@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Local config and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime/generated supervisor state
+runs/
+worktrees/
+artifacts/
+logs/
+*.jsonl
+
+# Inspiration/source clones. Keep sources/README.md tracked.
+sources/*
+!sources/README.md
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+

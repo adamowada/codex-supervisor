@@ -44,3 +44,14 @@ promotion into skills.
 Decision: OSS inspiration sources are cloned under `sources/` but ignored by git.
 
 Rationale: They are local reference material, not vendored project source.
+
+## D-0007: Codex Local State Is Telemetry
+
+Decision: Local Codex SQLite databases under `~/.codex` are read-only telemetry and reconciliation
+inputs, not the canonical supervisor queue.
+
+Rationale: Codex internal databases expose useful observations about threads, spawn graphs, goals,
+logs, agent jobs, inbox items, and automation runs, but their schema and lifecycle belong to Codex.
+`codex-supervisor` needs stable, project-owned state for tests, CI, handoffs, and cross-tool use.
+Therefore, canonical operational state remains in `plans/planning.sqlite3`, while Codex automations
+are managed through official automation tooling.

@@ -34,7 +34,9 @@ This note summarizes the privacy-safe `.codex` audit used to seed repo-local ski
 - `codex-state-readonly-audit`
 - `context-compaction-handoff`
 - `failure-loop-triage`
+- `fresh-thread-code-reviewer`
 - `git-pr-ci-operator`
+- `review-finding-fixer`
 - `skill-golden-eval-loop`
 - `source-evidence-attributor`
 - `subagent-run-digest`
@@ -42,3 +44,40 @@ This note summarizes the privacy-safe `.codex` audit used to seed repo-local ski
 - `verification-command-picker`
 - `windows-shell-quoting`
 - `worktree-sandbox-guard`
+- `skill-router` (added during integration cleanup)
+- `codex-supervisor` (thin top-level orchestrator)
+
+## Matt Pocock Skills Integrated
+
+Confidence: `confirmed`
+
+On 2026-05-23, `codex-supervisor` integrated the most relevant MIT-licensed
+`mattpocock/skills` engineering skills as repo-local skills:
+
+- `improve-codebase-architecture`
+- `grill-with-docs`
+- `setup-agent-docs` (adapted)
+- `to-issues`
+- `triage`
+- `diagnose`
+- `tdd`
+- `prototype`
+- `zoom-out`
+
+The existing `fresh-thread-code-reviewer` skill was updated with Matt's Standards-vs-Spec review
+axis instead of importing the in-progress `review` skill verbatim.
+
+## Integration Cleanup
+
+Confidence: `confirmed`
+
+The integrated skills were normalized for Codex-supervisor on 2026-05-23:
+
+- Upstream slash-command and agent-tool assumptions were replaced with Codex-native skill names and
+  read-only explorer subagent language.
+- Triage and issue publishing now prefer planning SQLite plus configured GitHub connector workflows.
+- Architecture reports now target ignored local artifacts first and avoid external CDN dependencies
+  unless explicitly useful.
+- Glossary and ADR updates now respect the repo's configured source-of-truth and locking process.
+- A top-level `codex-supervisor` skill now defines the operating loop, routes to smaller skills, and
+  enforces global invariants without absorbing child-skill procedures.

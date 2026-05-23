@@ -45,6 +45,10 @@ hashes.
 Operational planning state belongs in `plans/planning.sqlite3`. Use typed helpers in
 `codex_supervisor.planning`; do not scatter ad hoc SQL across the project.
 
+Local Codex databases under `~/.codex` are read-only telemetry inputs. Do not write directly to
+Codex internal SQLite databases. Reconcile observations into project-owned planning SQLite, and use
+official Codex automation tooling for recurring jobs, reminders, monitors, and thread wakeups.
+
 Synthesized durable learning belongs in `insights/`. Do not bury reusable workflow lessons only in
 chat, logs, or worker summaries.
 

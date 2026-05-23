@@ -8,6 +8,7 @@
 human planning session
   -> source-of-truth docs
   -> planning SQLite
+  -> Codex local state reconciliation
   -> task compiler
   -> queue
   -> worktree manager
@@ -33,6 +34,29 @@ Owns durable state:
 - knowledge graph update requests.
 
 The core should be testable without launching Codex.
+
+### Codex Local State Adapter
+
+The supervisor may observe local Codex state as telemetry, but it must not treat Codex internal
+databases as the canonical queue.
+
+Read-only inputs:
+
+- `~/.codex/state_5.sqlite`: threads, spawn edges, dynamic tools, and empty or future agent-job
+  tables.
+- `~/.codex/goals_1.sqlite`: per-thread goal rows when present.
+- `~/.codex/logs_2.sqlite`: local execution and application logs for workflow analytics.
+- `~/.codex/sqlite/codex-dev.db`: automation, automation run, and inbox tables when present.
+
+The adapter can propose imports into `plans/planning.sqlite3`, link thread IDs and goal IDs as
+evidence, detect stale work, summarize spawn trees, and surface repeated failures. It must not
+write directly to these local Codex SQLite databases.
+
+### Automation Bridge
+
+Automations should be created, updated, or inspected through official Codex automation tooling, not
+through raw SQLite writes. Automation runs are a scheduling surface for supervisor work such as
+queue reconciliation, CI monitoring, project health checks, and thread wakeups.
 
 ### Worker Backends
 

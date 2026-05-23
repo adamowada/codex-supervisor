@@ -75,11 +75,22 @@ Implement the durable learning loop:
 - test skills against golden tasks;
 - promote approved skills.
 
-## Stage 8: MCP Server And Codex Plugin
+## Stage 8: Codex Local State Adapter And Automation Bridge
+
+Implement:
+
+- read-only adapters for local Codex SQLite databases;
+- thread, spawn-tree, goal, automation, inbox, and log summaries;
+- dry-run reconciliation into planning SQLite;
+- provenance records for imported observations;
+- stale-thread, orphaned-handoff, and repeated-failure detection;
+- official Codex automation creation/update flows for recurring supervisor jobs.
+
+## Stage 9: MCP Server And Codex Plugin
 
 Expose supervisor operations through MCP and package project skills through a Codex plugin.
 
-## Stage 9: GitHub And CI/CD Integration
+## Stage 10: GitHub And CI/CD Integration
 
 Implement:
 

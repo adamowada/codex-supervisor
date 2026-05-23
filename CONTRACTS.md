@@ -45,6 +45,28 @@ Required fields:
 
 Codex workers should use `codex exec --json --output-schema` once the backend is implemented.
 
+## Codex Local State Import Contract
+
+Local Codex state imports are observations, not authority.
+
+Required fields for any imported observation:
+
+- `source_kind`: `thread`, `thread_spawn_edge`, `thread_goal`, `agent_job`, `automation`,
+  `automation_run`, `inbox_item`, or `log_summary`
+- `source_database`
+- `source_table`
+- `source_id`
+- `observed_at`
+- `confidence`
+- `summary`
+- `linked_plan_id`
+- `linked_task_id`
+- `raw_snapshot_path` or `raw_snapshot_hash`
+
+Importers may propose plans, tasks, worker runs, artifact links, or progress events. They must not
+silently overwrite canonical planning rows. Conflicts between local Codex observations and planning
+SQLite must be surfaced as reconciliation findings.
+
 ## Review Contract
 
 Automated review is separate from deterministic checks.

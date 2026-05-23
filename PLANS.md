@@ -20,6 +20,24 @@ The planning database is tracked in git and acts as operational state for Codex.
 Markdown remains the source of truth for stable human-facing knowledge. Do not use planning tables
 as a private replacement for `README.md`, `AGENTS.md`, contracts, architecture, SOP, or insights.
 
+## Codex Local State Reconciliation
+
+Local Codex databases under `~/.codex` are observational inputs, not the project queue. The
+canonical queue remains `plans/planning.sqlite3`.
+
+The supervisor may read local Codex state to propose updates:
+
+- threads and spawn edges can become evidence for active, stale, or orphaned work;
+- thread goals can become candidate plans or plan context;
+- agent-job rows, if Codex begins using them, can map to candidate `supervisor_tasks` or
+  `worker_runs`;
+- automation and inbox rows can inform recurring work and follow-up triage;
+- logs can reveal repeated failures, slow checks, or skill improvement candidates.
+
+Imported observations must preserve provenance: source database, source table, source ID, observed
+timestamp, and confidence. Imports may create proposed plans, tasks, links, or progress events, but
+must not silently overwrite canonical planning rows.
+
 ## Required Database
 
 Default path:
@@ -103,6 +121,8 @@ For each active plan:
 - add milestones and acceptance criteria;
 - append decisions as tradeoffs are resolved;
 - append progress events when work starts, completes, blocks, unblocks, verifies, or hands off;
+- link relevant Codex thread IDs, goal IDs, automation IDs, worker artifacts, and issue IDs as
+  evidence when available;
 - link artifacts and commits;
 - update markdown source-of-truth only when stable behavior changes;
 - update `insights/` when a reusable workflow lesson is learned.

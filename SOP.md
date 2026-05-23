@@ -52,6 +52,21 @@ For every AFK task:
 7. Repair or mark blocked.
 8. Link artifacts and progress events.
 
+## Control Tower Reconciliation
+
+On a recurring schedule or before a major supervision session:
+
+1. Read local Codex state databases in read-only mode.
+2. Summarize active and stale threads by project.
+3. Identify orphaned handoffs, abandoned worktrees, repeated failures, and high-fanout thread trees.
+4. Compare local Codex observations with `plans/planning.sqlite3`.
+5. Create proposed plan links, progress events, AFK tasks, or HITL tasks.
+6. Suggest Codex automations through official automation tooling when recurring checks would help.
+7. Record durable lessons in `insights/` when repeated patterns appear.
+
+Do not write directly to Codex internal SQLite databases. Use planning SQLite as the canonical queue
+and official Codex automation tooling as the scheduling surface.
+
 ## Learning Loop
 
 When a task fails, stalls, or requires repeated human correction:

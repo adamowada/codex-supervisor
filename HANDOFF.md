@@ -2,38 +2,73 @@
 
 ## Current State
 
-This repository has been bootstrapped as a Python-first `codex-supervisor` project.
+Repository: `codex-supervisor`
 
-Present:
+Current pushed commit: `418e8da`
 
-- git repo initialized;
-- shallow source clones under ignored `sources/`;
-- source-of-truth docs;
-- Python package skeleton;
-- planning SQLite contract;
-- source lock guard;
-- initial `insights/` knowledge graph;
-- repo-specific skills.
+The repository is a Python-first control plane for an agentic coding factory around Codex. The
+bootstrap source-of-truth documents, planning SQLite database, source lock guard, initial Python
+package skeleton, ignored OSS study sources, insights graph, and repo-local skill pack are present.
 
-The next Codex session should begin implementation from `ROADMAP.md`, starting with Stage 1 unless
-the user reprioritizes.
+Major additions now present:
+
+- `.agents/skills/codex-supervisor`: thin top-level orchestrator skill.
+- `.agents/skills/skill-router`: small dispatcher for choosing the right workflow skill.
+- Matt Pocock-inspired engineering skills for architecture, grilling, triage, issue shaping, TDD,
+  diagnosis, prototyping, and zoom-out review.
+- Fresh-thread code review and review-finding fixer skills matching Adam's review workflow.
+- Protected source-of-truth doctrine for treating local `~/.codex` SQLite databases as read-only
+  telemetry, while keeping `plans/planning.sqlite3` as the canonical queue.
+
+The repo was last verified with:
+
+- `uv run pytest`
+- `uv run ruff check .`
+- `uv run ruff format --check .`
+- `uv run mypy src`
+- `uv lock --check`
+- `python scripts/check_protected_files.py`
 
 ## Next Recommended Session Prompt
 
 ```text
-Read README.md, AGENTS.md, PLANS.md, ARCHITECTURE.md, CONTRACTS.md, ROADMAP.md, SOP.md, TESTING.md,
-DECISIONS.md, and insights/README.md.
+Use the codex-supervisor skill.
 
-Then inspect the Python package and tests. Begin Stage 1 from ROADMAP.md: complete the planning
-SQLite core. Keep all changes scoped, run the default checks, update plans/planning.sqlite3 through
-typed helpers, and do not edit locked source-of-truth docs unless the plan explicitly requires it.
+Read README.md, AGENTS.md, PLANS.md, ARCHITECTURE.md, CONTRACTS.md, ROADMAP.md, SOP.md, TESTING.md,
+DECISIONS.md, ATTRIBUTIONS.md, HANDOFF.md, and insights/codex-usage-skill-synthesis.md.
+
+Inspect plans/planning.sqlite3 through the existing typed planning helpers and summarize active
+plans, decisions, progress events, and next tasks.
+
+Then begin implementation from ROADMAP.md, starting with Stage 1: Planning SQLite Core, unless the
+current plan data or user instruction reprioritizes the work. Keep implementation scoped, update
+plans/planning.sqlite3 through typed helpers, preserve protected source-of-truth locks, and run the
+default verification suite before reporting completion.
 ```
+
+## Recommended First Implementation Focus
+
+Stage 1 should make the planning database comfortable enough for the supervisor to rely on it:
+
+- complete typed CRUD helpers for plans, milestones, acceptance criteria, decisions, progress
+  events, artifact links, commit links, supervisor tasks, and worker runs;
+- add CLI commands beyond `plan-init` and `plan-list` for inspecting active plans and recording
+  progress;
+- add tests for idempotent initialization, serialization, status transitions, and source-lock
+  interaction;
+- keep the public docs synchronized only when stable contracts change.
+
+Stage 8, the Codex local state adapter and automation bridge, is documented but should wait until the
+planning core can accept reconciled observations cleanly.
 
 ## Important Constraints
 
-- Do not stage or commit unless the user asks.
-- Do not vendor source clones.
+- Do not vendor source clones from `sources/`.
 - Keep the project cross-platform.
-- Treat dangerous/full-auto operation as the target mode.
-- Preserve the split between durable source of truth, operational SQLite state, and generated run
-  artifacts.
+- Treat dangerous/full-auto operation as the intended production mode.
+- Preserve the split between durable source of truth, operational SQLite state, local Codex
+  telemetry, and generated run artifacts.
+- Treat local `~/.codex` databases as read-only observational inputs.
+- Use official Codex automation tooling for recurring jobs, reminders, monitors, and thread wakeups.
+- Do not edit locked source-of-truth documents unless the active plan requires it; update
+  `scripts/check_protected_files.py` after intentional protected-doc changes.

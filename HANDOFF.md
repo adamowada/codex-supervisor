@@ -16,10 +16,10 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, Stage 8B review result payload validation is complete in planning SQLite. The
-expected queue state is `completed`: Stage 8 is the active current-queue plan with no open work
-remaining until the next Stage 8 slice is shaped. If the database reports anything else, trust the
-database and call this handoff stale.
+As of this snapshot, Stage 8B review result payload validation is complete in planning SQLite, and
+Stage 8C review result persistence is the next ready AFK slice. The expected queue state is `ready`
+with current task `task-stage8c-review-result-persistence`. If the database reports anything else,
+trust the database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
@@ -165,6 +165,16 @@ Stage 8B review result payload validation changed:
 - `insights/stage8b-review-result-payloads-worker-result.json`: durable Stage 8B worker-result
   evidence.
 
+Stage 8C review result persistence has been shaped:
+
+- `plans/planning.sqlite3`: adds `task-stage8c-review-result-persistence` as a ready AFK slice,
+  `milestone-stage8c-review-result-persistence`, and
+  `criterion-stage8c-review-result-persistence`.
+- Scope: persist validated `ReviewResult` records into planning progress and artifact links without
+  launching live review workers or creating repair tasks.
+- Expected focused check:
+  `uv run --no-sync python -B -m pytest tests/test_review_persistence.py tests/test_review_loop.py -q -p no:cacheprovider`.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -187,12 +197,12 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 Use story-loop-status as the queue state machine. Use task-current only as the executable AFK
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
-If queue_state is completed after Stage 8B, shape the next Stage 8 vertical slice in planning SQLite
-before editing. A likely next slice is Stage 8C: persist validated review results, accepted findings,
-waivers, and review artifacts into planning progress records without creating repair tasks yet. Keep
-live Codex Exec launch disabled while the local Codex CLI still fails preflight with
-`Access is denied`; do not launch live `codex exec` until an accessible executable path and intended
-`CODEX_HOME` are confirmed.
+If queue_state is ready, execute `task-stage8c-review-result-persistence`: persist validated review
+results, accepted findings, waivers, HITL finding summaries, verification evidence, and review
+artifacts into planning progress records without creating repair tasks yet. Keep live Codex Exec
+launch disabled while the local Codex CLI still fails preflight with `Access is denied`; do not
+launch live `codex exec` until an accessible executable path and intended `CODEX_HOME` are
+confirmed.
 ```
 
 ## Active Caveats

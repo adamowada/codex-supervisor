@@ -46,6 +46,8 @@ This note summarizes the privacy-safe `.codex` audit used to seed repo-local ski
 - `worktree-sandbox-guard`
 - `skill-router` (added during integration cleanup)
 - `codex-supervisor` (thin top-level orchestrator)
+- `goal-contract-drafter` (added after Codex Goals research)
+- `story-loop-runner` (added after Ralph research)
 
 ## Matt Pocock Skills Integrated
 
@@ -81,3 +83,15 @@ The integrated skills were normalized for Codex-supervisor on 2026-05-23:
 - Glossary and ADR updates now respect the repo's configured source-of-truth and locking process.
 - A top-level `codex-supervisor` skill now defines the operating loop, routes to smaller skills, and
   enforces global invariants without absorbing child-skill procedures.
+
+## Goal And Story Loop Synthesis
+
+Confidence: `confirmed`
+
+Codex Goals and Ralph-style loops add a missing middle layer between planning SQLite and worker
+execution:
+
+- Goal Contracts define the thread/worker finish line.
+- Story Loop policy constrains autonomous work to one ready vertical slice per iteration.
+- planning SQLite remains the canonical queue; native Codex Goal state and Ralph-style progress are
+  reconciled as evidence.

@@ -35,3 +35,21 @@ Confidence: inferred.
 
 `tech-resume` demonstrates a useful markdown insight wiki. `codex-supervisor` extends the pattern to
 workflow learning and skill evolution.
+
+## Goal Contracts Over Open-Ended Execution
+
+Confidence: confirmed.
+
+Codex Goals make long-running work safer when the objective, validation surface, constraints,
+boundaries, and stop condition are explicit. `codex-supervisor` should derive Goal Contracts from
+planning SQLite tasks and source-of-truth docs, then treat native Codex Goal state as execution
+telemetry rather than project authority.
+
+## One Story Per Fresh Context
+
+Confidence: confirmed.
+
+Ralph demonstrates that autonomous coding loops become easier to control when each iteration starts
+with fresh context, selects one incomplete story, runs checks, records progress, and stops or moves
+to the next story. `codex-supervisor` should apply this as Story Loop policy over `AFK` supervisor
+tasks.

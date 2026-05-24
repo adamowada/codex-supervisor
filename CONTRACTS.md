@@ -27,6 +27,44 @@ Required fields:
 AFK tasks must be implementable by a worker without new human input. HITL tasks require a human
 decision, design review, credential, or product judgment.
 
+## Goal Contract
+
+A Goal Contract is an execution contract for one thread or worker, derived from a supervisor task.
+It does not replace the task row.
+
+Required fields:
+
+- `objective`
+- `context_to_read_first`
+- `in_scope`
+- `out_of_scope`
+- `verification_surface`
+- `stop_condition`
+- `blocked_condition`
+- `iteration_policy`
+- `budget_or_status_limits`
+- `record_updates`
+
+Native Codex Goals can carry this contract into a Codex thread when available. Goal lifecycle state
+is reconciled back into planning SQLite as observation, not authority.
+
+## Story Loop Contract
+
+A story loop executes one vertical slice per iteration.
+
+Required loop rules:
+
+- select the highest-priority ready `AFK` task with no blocked dependencies;
+- execute exactly one story before broadening scope;
+- verify with the task's commands or artifacts;
+- run review when required;
+- record progress, artifacts, learnings, and follow-up tasks;
+- stop when no ready tasks remain, a task is HITL, sources conflict, verification is inconclusive,
+  or policy requires human authorization.
+
+Ralph's `prd.json` maps to planning SQLite tasks. Ralph's `passes: true` maps to verified task
+completion. Ralph's `progress.txt` maps to plan progress events plus `insights/` updates.
+
 ## Worker Result Contract
 
 Every worker must emit a structured result.

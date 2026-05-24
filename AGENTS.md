@@ -13,6 +13,8 @@ The product is not a replacement for Codex. It is a durable orchestration layer 
 - Treat source-of-truth files as contracts, not scratchpads.
 - Prefer repo-owned state over chat memory.
 - Prefer fresh-context worker runs over bloated long sessions.
+- Prefer Goal Contracts over open-ended "keep going" prompts.
+- Prefer one-story loops over broad unattended execution.
 - Prefer structured outputs over prose-only completion.
 - Prefer vertical-slice tasks over horizontal layer work.
 - Prefer worktrees over direct edits for unattended implementation.
@@ -48,6 +50,9 @@ Operational planning state belongs in `plans/planning.sqlite3`. Use typed helper
 Local Codex databases under `~/.codex` are read-only telemetry inputs. Do not write directly to
 Codex internal SQLite databases. Reconcile observations into project-owned planning SQLite, and use
 official Codex automation tooling for recurring jobs, reminders, monitors, and thread wakeups.
+
+Native Codex Goals are execution contracts for a thread or worker. They do not replace planning
+SQLite as the canonical project queue.
 
 Synthesized durable learning belongs in `insights/`. Do not bury reusable workflow lessons only in
 chat, logs, or worker summaries.

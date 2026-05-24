@@ -17,6 +17,7 @@ vendored into this repository.
 | `mattpocock-agent-rules-books` | `https://github.com/mattpocock/agent-rules-books` | MIT | Study concise rule-pack and skill-pack design. |
 | `mattpocock-agent-browser` | `https://github.com/mattpocock/agent-browser` | Apache-2.0 | Study browser automation APIs designed for coding agents. |
 | `mattpocock-node-DeepResearch` | `https://github.com/mattpocock/node-DeepResearch` | Apache-2.0 | Study bounded research, search, read, and synthesis loops. |
+| `snarktank-ralph` | `https://github.com/snarktank/ralph` | MIT | Study fresh-context autonomous coding loops, PRD-to-story execution, progress logs, checks, and stop conditions. |
 
 ## Reuse Rules
 

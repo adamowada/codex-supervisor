@@ -37,20 +37,25 @@ Before implementation:
 7. Identify risks.
 8. Split work into vertical slices.
 9. Mark each slice `AFK` or `HITL`.
-10. Persist all durable planning state to SQLite.
+10. Draft Goal Contract fields for each `AFK` slice.
+11. Persist all durable planning state to SQLite.
 
 ## Worker Execution
 
 For every AFK task:
 
 1. Create an isolated worktree.
-2. Render a task prompt from source-of-truth docs and task row.
+2. Render a Goal Contract and task prompt from source-of-truth docs and task row.
 3. Launch a fresh-context Codex worker.
-4. Capture raw logs and structured result.
-5. Run deterministic checks.
-6. Run automated review.
-7. Repair or mark blocked.
-8. Link artifacts and progress events.
+4. Execute one vertical slice/story only.
+5. Capture raw logs and structured result.
+6. Run deterministic checks.
+7. Run automated review.
+8. Repair or mark blocked.
+9. Link artifacts, learnings, and progress events.
+
+The loop may continue to the next ready task only after the current story has evidence for completion
+or a recorded blocked state.
 
 ## Control Tower Reconciliation
 

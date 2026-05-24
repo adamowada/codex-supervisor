@@ -27,10 +27,12 @@ For any new project:
 2. Persist the plan into a tracked SQLite planning database.
 3. Compile the plan into small vertical-slice tasks marked `AFK` or `HITL`.
 4. Launch fresh-context Codex workers in isolated worktrees.
-5. Require every worker to return structured output.
-6. Run automated checks and automated review before merge.
-7. Record decisions, progress, artifacts, commits, failures, and follow-up tasks.
-8. Update skills and the knowledge graph when repeated patterns or failures reveal something durable.
+5. Give each worker a Goal Contract with objective, boundaries, verification, and stop conditions.
+6. Execute one vertical slice per story-loop iteration.
+7. Require every worker to return structured output.
+8. Run automated checks and automated review before merge.
+9. Record decisions, progress, artifacts, commits, failures, and follow-up tasks.
+10. Update skills and the knowledge graph when repeated patterns or failures reveal something durable.
 
 ## Intended Operating Mode
 
@@ -105,3 +107,4 @@ The ignored `sources/` directory contains shallow clones of:
 - `mattpocock/agent-rules-books`
 - `mattpocock/agent-browser`
 - `mattpocock/node-DeepResearch`
+- `snarktank/ralph`

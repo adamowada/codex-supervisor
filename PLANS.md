@@ -100,6 +100,14 @@ Links plans to implementation, verification, or documentation commits.
 Machine-readable work queue compiled from plans. Tasks are vertical slices and must be classified as
 `AFK` or `HITL`.
 
+Until dedicated Goal Contract tables exist, task-level goal/story-loop metadata belongs in:
+
+- `scope_json` for Goal Contract context, in-scope boundaries, story-loop policy, and source links;
+- `out_of_scope_json` for non-goals and blocked conditions;
+- `acceptance_criteria_json` for evidence-based stop conditions;
+- `verification_commands_json` for validation surfaces;
+- `worker_runs.metadata_json` for observed native Codex Goal state and story-loop iteration data.
+
 ### `worker_runs`
 
 One row per worker invocation, including backend, worktree, prompt, status, timing, result file, and

@@ -46,7 +46,18 @@ Compile plans into vertical-slice tasks:
 - attach acceptance criteria and checks;
 - produce worker prompts.
 
-## Stage 5: Codex Exec Backend
+## Stage 5: Goal Contracts And Story Loop
+
+Implement:
+
+- Goal Contract data model and renderer;
+- Goal Contract prompt sections for native Codex Goals and worker prompts;
+- Story Loop policy for one ready AFK task per iteration;
+- queue inspection helpers for next-ready task selection;
+- progress and artifact recording for story iterations;
+- tests for stop conditions, blocked conditions, and source-of-truth precedence.
+
+## Stage 6: Codex Exec Backend
 
 Launch fresh-context workers:
 
@@ -56,7 +67,7 @@ Launch fresh-context workers:
 - capture JSONL, stderr, stdout, timing, diffs, and final result;
 - write worker-run records.
 
-## Stage 6: Review And Verification Loop
+## Stage 7: Review And Verification Loop
 
 Run:
 
@@ -65,7 +76,7 @@ Run:
 - repair loops;
 - final summary and handoff.
 
-## Stage 7: Insights And Skill Learning
+## Stage 8: Insights And Skill Learning
 
 Implement the durable learning loop:
 
@@ -75,7 +86,7 @@ Implement the durable learning loop:
 - test skills against golden tasks;
 - promote approved skills.
 
-## Stage 8: Codex Local State Adapter And Automation Bridge
+## Stage 9: Codex Local State Adapter And Automation Bridge
 
 Implement:
 
@@ -86,11 +97,11 @@ Implement:
 - stale-thread, orphaned-handoff, and repeated-failure detection;
 - official Codex automation creation/update flows for recurring supervisor jobs.
 
-## Stage 9: MCP Server And Codex Plugin
+## Stage 10: MCP Server And Codex Plugin
 
 Expose supervisor operations through MCP and package project skills through a Codex plugin.
 
-## Stage 10: GitHub And CI/CD Integration
+## Stage 11: GitHub And CI/CD Integration
 
 Implement:
 

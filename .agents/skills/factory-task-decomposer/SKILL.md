@@ -19,8 +19,13 @@ Each task needs:
 - out-of-scope list;
 - acceptance criteria;
 - verification commands;
+- evidence-based stop condition;
+- Goal Contract readiness;
 - expected worker backend;
 - review requirement.
 
 Prefer many small AFK tasks over one broad task. Mark tasks HITL only when a real human decision is
 required.
+
+Each AFK task should be small enough for one story-loop iteration. If a task cannot be expressed as
+one Goal Contract with one stop condition, split it further.

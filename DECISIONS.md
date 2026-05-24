@@ -55,3 +55,24 @@ logs, agent jobs, inbox items, and automation runs, but their schema and lifecyc
 `codex-supervisor` needs stable, project-owned state for tests, CI, handoffs, and cross-tool use.
 Therefore, canonical operational state remains in `plans/planning.sqlite3`, while Codex automations
 are managed through official automation tooling.
+
+## D-0008: Goal Contracts Guide Execution
+
+Decision: Native Codex Goals and supervisor Goal Contracts are execution contracts for threads and
+workers, not the canonical project queue.
+
+Rationale: Codex Goals provide a durable objective, validation loop, lifecycle controls, and stop
+conditions for a running thread. `codex-supervisor` still needs project-owned planning state that is
+testable, reviewable, and independent of Codex internal schemas. Therefore, Goal Contracts are
+derived from planning SQLite tasks and reconciled back as evidence.
+
+## D-0009: Story Loops Execute One Vertical Slice
+
+Decision: Ralph-style story loops are adopted as worker execution policy: one fresh-context worker
+implements one ready vertical slice, verifies it, records progress, and then stops or moves to the
+next ready slice.
+
+Rationale: The Ralph loop demonstrates a practical way to keep autonomous coding bounded: small
+stories, fresh context, durable progress, quality checks, and a clear stop condition. In
+`codex-supervisor`, planning SQLite replaces Ralph's `prd.json`, and insights/progress records
+replace `progress.txt`.

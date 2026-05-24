@@ -15,6 +15,13 @@ Generated during repository bootstrap.
 | `sources/mattpocock-agent-rules-books` | MIT | Mini/nano rule packs and guidance for skills vs always-on instructions. |
 | `sources/mattpocock-agent-browser` | Apache-2.0 | JSON browser automation and snapshot/ref workflow for agents. |
 | `sources/mattpocock-node-DeepResearch` | Apache-2.0 | Bounded search/read/reason loop for research workers. |
+| `sources/snarktank-ralph` | MIT | Fresh-context autonomous coding loop, PRD-to-story execution, progress logs, checks, and stop conditions. |
+
+## Documentation Sources
+
+| Source | Useful for |
+| --- | --- |
+| `https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex` | Official Codex Goals concepts: durable objective, validation loop, lifecycle controls, and stop conditions. |
 
 ## Use Policy
 

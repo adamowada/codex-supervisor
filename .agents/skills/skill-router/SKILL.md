@@ -24,6 +24,8 @@ If the selected skill would write to the wrong source, stop and switch to the so
 - New repo setup or imported skill prerequisites: `setup-agent-docs`.
 - Convert a plan into AFK/HITL work: `factory-task-decomposer`.
 - Shape one vague task into an AFK-ready contract: `afk-issue-shaper`.
+- Draft a Codex Goal-style objective or completion contract: `goal-contract-drafter`.
+- Run a Ralph-style one-story execution loop: `story-loop-runner`.
 - Publish approved task contracts to an issue tracker: `to-issues`.
 - Triage incoming issues or move issue states: `triage`.
 - Start work in a clean context or isolated worker: `fresh-context-worker`.
@@ -45,6 +47,8 @@ If the selected skill would write to the wrong source, stop and switch to the so
 ## Tie Breakers
 
 - Planning beats publishing. If work is not approved, keep it in planning SQLite or a local task contract before creating issues.
+- Goal Contracts beat open-ended execution. If the stop condition is unclear, draft or repair the Goal Contract before launching a worker.
+- Story loops beat broad execution. If several AFK tasks are ready, run one vertical slice per iteration.
 - Review beats fixing. If the user asks for review, report findings first; use `review-finding-fixer` only after they ask to fix them.
 - CI repair beats general diagnosis when there is a concrete failed job or check.
 - `diagnose` beats architecture review when a bug is still unreproduced.

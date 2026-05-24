@@ -23,6 +23,7 @@ Use it for synthesized, provenance-backed knowledge about:
 - `source-index.md`: cloned source corpus and what each repo is useful for.
 - `workflow-patterns.md`: recurring workflow patterns extracted from sources and Adam's projects.
 - `codex-usage-skill-synthesis.md`: aggregate `.codex` usage evidence behind repo-local skills.
+- `goal-mode-and-ralph-loop.md`: synthesis of Codex Goals and Ralph-style one-story loops.
 - `project-sop.md`: project bootstrap SOP distilled for spawned projects.
 - `skill-learning-loop.md`: how skills should be updated and tested over time.
 - `open-questions.md`: unresolved design questions for future planning sessions.

@@ -20,6 +20,9 @@ Include:
 - blocked-by;
 - acceptance criteria;
 - verification commands;
+- evidence-based stop condition;
+- blocked condition;
+- Goal Contract draft or source fields;
 - expected artifacts;
 - review requirement;
 - stop conditions.
@@ -27,3 +30,5 @@ Include:
 Use `AFK` when Codex can decide and verify the slice alone. Use `HITL` only when a human product, policy, credential, payment, privacy, or deployment decision is required.
 
 Prefer a small shippable behavior over a horizontal layer such as "build backend" or "add UI."
+
+Before launch, the issue should be convertible into a Goal Contract without new human input.

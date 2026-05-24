@@ -10,6 +10,8 @@ human planning session
   -> planning SQLite
   -> Codex local state reconciliation
   -> task compiler
+  -> goal contract renderer
+  -> story loop orchestrator
   -> queue
   -> worktree manager
   -> worker backend
@@ -57,6 +59,29 @@ write directly to these local Codex SQLite databases.
 Automations should be created, updated, or inspected through official Codex automation tooling, not
 through raw SQLite writes. Automation runs are a scheduling surface for supervisor work such as
 queue reconciliation, CI monitoring, project health checks, and thread wakeups.
+
+### Goal Contract Renderer
+
+Goal Contracts turn a supervisor task into a thread- or worker-scoped completion contract. They
+include the objective, source context, in-scope and out-of-scope boundaries, verification surface,
+stop condition, blocked condition, iteration policy, and record-update expectations.
+
+Native Codex Goals may be used as an execution aid when available, but they are not the canonical
+queue. The renderer should derive Goal Contracts from planning SQLite and source-of-truth docs, then
+reconcile observed goal state back into planning SQLite as telemetry.
+
+### Story Loop Orchestrator
+
+The Story Loop Orchestrator applies Ralph-style discipline to queued AFK work:
+
+- pick one highest-priority ready vertical slice;
+- launch one fresh-context worker in an isolated workspace;
+- verify and review the result;
+- record progress, artifacts, learnings, and follow-up tasks;
+- repeat only when another ready slice exists and policy allows it.
+
+The story loop is a policy layer over the supervisor's queue. It should not replace planning SQLite
+with `prd.json` or `progress.txt`, though it can import Ralph-inspired patterns.
 
 ### Worker Backends
 

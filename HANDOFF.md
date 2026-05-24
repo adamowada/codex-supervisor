@@ -4,7 +4,7 @@
 
 Repository: `codex-supervisor`
 
-Current pushed commit: `418e8da`
+Last clean pushed baseline before this planning update: `31da5a2`
 
 The repository is a Python-first control plane for an agentic coding factory around Codex. The
 bootstrap source-of-truth documents, planning SQLite database, source lock guard, initial Python
@@ -19,6 +19,8 @@ Major additions now present:
 - Fresh-thread code review and review-finding fixer skills matching Adam's review workflow.
 - Protected source-of-truth doctrine for treating local `~/.codex` SQLite databases as read-only
   telemetry, while keeping `plans/planning.sqlite3` as the canonical queue.
+- Goal Contract and Story Loop doctrine inspired by Codex Goals and Ralph.
+- `sources/snarktank-ralph` is present locally as an ignored MIT-licensed inspiration source.
 
 The repo was last verified with:
 
@@ -40,10 +42,14 @@ DECISIONS.md, ATTRIBUTIONS.md, HANDOFF.md, and insights/codex-usage-skill-synthe
 Inspect plans/planning.sqlite3 through the existing typed planning helpers and summarize active
 plans, decisions, progress events, and next tasks.
 
-Then begin implementation from ROADMAP.md, starting with Stage 1: Planning SQLite Core, unless the
-current plan data or user instruction reprioritizes the work. Keep implementation scoped, update
-plans/planning.sqlite3 through typed helpers, preserve protected source-of-truth locks, and run the
-default verification suite before reporting completion.
+First, use the knowledge-graph-updater skill on the queued immediate task: coordinate six read-only
+explorer lanes, collect structured findings from sources/, .agents/skills/, and source-of-truth
+documents, then synthesize useful findings into insights/ with provenance and confidence.
+
+After that, begin implementation from ROADMAP.md, starting with Stage 1: Planning SQLite Core,
+unless the current plan data or user instruction reprioritizes the work. Keep implementation scoped,
+update plans/planning.sqlite3 through typed helpers, preserve protected source-of-truth locks, and
+run the default verification suite before reporting completion.
 ```
 
 ## Recommended First Implementation Focus
@@ -60,6 +66,10 @@ Stage 1 should make the planning database comfortable enough for the supervisor 
 
 Stage 8, the Codex local state adapter and automation bridge, is documented but should wait until the
 planning core can accept reconciled observations cleanly.
+
+Goal Contracts and Story Loop support are now documented before the Codex Exec backend. Keep that
+middle layer in mind while implementing Stage 1 so task and worker-run records can carry goal/story
+metadata cleanly.
 
 ## Important Constraints
 

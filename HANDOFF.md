@@ -17,7 +17,7 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
 As of this snapshot, Stage 6 is complete and ACP'd, and Stage 7 is the active current-queue plan.
-The expected queue state after Stage 7D completion is `completed`: no ready, running, blocked, or
+The expected queue state after Stage 7E completion is `completed`: no ready, running, blocked, or
 HITL task remains in the current queue until the next Stage 7 slice is shaped. If the database
 reports anything else, trust the database and call this handoff stale.
 
@@ -27,13 +27,13 @@ Recent completed ACP checkpoints:
 - `200d027`: hardened exact task claiming, Story Loop queue snapshots, completed-plan criteria, and
   worker-result/attribution skill contracts.
 
-The latest full local gate passed after the Stage 7D worktree state update with:
+The latest full local gate passed after the Stage 7E cleanup planning update with:
 
 ```sh
 uv run --no-sync python -B scripts/verify.py
 ```
 
-That run covered 284 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
+That run covered 289 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
 hygiene, planning integrity, skill inventory, source inventory, protected locks, and
 `uv lock --check`.
 
@@ -126,6 +126,16 @@ Stage 7D worktree state snapshots changed:
   runner invocation.
 - `insights/stage7d-worktree-state-worker-result.json`: durable Stage 7D worker-result evidence.
 
+Stage 7E cleanup and orphan planning changed:
+
+- `src/codex_supervisor/worktree_cleanup.py`: added non-destructive `plan_cleanup_targets`, which
+  validates candidate paths with `validate_cleanup_target`, classifies ignored runtime roots,
+  preserves active worker-run IDs, and returns structured selected/skipped cleanup entries.
+- `tests/test_worktree_cleanup.py`: covers safe orphan candidates, root/outside rejection,
+  active-run preservation, unsupported runtime path skipping, and missing worker-run ID skipping.
+- `insights/stage7e-cleanup-orphan-planning-worker-result.json`: durable Stage 7E worker-result
+  evidence.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -149,10 +159,10 @@ Use story-loop-status as the queue state machine. Use task-current only as the e
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
 If queue_state is completed, shape the next vertical slice in planning SQLite before editing. A
-likely next AFK slice is Stage 7E: cleanup and orphan detection command planning behind
-`validate_cleanup_target`, still using injected command runners and no live deletion by default.
-Keep it explicitly non-live while the local Codex CLI still fails preflight with `Access is denied`;
-do not launch live `codex exec` until an accessible executable path and intended `CODEX_HOME` are
+likely next AFK slice is Stage 7F: feed active worker-run IDs from planning SQLite into cleanup
+planning or add a dry-run CLI command that exposes cleanup plans without deleting anything. Keep it
+explicitly non-live while the local Codex CLI still fails preflight with `Access is denied`; do not
+launch live `codex exec` until an accessible executable path and intended `CODEX_HOME` are
 confirmed.
 ```
 

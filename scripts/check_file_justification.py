@@ -251,6 +251,10 @@ FILE_PURPOSES = {
         "structured worker-result evidence for the Stage 8A review contracts slice",
         "check_planning_integrity",
     ),
+    "insights/stage8b-review-result-payloads-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 8B review result payload slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),

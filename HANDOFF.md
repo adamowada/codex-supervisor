@@ -16,10 +16,10 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, Stage 6 is complete and ACP'd, and Stage 7 is the active current-queue plan.
-The expected queue state after Stage 8A completion is `completed`: Stage 7 is marked completed and
-Stage 8 is the active current-queue plan. If the database reports anything else, trust the database
-and call this handoff stale.
+As of this snapshot, Stage 8B review result payload validation is complete in planning SQLite. The
+expected queue state is `completed`: Stage 8 is the active current-queue plan with no open work
+remaining until the next Stage 8 slice is shaped. If the database reports anything else, trust the
+database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
@@ -27,13 +27,13 @@ Recent completed ACP checkpoints:
 - `200d027`: hardened exact task claiming, Story Loop queue snapshots, completed-plan criteria, and
   worker-result/attribution skill contracts.
 
-The latest full local gate passed after the Stage 8A review contracts update with:
+The latest full local gate passed after the Stage 8B review result payload update with:
 
 ```sh
 uv run --no-sync python -B scripts/verify.py
 ```
 
-That run covered 300 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
+That run covered 309 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
 hygiene, planning integrity, skill inventory, source inventory, protected locks, and
 `uv lock --check`.
 
@@ -156,6 +156,15 @@ Stage 8A review contracts changed:
   finding rejection.
 - `insights/stage8a-review-contracts-worker-result.json`: durable Stage 8A worker-result evidence.
 
+Stage 8B review result payload validation changed:
+
+- `src/codex_supervisor/review_loop.py`: added `ReviewVerificationEvidence`, `ReviewResult`, and
+  `validate_review_result_payload`, plus accepted/waived finding views and repair draft extraction.
+- `tests/test_review_loop.py`: covers valid review result payloads, invalid payload shapes,
+  verification evidence validation, invalid finding payloads, and repair draft extraction.
+- `insights/stage8b-review-result-payloads-worker-result.json`: durable Stage 8B worker-result
+  evidence.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -178,11 +187,12 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 Use story-loop-status as the queue state machine. Use task-current only as the executable AFK
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
-If queue_state is completed after Stage 8A, shape the next Stage 8 vertical slice in planning SQLite
-before editing. A likely next slice is Stage 8B: review result payload validation and persistence of
-accepted findings or waivers into planning progress/artifact records. Keep live Codex Exec launch
-disabled while the local Codex CLI still fails preflight with `Access is denied`; do not launch live
-`codex exec` until an accessible executable path and intended `CODEX_HOME` are confirmed.
+If queue_state is completed after Stage 8B, shape the next Stage 8 vertical slice in planning SQLite
+before editing. A likely next slice is Stage 8C: persist validated review results, accepted findings,
+waivers, and review artifacts into planning progress records without creating repair tasks yet. Keep
+live Codex Exec launch disabled while the local Codex CLI still fails preflight with
+`Access is denied`; do not launch live `codex exec` until an accessible executable path and intended
+`CODEX_HOME` are confirmed.
 ```
 
 ## Active Caveats

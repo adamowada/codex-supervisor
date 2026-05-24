@@ -10,7 +10,10 @@ from codex_supervisor.review_loop import (
     ReviewContractError,
     ReviewFinding,
     ReviewLocation,
+    ReviewResult,
+    ReviewVerificationEvidence,
     repair_task_draft_from_finding,
+    validate_review_result_payload,
 )
 
 
@@ -138,3 +141,141 @@ def test_non_accepted_finding_cannot_become_repair_task_draft() -> None:
 
     with pytest.raises(ReviewContractError, match="only accepted findings"):
         repair_task_draft_from_finding(finding)
+
+
+def test_validate_review_result_payload_exposes_findings_and_repair_drafts() -> None:
+    result = validate_review_result_payload(
+        {
+            "review_id": "review-stage8b-001",
+            "mode": "everything",
+            "target": "diff:HEAD~1..HEAD",
+            "findings": [
+                {
+                    "finding_id": "finding-stage8b-001",
+                    "mode": "code_quality",
+                    "severity": "P2",
+                    "status": "accepted",
+                    "title": "Missing regression test",
+                    "evidence": "The changed branch lacks focused coverage.",
+                    "location": {"path": "src/codex_supervisor/review_loop.py", "line": 88},
+                    "recommendation": "Add a focused test.",
+                    "allowed_paths": [
+                        "src/codex_supervisor/review_loop.py",
+                        "tests/test_review_loop.py",
+                    ],
+                },
+                {
+                    "finding_id": "finding-stage8b-002",
+                    "mode": "architecture",
+                    "severity": "P3",
+                    "status": "waived",
+                    "title": "Can split later",
+                    "evidence": "The current module is still small.",
+                    "location": {"scope": "review loop module"},
+                    "recommendation": "Defer splitting until another caller appears.",
+                    "waiver_rationale": "No current readability or ownership risk.",
+                },
+            ],
+            "verification_evidence": [
+                {
+                    "command": "uv run --no-sync python -B -m pytest tests/test_review_loop.py",
+                    "exit_code": 0,
+                    "summary": "passed",
+                }
+            ],
+        }
+    )
+
+    assert isinstance(result, ReviewResult)
+    assert result.review_id == "review-stage8b-001"
+    assert result.mode == "everything"
+    assert result.target == "diff:HEAD~1..HEAD"
+    assert len(result.findings) == 2
+    assert result.accepted_findings[0].finding_id == "finding-stage8b-001"
+    assert result.waived_findings[0].finding_id == "finding-stage8b-002"
+    assert result.verification_evidence == (
+        ReviewVerificationEvidence(
+            command="uv run --no-sync python -B -m pytest tests/test_review_loop.py",
+            exit_code=0,
+            summary="passed",
+        ),
+    )
+    assert result.repair_task_drafts[0].source_finding_id == "finding-stage8b-001"
+    assert result.repair_task_drafts[0].allowed_paths == (
+        "src/codex_supervisor/review_loop.py",
+        "tests/test_review_loop.py",
+    )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        [],
+        {"mode": "everything", "target": "diff", "findings": [], "verification_evidence": []},
+        {
+            "review_id": "review",
+            "mode": "bad",
+            "target": "diff",
+            "findings": [],
+            "verification_evidence": [],
+        },
+        {
+            "review_id": "review",
+            "mode": "everything",
+            "target": "diff",
+            "findings": {},
+            "verification_evidence": [],
+        },
+    ],
+)
+def test_validate_review_result_payload_rejects_invalid_payload_shapes(payload: object) -> None:
+    with pytest.raises(ReviewContractError):
+        validate_review_result_payload(payload)
+
+
+@pytest.mark.parametrize(
+    "verification_evidence",
+    [
+        [{}],
+        [{"command": "pytest", "exit_code": "0", "summary": "passed"}],
+        [{"command": "pytest", "exit_code": 0, "summary": ""}],
+    ],
+)
+def test_validate_review_result_payload_rejects_invalid_verification_entries(
+    verification_evidence: list[object],
+) -> None:
+    with pytest.raises(ReviewContractError):
+        validate_review_result_payload(
+            {
+                "review_id": "review-stage8b-003",
+                "mode": "everything",
+                "target": "diff:HEAD",
+                "findings": [],
+                "verification_evidence": verification_evidence,
+            }
+        )
+
+
+def test_validate_review_result_payload_rejects_invalid_finding_payload() -> None:
+    with pytest.raises(ReviewContractError, match="finding location"):
+        validate_review_result_payload(
+            {
+                "review_id": "review-stage8b-004",
+                "mode": "everything",
+                "target": "diff:HEAD",
+                "findings": [
+                    {
+                        "finding_id": "finding-stage8b-004",
+                        "mode": "code_quality",
+                        "severity": "P2",
+                        "status": "accepted",
+                        "title": "Missing location",
+                        "evidence": "The finding lacks location.",
+                        "recommendation": "Add location.",
+                    }
+                ],
+                "verification_evidence": [
+                    {"command": "pytest", "exit_code": 0, "summary": "passed"}
+                ],
+            }
+        )

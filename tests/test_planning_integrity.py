@@ -236,6 +236,12 @@ def test_planning_integrity_rejects_commit_links_missing_from_git(tmp_path):
         check=True,
         stdout=subprocess.DEVNULL,
     )
+    subprocess.run(
+        ("git", "config", "commit.gpgsign", "false"),
+        cwd=tmp_path,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
     (tmp_path / "README.md").write_text("# Test\n", encoding="utf-8")
     subprocess.run(("git", "add", "README.md"), cwd=tmp_path, check=True)
     subprocess.run(

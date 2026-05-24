@@ -204,6 +204,8 @@ Confidence: confirmed.
   `.out-of-scope/` an opt-in triage pattern.
 - `plan-summary` now reads its plan, task, worker-run, decision, progress, and link inputs through a
   single typed summary snapshot instead of assembling a report across multiple SQLite reads.
+- Git-based tests that create commits now disable inherited GPG signing in their temporary repo
+  config, keeping local verification independent of developer machine settings.
 
 ## Remaining Watch Items
 

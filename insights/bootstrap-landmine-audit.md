@@ -45,8 +45,9 @@ Confidence: confirmed.
   SQLite and `story-loop-status` govern active queue state and execution order.
 - `scripts/verify.py --publication-ready` now runs the full default suite plus the stricter public
   index gate, so ACP guidance can invoke one command.
-- Publication hygiene now exempts ignored `sources/<name>` planning artifacts only when `<name>` is
-  in the documented source inventory.
+- Publication hygiene does not publish ignored `sources/<name>` clone artifacts. The tracked
+  `sources/README.md` inventory documents how to recreate local clones, while publication-ready
+  checks require linked planning artifacts to be tracked files unless they are external URLs.
 - `scripts/check_planning_integrity.py` now makes SQLite drift checks part of the default local
   verification suite, including queue-state drift, invalid statuses, missing worker evidence, and
   missing progress artifact links.
@@ -190,6 +191,10 @@ Confidence: confirmed.
 - Completed worker-result `tests_run` summaries now have to be nonblank and avoid stale pass
   phrasing. The six-lane audit result no longer preserves pre-ACP lock failures as current passing
   evidence.
+- The active Stage 6 design task now has documentation-only `allowed_paths`; implementation paths
+  stay out of the executable contract until the backend design is reviewed and authorized.
+- Recent handoff checkpoint commits are linked in `plans/planning.sqlite3`, so mutable handoff prose
+  and durable plan evidence no longer diverge on checkpoint provenance.
 
 ## Remaining Watch Items
 

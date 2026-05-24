@@ -26,7 +26,7 @@ progress, artifact links, commit links, supervisor tasks, worker runs, and lifec
 
 ## Stage 2: Source Locks
 
-Status: partial/completed locally for the bootstrap guard. The protected manifest, hash check
+Status: partial/completed at the published bootstrap baseline. The protected manifest, hash check
 command, git-index tracking check, and local verification integration are present. A dedicated
 intentional re-lock CLI remains future work; for now, hashes are updated through
 `scripts/print_protected_hashes.py` and `scripts/check_protected_files.py`.
@@ -63,7 +63,7 @@ Compile plans into vertical-slice tasks:
 
 ## Stage 5: Goal Contracts And Story Loop
 
-Status: completed locally. The current implementation includes typed Goal Contract rendering,
+Status: completed at the published bootstrap baseline. The current implementation includes typed Goal Contract rendering,
 Story Loop status/progress CLI helpers, source-authority metadata, native Goal Mode preflight
 guidance, HITL-aware loop status, dependency resolution for completed blockers, and tests for stop
 conditions, blocked conditions, Story Loop states, atomic progress/artifact recording, and
@@ -83,9 +83,9 @@ Implemented:
 Do not start this stage from roadmap order alone. Use `story-loop-status` and the current-queue
 planning state first.
 
-Status: active ready successor plan `plan-stage6-codex-exec-backend` after the bootstrap ACP
-publication checkpoint. The current task is the design/contract slice
-`task-stage6-codex-exec-backend-design`.
+Status: next major implementation stage after the Story Loop and bootstrap-publication checkpoints.
+Do not copy live plan or task IDs from this roadmap; inspect `plans/planning.sqlite3` for the
+current design, review, or implementation slice.
 
 Launch fresh-context workers:
 

@@ -7,12 +7,11 @@ This note summarizes the privacy-safe `.codex` audit used to seed repo-local ski
 
 ## Evidence
 
-- `~/.codex` contained roughly 7.7k files and 2.6k directories.
-- `sessions/` held roughly 1.7k JSONL session files plus a small archived-session set.
-- `state_5.sqlite` tracked roughly 1.7k threads, 1.2k spawn edges, and 700+ dynamic tool rows.
-- `logs_2.sqlite` contained roughly 400k log rows and 24k shell completions.
-- `ambient-suggestions/` contained 100+ suggestions, nearly all pending.
-- `goals_1.sqlite`, `agent_jobs`, and app automation tables were present but effectively unused.
+- The local Codex home contained a large session, state, log, and ambient-suggestion corpus.
+- Session and spawn metadata showed frequent multi-agent fanout and fresh-thread handoffs.
+- Logs showed repeated shell verification, ACP, and project-bootstrap workflows.
+- Ambient suggestions existed as a sizable mostly-pending queue.
+- Goal, agent-job, and automation tables existed but were not yet the primary durable work queue.
 
 ## Patterns
 

@@ -1,6 +1,7 @@
 # Project SOP Knowledge
 
-Confidence: confirmed.
+Confidence: confirmed from private local telemetry and inspected project scaffolds; public evidence
+is redacted aggregate method.
 
 Every production-intended project spawned by `codex-supervisor` should start with:
 

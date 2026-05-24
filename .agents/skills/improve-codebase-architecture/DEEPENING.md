@@ -1,5 +1,10 @@
 # Deepening
 
+Read-only/no-mutation guard: this companion document describes implementation moves only after the
+parent skill has permission to mutate. In read-only, readonly, review-only, audit-only, no-edits, or
+no-mutation mode, use these rules to propose candidates and tests in chat; do not delete tests,
+write new tests, edit code, update trackers, or mutate durable documents.
+
 How to deepen a cluster of shallow modules safely, given its dependencies. Assumes the vocabulary in [LANGUAGE.md](LANGUAGE.md) — **module**, **interface**, **seam**, **adapter**.
 
 ## Dependency categories

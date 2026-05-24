@@ -10,7 +10,7 @@ from typing import Any
 
 from codex_supervisor.planning import JsonObject, SupervisorTaskSummaryRecord
 
-SOURCE_OF_TRUTH_DOCUMENTS = (
+STABLE_CONTEXT_DOCUMENTS = (
     "README.md",
     "AGENTS.md",
     "PLANS.md",
@@ -21,9 +21,9 @@ SOURCE_OF_TRUTH_DOCUMENTS = (
     "TESTING.md",
     "DECISIONS.md",
     "ATTRIBUTIONS.md",
-    "HANDOFF.md",
-    "plans/planning.sqlite3",
 )
+QUEUE_AUTHORITY_DOCUMENTS = ("plans/planning.sqlite3",)
+MUTABLE_HANDOFF_DOCUMENTS = ("HANDOFF.md",)
 
 
 @dataclass(frozen=True)
@@ -90,7 +90,11 @@ def render_goal_contract(
         plan_id=task.plan_id,
         title=task.title,
         objective=task.goal,
-        context_to_read_first=SOURCE_OF_TRUTH_DOCUMENTS,
+        context_to_read_first=(
+            *STABLE_CONTEXT_DOCUMENTS,
+            *QUEUE_AUTHORITY_DOCUMENTS,
+            *MUTABLE_HANDOFF_DOCUMENTS,
+        ),
         in_scope=in_scope,
         out_of_scope=_copy_json_object(task.out_of_scope),
         constraints=constraints,
@@ -122,7 +126,12 @@ def render_goal_contract(
             "source_authority": {
                 "durable_doctrine": "locked source-of-truth docs",
                 "execution_order": "plans/planning.sqlite3",
-                "handoff": "mutable snapshot; follow planning SQLite on current-task drift",
+                "stable_context": list(STABLE_CONTEXT_DOCUMENTS),
+                "queue_authority": list(QUEUE_AUTHORITY_DOCUMENTS),
+                "handoff": (
+                    "mutable snapshot; read only after live queue inspection and follow "
+                    "planning SQLite on current-task drift"
+                ),
             },
             "native_goal_mode": {
                 "authority": "Goal Contracts guide execution; planning SQLite remains canonical.",
@@ -141,7 +150,19 @@ def render_goal_contract(
                     "worker prompt."
                 ),
             },
-            "worker_backend": task.worker_backend,
+            "worker_backend": {
+                "name": task.worker_backend,
+                "backend_status": (
+                    "planned_not_implemented"
+                    if task.worker_backend == "codex_exec"
+                    else "backend_specific_preflight_required"
+                ),
+                "execution_mode": (
+                    "current_thread_or_manual_prompt_until_stage6_backend"
+                    if task.worker_backend == "codex_exec"
+                    else "use_backend_only_after_preflight"
+                ),
+            },
         },
     )
 

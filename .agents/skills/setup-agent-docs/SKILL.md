@@ -11,8 +11,9 @@ This is not the full spawned-project bootstrap contract. Projects spawned by `co
 still need the top-level source-of-truth set, planning SQLite, source locks, verification scripts,
 insights graph, handoff artifacts, and project-specific SOP from `SOP.md` and `CONTRACTS.md`.
 
-If the current user turn is read-only, review-only, audit-only, or no-edits mode, do not create or
-edit docs. Return the proposed file list, contents outline, and source-lock follow-up instead.
+If the current user turn is read-only, readonly, review-only, audit-only, no-edits, or no-mutation
+mode, do not create or edit docs. Return the proposed file list, contents outline, and source-lock
+follow-up instead.
 
 ## Explore First
 

@@ -8,14 +8,15 @@ description: Run Codex-supervisor one-story discipline manually in the current s
 Run one vertical slice per iteration. Planning SQLite is the queue and Goal Contracts are the
 execution contract.
 
-If the current user turn is read-only, review-only, audit-only, no-edits, or no-mutation, run
-orientation commands only. Report the selected queue state, current task ID, blockers, and proposed
-next mutation commands; do not claim tasks, update SQLite, edit files, create worktrees, or start a
-worker.
+If the current user turn is read-only, readonly, review-only, audit-only, no-edits, or no-mutation,
+run orientation commands only. Report the selected queue state, current task ID, blockers, and
+proposed next mutation commands; do not claim tasks, update SQLite, edit files, create worktrees, or
+start a worker.
 
-In strict read-only, review-only, audit-only, or unsynced environments, run `uv run` commands only
-when dependencies are already present. Otherwise use existing command output, Git state, or read-only
-SQLite inspection and report that typed CLI orientation needs dependency setup.
+In strict read-only, readonly, review-only, audit-only, no-edits, no-mutation, or unsynced
+environments, run `uv run` commands only when dependencies are already present. Otherwise use
+existing command output, Git state, or read-only SQLite inspection and report that typed CLI
+orientation needs dependency setup.
 
 ## Loop
 
@@ -45,15 +46,11 @@ SQLite inspection and report that typed CLI orientation needs dependency setup.
 12. Execute only that story.
 13. Run the task verification commands.
 14. Run review when required.
-15. If checks pass, write or link a repo-local JSON worker result that satisfies `CONTRACTS.md`.
-   For `status: "completed"`, include `worker_run_id` for a single-run result or `worker_run_ids`
-   for an explicitly shared synthesized result whose entries are completed worker runs with the same
-   `result_path`, plus nonempty `summary`, `changed_files`, structured `tests_run` entries with zero
-   exit codes and non-stale summaries, exact `acceptance_results` evidence for task criteria,
-   `artifacts`, and `handoff_notes`; set the worker run `result_path` to that exact JSON file,
-   include the same path in `artifacts`, and link it through `plan_artifact_links` with relationship
-   `worker-result`. Keep `changed_files` focused on implementation or durable-documentation paths,
-   not evidence files that merely prove the run.
+15. If checks pass, write or link a repo-local JSON worker result that satisfies
+   `../worker-result-contract.md`: set the worker run `result_path` to that exact JSON file, include
+   the same path in `artifacts`, link it through `plan_artifact_links` with relationship
+   `worker-result`, and keep `changed_files` focused on implementation or durable-documentation
+   paths covered by task `allowed_paths`.
 16. Record progress, artifacts, changed files, and follow-up tasks.
 17. If checks fail, classify with `failure-loop-triage` or `ci-repair-loop`.
 18. Repeat only if another ready task exists and the user or official host automation tooling

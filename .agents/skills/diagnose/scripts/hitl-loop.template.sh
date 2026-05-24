@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Human-in-the-loop reproduction loop.
+# In read-only/no-mutation lanes, quote this as a proposed helper only; do not copy, edit, or run it.
 # Copy this file, edit the steps below, and run it.
 # The agent runs the script; the user follows prompts in their terminal.
 #

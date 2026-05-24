@@ -10,7 +10,7 @@ import sqlite3
 import subprocess
 import sys
 from dataclasses import dataclass
-from fnmatch import fnmatch
+from fnmatch import fnmatchcase
 from pathlib import Path
 from urllib.parse import quote
 
@@ -132,6 +132,7 @@ def check_planning_integrity(db_path: Path) -> tuple[PlanningIntegrityFailure, .
             )
             failures.extend(_check_current_queue_pending_criteria_have_open_tasks(connection))
             failures.extend(_check_json_columns(connection))
+            failures.extend(_check_json_string_array_elements(connection))
             failures.extend(_check_acceptance_criterion_verification_commands(connection))
             repo_root = db_path.resolve().parent.parent
             failures.extend(_check_plan_artifact_paths_are_repo_local(connection, repo_root))
@@ -144,9 +145,7 @@ def check_planning_integrity(db_path: Path) -> tuple[PlanningIntegrityFailure, .
             failures.extend(_check_open_afk_tasks_have_execution_contracts(connection))
             failures.extend(_check_open_afk_task_contract_values(connection))
             failures.extend(_check_completed_worker_runs_have_result_paths(connection))
-            failures.extend(
-                _check_completed_current_queue_afk_tasks_have_worker_evidence(connection)
-            )
+            failures.extend(_check_completed_afk_tasks_have_worker_evidence(connection))
             failures.extend(_check_completed_worker_result_paths_are_local_json(connection))
             failures.extend(_check_completed_worker_run_results_exist(connection, repo_root))
             failures.extend(_check_completed_worker_json_results(connection, repo_root))
@@ -284,6 +283,32 @@ def _check_json_columns(connection: sqlite3.Connection) -> tuple[PlanningIntegri
         failures.extend(_check_json_column_type(connection, table, column, dict))
     for table, column in JSON_ARRAY_COLUMNS:
         failures.extend(_check_json_column_type(connection, table, column, list))
+    return tuple(failures)
+
+
+def _check_json_string_array_elements(
+    connection: sqlite3.Connection,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    failures: list[PlanningIntegrityFailure] = []
+    for table, column in JSON_ARRAY_COLUMNS:
+        rowid_column = _rowid_column(table)
+        rows = connection.execute(f"SELECT {rowid_column}, {column} FROM {table}").fetchall()
+        for row_id, raw_value in rows:
+            try:
+                values = json.loads(str(raw_value))
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(values, list):
+                continue
+            for index, value in enumerate(values):
+                if isinstance(value, str) and value.strip():
+                    continue
+                failures.append(
+                    PlanningIntegrityFailure(
+                        "invalid_json_string_array_value",
+                        f"{table}.{column} on {row_id}[{index}] must be a nonblank string",
+                    )
+                )
     return tuple(failures)
 
 
@@ -530,17 +555,15 @@ def _check_completed_worker_runs_have_result_paths(
     )
 
 
-def _check_completed_current_queue_afk_tasks_have_worker_evidence(
+def _check_completed_afk_tasks_have_worker_evidence(
     connection: sqlite3.Connection,
 ) -> tuple[PlanningIntegrityFailure, ...]:
-    placeholders = ", ".join("?" for _ in CURRENT_QUEUE_PLAN_STATUSES)
     rows = connection.execute(
-        f"""
+        """
         SELECT st.task_id, st.plan_id
         FROM supervisor_tasks st
         JOIN plans p ON p.plan_id = st.plan_id
-        WHERE p.status IN ({placeholders})
-          AND st.task_type = 'AFK'
+        WHERE st.task_type = 'AFK'
           AND st.status = 'completed'
           AND NOT EXISTS (
               SELECT 1
@@ -551,13 +574,12 @@ def _check_completed_current_queue_afk_tasks_have_worker_evidence(
                 AND trim(wr.result_path) != ''
         )
         ORDER BY st.task_id
-        """,
-        tuple(sorted(CURRENT_QUEUE_PLAN_STATUSES)),
+        """
     ).fetchall()
     return tuple(
         PlanningIntegrityFailure(
-            "completed_current_queue_afk_task_without_worker_evidence",
-            f"{task_id} on current-queue plan {plan_id}",
+            "completed_afk_task_without_worker_evidence",
+            f"{task_id} on plan {plan_id}",
         )
         for task_id, plan_id in rows
     )
@@ -993,6 +1015,15 @@ def _normalize_repo_path(value: str) -> str:
     return value.strip().replace("\\", "/")
 
 
+def _worker_result_entry_path_reason(value: object) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return "path entry must be a nonblank string"
+    failures = unsafe_repo_relative_path_patterns((value.strip(),))
+    if failures:
+        return failures[0]
+    return None
+
+
 def _completed_worker_result_path_failures(
     worker_run_id: str,
     payload: dict[object, object],
@@ -1004,9 +1035,16 @@ def _completed_worker_result_path_failures(
         if not isinstance(values, list):
             continue
         for value in values:
-            if not isinstance(value, str) or not value.strip():
+            reason = _worker_result_entry_path_reason(value)
+            if reason is not None:
+                failures.append(
+                    PlanningIntegrityFailure(
+                        "completed_worker_run_invalid_result_schema",
+                        f"{worker_run_id}: {key} entry is unsafe: {value} ({reason})",
+                    )
+                )
                 continue
-            path = _artifact_path(repo_root, value)
+            path = _artifact_path(repo_root, str(value))
             if path is None:
                 failures.append(
                     PlanningIntegrityFailure(
@@ -1038,10 +1076,19 @@ def _completed_worker_result_allowed_path_failures(
         return ()
     failures: list[PlanningIntegrityFailure] = []
     for value in changed_files:
-        if not isinstance(value, str) or not value.strip():
+        reason = _worker_result_entry_path_reason(value)
+        if reason is not None:
+            failures.append(
+                PlanningIntegrityFailure(
+                    "completed_worker_run_invalid_result_schema",
+                    f"{worker_run_id}: changed_files entry is unsafe: {value} ({reason})",
+                )
+            )
             continue
         normalized = value.strip().replace("\\", "/")
-        if not any(fnmatch(normalized, pattern.replace("\\", "/")) for pattern in allowed_patterns):
+        if not any(
+            fnmatchcase(normalized, pattern.replace("\\", "/")) for pattern in allowed_patterns
+        ):
             failures.append(
                 PlanningIntegrityFailure(
                     "completed_worker_run_changed_file_outside_allowed_paths",

@@ -1,6 +1,6 @@
 # Codex Usage Skill Synthesis
 
-Confidence: `confirmed`
+Confidence: `confirmed from private local telemetry; public evidence is redacted aggregate method`
 
 This note summarizes the privacy-safe `.codex` audit used to seed repo-local skills on
 2026-05-23. It intentionally records aggregate behavior, not private transcript content.

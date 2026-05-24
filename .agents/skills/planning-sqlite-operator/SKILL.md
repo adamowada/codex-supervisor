@@ -12,9 +12,10 @@ Use `plans/planning.sqlite3` for operational planning state.
 - Use `codex_supervisor.planning` helpers and `codex-supervisor` CLI commands first.
 - Use read-only CLI commands for orientation; do not initialize or migrate the database just to
   answer status questions.
-- In strict read-only, review-only, audit-only, or unsynced environments, run `uv run` commands only
-  when dependencies are already present. Otherwise use existing command output, Git state, or
-  read-only SQLite inspection and report that typed CLI orientation needs dependency setup.
+- In strict read-only, readonly, review-only, audit-only, no-edits, no-mutation, or unsynced
+  environments, run `uv run` commands only when dependencies are already present. Otherwise use
+  existing command output, Git state, or read-only SQLite inspection and report that typed CLI
+  orientation needs dependency setup.
 - Do not write ad hoc SQL for mutations. If read-only SQL is the only available way to answer a
   planning question, open the database with `mode=ro`, state that the helper surface is missing, and
   propose the smallest typed helper. Add that helper only when the current turn permits edits.
@@ -28,14 +29,8 @@ Use `plans/planning.sqlite3` for operational planning state.
   `verification_commands_json`, and worker-run `metadata_json` until the schema gains dedicated
   tables.
 - Completed worker runs must use `result_path` for an existing repo-local JSON artifact satisfying
-  the Worker Result Contract. Completed results require `worker_run_id` for single-run evidence or
-  `worker_run_ids` for explicitly shared synthesized evidence whose entries are completed worker
-  runs with the same `result_path`, nonempty `summary`, `changed_files`, structured `tests_run`
-  entries with zero exit codes and non-stale summaries, exact `acceptance_results` evidence for
-  task criteria, `artifacts`, and `handoff_notes`. Link the exact JSON result path through
-  `plan_artifact_links` with relationship `worker-result`; link markdown reports separately as
-  supporting artifacts. The JSON result's `changed_files` and `artifacts` lists must include its own
-  `result_path`.
+  `../worker-result-contract.md`. Link the exact JSON result path through `plan_artifact_links` with
+  relationship `worker-result`; link markdown reports separately as supporting artifacts.
 - Keep markdown source-of-truth docs human-facing; do not hide stable doctrine only in SQLite.
 
 ## Current Task Rule
@@ -88,6 +83,12 @@ their terminal or non-current plan status. That wording caused fresh-thread conf
 
 `task-current --json` returning `null` means "no executable AFK task was selected." It does not mean
 "nothing is happening" until `story-loop-status` also reports `completed` or `empty`.
+
+Strict read-only fallback SQL:
+
+```sh
+python -B -c "import json, sqlite3; c=sqlite3.connect('file:plans/planning.sqlite3?mode=ro', uri=True); c.row_factory=sqlite3.Row; rows=c.execute(\"\"\"SELECT p.plan_id,p.status AS plan_status,p.priority,st.task_id,st.title,st.status AS task_status,st.task_type,st.worker_backend,st.blocked_by_json FROM supervisor_tasks st JOIN plans p ON p.plan_id=st.plan_id WHERE p.status IN ('active','blocked') ORDER BY p.status='active' DESC,p.priority DESC,st.status='ready' DESC,st.updated_at DESC,st.task_id\"\"\").fetchall(); print(json.dumps([dict(r) for r in rows], indent=2)); c.close()"
+```
 
 Treat drift as a mismatch between durable sources or invalid queue shape, such as handoff prose
 claiming a task the database does not expose, a ready AFK task attached to a terminal or historical

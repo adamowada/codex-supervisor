@@ -19,9 +19,9 @@ tests.
   Goals are disabled or auth is unavailable.
 - Local `~/.codex/goals_1.sqlite` has the shape for thread-scoped goals. Treat row counts as
   time-sensitive telemetry, not stable doctrine.
-- `sources/README.md` pins `sources/snarktank-ralph` at commit
+- `sources/README.md` pins `snarktank/ralph` at upstream commit
   `6c53cb0b831ebe8739c6a003e22af14902d8b0b5` with observed MIT license posture.
-- The tracked source inventory pins `sources/snarktank-ralph` to commit
+- The tracked source inventory pins `snarktank/ralph` to upstream commit
   `6c53cb0b831ebe8739c6a003e22af14902d8b0b5`. The local clone is an inspection cache; durable
   evidence should cite the pinned upstream commit, tracked inventory, or tracked excerpts rather
   than relying on mutable ignored files. At that pinned revision, Ralph's README, prompt, and Ralph

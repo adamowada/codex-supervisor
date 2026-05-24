@@ -22,7 +22,8 @@ Major additions now present:
 - Protected source-of-truth doctrine for treating local `~/.codex` SQLite databases as read-only
   telemetry, while keeping `plans/planning.sqlite3` as the canonical queue.
 - Goal Contract and Story Loop doctrine inspired by Codex Goals and Ralph.
-- `sources/snarktank-ralph` is present locally as an ignored MIT-licensed inspiration source.
+- `sources/snarktank-ralph` may be present in Adam's local workspace as an ignored MIT-licensed
+  inspiration source. Clean clones recreate ignored sources from `sources/README.md`.
 - The queued six-lane knowledge graph audit is complete; its findings were reconciled into docs,
   skills, planning state, and insights.
 - Completed explorer worker runs now point at structured JSON evidence:
@@ -45,8 +46,9 @@ Major additions now present:
 - Planning SQLite access now validates the expected schema and required indexes before CLI
   reads/writes, prevents more than one nonterminal worker run for a task, rejects nonterminal
   worker-run states on pending or terminal tasks, and rejects moving a task to another plan after
-  worker history exists. `plans/planning.sqlite3` is now at planning schema version 3, including
-  stronger SQLite-level status/review constraints and schema-fragment validation for critical DDL.
+  worker history exists. `plans/planning.sqlite3` is now at planning schema version 4, including
+  stronger SQLite-level status/review constraints, schema-fragment validation for critical DDL, and
+  strict full-SHA commit-link constraints.
 - Fresh-thread summary commands now expose current-queue views:
   `plan-summary --current-queue` and `task-list --current-queue-plans-only` include active and
   blocked plans, while the older active-only flags are reserved for deliberately narrow audits.
@@ -69,14 +71,15 @@ Major additions now present:
   evidence must identify the covered run with `worker_run_id` or, for intentionally shared
   synthesized evidence, `worker_run_ids`; each shared entry must be a completed worker run pointing
   at the same `result_path`. The `result_path` artifact link must use relationship `worker-result`,
-  and its own `result_path` must appear in the JSON `changed_files` and `artifacts` lists.
+  and its own `result_path` must appear in the JSON `artifacts` list. `changed_files` should stay
+  focused on implementation or durable-documentation paths covered by the task `allowed_paths`.
   `tests_run` summaries must be nonblank and avoid stale pass phrasing.
 - `scripts/check_file_justification.py` syntax was repaired after the UTF-8 gate addition, and
   completed worker-result acceptance evidence can no longer be a bare boolean.
 - Verification-command parsing now rejects cacheful pytest, Ruff, and mypy commands in worker-result
   evidence, permits only read-only `codex_supervisor.cli` module commands, and requires cache-free
-  forms such as `python -B -m pytest -p no:cacheprovider`, `ruff ... --no-cache`, and
-  `mypy --no-incremental`.
+  forms such as `python -B -m pytest -p no:cacheprovider`, `uv run --no-sync python ...`,
+  `ruff ... --no-cache`, and `mypy --no-incremental`.
 - File-purpose justification now treats `manual review` as a narrow `HANDOFF.md` verifier only and
   fails stale manifest entries for files that no longer exist.
 - Source inventory checks now compare exact canonical upstream URLs, including normalized HTTPS and
@@ -94,7 +97,7 @@ Major additions now present:
   routine checks do not depend on stale cache state; ignored local environment/cache directories may
   still exist and must remain unstaged.
 - `scripts/verify.py` now includes CLI import and no-sync console-script smoke checks:
-  `uv run python -B -m codex_supervisor.cli --help` and
+  `uv run --no-sync python -B -m codex_supervisor.cli --help` and
   `uv run --no-sync codex-supervisor --help`.
 - The Stage 6 Codex Exec backend successor is recorded durably as
   `plan-stage6-codex-exec-backend`. After ACP commit `e422e16` and queue reconciliation commit
@@ -103,8 +106,8 @@ Major additions now present:
   wording explicit about Stage 6, added the Matt Pocock MIT skill reuse decision, made worker-result
   snapshot evidence date-bound, and linked remaining checkpoint artifacts in planning SQLite.
 - Verification-command safety now rejects direct pytest forms that can still write Python bytecode;
-  use `python -B -m pytest ...` or `uv run python -B -m pytest ...` for AFK task contracts and
-  worker-result evidence.
+  use `python -B -m pytest ...` or `uv run --no-sync python -B -m pytest ...` for AFK task
+  contracts and worker-result evidence.
 - `check_protected_files.py` now reports untracked protected files and hash mismatches together, so
   ACP can see all lock work in one run.
 - Current-task discovery drift was repaired again after a fresh Codex thread reported a historical

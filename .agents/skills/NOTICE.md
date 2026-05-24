@@ -5,7 +5,8 @@ synthesized from OSS references.
 
 ## Matt Pocock Skills
 
-Source: `https://github.com/mattpocock/skills` at local source clone commit `b8be62f`.
+Source: `https://github.com/mattpocock/skills` at upstream commit
+`b8be62ffacb0118fa3eaa29a0923c87c8c11985c`, as documented in `sources/README.md`.
 
 Copied and adapted under MIT license:
 

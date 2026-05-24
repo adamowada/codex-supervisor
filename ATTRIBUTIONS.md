@@ -27,7 +27,8 @@ in this repository.
 ## Integrated Skill Material
 
 Selected files under `.agents/skills/` are copied, adapted, or synthesized from
-`https://github.com/mattpocock/skills` at source clone commit `b8be62f`.
+`https://github.com/mattpocock/skills` at upstream commit
+`b8be62ffacb0118fa3eaa29a0923c87c8c11985c`, as documented in `sources/README.md`.
 
 The local provenance index for integrated skills lives at `.agents/skills/NOTICE.md`.
 

@@ -203,6 +203,10 @@ FILE_PURPOSES = {
     "insights/bootstrap-landmine-worker-result.json": FilePurpose(
         "structured worker-result evidence for completed explorer runs", "check_planning_integrity"
     ),
+    "insights/bootstrap-historical-afk-worker-result.json": FilePurpose(
+        "structured worker-result evidence for historical completed AFK tasks",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
@@ -240,6 +244,9 @@ FILE_PURPOSES = {
     "scripts/print_protected_hashes.py": FilePurpose("protected hash refresh helper", "pytest"),
     "scripts/verify.py": FilePurpose("aggregated local verification runner", "pytest"),
     "sources/README.md": FilePurpose("ignored source clone inventory", "check_source_inventory"),
+    ".agents/skills/worker-result-contract.md": FilePurpose(
+        "shared worker-result contract for repo-local skills", "check_skill_inventory"
+    ),
     "src/codex_supervisor/__init__.py": FilePurpose("Python package marker", "mypy"),
     "src/codex_supervisor/cli.py": FilePurpose("codex-supervisor CLI", "pytest"),
     "src/codex_supervisor/goal_contracts.py": FilePurpose("Goal Contract renderer", "pytest"),

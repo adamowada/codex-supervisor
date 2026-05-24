@@ -121,8 +121,8 @@ Confidence: confirmed.
   should start with `story-loop-status --json`, then use current-queue task helpers before reading
   all history.
 - Verification-command evidence is now cache-safe and non-mutating: cacheful pytest, Ruff, and mypy
-  commands are rejected, and the only permitted Python CLI module smoke is
-  `python -B -m codex_supervisor.cli --help`.
+  commands are rejected, `uv run` evidence must use `uv run --no-sync`, and the only permitted
+  Python CLI module smoke is `python -B -m codex_supervisor.cli --help`.
 - File-purpose checks now restrict `manual review` to `HANDOFF.md` and fail stale manifest entries
   for missing files.
 - Source inventory checks now compare exact canonical upstream URLs, including SSH/HTTPS GitHub
@@ -147,9 +147,9 @@ Confidence: confirmed.
 - The file-purpose and public-hygiene gates now filter deleted tracked files before normal public
   candidate checks, so intentional removals are checked by Git status/publication readiness instead
   of stale folder or missing-worktree failures.
-- Completed AFK tasks on active or blocked current-queue plans now require completed worker evidence
-  in planning integrity, so a status update cannot silently remove current work from the queue
-  without a result artifact.
+- Completed AFK tasks now require completed worker evidence in planning integrity, including
+  historical plans, so a status update cannot silently remove work from the queue without a result
+  artifact.
 - Rendered Goal Contracts now distinguish Goal Mode setup from read-only execution: config edits and
   `codex features enable goals` are allowed only when that setup is in scope; otherwise workers use
   the prompt-rendered fallback.
@@ -180,11 +180,13 @@ Confidence: confirmed.
   `worker-result` relationship, not merely any `plan_artifact_links` row. Supporting reports can
   still use their own relationships without satisfying result evidence accidentally.
 - Open AFK tasks on active or blocked plans now have their execution contracts checked before they
-  become ready. The blocked Stage 6 Codex Exec backend task was normalized from cacheful
-  `uv run pytest` to the cache-safe `uv run python -B -m pytest -q -p no:cacheprovider` form.
-- Completed worker-result JSON now has to list its own `result_path` in both `changed_files` and
-  `artifacts`, making the evidence artifact self-describing even when read outside the planning row
-  that points to it.
+  enter any open execution state. The Stage 6 Codex Exec backend task was normalized from cacheful
+  `uv run pytest` to the cache-safe `uv run --no-sync python -B -m pytest -q -p no:cacheprovider`
+  form.
+- Completed worker-result JSON now has to list its own `result_path` in `artifacts`, making the
+  evidence artifact self-describing even when read outside the planning row that points to it.
+  `changed_files` stays limited to implementation or durable-documentation paths covered by the task
+  `allowed_paths`.
 - Completed worker-result `tests_run` summaries now have to be nonblank and avoid stale pass
   phrasing. The six-lane audit result no longer preserves pre-ACP lock failures as current passing
   evidence.
@@ -205,8 +207,8 @@ Confidence: confirmed.
 
 - The bootstrap publication checkpoint was ACP'd to `origin/main`, `.gitattributes` and the new
   public bootstrap files are tracked, and the default plus publication-ready verification gates pass.
-- Planning schema version 3 now rebuilds constrained tables and validates critical SQLite DDL
-  fragments, including status enums and `review_required` boolean constraints.
+- Planning schema version 4 includes constrained-table validation, critical SQLite DDL fragments,
+  status enums, `review_required` boolean constraints, and strict full-SHA commit-link constraints.
 - Fresh-thread orientation now has current-queue CLI flags so blocked successor plans stay visible:
   `plan-summary --current-queue` and `task-list --current-queue-plans-only`.
 - Worker-run completion helpers now auto-link completed JSON `result_path` artifacts with the

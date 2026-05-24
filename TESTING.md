@@ -72,7 +72,7 @@ description metadata, folder/name agreement, route-map coverage, and no prohibit
 - safe task and worker-run upserts that preserve omitted contract/evidence fields by default;
 - source lock hash calculation;
 - Goal Contract prompt rendering;
-- planning schema v2/v3 migration and critical DDL validation;
+- planning schema v2/v3/v4 migrations and critical DDL validation;
 - Story Loop status and progress recording;
 - public repo hygiene, file purpose, skill inventory, and source inventory checks.
 
@@ -81,7 +81,7 @@ description metadata, folder/name agreement, route-map coverage, and no prohibit
 These surfaces are part of the contract but are not implemented deeply enough to call covered yet:
 
 - project adapter parsing;
-- future planning schema migrations beyond schema version 3;
+- future planning schema migrations beyond schema version 4;
 - insights graph convention validation;
 - fake worker backend execution;
 - JSONL parsing for worker evidence.

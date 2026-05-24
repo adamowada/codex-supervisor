@@ -91,7 +91,8 @@ Launch fresh-context workers:
 
 - create worktrees;
 - render prompts;
-- call `codex exec --json --output-schema`;
+- after the design contract is accepted and the backend exists, call
+  `codex exec --json --output-schema`;
 - capture JSONL, stderr, stdout, timing, diffs, and final result;
 - write worker-run records.
 

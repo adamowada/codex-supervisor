@@ -31,32 +31,10 @@ including the `${CODEX_HOME}/config.toml` `[features] goals = true` fallback.
 
 ## Standard Result Schema
 
-Require workers to return:
-
-- `worker_run_id` for a single-run result, or `worker_run_ids` for an explicitly shared synthesized
-  result whose entries are completed worker runs with the same `result_path`.
-- `status`: `completed`, `blocked`, `failed`, or `needs_review`.
-- `summary`.
-- `changed_files`.
-- `tests_run`: objects with `command`, integer `exit_code`, and important output summary.
-- `acceptance_results`: exact task acceptance criteria mapped to passing evidence.
-- `risks`: residual risks, blockers, and test gaps.
-- `follow_up_tasks`.
-- `artifacts`.
-- `handoff_notes`: record updates made or still needed.
-
-Use these field names because they mirror `CONTRACTS.md`. Do not invent a parallel worker result
-schema inside prompts. When a worker run is marked `completed`, `summary`, `changed_files`,
-`tests_run`, `acceptance_results`, `artifacts`, and `handoff_notes` must be nonempty evidence fields.
-Each `tests_run[].summary` must be nonblank and must not use stale phrasing such as "passed at the
-time"; use current passing verifier evidence or record the gap in `risks`.
-The worker run `result_path` must point at that existing repo-local JSON artifact so
-`scripts/check_planning_integrity.py` can validate worker-run identity, zero-exit verification
-commands, exact acceptance coverage, changed files inside `allowed_paths`, and artifact links. For
-shared synthesized results, every `worker_run_ids` entry must be a completed worker run whose
-`result_path` is that same JSON file. Link the JSON result through `plan_artifact_links` with
-relationship `worker-result`, and include that same `result_path` in the JSON result's
-`changed_files` and `artifacts` lists. Link markdown reports separately as supporting artifacts.
+Require workers to return a JSON result matching `../worker-result-contract.md`. Use those field
+names because they mirror `CONTRACTS.md`; do not invent a parallel schema inside prompts. In
+particular, `artifacts` must include the JSON `result_path`, while `changed_files` should stay
+focused on implementation or durable-documentation paths covered by task `allowed_paths`.
 
 ## Exclude
 

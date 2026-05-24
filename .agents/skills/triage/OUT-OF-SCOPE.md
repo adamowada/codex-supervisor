@@ -1,5 +1,9 @@
 # Out-Of-Scope Knowledge Base
 
+Read-only/no-mutation guard: in read-only, readonly, review-only, audit-only, no-edits, or
+no-mutation mode, draft only. Do not close issues, change labels, write `.out-of-scope/` records, or
+mutate planning SQLite; return proposed tracker and file mutations for later approval.
+
 The `.out-of-scope/` directory stores durable records of rejected feature requests.
 
 It exists for:

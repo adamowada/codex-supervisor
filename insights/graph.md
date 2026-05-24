@@ -29,6 +29,6 @@ Operational pointer: this graph is descriptive memory, not the live queue. For c
 | `ProjectAdapter` | compiles docs into | `PlanningSQLite` | `ROADMAP.md`, `CONTRACTS.md` | planned | 2026-05-24 | Build adapter after planning/publication hardening. |
 | `GoalContract` | derives from | `PlanningSQLite` | `CONTRACTS.md`, `src/codex_supervisor/goal_contracts.py` | confirmed | 2026-05-24 | Preserve prompt fallback when native Goals unavailable. |
 | `StoryLoop` | executes | `GoalContract` | `src/codex_supervisor/story_loop.py`, `story-loop-runner` skill | confirmed | 2026-05-24 | Keep one executable AFK task per iteration. |
-| `RalphLoop` | informs | `StoryLoop` | `insights/goal-mode-and-ralph-loop.md`, `sources/snarktank-ralph` | confirmed | 2026-05-24 | Use as pattern source, not operational state. |
+| `RalphLoop` | informs | `StoryLoop` | `insights/goal-mode-and-ralph-loop.md`, `sources/README.md` pinned `snarktank/ralph` commit `6c53cb0b831ebe8739c6a003e22af14902d8b0b5` | confirmed | 2026-05-24 | Use as pattern source, not operational state. |
 | `SkillLearningLoop` | refines | `InsightsWiki` | `insights/skill-learning-loop.md`, `skill-golden-eval-loop` skill | planned | 2026-05-24 | Add golden evals for high-risk skills. |
 | `AgenticEngineeringFactory` | implemented by | `CodexSupervisor` | `README.md`, `ROADMAP.md`, repo-local skills | confirmed | 2026-05-24 | Continue tightening bootstrap and ACP reproducibility. |

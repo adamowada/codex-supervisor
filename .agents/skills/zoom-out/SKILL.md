@@ -7,6 +7,10 @@ description: Produce a higher-level map of an unfamiliar code area. Use when imp
 
 Map the broader context before editing.
 
+If the current user turn is read-only, readonly, review-only, audit-only, no-edits, or no-mutation
+mode, inspect and report only. Do not edit files, update planning SQLite, write reports, or mutate
+trackers.
+
 ## Workflow
 
 1. Identify the narrow area the user or current task is focused on.

@@ -153,10 +153,11 @@ link that artifact through `plan_artifact_links` with relationship `worker-resul
 must satisfy the Worker Result Contract in `CONTRACTS.md`, including worker-run identity coverage,
 shared `worker_run_ids` entries that are completed runs with the same `result_path`, nonempty
 completed-run evidence fields, zero-exit structured test records, exact acceptance-criterion
-evidence, `changed_files` and `artifacts` entries for the JSON result file itself, and changed files
-covered by task `allowed_paths_json`; markdown reports can be linked separately as supporting
-evidence. Use tracked paths for durable result evidence that must survive publication, and keep
-ignored `artifacts/`, `runs/`, `worktrees/`, and `logs/` for ephemeral local output.
+evidence, an `artifacts` entry for the JSON result file itself, and `changed_files` entries limited
+to implementation or durable-documentation paths covered by task `allowed_paths_json`; markdown
+reports can be linked separately as supporting evidence. Use tracked paths for durable result
+evidence that must survive publication, and keep ignored `artifacts/`, `runs/`, `worktrees/`, and
+`logs/` for ephemeral local output.
 
 Use `worker-run-status ... --status completed --result-path <json>` or `worker-run-upsert` for normal
 completion writes; the typed helper auto-links the result artifact as `worker-result`. Manual

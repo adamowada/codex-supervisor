@@ -1,5 +1,9 @@
 # Writing Agent Briefs
 
+Read-only/no-mutation guard: in read-only, readonly, review-only, audit-only, no-edits, or
+no-mutation mode, draft the brief only. Do not post tracker comments, update labels, write files, or
+mutate planning SQLite; return proposed mutations for later approval.
+
 An agent brief is a structured issue or PR comment posted when work moves to `ready-for-agent`.
 It is the tracker-facing projection of the canonical planning task or Goal Contract unless the repo
 explicitly chooses GitHub Issues as the canonical queue. For codex-supervisor spawned projects, link

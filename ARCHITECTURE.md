@@ -71,7 +71,10 @@ queue. The renderer should derive Goal Contracts from planning SQLite and source
 reconcile observed goal state back into planning SQLite as telemetry.
 
 Worker launch code must verify the Codex version, pass the intended `CODEX_HOME`, and confirm the
-Goals feature is enabled before depending on `/goal`.
+Goals feature is enabled before depending on `/goal`. Enabling Goals through
+`${CODEX_HOME}/config.toml` or `codex features enable goals` is a setup mutation; use it only when
+Goal Mode setup is explicitly in scope and writes to that Codex home are allowed. Otherwise render
+the Goal Contract into the worker prompt and do not edit Codex config or internal goal databases.
 
 ### Story Loop Orchestrator
 
@@ -94,7 +97,7 @@ Backends execute one task in one isolated context.
 Initial planned backends:
 
 - `CodexExecBackend`: primary production backend using `codex exec --json --output-schema` after
-  ROADMAP Stage 6 is implemented.
+  ROADMAP Stage 6 is designed, accepted, and implemented.
 - `ShellBackend`: deterministic checks and maintenance scripts.
 - `ClawCodeBackend`: optional local-model/reference backend inspired by `HarnessLab/claw-code-agent`;
   keep it generic and do not copy source while upstream licensing is unclear.

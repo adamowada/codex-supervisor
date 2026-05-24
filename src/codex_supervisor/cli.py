@@ -1563,7 +1563,7 @@ def seed_bootstrap_plan(store: PlanningSQLiteStore) -> None:
                     "Implementation work follows the active source-of-truth docs.",
                     "Default verification passes before handoff.",
                 ],
-                verification_commands=["uv run python -B scripts/verify.py"],
+                verification_commands=["uv run --no-sync python -B scripts/verify.py"],
                 allowed_paths=[
                     "src/**",
                     "tests/**",

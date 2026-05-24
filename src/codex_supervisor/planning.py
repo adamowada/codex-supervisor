@@ -72,6 +72,7 @@ SHELL_METACHARACTERS = (
     "`",
     "$(",
 )
+UV_RUN_READONLY_PREFIX = ("uv", "run", "--no-sync")
 SAFE_PYTHON_CHECK_SCRIPTS = frozenset(
     {
         "scripts/check_file_justification.py",
@@ -83,6 +84,10 @@ SAFE_PYTHON_CHECK_SCRIPTS = frozenset(
         "scripts/verify.py",
     }
 )
+SAFE_PYTHON_CHECK_SCRIPT_ARGS = {
+    "scripts/check_public_repo_hygiene.py": frozenset({(), ("--publication-ready",)}),
+    "scripts/verify.py": frozenset({(), ("--publication-ready",)}),
+}
 SAFE_CODEX_SUPERVISOR_CLI_READ_COMMANDS = frozenset(
     {
         "--help",
@@ -948,7 +953,7 @@ class PlanningSQLiteStore:
             ).fetchone()
             _raise_missing(0 if row is None else 1, "task", task_id)
             summary = _get_supervisor_task_summary(connection, task_id)
-            if summary is not None and status == "ready":
+            if summary is not None:
                 _validate_status_transition_contract_for_current_queue_plan(
                     connection,
                     summary,
@@ -1657,6 +1662,8 @@ def unsafe_verification_command_reason(command: object) -> str | None:
     if not isinstance(command, str):
         return "verification command must be a string"
     raw_command = command.strip()
+    if _contains_control_character(raw_command):
+        return "control characters are not allowed"
     if any(fragment in raw_command for fragment in SHELL_METACHARACTERS):
         return "shell metacharacters and redirection are not allowed"
     try:
@@ -1671,19 +1678,32 @@ def unsafe_verification_command_reason(command: object) -> str | None:
         return None
     if tokens == ("git", "diff", "--check"):
         return None
-    if tokens[:3] == ("uv", "run", "ruff"):
-        return _ruff_command_reason(tokens[3:])
+    if tokens[:2] == ("uv", "run"):
+        if tokens[:3] != UV_RUN_READONLY_PREFIX:
+            return "uv run verification must include --no-sync"
+        uv_tokens = tokens[3:]
+        if not uv_tokens:
+            return "uv run --no-sync verification is missing a command"
+        if uv_tokens[0] == "ruff":
+            return _ruff_command_reason(uv_tokens)
+        if uv_tokens[0] == "mypy":
+            return _mypy_command_reason(uv_tokens)
+        if uv_tokens[0] in {"python", "python3"}:
+            return _safe_python_command_reason(uv_tokens[1:])
+        if uv_tokens[0] == "codex-supervisor":
+            return _codex_supervisor_cli_command_reason(uv_tokens[1:])
+        return "uv run --no-sync verification is limited to approved read-only commands"
     if tokens[0] == "ruff":
         return _ruff_command_reason(tokens)
-    if tokens[:3] == ("uv", "run", "mypy"):
-        return _mypy_command_reason(tokens[3:])
     if tokens[0] == "mypy":
         return _mypy_command_reason(tokens)
-    if tokens[:3] in {("uv", "run", "python"), ("uv", "run", "python3")}:
-        return _safe_python_command_reason(tokens[3:])
     if tokens[0] in {"python", "python3"} and len(tokens) >= 2:
         return _safe_python_command_reason(tokens[1:])
     return "unsupported verification command shape"
+
+
+def _contains_control_character(value: str) -> bool:
+    return any(ord(character) < 32 or ord(character) == 127 for character in value)
 
 
 def _safe_python_command_reason(tokens: tuple[str, ...]) -> str | None:
@@ -1694,7 +1714,7 @@ def _safe_python_command_reason(tokens: tuple[str, ...]) -> str | None:
         return "python verification is missing a script or module"
     script = remaining[0]
     if script in SAFE_PYTHON_CHECK_SCRIPTS:
-        return None
+        return _safe_python_script_reason(script, remaining[1:])
     if script == "-m":
         module = remaining[1] if len(remaining) >= 2 else ""
         args = remaining[2:] if len(remaining) >= 2 else ()
@@ -1704,7 +1724,28 @@ def _safe_python_command_reason(tokens: tuple[str, ...]) -> str | None:
     return "python verification is limited to approved scripts or modules"
 
 
+def _safe_python_script_reason(script: str, args: tuple[str, ...]) -> str | None:
+    allowed_args = SAFE_PYTHON_CHECK_SCRIPT_ARGS.get(script, frozenset({()}))
+    if args in allowed_args:
+        return None
+    return f"{script} verification uses unsupported arguments"
+
+
 def _pytest_command_reason(tokens: tuple[str, ...]) -> str | None:
+    blocked_output_flags = (
+        "--basetemp",
+        "--cache-clear",
+        "--cov",
+        "--junitxml",
+        "--json-report",
+        "--lf",
+        "--last-failed",
+        "--new-first",
+        "--stepwise",
+    )
+    for token in tokens:
+        if any(token == flag or token.startswith(flag + "=") for flag in blocked_output_flags):
+            return "pytest verification must not write cache, coverage, or report artifacts"
     for index, token in enumerate(tokens[:-1]):
         if token == "-p" and tokens[index + 1] == "no:cacheprovider":
             return None
@@ -1725,6 +1766,8 @@ def _ruff_command_reason(tokens: tuple[str, ...]) -> str | None:
 
 
 def _mypy_command_reason(tokens: tuple[str, ...]) -> str | None:
+    if any(token == "--install-types" or token.startswith("--install-types=") for token in tokens):
+        return "mypy verification must not install type packages"
     if "--no-incremental" in tokens:
         return None
     return "mypy verification must include --no-incremental"

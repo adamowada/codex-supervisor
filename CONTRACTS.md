@@ -125,7 +125,7 @@ record the residual risk separately.
 Example `tests_run` entry:
 
 ```json
-{"command":"uv run python -B -m pytest -q -p no:cacheprovider","exit_code":0,"summary":"passed"}
+{"command":"uv run --no-sync python -B -m pytest -q -p no:cacheprovider","exit_code":0,"summary":"passed"}
 ```
 
 Example `acceptance_results` entry:

@@ -89,6 +89,10 @@ Stable top-level source-of-truth documents, excluding the mutable `HANDOFF.md`, 
 
 ## Fresh Thread Bootstrap
 
+Use the repo-local `codex-supervisor` skill first. If the skill is not available in the fresh
+thread, read `.agents/skills/codex-supervisor/SKILL.md` directly and follow its bootstrap contract
+before interpreting queue state.
+
 ```sh
 git status --short --branch
 git rev-parse --short HEAD
@@ -120,6 +124,12 @@ uv run codex-supervisor plan-list
 strict read-only audit where dependencies are not already synced, do not run setup or `uv run`; use
 existing command output, Git state, or read-only SQLite inspection and report that dependency setup is
 required for typed CLI orientation.
+
+Strict read-only SQLite fallback:
+
+```sh
+python -B -c "import json, sqlite3; c=sqlite3.connect('file:plans/planning.sqlite3?mode=ro', uri=True); c.row_factory=sqlite3.Row; rows=c.execute(\"\"\"SELECT p.plan_id,p.status AS plan_status,p.priority,st.task_id,st.title,st.status AS task_status,st.task_type,st.worker_backend,st.blocked_by_json FROM supervisor_tasks st JOIN plans p ON p.plan_id=st.plan_id WHERE p.status IN ('active','blocked') ORDER BY p.status='active' DESC,p.priority DESC,st.status='ready' DESC,st.updated_at DESC,st.task_id\"\"\").fetchall(); print(json.dumps([dict(r) for r in rows], indent=2)); c.close()"
+```
 
 `plan-list`, `plan-summary`, `story-loop-status`, `task-current`, `task-show`, and `task-list`
 inspect existing planning state without initializing or mutating the database. `story-loop-status`

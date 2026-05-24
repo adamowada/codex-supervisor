@@ -11,9 +11,9 @@ Use this skill when the current thread is about to lose context or when a worker
 with a durable artifact. Use `thread-resume-brief` when a new thread is already starting and needs a
 read-only status summary before work resumes.
 
-If the current turn is read-only, review-only, audit-only, or no-edits mode, do not write a handoff
-file or mutate planning state. Return the handoff text in chat plus the proposed target path and
-recording commands for later approval.
+If the current turn is read-only, readonly, review-only, audit-only, no-edits, or no-mutation mode,
+do not write a handoff file or mutate planning state. Return the handoff text in chat plus the
+proposed target path and recording commands for later approval.
 
 ## Include
 

@@ -61,8 +61,9 @@ When starting or resuming `codex-supervisor` in a fresh Codex thread:
 1. Read this skill and enough of `AGENTS.md` to identify the bootstrap commands.
 2. Run `git status --short --branch`.
 3. Run `git rev-parse --short HEAD`.
-4. If writes and dependency setup are allowed, run `uv sync --dev`. In read-only mode, skip setup
-   and use the existing environment.
+4. If writes and dependency setup are allowed, run `uv python install 3.14`,
+   `uv sync --dev`, and `uv run python --version`. In read-only mode, skip setup and use the
+   existing environment.
 5. Read the minimum stable orientation set: `README.md`, `AGENTS.md`, `PLANS.md`, and
    `insights/README.md`. Do not read mutable `HANDOFF.md` before the live queue unless the user
    explicitly asks for handoff prose first.
@@ -71,7 +72,7 @@ When starting or resuming `codex-supervisor` in a fresh Codex thread:
    synced or dependency setup is allowed.
 8. Run `uv run codex-supervisor task-current --json` only to select an executable AFK task.
    In strict read-only mode with no synced environment, use existing command output, Git state, or
-   read-only SQLite inspection and report that typed CLI orientation needs dependency setup.
+   the read-only SQLite fallback below and report that typed CLI orientation needs dependency setup.
 9. Treat top-level `queue_state` from `story-loop-status --json` as the queue state machine:
    `ready` means continue with the current AFK task, `running` means report the claimed worker task
    and wait/monitor, `hitl` means report the human checkpoint and pause, `blocked` means report
@@ -95,6 +96,12 @@ When starting or resuming `codex-supervisor` in a fresh Codex thread:
 15. Use `uv run python -B scripts/verify.py` as the final local gate unless the task explicitly limits
    verification to a narrower command. Treat failures as evidence to triage, not as proof that
    `HANDOFF.md` is the queue authority.
+
+Strict read-only SQLite fallback:
+
+```sh
+python -B -c "import json, sqlite3; c=sqlite3.connect('file:plans/planning.sqlite3?mode=ro', uri=True); c.row_factory=sqlite3.Row; rows=c.execute(\"\"\"SELECT p.plan_id,p.status AS plan_status,p.priority,st.task_id,st.title,st.status AS task_status,st.task_type,st.worker_backend,st.blocked_by_json FROM supervisor_tasks st JOIN plans p ON p.plan_id=st.plan_id WHERE p.status IN ('active','blocked') ORDER BY p.status='active' DESC,p.priority DESC,st.status='ready' DESC,st.updated_at DESC,st.task_id\"\"\").fetchall(); print(json.dumps([dict(r) for r in rows], indent=2)); c.close()"
+```
 
 ## Child Skill Dispatch
 

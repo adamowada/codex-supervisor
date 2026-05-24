@@ -7,8 +7,8 @@ description: Turn code review findings into fixes after the user says to fix all
 
 Fix every valid finding unless HITL rejects it or the behavior is intentionally designed.
 
-If the current user turn is read-only, review-only, audit-only, or no-edits mode, do not edit files.
-Return the normalized checklist and the proposed fix plan instead.
+If the current user turn is read-only, readonly, review-only, audit-only, no-edits, or no-mutation
+mode, do not edit files. Return the normalized checklist and the proposed fix plan instead.
 
 ## Workflow
 

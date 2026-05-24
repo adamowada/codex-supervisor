@@ -7,9 +7,9 @@ description: Prepare or verify isolated worktrees and scoped sandboxes for AFK/f
 
 Full-auto work belongs in a bounded workspace.
 
-If the current turn is read-only, review-only, audit-only, or no-edits mode, do not create
-worktrees, move files, clean directories, or mutate git state. Inspect only, then return the exact
-proposed worktree/sandbox commands and path checks for later approval.
+If the current turn is read-only, readonly, review-only, audit-only, no-edits, or no-mutation mode,
+do not create worktrees, move files, clean directories, or mutate git state. Inspect only, then
+return the exact proposed worktree/sandbox commands and path checks for later approval.
 
 ## Checklist
 

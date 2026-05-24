@@ -163,7 +163,7 @@ def test_story_loop_default_reports_blocked_successor_plan(tmp_path, capsys):
             task_type="AFK",
             status="blocked",
             acceptance_criteria=["checkpoint approved"],
-            verification_commands=["uv run python -B -m pytest -p no:cacheprovider"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
             allowed_paths=["src/**"],
         )
     )
@@ -322,7 +322,7 @@ def test_story_loop_allows_ready_rework_after_completed_worker_run(tmp_path, cap
             task_type="AFK",
             status="ready",
             acceptance_criteria=["review findings fixed"],
-            verification_commands=["uv run python -B -m pytest -p no:cacheprovider"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
             allowed_paths=["src/**"],
         )
     )
@@ -500,7 +500,7 @@ def test_story_loop_plan_id_reports_inactive_or_missing_plan(tmp_path, capsys):
             task_type="AFK",
             status="blocked",
             acceptance_criteria=["unblocked"],
-            verification_commands=["uv run python -B -m pytest -p no:cacheprovider"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
             allowed_paths=["src/**"],
         )
     )

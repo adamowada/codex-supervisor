@@ -390,9 +390,7 @@ def test_planning_integrity_requires_completed_worker_run_result_path(tmp_path):
     )
 
 
-def test_planning_integrity_rejects_completed_current_queue_afk_task_without_worker_evidence(
-    tmp_path,
-):
+def test_planning_integrity_rejects_completed_afk_task_without_worker_evidence(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)
@@ -414,7 +412,7 @@ def test_planning_integrity_rejects_completed_current_queue_afk_task_without_wor
             task_type="AFK",
             status="completed",
             acceptance_criteria=["done"],
-            verification_commands=["uv run python -B -m pytest -p no:cacheprovider"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
             allowed_paths=["src/**"],
         )
     )
@@ -422,8 +420,7 @@ def test_planning_integrity_rejects_completed_current_queue_afk_task_without_wor
     failures = module.check_planning_integrity(db_path)
 
     assert any(
-        failure.check_name == "completed_current_queue_afk_task_without_worker_evidence"
-        for failure in failures
+        failure.check_name == "completed_afk_task_without_worker_evidence" for failure in failures
     )
 
 
@@ -896,7 +893,7 @@ def test_planning_integrity_rejects_boolean_acceptance_evidence(tmp_path):
             task_type="AFK",
             status="ready",
             acceptance_criteria=["criterion"],
-            verification_commands=["uv run python -B -m pytest -p no:cacheprovider"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
             allowed_paths=["runs/run-worker/result.json"],
         )
     )
@@ -1356,7 +1353,7 @@ def test_planning_integrity_allows_worker_result_changed_files_to_omit_result_pa
             task_type="AFK",
             status="ready",
             acceptance_criteria=["criterion"],
-            verification_commands=["uv run python -B -m pytest -p no:cacheprovider"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
             allowed_paths=["src/**"],
         )
     )
@@ -1420,7 +1417,7 @@ def test_planning_integrity_requires_worker_result_to_cover_task_contract(tmp_pa
             status="ready",
             acceptance_criteria=["one", "two"],
             verification_commands=[
-                "uv run python -B -m pytest -p no:cacheprovider",
+                "uv run --no-sync python -B -m pytest -p no:cacheprovider",
                 "python scripts/check_protected_files.py",
             ],
             allowed_paths=["src/**"],
@@ -1486,7 +1483,7 @@ def test_planning_integrity_rejects_unsafe_completed_worker_result_commands(tmp_
     result_path.parent.mkdir(parents=True)
     result_path.write_text(
         json_worker_result().replace(
-            "uv run python -B -m pytest -p no:cacheprovider",
+            "uv run --no-sync python -B -m pytest -p no:cacheprovider",
             "uv run pytest",
         ),
         encoding="utf-8",
@@ -1623,6 +1620,75 @@ def test_planning_integrity_requires_changed_files_to_match_allowed_paths(tmp_pa
     )
 
 
+@pytest.mark.parametrize(
+    ("changed_file", "expected_fragment"),
+    [
+        ("Src/worker.py", "not covered by allowed_paths"),
+        ("src/../README.md", "parent traversal is not allowed"),
+    ],
+)
+def test_planning_integrity_normalizes_worker_result_changed_files_strictly(
+    tmp_path,
+    changed_file,
+    expected_fragment,
+):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker",
+            slug="worker",
+            title="Worker Plan",
+            goal="Validate worker changed-file normalization.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-worker",
+            title="Worker task",
+            goal="Run.",
+            task_type="AFK",
+            status="ready",
+            acceptance_criteria=["criterion"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+        )
+    )
+    result_path = tmp_path / "runs" / "run-worker" / "result.json"
+    result_path.parent.mkdir(parents=True)
+    if ".." not in changed_file:
+        changed_path = tmp_path / changed_file
+        changed_path.parent.mkdir(parents=True)
+        changed_path.write_text("print('changed')\n", encoding="utf-8")
+    payload = json.loads(json_worker_result())
+    payload["changed_files"] = [changed_file]
+    result_path.write_text(json.dumps(payload), encoding="utf-8")
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-worker",
+            task_id="task-worker",
+            backend="subagent_explorer",
+            status="completed",
+            result_path="runs/run-worker/result.json",
+        )
+    )
+    store.add_plan_artifact_link(
+        PlanArtifactLinkRecord(
+            plan_id="plan-worker",
+            artifact_id="runs/run-worker/result.json",
+            relationship="worker-result",
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+    reasons = "\n".join(failure.reason for failure in failures)
+
+    assert expected_fragment in reasons
+
+
 def test_planning_integrity_reports_schema_drift_without_traceback(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
@@ -1727,6 +1793,44 @@ def test_planning_integrity_rejects_blank_ready_afk_contract_values(tmp_path):
     )
 
 
+def test_planning_integrity_rejects_bad_string_array_elements_on_historical_tasks(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-history",
+            slug="history",
+            title="Historical Plan",
+            goal="Catch corrupt historical arrays before readers do.",
+            status="completed",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-history",
+            plan_id="plan-history",
+            title="Historical HITL",
+            goal="Already handled.",
+            task_type="HITL",
+            status="completed",
+        )
+    )
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "UPDATE supervisor_tasks SET blocked_by_json = ? WHERE task_id = ?",
+            ("[null]", "task-history"),
+        )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "invalid_json_string_array_value"
+        and "blocked_by_json" in failure.reason
+        for failure in failures
+    )
+
+
 def test_planning_integrity_rejects_unsafe_ready_afk_contract_values(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
@@ -1749,7 +1853,7 @@ def test_planning_integrity_rejects_unsafe_ready_afk_contract_values(tmp_path):
             task_type="AFK",
             status="ready",
             acceptance_criteria=["done"],
-            verification_commands=["uv run python -B -m pytest -p no:cacheprovider"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
             allowed_paths=["src/**"],
         )
     )
@@ -1810,7 +1914,8 @@ def test_planning_integrity_rejects_unsafe_blocked_afk_contract_values(tmp_path)
     [
         "python -c \"open('x', 'w').write('bad')\"",
         "uv run codex-supervisor task-upsert --task-id bad",
-        "uv run python -B scripts/print_protected_hashes.py > scripts/check_protected_files.py",
+        "uv run --no-sync python -B scripts/print_protected_hashes.py "
+        "> scripts/check_protected_files.py",
         "pytest",
         "uv run pytest",
         "uv run pytest -p random no:cacheprovider",
@@ -1934,15 +2039,15 @@ def test_planning_integrity_rejects_drive_relative_artifact_paths(tmp_path):
     "command",
     [
         "python -B -m pytest -p no:cacheprovider",
-        "uv run python -B -m pytest -p no:cacheprovider",
+        "uv run --no-sync python -B -m pytest -p no:cacheprovider",
         "ruff check . --no-cache",
-        "uv run ruff format --check . --no-cache",
+        "uv run --no-sync ruff format --check . --no-cache",
         "mypy --no-incremental src scripts",
-        "uv run mypy --no-incremental src scripts",
+        "uv run --no-sync mypy --no-incremental src scripts",
         "python -B -m codex_supervisor.cli --help",
-        "uv run python -B -m codex_supervisor.cli --help",
-        "uv run python -B -m codex_supervisor.cli story-loop-status",
-        "uv run python -B -m codex_supervisor.cli task-list --status ready",
+        "uv run --no-sync python -B -m codex_supervisor.cli --help",
+        "uv run --no-sync python -B -m codex_supervisor.cli story-loop-status",
+        "uv run --no-sync python -B -m codex_supervisor.cli task-list --status ready",
     ],
 )
 def test_planning_integrity_accepts_cache_safe_ready_afk_verification_commands(
@@ -2067,7 +2172,7 @@ def json_worker_result() -> str:
         '"summary":"Done.",'
         '"changed_files":["runs/run-worker/result.json"],'
         '"tests_run":[{'
-        '"command":"uv run python -B -m pytest -p no:cacheprovider",'
+        '"command":"uv run --no-sync python -B -m pytest -p no:cacheprovider",'
         '"exit_code":0,'
         '"summary":"passed"'
         "}],"

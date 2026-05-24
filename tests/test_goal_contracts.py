@@ -29,7 +29,7 @@ def test_goal_contract_renderer_produces_required_sections():
         scope={"area": "planning"},
         out_of_scope={"edits": ["backend launch"]},
         acceptance_criteria=["Objective is present.", "Stop condition is present."],
-        verification_commands=["uv run python -B -m pytest -p no:cacheprovider"],
+        verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
         allowed_paths=["src/**", "tests/**"],
         blocked_by=[],
         worker_backend="codex_exec",
@@ -51,11 +51,18 @@ def test_goal_contract_renderer_produces_required_sections():
         "Objective is present.",
         "Stop condition is present.",
     )
-    assert contract.verification_surface == ("uv run python -B -m pytest -p no:cacheprovider",)
+    assert contract.verification_surface == (
+        "uv run --no-sync python -B -m pytest -p no:cacheprovider",
+    )
     assert "native_goal_mode" in contract.execution_surface
     assert contract.execution_surface["source_authority"]["execution_order"] == (
         "plans/planning.sqlite3"
     )
+    assert contract.execution_surface["worker_backend"] == {
+        "name": "codex_exec",
+        "backend_status": "planned_not_implemented",
+        "execution_mode": "current_thread_or_manual_prompt_until_stage6_backend",
+    }
     goal_mode_preflight = contract.execution_surface["native_goal_mode"]["preflight"]
     assert "[features] goals = true" in goal_mode_preflight[1]
     assert "only when Goal Mode setup is in scope" in goal_mode_preflight[1]
@@ -144,7 +151,7 @@ def test_cli_goal_contract_render_defaults_to_current_ready_afk_task(tmp_path, c
             status="ready",
             scope={"area": "planning"},
             acceptance_criteria=["Contract is rendered."],
-            verification_commands=["uv run python -B -m pytest -p no:cacheprovider"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
             allowed_paths=["src/**"],
         )
     )
@@ -162,7 +169,7 @@ def test_cli_goal_contract_render_defaults_to_current_ready_afk_task(tmp_path, c
     assert contract_json["task_id"] == "task-contract"
     assert contract_json["objective"] == "Render the next Goal Contract."
     assert contract_json["verification_surface"] == [
-        "uv run python -B -m pytest -p no:cacheprovider"
+        "uv run --no-sync python -B -m pytest -p no:cacheprovider"
     ]
     assert "README.md" in contract_json["context_to_read_first"]
 
@@ -198,7 +205,7 @@ def test_cli_goal_contract_render_omits_resolved_dependency_blockers(tmp_path, c
             task_type="AFK",
             status="ready",
             acceptance_criteria=["Contract is rendered."],
-            verification_commands=["uv run python -B -m pytest -p no:cacheprovider"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
             allowed_paths=["src/**"],
             blocked_by=["task-parent"],
         )

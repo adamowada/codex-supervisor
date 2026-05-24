@@ -21,7 +21,7 @@ The table below records observed relevance, not adoption. Treat each row togethe
 | `sources/mattpocock-agent-rules-books` | Mini/nano rule packs and guidance for skills vs always-on instructions. | MIT-licensed inspiration; preserve upstream attribution before copying. |
 | `sources/mattpocock-agent-browser` | JSON browser automation and snapshot/ref workflow for agents. | Apache-2.0 inspiration for browser tooling patterns. |
 | `sources/mattpocock-node-DeepResearch` | Bounded search/read/reason loop for research workers. | Apache-2.0 inspiration for bounded research loops. |
-| `sources/snarktank-ralph` | Fresh-context autonomous coding loop, PRD-to-story execution, progress logs, checks, and stop conditions. | MIT-licensed conceptual inspiration for one-story loops. |
+| `sources/README.md` pinned `snarktank/ralph` commit `6c53cb0b831ebe8739c6a003e22af14902d8b0b5` | Fresh-context autonomous coding loop, PRD-to-story execution, progress logs, checks, and stop conditions. | MIT-licensed conceptual inspiration for one-story loops. |
 
 ## Documentation Sources
 
@@ -40,7 +40,7 @@ code reuse. License-unclear sources require extra review before any copying.
 | Source | Current synthesis state | Next action |
 | --- | --- | --- |
 | `sources/mattpocock-skills` | Adopted selectively into repo-local skills with MIT attribution and decision coverage. | Keep tightening skills through golden evals and Adam-specific review. |
-| `sources/snarktank-ralph` | Synthesized into Story Loop doctrine and Goal Contract workflow. | Revisit during Stage 6 backend implementation. |
+| `sources/README.md` pinned `snarktank/ralph` commit `6c53cb0b831ebe8739c6a003e22af14902d8b0b5` | Synthesized into Story Loop doctrine and Goal Contract workflow. | Revisit during Stage 6 backend implementation. |
 | `sources/openai-codex` | Inventoried and used for Codex CLI/config inspiration; not yet deeply synthesized into backend contracts. | Re-scan before implementing Stage 6 Codex Exec backend. |
 | `sources/openclaw-openclaw` | Inventoried as local control-plane inspiration; no adopted implementation claims yet. | Create Stage 6/7 insight cards before copying patterns. |
 | `sources/harnesslab-claw-code-agent` | Reference-only until license posture is clarified; no copied material. | Keep as study material only unless license/permission changes. |

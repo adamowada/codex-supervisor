@@ -407,7 +407,7 @@ def test_cli_seed_bootstrap_plan_creates_current_task(tmp_path, capsys):
     assert current_task["acceptance_criteria"]
     assert "story-loop-status" in current_task["acceptance_criteria"][0]
     assert "task-current" not in " ".join(current_task["acceptance_criteria"])
-    assert current_task["verification_commands"] == ["uv run python -B scripts/verify.py"]
+    assert current_task["verification_commands"] == ["uv run --no-sync python -B scripts/verify.py"]
     assert "plans/planning.sqlite3" in current_task["allowed_paths"]
 
     store = open_existing_planning_database(db_path)
@@ -536,7 +536,7 @@ def test_cli_seed_bootstrap_plan_repairs_stale_bootstrap_task_contract(tmp_path,
     assert main(["task-current", "--path", str(db_path), "--json"]) == 0
     current_task = json.loads(capsys.readouterr().out)
     assert current_task["task_id"] == "task-bootstrap-orient-and-plan"
-    assert current_task["verification_commands"] == ["uv run python -B scripts/verify.py"]
+    assert current_task["verification_commands"] == ["uv run --no-sync python -B scripts/verify.py"]
     assert "plans/planning.sqlite3" in current_task["allowed_paths"]
 
 
@@ -578,7 +578,7 @@ def test_supervisor_task_allowed_paths_reject_unsafe_patterns(tmp_path, unsafe_p
                 task_type="AFK",
                 status="ready",
                 acceptance_criteria=["done"],
-                verification_commands=["uv run python -B -m pytest -p no:cacheprovider"],
+                verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
                 allowed_paths=[unsafe_path],
             )
         )
@@ -1179,7 +1179,7 @@ def test_cli_creation_commands_record_plan_milestone_and_criterion(tmp_path, cap
                 "--status",
                 "pending",
                 "--verification-command",
-                "uv run python -B -m pytest -p no:cacheprovider",
+                "uv run --no-sync python -B -m pytest -p no:cacheprovider",
                 "--json",
             ]
         )
@@ -1187,7 +1187,7 @@ def test_cli_creation_commands_record_plan_milestone_and_criterion(tmp_path, cap
     )
     criterion_json = json.loads(capsys.readouterr().out)
     assert criterion_json["verification_command"] == (
-        "uv run python -B -m pytest -p no:cacheprovider"
+        "uv run --no-sync python -B -m pytest -p no:cacheprovider"
     )
 
     read_store = open_existing_planning_database(db_path)
@@ -2210,6 +2210,33 @@ def test_task_status_cannot_hide_active_worker_run(tmp_path):
 
     with pytest.raises(ValueError, match="cannot set task task-test to completed"):
         store.update_supervisor_task_status("task-test", "completed")
+
+
+@pytest.mark.parametrize("status", ["ready", "running", "blocked", "reviewing"])
+def test_task_status_rejects_open_afk_state_without_execution_contract(tmp_path, status):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Reject underspecified open AFK work.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-test",
+            plan_id="plan-test",
+            title="Task",
+            goal="Missing its execution contract.",
+            task_type="AFK",
+            status="pending",
+        )
+    )
+
+    with pytest.raises(ValueError, match="invalid execution contract"):
+        store.update_supervisor_task_status("task-test", status)
 
 
 def test_worker_run_upsert_rejects_reassigning_existing_run_to_another_task(tmp_path):

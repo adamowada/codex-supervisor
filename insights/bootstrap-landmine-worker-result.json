@@ -50,17 +50,17 @@
   "summary": "Six-lane bootstrap landmine audit completed and synthesized into insights/bootstrap-landmine-audit.md.",
   "tests_run": [
     {
-      "command": "uv run python -B -m pytest -q -p no:cacheprovider",
+      "command": "uv run --no-sync python -B -m pytest -q -p no:cacheprovider",
       "exit_code": 0,
       "summary": "Passed with cache disabled while validating the synthesized audit evidence."
     },
     {
-      "command": "uv run python -B scripts/check_planning_integrity.py",
+      "command": "uv run --no-sync python -B scripts/check_planning_integrity.py",
       "exit_code": 0,
       "summary": "Passed against planning database state and worker-result evidence at audit completion on 2026-05-24."
     },
     {
-      "command": "uv run python -B scripts/check_source_inventory.py",
+      "command": "uv run --no-sync python -B scripts/check_source_inventory.py",
       "exit_code": 0,
       "summary": "Passed against ignored-source inventory state at audit completion on 2026-05-24."
     }

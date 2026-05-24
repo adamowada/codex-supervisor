@@ -2,7 +2,8 @@
 
 ## Fresh Context Over Long Context
 
-Confidence: confirmed.
+Confidence: confirmed from private local telemetry and cross-project source review; public evidence
+is redacted aggregate method.
 
 Long Codex sessions eventually degrade. The supervisor should turn durable state into task prompts
 and launch fresh workers instead of pushing one conversation indefinitely.

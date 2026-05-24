@@ -32,7 +32,7 @@ This skill is informed by the project's domain model. Domain language gives name
 
 ### 1. Explore
 
-Read the repo's configured source-of-truth docs first. For `codex-supervisor`, read the protected top-level docs, `insights/`, and planning SQLite records relevant to the review. For spawned projects, read `docs/agents/source-of-truth.md`, `docs/agents/domain.md`, `CONTEXT.md`, `CONTEXT-MAP.md`, and ADRs when present; if those lightweight docs are absent, fall back to the spawned-project top-level scaffold (`README.md`, `AGENTS.md`, `PLANS.md`, `ARCHITECTURE.md`, `CONTRACTS.md`, `SOP.md`, and `HANDOFF.md`).
+Read the repo's configured source-of-truth docs first. For `codex-supervisor`, read the protected top-level docs, `insights/`, and planning SQLite records relevant to the review; read `HANDOFF.md` only after live queue state is known. For spawned projects, read `docs/agents/source-of-truth.md`, `docs/agents/domain.md`, `CONTEXT.md`, `CONTEXT-MAP.md`, and ADRs when present; if those lightweight docs are absent, fall back to the spawned-project top-level scaffold (`README.md`, `AGENTS.md`, `PLANS.md`, `ARCHITECTURE.md`, `CONTRACTS.md`, and `SOP.md`), then read `HANDOFF.md` only after current work state is established.
 
 Then walk the codebase. Spawn read-only Codex explorer subagents when the host exposes subagent
 tools; otherwise explore locally or prepare self-contained read-only prompts. Do not follow rigid
@@ -52,9 +52,10 @@ Prefer a concise Markdown summary unless the user asks for a visual report or th
 
 For `codex-supervisor` and spawned projects, write generated reports under `artifacts/architecture-reviews/` so they stay ignored by git. If the repo has no ignored artifact path, use the OS temp directory and tell the user the absolute path.
 
-If the current turn is read-only, review-only, audit-only, no-edits, or no-mutation, do not write
-generated reports or update durable knowledge. Return the ranked candidates in chat and include the
-proposed report path or knowledge-graph updates as follow-up actions.
+If the current turn is read-only, readonly, review-only, audit-only, no-edits, or no-mutation, do
+not edit code or tests, write generated reports, update durable knowledge, mutate planning SQLite,
+or touch trackers. Return the ranked candidates in chat and include the proposed report path or
+knowledge-graph updates as follow-up actions.
 
 When creating HTML, use [HTML-REPORT.md](HTML-REPORT.md). Prefer static local CSS and inline diagrams when the report must work offline. CDN-based Tailwind or Mermaid is acceptable only when network access is allowed and the report notes that dependency.
 

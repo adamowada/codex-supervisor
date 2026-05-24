@@ -85,6 +85,7 @@ def test_child_plan_mutations_touch_parent_updated_at(tmp_path, monkeypatch):
             datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC),
             datetime(2026, 1, 1, 0, 0, 5, tzinfo=UTC),
             datetime(2026, 1, 1, 0, 0, 10, tzinfo=UTC),
+            datetime(2026, 1, 1, 0, 0, 15, tzinfo=UTC),
         ]
     )
     monkeypatch.setattr(planning_module, "_utc_now", lambda: next(moments))
@@ -118,6 +119,56 @@ def test_child_plan_mutations_touch_parent_updated_at(tmp_path, monkeypatch):
     finally:
         connection.close()
     assert updated_at == "2026-01-01T00:00:10Z"
+
+
+def test_duplicate_links_do_not_touch_parent_updated_at(tmp_path, monkeypatch):
+    moments = iter(
+        [
+            datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC),
+            datetime(2026, 1, 1, 0, 0, 5, tzinfo=UTC),
+            datetime(2026, 1, 1, 0, 0, 10, tzinfo=UTC),
+            datetime(2026, 1, 1, 0, 0, 15, tzinfo=UTC),
+        ]
+    )
+    monkeypatch.setattr(planning_module, "_utc_now", lambda: next(moments))
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-touch",
+            slug="touch",
+            title="Touch",
+            goal="Prove no-op child mutations leave parent timestamps stable.",
+            status="active",
+        )
+    )
+    store.add_plan_artifact_link(
+        PlanArtifactLinkRecord(
+            plan_id="plan-touch",
+            artifact_id="insights/example.md",
+            relationship="evidence",
+        )
+    )
+    with sqlite3.connect(db_path) as connection:
+        after_insert = connection.execute(
+            "SELECT updated_at FROM plans WHERE plan_id = ?",
+            ("plan-touch",),
+        ).fetchone()[0]
+
+    store.add_plan_artifact_link(
+        PlanArtifactLinkRecord(
+            plan_id="plan-touch",
+            artifact_id="insights/example.md",
+            relationship="evidence",
+        )
+    )
+
+    with sqlite3.connect(db_path) as connection:
+        after_duplicate = connection.execute(
+            "SELECT updated_at FROM plans WHERE plan_id = ?",
+            ("plan-touch",),
+        ).fetchone()[0]
+    assert after_duplicate == after_insert
 
 
 def test_read_only_store_does_not_create_missing_database(tmp_path):
@@ -1946,6 +1997,44 @@ def test_plan_commit_links_require_full_commit_sha(tmp_path):
                 relationship="implementation",
             )
         )
+
+
+def test_delete_plan_commit_link_removes_link_and_touches_parent(tmp_path, monkeypatch):
+    moments = iter(
+        [
+            datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC),
+            datetime(2026, 1, 1, 0, 0, 5, tzinfo=UTC),
+            datetime(2026, 1, 1, 0, 0, 10, tzinfo=UTC),
+            datetime(2026, 1, 1, 0, 0, 15, tzinfo=UTC),
+        ]
+    )
+    monkeypatch.setattr(planning_module, "_utc_now", lambda: next(moments))
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Exercise commit link deletion.",
+            status="active",
+        )
+    )
+    record = PlanCommitLinkRecord(
+        plan_id="plan-test",
+        commit_sha=FULL_COMMIT_SHA,
+        relationship="implementation",
+    )
+    store.add_plan_commit_link(record)
+
+    assert store.delete_plan_commit_link(record) is True
+    assert store.list_plan_commit_links(plan_id="plan-test") == ()
+    with sqlite3.connect(store.path) as connection:
+        updated_at = connection.execute(
+            "SELECT updated_at FROM plans WHERE plan_id = ?",
+            ("plan-test",),
+        ).fetchone()[0]
+    assert updated_at == "2026-01-01T00:00:15Z"
+    assert store.delete_plan_commit_link(record) is False
 
 
 def test_completed_worker_runs_require_result_path(tmp_path):

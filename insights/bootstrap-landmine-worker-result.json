@@ -13,7 +13,7 @@
       "status": "passed"
     },
     "insights are updated with provenance and confidence labels": {
-      "evidence": "insights/bootstrap-landmine-audit.md records source-backed findings with severity and confidence labels.",
+      "evidence": "insights/bootstrap-landmine-audit.md records synthesized source-backed findings and was linked as supporting planning evidence for the six-lane audit.",
       "status": "passed"
     },
     "no source clones are staged": {
@@ -21,7 +21,7 @@
       "status": "passed"
     },
     "planning SQLite records progress": {
-      "evidence": "At audit completion on 2026-05-24, plans/planning.sqlite3 contained progress events and worker-run rows for the six-lane audit.",
+      "evidence": "At audit completion on 2026-05-24, plans/planning.sqlite3 contained completed worker-run rows for worker-run-audit-code-tests, worker-run-audit-file-justification, worker-run-audit-planning-db, worker-run-audit-public-hygiene, worker-run-audit-skills, and worker-run-audit-source-docs.",
       "status": "passed"
     },
     "six read-only lanes are defined": {
@@ -38,14 +38,13 @@
     "insights/bootstrap-landmine-audit.md"
   ],
   "changed_files": [
-    "insights/bootstrap-landmine-worker-result.json",
     "insights/bootstrap-landmine-audit.md",
     "plans/planning.sqlite3"
   ],
   "follow_up_tasks": [],
   "handoff_notes": "Structured worker-result artifact added so completed worker runs have repo-local JSON evidence.",
   "risks": [
-    "Historical explorer lanes share this synthesized result artifact; raw per-lane notes remain summarized in insights/bootstrap-landmine-audit.md rather than stored as separate worker outputs."
+    "Historical explorer lanes share this synthesized result artifact; raw per-lane notes were ephemeral chat outputs and are represented durably only through the planning worker-run IDs plus the tracked synthesis."
   ],
   "status": "completed",
   "summary": "Six-lane bootstrap landmine audit completed and synthesized into insights/bootstrap-landmine-audit.md.",

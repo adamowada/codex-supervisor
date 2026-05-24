@@ -1,33 +1,17 @@
 # Deep Modules
 
-From "A Philosophy of Software Design":
+Use the architecture skill glossary as the authority for "deep module" language:
+`../improve-codebase-architecture/LANGUAGE.md`.
 
-**Deep module** = small interface + lots of implementation
-
-```
-┌─────────────────────┐
-│   Small Interface   │  ← Few methods, simple params
-├─────────────────────┤
-│                     │
-│                     │
-│  Deep Implementation│  ← Complex logic hidden
-│                     │
-│                     │
-└─────────────────────┘
-```
-
-**Shallow module** = large interface + little implementation (avoid)
-
-```
-┌─────────────────────────────────┐
-│       Large Interface           │  ← Many methods, complex params
-├─────────────────────────────────┤
-│  Thin Implementation            │  ← Just passes through
-└─────────────────────────────────┘
-```
+In TDD planning, treat a deep module as a module whose interface gives high leverage for its callers:
+simple to use, hard to misuse, and able to hide meaningful implementation detail behind stable
+behavior. Do not reduce depth to a line-count ratio or "small interface plus lots of code"; the
+question is whether the interface buys enough behavior, clarity, and locality for the system.
 
 When designing interfaces, ask:
 
-- Can I reduce the number of methods?
-- Can I simplify the parameters?
-- Can I hide more complexity inside?
+- Can the public behavior be named in domain language?
+- Can callers do less coordination work?
+- Can invalid states or call orders be made harder?
+- Can more implementation detail stay private?
+- Can tests verify behavior through the public interface instead of internals?

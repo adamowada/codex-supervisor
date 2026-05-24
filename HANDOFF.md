@@ -90,8 +90,9 @@ Major additions now present:
 - Repo-local skills now clarify strict read-only/review-only behavior, distinguish current Stage 5
   Story Loop support from the future Stage 6 Codex Exec backend, and route full spawned-project
   scaffolds to `spawned-project-bootstrap`.
-- The verification runner disables pytest, Ruff, mypy, and Python bytecode caches so routine checks
-  do not leave hidden cache artifacts.
+- The verification runner uses cache-safe pytest, Ruff, mypy, and Python bytecode settings so
+  routine checks do not depend on stale cache state; ignored local environment/cache directories may
+  still exist and must remain unstaged.
 - `scripts/verify.py` now includes CLI import and no-sync console-script smoke checks:
   `uv run python -B -m codex_supervisor.cli --help` and
   `uv run --no-sync codex-supervisor --help`.
@@ -106,15 +107,30 @@ Major additions now present:
   worker-result evidence.
 - `check_protected_files.py` now reports untracked protected files and hash mismatches together, so
   ACP can see all lock work in one run.
+- Current-task discovery drift was repaired again after a fresh Codex thread reported a historical
+  ready task as "one other ready task." `planning-sqlite-operator` now requires separate Current
+  Queue and Historical Rows reporting, and the database has no ready/open tasks on terminal plans.
+- Planning schema version 4 tightens `plan_commit_links.commit_sha` at the SQLite layer, adds
+  `commit-link-delete`, prevents duplicate artifact/commit links from touching parent plan
+  timestamps, and planning integrity now verifies linked SHAs exist in the local git repository when
+  git metadata is present.
+- Stage 6 planning metadata now uses `previously_blocked_by` instead of live `blocked_by` after the
+  ACP checkpoint completed. The bad publication commit link was replaced with
+  `e422e16173cafffe87505dd540f54a22c9f1cabd`, and queue-reconciliation evidence was linked to
+  `a024555732bbd24a757bfb4fb85b879509464ac6`.
+- Repo-local skills now use a consistent read-only/review-only/audit-only/no-edits/no-mutation
+  guard, route raw `.codex` telemetry through `codex-state-readonly-audit`, and keep worker-result
+  `changed_files` focused on implementation or durable-documentation changes rather than proof
+  artifacts.
 
-Implementation checks last passed in a clean worktree on 2026-05-24 at HEAD `a024555` with:
+Implementation checks last passed in the drift-repair working tree on 2026-05-24 with:
 
 - `uv run python -B scripts/verify.py`
-- `uv run python -B scripts/verify.py --publication-ready`
 
-Both commands passed after ACP and planning queue reconciliation. They cover 217 tests, Ruff, format
-check, mypy, CLI smoke checks, file justification, public hygiene, planning integrity, skill
-inventory, source inventory, protected locks, and `uv lock --check`.
+This covers 220 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
+hygiene, planning integrity, skill inventory, source inventory, protected locks, and
+`uv lock --check`. Run `git rev-parse --short HEAD` in the fresh thread for the exact committed
+snapshot, because this mutable handoff should not be treated as a self-identifying commit hash.
 
 ## Next Recommended Session Prompt
 
@@ -154,9 +170,10 @@ Snapshot only:
 
 As of this handoff snapshot, the expected state is `queue_state: "ready"` with current task
 `task-stage6-codex-exec-backend-design` under active plan `plan-stage6-codex-exec-backend`. The
-bootstrap publication checkpoint is completed and linked to ACP commit `e422e16`; queue
-reconciliation is commit `a024555`. If the database reports a different state, trust the database and
-call out this handoff as stale.
+bootstrap publication checkpoint is completed and linked to ACP commit
+`e422e16173cafffe87505dd540f54a22c9f1cabd`; queue reconciliation is linked to
+`a024555732bbd24a757bfb4fb85b879509464ac6`. If the database reports a different state, trust the
+database and call out this handoff as stale.
 
 ROADMAP Stage 5 is implemented locally. Begin from the current database state rather than from stale
 handoff prose.

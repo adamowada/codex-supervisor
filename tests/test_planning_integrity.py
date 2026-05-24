@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -188,8 +189,7 @@ def test_planning_integrity_detects_invalid_json_shapes(tmp_path):
     assert any(failure.check_name == "unexpected_json_type" for failure in failures)
 
 
-def test_planning_integrity_rejects_short_plan_commit_links(tmp_path):
-    module = _load_planning_integrity_module()
+def test_plan_commit_links_reject_short_sha_at_sqlite_layer(tmp_path):
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)
     store.upsert_plan(
@@ -208,15 +208,61 @@ def test_planning_integrity_rejects_short_plan_commit_links(tmp_path):
             relationship="implementation",
         )
     )
-    with sqlite3.connect(db_path) as connection:
+    with (
+        sqlite3.connect(db_path) as connection,
+        pytest.raises(sqlite3.IntegrityError),
+    ):
         connection.execute(
             "UPDATE plan_commit_links SET commit_sha = ? WHERE plan_id = ?",
             ("abc123", "plan-commit"),
         )
 
+
+def test_planning_integrity_rejects_commit_links_missing_from_git(tmp_path):
+    module = _load_planning_integrity_module()
+    subprocess.run(("git", "init"), cwd=tmp_path, check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(
+        ("git", "config", "user.email", "test@example.com"),
+        cwd=tmp_path,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    subprocess.run(
+        ("git", "config", "user.name", "Test User"),
+        cwd=tmp_path,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    (tmp_path / "README.md").write_text("# Test\n", encoding="utf-8")
+    subprocess.run(("git", "add", "README.md"), cwd=tmp_path, check=True)
+    subprocess.run(
+        ("git", "commit", "-m", "Initial"),
+        cwd=tmp_path,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-commit",
+            slug="commit",
+            title="Commit Evidence Plan",
+            goal="Require existing commit evidence.",
+            status="active",
+        )
+    )
+    store.add_plan_commit_link(
+        PlanCommitLinkRecord(
+            plan_id="plan-commit",
+            commit_sha=FULL_COMMIT_SHA,
+            relationship="implementation",
+        )
+    )
+
     failures = module.check_planning_integrity(db_path)
 
-    assert any(failure.check_name == "plan_commit_link_not_full_sha" for failure in failures)
+    assert any(failure.check_name == "plan_commit_link_missing_git_commit" for failure in failures)
 
 
 def test_planning_integrity_detects_invalid_status_and_queue_drift(tmp_path):
@@ -1288,7 +1334,7 @@ def test_planning_integrity_requires_worker_result_artifacts_to_include_result_p
     )
 
 
-def test_planning_integrity_requires_worker_result_changed_files_to_include_result_path(tmp_path):
+def test_planning_integrity_allows_worker_result_changed_files_to_omit_result_path(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)
@@ -1309,16 +1355,20 @@ def test_planning_integrity_requires_worker_result_changed_files_to_include_resu
             goal="Run.",
             task_type="AFK",
             status="ready",
+            acceptance_criteria=["criterion"],
+            verification_commands=["uv run python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
         )
     )
     result_path = tmp_path / "runs" / "run-worker" / "result.json"
     result_path.parent.mkdir(parents=True)
-    supporting_path = tmp_path / "runs" / "run-worker" / "supporting.json"
-    supporting_path.write_text("{}", encoding="utf-8")
+    changed_path = tmp_path / "src" / "worker.py"
+    changed_path.parent.mkdir(parents=True)
+    changed_path.write_text("print('changed')\n", encoding="utf-8")
     result_path.write_text(
         json_worker_result().replace(
             '"changed_files":["runs/run-worker/result.json"]',
-            '"changed_files":["runs/run-worker/supporting.json"]',
+            '"changed_files":["src/worker.py"]',
         ),
         encoding="utf-8",
     )
@@ -1341,8 +1391,8 @@ def test_planning_integrity_requires_worker_result_changed_files_to_include_resu
 
     failures = module.check_planning_integrity(db_path)
 
-    assert any(
-        "changed_files must include result_path runs/run-worker/result.json" in failure.reason
+    assert not any(
+        "changed_files" in failure.reason and "result_path" in failure.reason
         for failure in failures
     )
 

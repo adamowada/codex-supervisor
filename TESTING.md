@@ -33,8 +33,10 @@ uv lock --check
 ```
 
 The default suite must be deterministic and must not launch real Codex workers.
-It sets `PYTHONDONTWRITEBYTECODE=1` and disables pytest, Ruff, and mypy caches so verification does
-not create hidden cache artifacts.
+It sets `PYTHONDONTWRITEBYTECODE=1` and uses cache-safe pytest, Ruff, and mypy flags so verification
+does not depend on stale cache state. Local tooling can still leave ignored environment or cache
+directories such as `.venv/`, `.mypy_cache/`, or `__pycache__/` when run outside the verifier or by
+dependency setup; those artifacts are ignored and must remain unstaged.
 
 ## Publication Gate
 

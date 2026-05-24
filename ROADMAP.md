@@ -31,12 +31,15 @@ command, git-index tracking check, and local verification integration are presen
 intentional re-lock CLI remains future work; for now, hashes are updated through
 `scripts/print_protected_hashes.py` and `scripts/check_protected_files.py`.
 
-Implement:
+Implemented:
 
 - protected document manifest;
 - hash check command;
-- intentional re-lock command;
 - CI/local command integration.
+
+Remaining:
+
+- intentional re-lock command.
 
 ## Stage 3: Project Registry And Adapters
 

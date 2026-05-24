@@ -16,8 +16,9 @@ Write durable learning to `insights/`.
 - Keep claims short and reusable.
 - If the lesson implies a workflow change, route the proposed skill edit through
   `skill-golden-eval-loop` before promotion. In write-enabled turns, update the relevant
-  `.agents/skills/<skill>/SKILL.md` and its golden task together. In read-only turns, record the
-  proposed change in `insights/skill-learning-loop.md`.
+  `.agents/skills/<skill>/SKILL.md` and its golden task together. In read-only, review-only,
+  audit-only, no-edits, or no-mutation turns, return the proposed `insights/skill-learning-loop.md`
+  entry in chat instead of writing it.
 - Record the update in planning SQLite when part of an active plan.
 
 ## Insight Shape

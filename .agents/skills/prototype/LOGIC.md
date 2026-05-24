@@ -1,5 +1,8 @@
 # Logic Prototype
 
+In read-only, review-only, audit-only, no-edits, or no-mutation mode, return the proposed logic
+prototype shape, command, state model, and cleanup contract instead of writing files.
+
 A tiny interactive terminal app that lets the user drive a state model by hand. Use this when the question is about **business logic, state transitions, or data shape** — the kind of thing that looks reasonable on paper but only feels wrong once you push it through real cases.
 
 ## When this is the right shape

@@ -82,6 +82,10 @@ current-queue plan, but its ready AFK tasks are not executable until the plan or
 resolved. Do not report historical rows as "the current task" or "the next task" unless the user
 explicitly asks for historical backlog rows or reopens the plan.
 
+If the user asks for all rows after queue-state discovery, separate the answer into `Current Queue`
+and `Historical Rows`. Never phrase historical ready tasks as "one other ready task" without naming
+their terminal or non-current plan status. That wording caused fresh-thread confusion in this repo.
+
 `task-current --json` returning `null` means "no executable AFK task was selected." It does not mean
 "nothing is happening" until `story-loop-status` also reports `completed` or `empty`.
 

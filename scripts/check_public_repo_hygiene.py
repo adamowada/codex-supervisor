@@ -148,7 +148,8 @@ def _check_database_dumps(repo_root: Path) -> tuple[str, ...]:
             continue
         db_uri = f"file:{quote(db_path.resolve().as_posix(), safe='/:')}?mode=ro"
         try:
-            text = "\n".join(sql for sql in sqlite3.connect(db_uri, uri=True).iterdump())
+            with sqlite3.connect(db_uri, uri=True) as connection:
+                text = "\n".join(sql for sql in connection.iterdump())
         except sqlite3.Error as exc:
             failures.append(f"{relative_path}: could not inspect database dump: {exc}")
             continue

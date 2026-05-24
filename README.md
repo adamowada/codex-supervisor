@@ -97,14 +97,15 @@ git rev-parse --short HEAD
 If dependency setup and writes are allowed, also run:
 
 ```sh
-uv python install 3.14.5
+uv python install 3.14
 uv sync --dev
 uv run python --version
 ```
 
-Then read `AGENTS.md`, `PLANS.md`, `HANDOFF.md`, and `insights/README.md`. Use those files to find
+Then read `AGENTS.md`, `PLANS.md`, and `insights/README.md`. Use those stable files to find
 task-relevant source-of-truth docs after the live queue is known, instead of front-loading every
-historical audit or insight file.
+historical audit or insight file. Read `HANDOFF.md` only after the live queue has been inspected;
+it is a mutable snapshot, not the queue authority.
 Inspect the live queue before interpreting `task-current` or running broad checks:
 
 ```sh
@@ -152,9 +153,11 @@ Initialize or migrate the tracked planning database only when intended:
 uv run codex-supervisor plan-init --seed-bootstrap-plan
 ```
 
-`.python-version` pins Python 3.14.5 because this repo intentionally tracks the latest Python line
-from day one. If your platform does not have Python 3.14.5 installed yet, install it through `uv`
-before running verification.
+`.python-version` targets the Python 3.14 line because this repo intentionally tracks the latest
+Python line from day one. Use `uv python install 3.14` to install the newest uv-managed 3.14 patch
+available for your platform, or install an exact system Python patch release outside uv when uv does
+not publish that patch for your platform. Run `uv run python --version` before verification and
+confirm it reports Python 3.14.x.
 
 ## Codex Goal Prerequisite
 
@@ -181,6 +184,11 @@ On Windows, `codex --version` can fail when the executable resolved through `Win
 directly callable from the current shell. Treat that as a Goal Mode preflight failure, not as a
 reason to write local Codex databases directly. Use prompt-rendered Goal Contracts until the Codex
 CLI path and `CODEX_HOME` are confirmed.
+
+Stage 6 worker metadata should record the Goal Mode preflight evidence explicitly: resolved Codex
+executable, `codex --version` output, intended `CODEX_HOME`, config path and feature state, whether
+the selected worker backend has an official noninteractive native-goal path, and the fallback
+decision when the contract is rendered into the prompt instead.
 
 ## OSS Inspiration Sources
 

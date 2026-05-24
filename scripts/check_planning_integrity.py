@@ -7,6 +7,7 @@ import argparse
 import json
 import re
 import sqlite3
+import subprocess
 import sys
 from dataclasses import dataclass
 from fnmatch import fnmatch
@@ -135,6 +136,7 @@ def check_planning_integrity(db_path: Path) -> tuple[PlanningIntegrityFailure, .
             repo_root = db_path.resolve().parent.parent
             failures.extend(_check_plan_artifact_paths_are_repo_local(connection, repo_root))
             failures.extend(_check_plan_commit_links_are_full_shas(connection))
+            failures.extend(_check_plan_commit_links_exist_in_git(connection, repo_root))
             failures.extend(_check_current_queue_plans_have_operational_structure(connection))
             failures.extend(_check_completed_plans_have_completed_criteria(connection))
             failures.extend(_check_completed_plans_have_no_open_tasks(connection))
@@ -397,6 +399,44 @@ def _check_plan_commit_links_are_full_shas(
         for plan_id, commit_sha, relationship in rows
         if FULL_COMMIT_SHA_PATTERN.fullmatch(str(commit_sha)) is None
     )
+
+
+def _check_plan_commit_links_exist_in_git(
+    connection: sqlite3.Connection,
+    repo_root: Path,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    if not _repo_has_git_metadata(repo_root):
+        return ()
+    rows = connection.execute(
+        """
+        SELECT plan_id, commit_sha, relationship
+        FROM plan_commit_links
+        ORDER BY plan_id, commit_sha, relationship
+        """
+    ).fetchall()
+    failures: list[PlanningIntegrityFailure] = []
+    for plan_id, commit_sha, relationship in rows:
+        sha = str(commit_sha)
+        if FULL_COMMIT_SHA_PATTERN.fullmatch(sha) is None:
+            continue
+        completed = subprocess.run(
+            ("git", "-C", str(repo_root), "cat-file", "-e", f"{sha}^{{commit}}"),
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if completed.returncode != 0:
+            failures.append(
+                PlanningIntegrityFailure(
+                    "plan_commit_link_missing_git_commit",
+                    f"{plan_id} {relationship}: {sha}",
+                )
+            )
+    return tuple(failures)
+
+
+def _repo_has_git_metadata(repo_root: Path) -> bool:
+    return (repo_root / ".git").exists()
 
 
 def _rowid_column(table: str) -> str:
@@ -932,10 +972,8 @@ def _completed_worker_result_artifact_reference_failures(
 ) -> tuple[PlanningIntegrityFailure, ...]:
     normalized_result_path = _normalize_repo_path(result_path)
     failures: list[PlanningIntegrityFailure] = []
-    for key in ("artifacts", "changed_files"):
-        values = payload.get(key)
-        if not isinstance(values, list):
-            continue
+    values = payload.get("artifacts")
+    if isinstance(values, list):
         normalized_values = {
             value.strip().replace("\\", "/")
             for value in values
@@ -945,7 +983,7 @@ def _completed_worker_result_artifact_reference_failures(
             failures.append(
                 PlanningIntegrityFailure(
                     "completed_worker_run_invalid_result_schema",
-                    f"{worker_run_id}: {key} must include result_path {normalized_result_path}",
+                    f"{worker_run_id}: artifacts must include result_path {normalized_result_path}",
                 )
             )
     return tuple(failures)

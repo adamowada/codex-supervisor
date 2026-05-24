@@ -7,9 +7,9 @@ description: Classify a failed command, CI job, test, lint, typecheck, build, sh
 
 Read the smallest useful failure excerpt and classify before fixing.
 
-If the current user turn is read-only or review-only, do not edit files, update trackers/databases,
-rerun mutating jobs, or apply repair. Return the class, evidence, and proposed next bounded command
-only.
+If the current user turn is read-only, review-only, audit-only, no-edits, or no-mutation, do not
+edit files, update trackers/databases, rerun mutating jobs, or apply repair. Return the class,
+evidence, and proposed next bounded command only.
 
 ## Failure Classes
 

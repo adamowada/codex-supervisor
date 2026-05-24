@@ -7,6 +7,10 @@ description: Handle Windows PowerShell command construction, quoting, here-strin
 
 Prefer simple native PowerShell commands. Use here-strings for complex inline code.
 
+If the current user turn is read-only, review-only, audit-only, no-edits, or no-mutation, do not run
+destructive cleanup, move, or rewrite commands. Return the exact safe command shape and validation
+steps instead.
+
 ## Patterns
 
 - Use `-LiteralPath` for exact filesystem paths.

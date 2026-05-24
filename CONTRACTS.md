@@ -100,8 +100,8 @@ Completed worker-run rows must link `result_path` to an existing repo-local JSON
 integrity checks validate this required field set, field types, status vocabulary, artifact
 existence, worker-run identity coverage, shared `worker_run_ids` membership against completed runs
 with the same `result_path`, task verification coverage with zero exit codes, exact
-acceptance-criterion coverage, changed-file alignment with `allowed_paths_json`, and the
-`plan_artifact_links` relationship.
+acceptance-criterion coverage, implementation changed-file alignment with `allowed_paths_json`, and
+the `plan_artifact_links` relationship.
 Publication-ready durable evidence should live in tracked repo-local paths such as `insights/`;
 ignored paths such as `artifacts/`, `runs/`, `worktrees/`, and `logs/` are ephemeral run output and
 cannot satisfy the publication gate.
@@ -111,9 +111,11 @@ When `status` is `completed`, these evidence fields must be nonempty: `summary`,
 only says "done" without changed files, verification evidence, artifacts, and acceptance mapping is
 not durable enough to advance the Story Loop.
 
-The `changed_files` and `artifacts` lists must both include the JSON result file itself, exactly
-matching the worker-run `result_path`. Supporting reports, logs, and markdown summaries can appear
-alongside it, but they do not replace the result artifact.
+The `artifacts` list must include the JSON result file itself, exactly matching the worker-run
+`result_path`. `changed_files` should list implementation or durable-documentation paths changed by
+the worker, not evidence files that merely prove the run. Supporting reports, logs, and markdown
+summaries can appear alongside the JSON result in `artifacts`, but they do not replace the result
+artifact.
 
 Each `tests_run` entry needs a nonblank summary that reports durable evidence without stale
 phrasing such as "passed at the time." If a command no longer passes in the current bootstrap
@@ -132,7 +134,7 @@ Example `acceptance_results` entry:
 {
   "Default verification passes before handoff.": {
     "status": "passed",
-    "evidence": "Cache-safe component verification passed; publication-ready verification remains gated by the HITL ACP checkpoint."
+    "evidence": "Cache-safe default verification and publication-ready verification passed after ACP."
   }
 }
 ```
@@ -177,7 +179,10 @@ security/safety risk, and unclear handoff state.
 
 ## Project Spawn Contract
 
-Any production-intended project spawned by the supervisor should begin with the base scaffold:
+Any production-intended project spawned by the supervisor should begin with the base scaffold, then
+grow by tier as the project earns the extra surface area.
+
+### Base Tier
 
 - `README.md`
 - `AGENTS.md`
@@ -188,27 +193,39 @@ Any production-intended project spawned by the supervisor should begin with the 
 - `TESTING.md`
 - `DECISIONS.md`
 - `SOP.md`
-- `LICENSE`
-- `ATTRIBUTIONS.md`
 - `HANDOFF.md`
 - `.gitignore`
 - `.gitattributes`
-- `plans/planning.sqlite3`
 - `scripts/verify.py`
+- `insights/README.md`
+
+### Supervisor-Managed Tier
+
+Add when the project needs unattended worker coordination, protected source-of-truth checks, or
+tracked operational queue state:
+
+- `plans/planning.sqlite3`
 - `scripts/print_protected_hashes.py`
 - `scripts/check_protected_files.py`
 - `scripts/check_file_justification.py`
 - `scripts/check_planning_integrity.py`
-- `scripts/check_public_repo_hygiene.py`
-- `insights/README.md`
 
-Add the optional skill/source module only when the project needs repo-local skills or OSS study
-sources:
+### Publication-Ready Tier
+
+Add or tighten when the repo is intended to be public or shared outside the local machine:
+
+- `LICENSE`
+- `ATTRIBUTIONS.md`
+- `scripts/check_public_repo_hygiene.py`
+
+### Skills And Source-Study Tier
+
+Add only when the project needs repo-local skills or OSS study sources:
 
 - `scripts/check_skill_inventory.py`
 - `scripts/check_source_inventory.py`
 - project-relevant `.agents/skills/`
 - `sources/README.md`
 
-This is the default SOP unless the user explicitly asks for a smaller project. Do not create empty
-skill or source inventory surfaces just to satisfy the supervisor pattern.
+This tiering is the default SOP unless the user explicitly asks for a smaller project. Do not create
+empty skill, source inventory, attribution, or lock surfaces just to satisfy the supervisor pattern.

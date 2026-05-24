@@ -7,9 +7,9 @@ description: Track inspiration, attribution, and license posture when using OSS 
 
 Separate inspiration from reuse.
 
-If the current user turn is read-only or review-only, do not edit attribution files, copy source
-material, update planning SQLite, or change license posture. Return attribution findings and
-proposed edits only.
+If the current user turn is read-only, review-only, audit-only, no-edits, or no-mutation, do not
+edit attribution files, copy source material, update planning SQLite, or change license posture.
+Return attribution findings and proposed edits only.
 
 ## Rules
 

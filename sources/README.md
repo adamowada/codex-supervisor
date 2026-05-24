@@ -37,7 +37,10 @@ git checkout --detach <local-commit>
 
 If a host does not support fetching the exact commit by SHA with `--depth=1`, fetch the default
 branch shallowly, then deepen only as needed to reach the pinned commit. Record any intentional
-source refresh in this README before using the refreshed code as evidence.
+source refresh in this README before citing the refreshed code in tracked insights, plans, skills,
+or source-of-truth documents. Treat ignored clones as inspection caches; durable evidence should be
+the pinned upstream commit, tracked inventory row, permalink, tracked excerpt, or tracked synthesis
+artifact.
 
 ## Use Rules
 

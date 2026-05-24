@@ -209,6 +209,13 @@ def main(argv: list[str] | None = None) -> int:
     commit_add_parser.add_argument("--relationship", required=True)
     commit_add_parser.add_argument("--json", action="store_true", default=False)
 
+    commit_delete_parser = subparsers.add_parser("commit-link-delete", help="Unlink a plan commit")
+    commit_delete_parser.add_argument("--path", type=Path, default=None)
+    commit_delete_parser.add_argument("--plan-id", required=True)
+    commit_delete_parser.add_argument("--commit-sha", required=True)
+    commit_delete_parser.add_argument("--relationship", required=True)
+    commit_delete_parser.add_argument("--json", action="store_true", default=False)
+
     task_upsert_parser = subparsers.add_parser(
         "task-upsert",
         help="Create a task or safely update one while preserving omitted optional fields",
@@ -774,6 +781,28 @@ def main(argv: list[str] | None = None) -> int:
         if not _write_or_report(lambda: commit_store.add_plan_commit_link(commit_record)):
             return 1
         _print_mutation_result("commit_link", commit_record.commit_sha, commit_record, args.json)
+        return 0
+
+    if args.command == "commit-link-delete":
+        write_store = _open_write_store(args.path)
+        if write_store is None:
+            return 1
+        commit_store = write_store
+        commit_record = PlanCommitLinkRecord(
+            plan_id=args.plan_id,
+            commit_sha=args.commit_sha,
+            relationship=args.relationship,
+        )
+        deleted = _write_value_or_report(
+            lambda: commit_store.delete_plan_commit_link(commit_record)
+        )
+        if deleted is None:
+            return 1
+        if args.json:
+            _print_json({"deleted": deleted, "commit_link": commit_record})
+        else:
+            action = "Deleted" if deleted else "No matching"
+            print(f"{action} commit_link: {commit_record.commit_sha}")
         return 0
 
     if args.command == "task-upsert":

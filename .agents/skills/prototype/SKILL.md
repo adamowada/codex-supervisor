@@ -7,9 +7,9 @@ description: Build a throwaway prototype to flesh out a design before committing
 
 A prototype is **throwaway code that answers a question**. The question decides the shape.
 
-If the current user turn is read-only or review-only, do not create prototype files, routes,
-fixtures, scratch databases, or generated assets. Return the proposed prototype shape, run command,
-and cleanup contract only.
+If the current user turn is read-only, review-only, audit-only, no-edits, or no-mutation, do not
+create prototype files, routes, fixtures, scratch databases, or generated assets. Return the
+proposed prototype shape, run command, and cleanup contract only.
 
 ## Pick a branch
 

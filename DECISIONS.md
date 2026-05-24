@@ -83,13 +83,15 @@ replace `progress.txt`.
 ## D-0010: Verify Codex Goal Availability Before Worker Launch
 
 Decision: Codex-supervisor must treat native Codex Goals as an optional execution surface that
-requires explicit availability checks. Worker launches should check `codex --version`, pass the
-intended `CODEX_HOME`, and verify Goals are enabled before using `/goal`. If `/goal` is unavailable
-on a Goals-capable build, set `[features] goals = true` in `${CODEX_HOME}/config.toml` or run
-`codex features enable goals` only when Goal Mode setup is explicitly in scope and writes to that
-Codex home are allowed. In read-only, review-only, or already-synced worker contexts, use the
-prompt-rendered Goal Contract fallback instead. Restart or start a fresh Codex session only if the
-running process does not pick up an allowed config change.
+requires explicit availability checks. Worker launches should record resolved Codex executable,
+`codex --version`, intended `CODEX_HOME`, config path, feature state, whether the selected worker
+backend exposes an official noninteractive native-goal path, and the prompt-rendered fallback
+decision before using native Goals. If `/goal` is unavailable on a Goals-capable build, set
+`[features] goals = true` in `${CODEX_HOME}/config.toml` or run `codex features enable goals` only
+when Goal Mode setup is explicitly in scope and writes to that Codex home are allowed. In read-only,
+review-only, or already-synced worker contexts, use the prompt-rendered Goal Contract fallback
+instead. Restart or start a fresh Codex session only if the running process does not pick up an
+allowed config change.
 
 Rationale: Goal mode can be disabled by feature configuration, and a worker launched with the wrong
 Codex home may load a sandbox config where Goals or authentication are unavailable. Official

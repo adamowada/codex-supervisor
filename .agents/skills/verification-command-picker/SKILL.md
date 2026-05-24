@@ -7,9 +7,9 @@ description: Choose the smallest useful verification commands for a repo or chan
 
 Pick commands from repo evidence, then run narrow to broad.
 
-If the current user turn is read-only or review-only, do not run commands that write caches,
-artifacts, lockfiles, databases, screenshots, or reports. Return the selected command ladder and
-explain which commands are safe to run only after writes are allowed.
+If the current user turn is read-only, review-only, audit-only, no-edits, or no-mutation, do not run
+commands that write caches, artifacts, lockfiles, databases, screenshots, or reports. Return the
+selected command ladder and explain which commands are safe to run only after writes are allowed.
 
 ## Signals
 

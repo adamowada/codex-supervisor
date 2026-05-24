@@ -7,9 +7,9 @@ description: Disciplined diagnosis loop for hard, unclear, flaky, or performance
 
 A discipline for hard bugs. Skip phases only when explicitly justified.
 
-If the current user turn is read-only or review-only, do not edit files, write fixtures, update
-trackers/databases, or run repair. Return the proposed feedback loop, hypotheses, probes, and
-commands only.
+If the current user turn is read-only, review-only, audit-only, no-edits, or no-mutation, do not
+edit files, write fixtures, update trackers/databases, or run repair. Return the proposed feedback
+loop, hypotheses, probes, and commands only.
 
 When exploring the codebase, use the project's domain glossary to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
 

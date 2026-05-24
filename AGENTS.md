@@ -85,6 +85,11 @@ If `codex --version` fails from a Windows shell because the resolved executable 
 treat native Goal Mode as unavailable for that worker and use the prompt-rendered Goal Contract
 fallback until the CLI path and `CODEX_HOME` are confirmed.
 
+When designing or launching Stage 6 noninteractive workers, record the Goal Mode preflight evidence
+in worker metadata: resolved Codex executable, version output, intended `CODEX_HOME`, config path and
+feature state, whether the backend has an official noninteractive native-goal path, and the
+prompt-rendered fallback decision.
+
 Synthesized durable learning belongs in `insights/`. Do not bury reusable workflow lessons only in
 chat, logs, or worker summaries.
 

@@ -5,9 +5,9 @@ description: Test-driven development with red-green-refactor loop. Use when user
 
 # Test-Driven Development
 
-If the current user turn is read-only or review-only, do not write tests, edit implementation, update
-trackers/databases, or run repair. Return the proposed red-green slices, public interfaces, and
-verification commands only.
+If the current user turn is read-only, review-only, audit-only, no-edits, or no-mutation, do not
+write tests, edit implementation, update trackers/databases, or run repair. Return the proposed
+red-green slices, public interfaces, and verification commands only.
 
 ## Philosophy
 

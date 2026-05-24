@@ -47,7 +47,7 @@ telemetry rather than project authority.
 
 ## One Story Per Fresh Context
 
-Confidence: confirmed.
+Confidence: inferred.
 
 Ralph demonstrates that autonomous coding loops become easier to control when each iteration starts
 with fresh context, selects one incomplete story, runs checks, records progress, and stops or moves

@@ -20,4 +20,7 @@ Collapse many agents into one decision-ready artifact.
 - recommended integration order;
 - next AFK task.
 
-For `.codex` state, use `thread_spawn_edges`, thread metadata, worktree paths, and session indexes. Avoid dumping raw private transcripts.
+For `.codex` state, start with `codex-state-readonly-audit` and consume its normalized,
+schema-inspected metadata: spawn edges, thread metadata, worktree paths, session indexes, and source
+database/table provenance. Avoid direct dependency on raw Codex internal table names in the digest,
+and avoid dumping raw private transcripts.

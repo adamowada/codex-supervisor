@@ -7,9 +7,9 @@ description: Evaluate a Codex skill before promotion or after revision. Use when
 
 One skill change needs at least one realistic task that proves it helps.
 
-If the current user turn is read-only or review-only, do not edit skills, spawn mutating evaluators,
-write eval artifacts, or update insights. Return the golden task, rubric, and proposed eval protocol
-only.
+If the current user turn is read-only, review-only, audit-only, no-edits, or no-mutation, do not
+edit skills, spawn mutating evaluators, write eval artifacts, or update insights. Return the golden
+task, rubric, and proposed eval protocol only.
 
 ## Workflow
 

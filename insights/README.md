@@ -33,6 +33,9 @@ Use it for synthesized, provenance-backed knowledge about:
 
 Historical audit and worker-result files are evidence, not mandatory orientation. Fresh threads
 should read them only when the live task references the audit or when investigating related drift.
+Insights are durable memory, not operational queue state. For current work, inspect
+`story-loop-status --json`, `plan-summary --current-queue`, and
+`task-list --current-queue-plans-only` before treating an insight or historical audit as live.
 
 ## Reusable Insight Shape
 

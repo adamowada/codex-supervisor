@@ -12,9 +12,10 @@ Summarize suggestions without dumping private prompt text.
 1. If the current turn is read-only, review-only, audit-only, no-edits, or no-mutation mode, do not
    update queues, dismiss suggestions, write telemetry, or mutate planning SQLite. Return a triage
    report and the exact `afk-issue-shaper`/`planning-sqlite-operator` follow-up commands instead.
-2. Inventory suggestion buckets by project, status, and recency. Treat `.codex/ambient-suggestions`
-   as optional/discovered, not a guaranteed Codex path; documented local telemetry sources include
-   inbox and automation tables.
+2. Inventory suggestion buckets by project, status, and recency from normalized
+   `codex-state-readonly-audit` output. Treat `.codex/ambient-suggestions` as optional/discovered,
+   not a guaranteed Codex path; documented local telemetry sources include inbox and automation
+   tables.
 3. Group duplicates by underlying action, not wording.
 4. Classify each group: `AFK`, `HITL`, `dismiss`, or `needs context`.
 5. For `AFK` and `HITL`, emit an `afk-issue-shaper` compatible task and route durable queue writes

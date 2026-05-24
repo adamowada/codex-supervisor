@@ -29,11 +29,12 @@ class PlanningSchemaIndex:
     where_sql: str | None = None
 
 
-CURRENT_PLANNING_SCHEMA_VERSION = 3
+CURRENT_PLANNING_SCHEMA_VERSION = 4
 PLANNING_SCHEMA_MIGRATIONS = (
     (1, "initial_supervisor_planning_schema"),
     (2, "worker_runs_one_nonterminal_per_task_index"),
     (3, "strict_status_and_review_constraints"),
+    (4, "strict_commit_link_sha_constraint"),
 )
 PLAN_STATUSES = frozenset({"active", "blocked", "completed", "abandoned", "superseded"})
 CURRENT_QUEUE_PLAN_STATUSES = frozenset({"active", "blocked"})
@@ -236,6 +237,11 @@ PLANNING_SCHEMA_TABLE_REQUIRED_SQL = {
         "'completed'",
         "'failed'",
         "'cancelled'",
+    ),
+    "plan_commit_links": (
+        "commit_sha text not null check(",
+        "length(commit_sha) = 40",
+        "commit_sha not glob '*[^0-9a-f]*'",
     ),
     "supervisor_tasks": (
         "task_type text not null check(task_type in ('afk', 'hitl'))",
@@ -1129,14 +1135,15 @@ class PlanningSQLiteStore:
         _validate_artifact_id(record.artifact_id, "artifact_id")
         now = _format_datetime(_utc_now())
         with self.connect() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 """
                 INSERT OR IGNORE INTO plan_artifact_links(plan_id, artifact_id, relationship)
                 VALUES (?, ?, ?)
                 """,
                 (record.plan_id, record.artifact_id, record.relationship),
             )
-            _touch_plan(connection, record.plan_id, now)
+            if cursor.rowcount:
+                _touch_plan(connection, record.plan_id, now)
 
     def list_plan_artifact_links(
         self,
@@ -1160,14 +1167,34 @@ class PlanningSQLiteStore:
         _validate_required(record.relationship, "relationship")
         now = _format_datetime(_utc_now())
         with self.connect() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 """
                 INSERT OR IGNORE INTO plan_commit_links(plan_id, commit_sha, relationship)
                 VALUES (?, ?, ?)
                 """,
                 (record.plan_id, record.commit_sha, record.relationship),
             )
-            _touch_plan(connection, record.plan_id, now)
+            if cursor.rowcount:
+                _touch_plan(connection, record.plan_id, now)
+
+    def delete_plan_commit_link(self, record: PlanCommitLinkRecord) -> bool:
+        _validate_required(record.plan_id, "plan_id")
+        _validate_required(record.commit_sha, "commit_sha")
+        _validate_commit_sha(record.commit_sha)
+        _validate_required(record.relationship, "relationship")
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                DELETE FROM plan_commit_links
+                WHERE plan_id = ? AND commit_sha = ? AND relationship = ?
+                """,
+                (record.plan_id, record.commit_sha, record.relationship),
+            )
+            if cursor.rowcount:
+                now = _format_datetime(_utc_now())
+                _touch_plan(connection, record.plan_id, now)
+                return True
+            return False
 
     def list_plan_commit_links(
         self,
@@ -2262,7 +2289,7 @@ def _apply_schema_migrations(connection: sqlite3.Connection, now: str) -> None:
     if current_version == 0:
         _record_schema_migrations(connection, now, starting_after=0)
         return
-    if current_version < 3:
+    if current_version < CURRENT_PLANNING_SCHEMA_VERSION:
         _rebuild_tables_with_current_constraints(connection)
     _record_schema_migrations(connection, now, starting_after=current_version)
 
@@ -2475,7 +2502,9 @@ CREATE TABLE IF NOT EXISTS plan_artifact_links (
 
 CREATE TABLE IF NOT EXISTS plan_commit_links (
     plan_id TEXT NOT NULL REFERENCES plans(plan_id) ON DELETE CASCADE,
-    commit_sha TEXT NOT NULL CHECK(length(commit_sha) > 0),
+    commit_sha TEXT NOT NULL CHECK(
+        length(commit_sha) = 40 AND commit_sha NOT GLOB '*[^0-9a-f]*'
+    ),
     relationship TEXT NOT NULL CHECK(length(relationship) > 0),
     PRIMARY KEY(plan_id, commit_sha, relationship)
 );

@@ -5,9 +5,9 @@ description: Summarize CI/check failures and route repair through failure-loop-t
 
 # CI Repair Loop
 
-If the current user turn is read-only or review-only, do not edit files, rerun jobs, push commits,
-update trackers/databases, or start repair. Return the failure summary, likely class, and proposed
-bounded repair loop only.
+If the current user turn is read-only, review-only, audit-only, no-edits, or no-mutation, do not
+edit files, rerun jobs, push commits, update trackers/databases, or start repair. Return the failure
+summary, likely class, and proposed bounded repair loop only.
 
 1. Identify whether the failure source is local output, GitHub check metadata, workflow job logs, or
    another CI provider.

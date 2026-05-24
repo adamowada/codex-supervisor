@@ -16,19 +16,30 @@ ROADMAP.md
 TESTING.md
 DECISIONS.md
 SOP.md
-LICENSE
-ATTRIBUTIONS.md
 HANDOFF.md
 .gitignore
 .gitattributes
-plans/planning.sqlite3
 scripts/verify.py
+insights/README.md
+```
+
+Add supervisor-managed surfaces when the project needs unattended workers, protected source-of-truth
+checks, or a tracked operational queue:
+
+```text
+plans/planning.sqlite3
 scripts/print_protected_hashes.py
 scripts/check_protected_files.py
 scripts/check_file_justification.py
 scripts/check_planning_integrity.py
+```
+
+Add publication-ready surfaces when the project will be public or shared beyond the local machine:
+
+```text
+LICENSE
+ATTRIBUTIONS.md
 scripts/check_public_repo_hygiene.py
-insights/
 ```
 
 Add optional skill/source modules only when the project actually needs repo-local skills or OSS
@@ -69,7 +80,9 @@ For every AFK task:
 3. Run the worker-launch preflight: `codex --version`, intended `CODEX_HOME`, `/goal` visibility, and
    feature enablement when needed. Treat `${CODEX_HOME}/config.toml` edits and
    `codex features enable goals` as setup mutations; use them only when Goal Mode setup is
-   explicitly in scope and writes to the intended Codex home are allowed.
+   explicitly in scope and writes to the intended Codex home are allowed. Record resolved Codex
+   executable, version output, config path, feature state, native-goal support for the selected
+   backend, and fallback decision in worker metadata.
 4. Launch a fresh-context Codex worker through the configured backend. Until the Stage 6 Codex Exec
    backend exists, execute the contract in the supervised thread or a manually created fresh-context
    worker prompt.

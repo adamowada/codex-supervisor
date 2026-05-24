@@ -66,11 +66,17 @@ If the selected skill would write to the wrong source, stop and route explicitly
 - Planning beats publishing. If work is not approved, keep it in planning SQLite or a local task contract before creating issues.
 - Goal Contracts beat open-ended execution. If the stop condition is unclear, draft or repair the Goal Contract before launching a worker.
 - Story loops beat broad execution. If several AFK tasks are ready, run one vertical slice per iteration.
+- Raw local `.codex` telemetry goes through `codex-state-readonly-audit` first. Digest, ambient
+  triage, and planning updates should consume normalized schema-inspected metadata rather than
+  directly depending on Codex internal table names.
 - Review beats fixing. If the user asks for review, report findings first; use `review-finding-fixer` only after they ask to fix them.
 - CI repair beats general diagnosis when there is a concrete failed job or check.
 - `git-pr-ci-operator` beats `acp-publisher` for PR metadata, CI logs, reruns, reviews, and merges.
 - `diagnose` beats architecture review when a bug is still unreproduced.
 - `improve-codebase-architecture` beats `grill-with-docs` when the request is mainly about module depth, seams, or testability.
 - `grill-with-docs` beats architecture review when the plan or vocabulary is still fuzzy.
+- Task-shaping boundaries: `afk-issue-shaper` shapes one vague task into one AFK-ready contract;
+  `factory-task-decomposer` splits a plan into multiple planning rows; `to-issues` publishes
+  approved slices to an issue tracker; `triage` classifies incoming tracker state.
 - Architecture-only code review starts in `fresh-thread-code-reviewer` for findings format, then
   uses `improve-codebase-architecture` vocabulary for the analysis lens.

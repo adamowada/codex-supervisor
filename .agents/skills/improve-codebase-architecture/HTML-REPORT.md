@@ -1,5 +1,8 @@
 # HTML Report Format
 
+In read-only, review-only, audit-only, no-edits, or no-mutation mode, return the proposed report
+outline and target path instead of writing the HTML file.
+
 Render architectural reviews as a single static HTML file. In `codex-supervisor` or spawned projects, write reports under `artifacts/architecture-reviews/` so they are ignored by git. If the repo has no ignored artifact path, use the OS temp directory and tell the user the absolute path.
 
 Prefer no external network dependencies. Inline a small CSS layer and use inline SVG or hand-built boxes for diagrams. Mermaid via CDN is acceptable only when graph-shaped diagrams materially improve the report and network access is allowed; note the dependency in the report.

@@ -6,8 +6,9 @@ Confidence: confirmed.
 
 - Six read-only explorer lanes audited repo shape, Python code and tests, skills, source-of-truth
   docs, planning SQLite, and the fresh-thread bootstrap path.
-- Component checks passed after fixes. The broad default gate intentionally stops at the
-  protected-file/publication checkpoint until intended public files are tracked.
+- Component checks passed after fixes. Earlier pre-ACP snapshots intentionally stopped at the
+  protected-file/publication checkpoint until intended public files were tracked; current
+  publication-ready status is summarized in `Recently Fixed And Verified`.
 - Read-only SQLite drift checks passed for current-queue plans with pending criteria, missing
   artifact links, parent-plan timestamps, integrity, and foreign keys.
 
@@ -99,8 +100,8 @@ Confidence: confirmed.
 - Planning structure can now be created through typed CLI commands for plans, milestones, and
   criteria, and commands that cannot infer the planning database path fail with a clean recovery
   message instead of a stack trace.
-- The active HITL publication checkpoint is encoded as read/report-only until the user approves or
-  rejects ACP.
+- The HITL publication checkpoint was encoded as read/report-only until the user approved ACP, then
+  completed through the published checkpoint flow.
 - A follow-up six-lane audit found the tracked database was missing the newer
   `idx_worker_runs_one_nonterminal_per_task` partial unique index even though fresh schema SQL
   created it. Schema validation now verifies required indexes, schema version was bumped to 2, and
@@ -185,8 +186,8 @@ Confidence: confirmed.
   `artifacts`, making the evidence artifact self-describing even when read outside the planning row
   that points to it.
 - Completed worker-result `tests_run` summaries now have to be nonblank and avoid stale pass
-  phrasing. The six-lane audit result no longer claims `check_protected_files.py` passes while the
-  HITL ACP checkpoint intentionally leaves `.gitattributes` untracked.
+  phrasing. The six-lane audit result no longer preserves pre-ACP lock failures as current passing
+  evidence.
 
 ## Remaining Watch Items
 

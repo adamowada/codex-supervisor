@@ -7,9 +7,9 @@ description: Run a grilling session that challenges a plan against the existing 
 
 Interview the user relentlessly about every aspect of the plan until you reach a shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one by one. For each question, provide your recommended answer.
 
-If the current user turn is read-only or review-only, do not edit durable docs, insights, planning
-SQLite, issues, or tracker state. Return challenged assumptions, recommended answers, and proposed
-source-of-truth updates only.
+If the current user turn is read-only, review-only, audit-only, no-edits, or no-mutation, do not
+edit durable docs, insights, planning SQLite, issues, or tracker state. Return challenged
+assumptions, recommended answers, and proposed source-of-truth updates only.
 
 Ask one question at a time, waiting for feedback before continuing in interactive mode. In approved
 AFK or dangerous full-auto mode, derive answers from durable sources, record assumptions, and turn

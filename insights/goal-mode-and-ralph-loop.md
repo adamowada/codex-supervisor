@@ -1,6 +1,8 @@
 # Goal Mode And Ralph Loop
 
-Confidence: confirmed.
+Confidence: mixed. Source facts are confirmed where tied to official docs, tracked source
+inventory, or local telemetry. Project policy below is inferred unless backed by implementation or
+tests.
 
 ## Evidence
 
@@ -19,11 +21,13 @@ Confidence: confirmed.
   time-sensitive telemetry, not stable doctrine.
 - `sources/README.md` pins `sources/snarktank-ralph` at commit
   `6c53cb0b831ebe8739c6a003e22af14902d8b0b5` with observed MIT license posture.
-- Ralph's tracked local evidence is strongest in `sources/snarktank-ralph/prompt.md` and
-  `sources/snarktank-ralph/README.md`: each iteration selects one unfinished story, runs quality
-  checks, commits passing work, updates story/progress state, preserves reusable learnings, and
-  repeats until all stories pass. `sources/snarktank-ralph/skills/ralph/SKILL.md` adds the
-  right-sized-story rule: one story should fit in one fresh context window.
+- The tracked source inventory pins `sources/snarktank-ralph` to commit
+  `6c53cb0b831ebe8739c6a003e22af14902d8b0b5`. The local clone is an inspection cache; durable
+  evidence should cite the pinned upstream commit, tracked inventory, or tracked excerpts rather
+  than relying on mutable ignored files. At that pinned revision, Ralph's README, prompt, and Ralph
+  skill describe one unfinished story per iteration, quality checks, passing commits, progress
+  updates, reusable learnings, and a right-sized-story rule that should fit in one fresh context
+  window.
 
 ## Synthesis
 

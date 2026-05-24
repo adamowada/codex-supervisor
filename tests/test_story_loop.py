@@ -625,6 +625,8 @@ def test_story_loop_record_writes_progress_and_artifact_links(tmp_path, capsys):
                 "tests/test_example.py",
                 "--artifact-relationship",
                 "iteration-evidence",
+                "--linked-artifact-id",
+                "reports/story.md",
                 "--json",
             ]
         )
@@ -632,12 +634,13 @@ def test_story_loop_record_writes_progress_and_artifact_links(tmp_path, capsys):
     )
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["progress"]["linked_artifact_id"] == "src/example.py"
+    assert payload["progress"]["linked_artifact_id"] == "reports/story.md"
     assert "task_id=task-story" in payload["progress"]["details"]
     assert "worker_run_id=run-story" in payload["progress"]["details"]
     assert [link["artifact_id"] for link in payload["artifact_links"]] == [
         "src/example.py",
         "tests/test_example.py",
+        "reports/story.md",
     ]
 
     read_store = open_existing_planning_database(db_path)
@@ -645,10 +648,14 @@ def test_story_loop_record_writes_progress_and_artifact_links(tmp_path, capsys):
     artifact_links = read_store.list_plan_artifact_links(plan_id="plan-story")
     assert progress[0].progress_id == "progress-story"
     assert {link.artifact_id for link in artifact_links} == {
+        "reports/story.md",
         "src/example.py",
         "tests/test_example.py",
     }
-    assert {link.relationship for link in artifact_links} == {"iteration-evidence"}
+    assert {link.relationship for link in artifact_links} == {
+        "iteration-evidence",
+        "progress-linked-artifact",
+    }
 
 
 def test_story_loop_record_rejects_cross_plan_task_reference(tmp_path, capsys):

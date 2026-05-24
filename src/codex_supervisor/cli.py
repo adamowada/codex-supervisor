@@ -116,6 +116,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Atomically claim the current ready AFK task and create a worker run",
     )
     task_claim_parser.add_argument("--path", type=Path, default=None)
+    task_claim_parser.add_argument(
+        "--task-id",
+        default=None,
+        help="Only claim this ready AFK task; return null if another task is current.",
+    )
     task_claim_parser.add_argument("--worker-run-id", required=True)
     task_claim_parser.add_argument("--backend", default="codex_exec")
     task_claim_parser.add_argument(
@@ -599,6 +604,7 @@ def main(argv: list[str] | None = None) -> int:
             claim = write_store.claim_next_ready_afk_task(
                 worker_run_id=args.worker_run_id,
                 backend=args.backend,
+                task_id=args.task_id,
                 status=args.status,
                 worktree_path=args.worktree_path,
                 prompt_path=args.prompt_path,
@@ -1059,7 +1065,7 @@ def _open_read_store(path: Path | None) -> PlanningSQLiteStore | None:
     except (ValueError, sqlite3.Error) as exc:
         print(f"Planning database schema is not valid: {exc}", file=sys.stderr)
         print(
-            "Run: uv run python -B scripts/check_planning_integrity.py",
+            "Run: uv run --no-sync python -B scripts/check_planning_integrity.py",
             file=sys.stderr,
         )
         return None
@@ -1086,7 +1092,7 @@ def _open_write_store(path: Path | None) -> PlanningSQLiteStore | None:
     except (ValueError, sqlite3.Error) as exc:
         print(f"Planning database schema is not valid: {exc}", file=sys.stderr)
         print(
-            "Run: uv run python -B scripts/check_planning_integrity.py",
+            "Run: uv run --no-sync python -B scripts/check_planning_integrity.py",
             file=sys.stderr,
         )
         return None
@@ -1101,7 +1107,7 @@ def _read_or_report[T](operation: Callable[[], T]) -> T | None:
         _last_read_failed = True
         print(f"Could not read planning database: {exc}", file=sys.stderr)
         print(
-            "Run: uv run python -B scripts/check_planning_integrity.py",
+            "Run: uv run --no-sync python -B scripts/check_planning_integrity.py",
             file=sys.stderr,
         )
         return None

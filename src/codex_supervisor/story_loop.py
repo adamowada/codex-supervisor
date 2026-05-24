@@ -65,10 +65,11 @@ def build_story_loop_status(
 ) -> StoryLoopStatus:
     """Build Story Loop status from planning helpers."""
 
-    plans = _select_plans(store.list_plans(), active_only=active_only, plan_id=plan_id)
-    tasks = store.list_supervisor_tasks()
-    worker_runs = store.list_worker_runs()
-    criteria = store.list_plan_acceptance_criteria()
+    snapshot = store.read_queue_snapshot()
+    plans = _select_plans(snapshot.plans, active_only=active_only, plan_id=plan_id)
+    tasks = snapshot.tasks
+    worker_runs = snapshot.worker_runs
+    criteria = snapshot.criteria
     selected_plan_ids = {plan.plan_id for plan in plans}
     plan_statuses = tuple(
         _build_plan_status(
@@ -164,6 +165,17 @@ def record_story_loop_progress(
         )
         for artifact_id in artifact_ids
     )
+    if progress.linked_artifact_id is not None and not any(
+        link.artifact_id == progress.linked_artifact_id for link in artifact_links
+    ):
+        artifact_links = (
+            *artifact_links,
+            PlanArtifactLinkRecord(
+                plan_id=plan_id,
+                artifact_id=progress.linked_artifact_id,
+                relationship="progress-linked-artifact",
+            ),
+        )
     store.add_plan_progress_with_artifact_links(progress, artifact_links)
     return StoryLoopRecordResult(progress=progress, artifact_links=artifact_links)
 
@@ -290,7 +302,8 @@ def _validate_story_loop_references(
     task_id: str | None,
     worker_run_id: str | None,
 ) -> None:
-    tasks = store.list_supervisor_tasks()
+    snapshot = store.read_queue_snapshot()
+    tasks = snapshot.tasks
     task = _task_by_id(tasks, task_id)
     if task_id is not None and task is None:
         raise ValueError(f"task_id does not exist: {task_id}")
@@ -299,7 +312,7 @@ def _validate_story_loop_references(
     if worker_run_id is None:
         return
     worker_run = next(
-        (run for run in store.list_worker_runs() if run.worker_run_id == worker_run_id),
+        (run for run in snapshot.worker_runs if run.worker_run_id == worker_run_id),
         None,
     )
     if worker_run is None:

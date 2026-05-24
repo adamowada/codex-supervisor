@@ -418,6 +418,14 @@ class TaskClaimRecord:
     worker_run: WorkerRunRecord
 
 
+@dataclass(frozen=True)
+class PlanningQueueSnapshot:
+    plans: tuple[PlanRecord, ...]
+    tasks: tuple[SupervisorTaskSummaryRecord, ...]
+    worker_runs: tuple[WorkerRunRecord, ...]
+    criteria: tuple[PlanAcceptanceCriterionRecord, ...]
+
+
 class PlanningSQLiteStore:
     """Repository wrapper around the tracked planning SQLite database."""
 
@@ -645,31 +653,7 @@ class PlanningSQLiteStore:
 
     def list_plans(self, *, status: str | None = None) -> tuple[PlanRecord, ...]:
         with self.connect() as connection:
-            if status is None:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM plans
-                    ORDER BY
-                        CASE status
-                            WHEN 'active' THEN 0
-                            WHEN 'blocked' THEN 1
-                            ELSE 2
-                        END,
-                        priority DESC,
-                        updated_at DESC,
-                        plan_id
-                    """
-                ).fetchall()
-            else:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM plans
-                    WHERE status = ?
-                    ORDER BY priority DESC, updated_at DESC, plan_id
-                    """,
-                    (status,),
-                ).fetchall()
-        return tuple(_plan_from_row(row) for row in rows)
+            return _list_plans(connection, status=status)
 
     def upsert_plan_milestone(self, record: PlanMilestoneRecord) -> None:
         _validate_required(record.milestone_id, "milestone_id")
@@ -795,15 +779,8 @@ class PlanningSQLiteStore:
         *,
         plan_id: str | None = None,
     ) -> tuple[PlanAcceptanceCriterionRecord, ...]:
-        query = "SELECT * FROM plan_acceptance_criteria"
-        parameters: list[object] = []
-        if plan_id is not None:
-            query += " WHERE plan_id = ?"
-            parameters.append(plan_id)
-        query += " ORDER BY plan_id, criterion_id"
         with self.connect() as connection:
-            rows = connection.execute(query, parameters).fetchall()
-        return tuple(_plan_acceptance_criterion_from_row(row) for row in rows)
+            return _list_plan_acceptance_criteria(connection, plan_id=plan_id)
 
     def list_supervisor_tasks(
         self,
@@ -825,23 +802,36 @@ class PlanningSQLiteStore:
                 current_queue_plans_only=current_queue_plans_only,
                 task_type=task_type,
             )
-        if unblocked_only:
-            blocker_lookup = self.list_supervisor_tasks(
-                active_plans_only=active_plans_only,
-                current_queue_plans_only=current_queue_plans_only,
-            )
-            tasks = tuple(
-                task for task in tasks if not has_unresolved_task_blockers(task, blocker_lookup)
-            )
+            if unblocked_only:
+                blocker_lookup = _list_supervisor_task_summaries(
+                    connection,
+                    active_plans_only=active_plans_only,
+                    current_queue_plans_only=current_queue_plans_only,
+                )
+                tasks = tuple(
+                    task for task in tasks if not has_unresolved_task_blockers(task, blocker_lookup)
+                )
         return tasks
 
     def next_ready_afk_task(self) -> SupervisorTaskSummaryRecord | None:
-        tasks = self.list_supervisor_tasks(active_plans_only=False)
-        worker_runs = self.list_worker_runs()
-        return next(
-            (task for task in tasks if is_executable_afk_task(task, tasks, worker_runs)),
-            None,
-        )
+        with self.connect() as connection:
+            tasks = _list_supervisor_task_summaries(connection, active_plans_only=False)
+            worker_runs = _list_worker_runs(connection)
+            return next(
+                (task for task in tasks if is_executable_afk_task(task, tasks, worker_runs)),
+                None,
+            )
+
+    def read_queue_snapshot(self) -> PlanningQueueSnapshot:
+        """Read queue status inputs from a single SQLite snapshot."""
+
+        with self.connect() as connection:
+            return PlanningQueueSnapshot(
+                plans=_list_plans(connection),
+                tasks=_list_supervisor_task_summaries(connection),
+                worker_runs=_list_worker_runs(connection),
+                criteria=_list_plan_acceptance_criteria(connection),
+            )
 
     def upsert_supervisor_task(
         self,
@@ -1318,6 +1308,7 @@ class PlanningSQLiteStore:
         *,
         worker_run_id: str,
         backend: str,
+        task_id: str | None = None,
         status: str = "running",
         worktree_path: str | None = None,
         prompt_path: str | None = None,
@@ -1326,6 +1317,8 @@ class PlanningSQLiteStore:
     ) -> TaskClaimRecord | None:
         _validate_required(worker_run_id, "worker_run_id")
         _validate_required(backend, "backend")
+        if task_id is not None:
+            _validate_required(task_id, "task_id")
         _validate_required(status, "status")
         _validate_choice(status, CLAIM_WORKER_RUN_STATUSES, "status")
         now = _format_datetime(_utc_now())
@@ -1341,6 +1334,8 @@ class PlanningSQLiteStore:
                 ),
                 None,
             )
+            if task is not None and task_id is not None and task.task_id != task_id:
+                return None
             if task is None:
                 return None
             cursor = connection.execute(
@@ -1934,6 +1929,14 @@ def _validate_plan_can_enter_status(
             f"{open_criterion['criterion_id']} is {open_criterion['status']}"
         )
         raise ValueError(msg)
+    if status == "completed":
+        incomplete_criterion = _first_not_completed_criterion_for_plan(connection, plan_id)
+        if incomplete_criterion is not None:
+            msg = (
+                f"cannot set plan {plan_id} to completed while criterion "
+                f"{incomplete_criterion['criterion_id']} is {incomplete_criterion['status']}"
+            )
+            raise ValueError(msg)
 
 
 def _first_open_task_for_plan(connection: sqlite3.Connection, plan_id: str) -> sqlite3.Row | None:
@@ -1992,6 +1995,26 @@ def _first_open_criterion_for_plan(
             LIMIT 1
             """,
             (plan_id, *sorted(OPEN_CRITERION_STATUSES)),
+        ).fetchone(),
+    )
+
+
+def _first_not_completed_criterion_for_plan(
+    connection: sqlite3.Connection,
+    plan_id: str,
+) -> sqlite3.Row | None:
+    return cast(
+        sqlite3.Row | None,
+        connection.execute(
+            """
+            SELECT criterion_id, status
+            FROM plan_acceptance_criteria
+            WHERE plan_id = ?
+              AND status != 'completed'
+            ORDER BY criterion_id
+            LIMIT 1
+            """,
+            (plan_id,),
         ).fetchone(),
     )
 
@@ -2109,6 +2132,53 @@ def _get_supervisor_task_summary(
         if task.task_id == task_id:
             return task
     raise KeyError(f"No task found: {task_id}")
+
+
+def _list_plans(
+    connection: sqlite3.Connection,
+    *,
+    status: str | None = None,
+) -> tuple[PlanRecord, ...]:
+    if status is None:
+        rows = connection.execute(
+            """
+            SELECT * FROM plans
+            ORDER BY
+                CASE status
+                    WHEN 'active' THEN 0
+                    WHEN 'blocked' THEN 1
+                    ELSE 2
+                END,
+                priority DESC,
+                updated_at DESC,
+                plan_id
+            """
+        ).fetchall()
+    else:
+        rows = connection.execute(
+            """
+            SELECT * FROM plans
+            WHERE status = ?
+            ORDER BY priority DESC, updated_at DESC, plan_id
+            """,
+            (status,),
+        ).fetchall()
+    return tuple(_plan_from_row(row) for row in rows)
+
+
+def _list_plan_acceptance_criteria(
+    connection: sqlite3.Connection,
+    *,
+    plan_id: str | None = None,
+) -> tuple[PlanAcceptanceCriterionRecord, ...]:
+    query = "SELECT * FROM plan_acceptance_criteria"
+    parameters: list[object] = []
+    if plan_id is not None:
+        query += " WHERE plan_id = ?"
+        parameters.append(plan_id)
+    query += " ORDER BY plan_id, criterion_id"
+    rows = connection.execute(query, parameters).fetchall()
+    return tuple(_plan_acceptance_criterion_from_row(row) for row in rows)
 
 
 def _list_worker_runs(connection: sqlite3.Connection) -> tuple[WorkerRunRecord, ...]:

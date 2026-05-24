@@ -25,7 +25,6 @@ from codex_supervisor.planning import (  # noqa: E402
     CURRENT_QUEUE_PLAN_STATUSES,
     MILESTONE_STATUSES,
     NONTERMINAL_WORKER_RUN_STATUSES,
-    OPEN_CRITERION_STATUSES,
     OPEN_TASK_STATUSES,
     PLAN_STATUSES,
     TASK_STATUSES,
@@ -513,17 +512,15 @@ def _check_current_queue_plans_have_operational_structure(
 def _check_completed_plans_have_completed_criteria(
     connection: sqlite3.Connection,
 ) -> tuple[PlanningIntegrityFailure, ...]:
-    placeholders = ", ".join("?" for _ in OPEN_CRITERION_STATUSES)
     rows = connection.execute(
-        f"""
+        """
         SELECT ac.criterion_id, ac.plan_id, ac.status
         FROM plan_acceptance_criteria ac
         JOIN plans p ON p.plan_id = ac.plan_id
         WHERE p.status = 'completed'
-          AND ac.status IN ({placeholders})
+          AND ac.status != 'completed'
         ORDER BY ac.plan_id, ac.criterion_id
-        """,
-        tuple(sorted(OPEN_CRITERION_STATUSES)),
+        """
     ).fetchall()
     return tuple(
         PlanningIntegrityFailure(

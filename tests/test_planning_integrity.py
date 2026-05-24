@@ -151,17 +151,20 @@ def test_planning_integrity_requires_completed_plans_to_complete_criteria(tmp_pa
     )
     store.upsert_plan_acceptance_criterion(
         PlanAcceptanceCriterionRecord(
-            criterion_id="criterion-pending",
+            criterion_id="criterion-failed",
             plan_id="plan-completed",
-            description="Should have been completed.",
-            status="pending",
+            description="Should have passed.",
+            status="failed",
         )
     )
 
     failures = module.check_planning_integrity(db_path)
 
     assert any(
-        failure.check_name == "completed_plan_has_incomplete_criterion" for failure in failures
+        failure.check_name == "completed_plan_has_incomplete_criterion"
+        and "criterion-failed" in failure.reason
+        and "failed" in failure.reason
+        for failure in failures
     )
 
 

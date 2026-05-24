@@ -671,6 +671,32 @@ def test_plan_status_rejects_terminal_state_with_open_work(tmp_path):
         )
 
 
+def test_plan_status_rejects_completed_state_with_failed_criterion(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-terminal",
+            slug="terminal",
+            title="Terminal Plan",
+            goal="Reject unsatisfied criteria.",
+            status="active",
+        )
+    )
+    store.upsert_plan_acceptance_criterion(
+        PlanAcceptanceCriterionRecord(
+            criterion_id="criterion-failed",
+            plan_id="plan-terminal",
+            description="Must pass.",
+            status="failed",
+        )
+    )
+
+    with pytest.raises(ValueError, match="criterion criterion-failed is failed"):
+        store.update_plan_status("plan-terminal", "completed")
+
+    store.update_plan_status("plan-terminal", "abandoned")
+
+
 def test_planning_schema_rejects_invalid_status_and_review_values(tmp_path):
     db_path = tmp_path / "plans" / "planning.sqlite3"
     initialize_planning_database(db_path)
@@ -1710,6 +1736,56 @@ def test_claim_next_ready_afk_task_is_atomic_state_transition(tmp_path):
     )
 
 
+def test_claim_next_ready_afk_task_respects_expected_current_task_id(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-active",
+            slug="active",
+            title="Active",
+            goal="Claim one task.",
+            status="active",
+            priority=100,
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-current",
+            plan_id="plan-active",
+            title="Current task",
+            goal="Claim this exact task.",
+            task_type="AFK",
+            status="ready",
+            acceptance_criteria=["done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+        )
+    )
+
+    assert (
+        store.claim_next_ready_afk_task(
+            worker_run_id="run-stale",
+            backend="codex_exec",
+            task_id="task-stale",
+        )
+        is None
+    )
+
+    current = store.next_ready_afk_task()
+    assert current is not None
+    assert current.task_id == "task-current"
+
+    claim = store.claim_next_ready_afk_task(
+        worker_run_id="run-current",
+        backend="codex_exec",
+        task_id="task-current",
+    )
+
+    assert claim is not None
+    assert claim.task.task_id == "task-current"
+    assert claim.worker_run.task_id == "task-current"
+
+
 def test_claim_next_ready_afk_task_rejects_terminal_or_review_status(tmp_path):
     store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
 
@@ -1753,6 +1829,8 @@ def test_cli_task_claim_returns_claim_or_null(tmp_path, capsys):
                 "task-claim",
                 "--path",
                 str(db_path),
+                "--task-id",
+                "task-ready",
                 "--worker-run-id",
                 "run-cli",
                 "--json",
@@ -1771,6 +1849,8 @@ def test_cli_task_claim_returns_claim_or_null(tmp_path, capsys):
                 "task-claim",
                 "--path",
                 str(db_path),
+                "--task-id",
+                "task-ready",
                 "--worker-run-id",
                 "run-cli-empty",
                 "--json",

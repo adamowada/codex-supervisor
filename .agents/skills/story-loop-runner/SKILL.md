@@ -40,9 +40,11 @@ orientation needs dependency setup.
    `uv run --no-sync python -B -m codex_supervisor.cli task-current --json` and execute only the
    returned task.
 9. Claim the task with
-   `uv run --no-sync python -B -m codex_supervisor.cli task-claim --worker-run-id <id> --json`
+   `uv run --no-sync python -B -m codex_supervisor.cli task-claim --task-id <task_id> --worker-run-id <id> --json`
    before handing it to a worker, unless you are intentionally executing it inline in this
-   supervised thread.
+   supervised thread. If the claim returns `null`, stop and refresh `story-loop-status`; another
+   worker or thread changed the queue. If the returned `task.task_id` differs from the selected
+   `<task_id>`, stop and treat that as queue drift.
 10. Draft or load its Goal Contract with `goal-contract-drafter`; if using native Codex Goals, apply
    that skill's Goal Mode preflight and `${CODEX_HOME}/config.toml` fallback before relying on
    `/goal`.

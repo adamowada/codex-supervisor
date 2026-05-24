@@ -23,6 +23,9 @@ Required JSON fields:
 
 Rules:
 
+- If a `worker_runs.status` row is marked `completed`, the JSON `status` for its `result_path`
+  must also be `completed`. Blocked, failed, cancelled, or needs-review evidence must not be reused
+  as the completed worker result.
 - Link the JSON result through `plan_artifact_links` with relationship `worker-result`.
 - Link markdown reports separately as supporting artifacts.
 - For shared synthesized results, every `worker_run_ids` entry must be a completed worker run whose

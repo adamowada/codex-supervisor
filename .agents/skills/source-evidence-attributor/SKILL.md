@@ -17,6 +17,8 @@ Return attribution findings and proposed edits only.
 - Treat license-missing sources as reference-only until clarified.
 - Preserve required copyright, license, and notice text.
 - Add or update `ATTRIBUTIONS.md` for durable public-facing attribution.
+- When copied, adapted, or synthesized material lands under `.agents/skills`, also update
+  `.agents/skills/NOTICE.md` so the skill pack carries its own attribution surface.
 - Because `ATTRIBUTIONS.md` is protected, route completed attribution edits through
   `source-lock-operator` before ACP or publication.
 - Record a decision before direct code reuse or dependency integration.

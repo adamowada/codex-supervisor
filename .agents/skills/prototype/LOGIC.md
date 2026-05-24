@@ -71,7 +71,12 @@ Give the user the run command. They'll drive it themselves; the interesting mome
 
 ### 7. Capture the answer
 
-When the prototype has done its job, the answer to the question is the only thing worth keeping. If the user is around, ask what it taught them. If not, leave a `NOTES.md` next to the prototype so the answer can be filled in (or filled in by you, if you've watched the session) before the prototype gets deleted.
+When the prototype has done its job, the answer to the question is the only thing worth keeping. If
+the user is around, ask what it taught them. If not, record the missing verdict in the repo's
+configured handoff or task state before deleting the prototype. For `codex-supervisor`, use planning
+SQLite for task/progress state, `HANDOFF.md` for mutable resume context, and `insights/` via
+`knowledge-graph-updater` for reusable lessons. Use `NOTES.md` only when the target repo has
+explicitly adopted local prototype notes.
 
 ## Anti-patterns
 

@@ -51,7 +51,11 @@ read-only and review-only requests always override full-auto behavior for that t
 6. **Execute.** Implement one vertical slice or repair loop at a time. Use story-loop discipline for queued AFK work. Keep unrelated refactors out unless the selected skill says they are part of the task.
 7. **Verify.** Run targeted checks, then broader checks as risk demands. Record failures through the failure skills instead of hand-waving.
 8. **Review.** Use fresh-context review for branches, commits, diffs, or whole-repo reviews. Fix findings only after user or policy approval.
-9. **Record.** Update planning SQLite, source-of-truth docs, insights, issue tracker state, and handoff artifacts as appropriate.
+9. **Record.** Update planning SQLite for live state, `HANDOFF.md` for mutable resume context,
+   `insights/` for durable learning, issue trackers for reconciled remote state, and protected
+   source-of-truth docs only when stable doctrine, contracts, architecture, testing policy, or
+   public repo policy changes. Never write task progress, stage progress, or queue status into
+   protected docs.
 10. **Continue or hand off.** Pick the next ready task, publish if explicitly requested, or create a compact handoff for a fresh thread/worker.
 
 ## Fresh Thread Bootstrap Contract

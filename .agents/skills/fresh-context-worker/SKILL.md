@@ -1,14 +1,16 @@
 ---
 name: fresh-context-worker
-description: Prepare prompts and handoffs for fresh-context Codex workers. Use when designing or reviewing worker prompts, result schemas, or context handoffs; until the Stage 6 backend exists, do not imply the supervisor can launch workers automatically.
+description: Prepare prompts and handoffs for fresh-context Codex workers. Use when designing or reviewing worker prompts, result schemas, backend preflight evidence, or context handoffs for isolated Codex worker execution.
 ---
 
 # Fresh Context Worker
 
 Every worker prompt should be self-contained and small.
 
-Until ROADMAP Stage 6 is implemented, prepare a manual worker handoff or current-thread execution
-prompt. Do not claim `codex-supervisor` can launch Codex Exec workers automatically.
+Do not infer worker-launch capability from `ROADMAP.md`. Worker execution is available only when
+the selected `worker_backend`, environment preflight, and planning SQLite evidence show a launchable
+path. If no launchable backend is available, prepare a manual worker handoff or record a blocker;
+do not claim `codex-supervisor` launched a worker.
 
 If the current user turn is read-only, review-only, audit-only, no-edits, or no-mutation mode, do
 not start workers, create worktrees, write prompt artifacts, update planning state, or mutate git or

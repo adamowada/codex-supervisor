@@ -100,7 +100,11 @@ Surface the URL (and the `?variant=` keys). The user will flip through whenever 
 
 ### 6. Capture the answer and clean up
 
-Once a variant has won, write down which one and why (commit message, ADR, issue, or a `NOTES.md` next to the prototype if running AFK and the user hasn't responded yet). Then:
+Once a variant has won, write down which one and why in the repo's configured durable record. For
+`codex-supervisor`, use planning SQLite for task/progress state, `HANDOFF.md` for mutable resume
+context, and `insights/` via `knowledge-graph-updater` for reusable lessons. In other repos, use the
+configured decision, issue, or insight surface; use `NOTES.md` only when that repo has explicitly
+adopted local prototype notes. Then:
 
 - **Sub-shape A** — delete the losing variants and the switcher; fold the winner into the existing page.
 - **Sub-shape B** — promote the winning variant to a real route, delete the throwaway route and the switcher.

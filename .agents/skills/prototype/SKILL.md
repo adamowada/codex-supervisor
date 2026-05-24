@@ -35,4 +35,10 @@ files.
 
 ## When done
 
-The _answer_ is the only thing worth keeping from a prototype. Capture it somewhere durable (commit message, ADR, issue, or a `NOTES.md` next to the prototype) along with the question it was answering. If the user is around, that capture is a quick conversation; if not, leave the placeholder so they (or you, on the next pass) can fill in the verdict before deleting the prototype.
+The _answer_ is the only thing worth keeping from a prototype. Capture it in the repo's configured
+durable record for design learning: for `codex-supervisor`, use planning SQLite for task/progress
+state, `HANDOFF.md` for mutable resume context, and `insights/` via `knowledge-graph-updater` for
+reusable lessons. In other repos, use the configured decision, issue, or insight surface; use
+`NOTES.md` only when that repo has explicitly adopted local prototype notes. If the user is around,
+that capture is a quick conversation; if not, record the missing verdict as HITL or handoff context
+before deleting the prototype.

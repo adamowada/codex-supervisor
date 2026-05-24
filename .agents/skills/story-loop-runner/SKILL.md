@@ -1,6 +1,6 @@
 ---
 name: story-loop-runner
-description: Run Codex-supervisor one-story discipline manually in the current supervised thread or prepare self-contained worker prompts until the Stage 6 backend exists. Use when executing one AFK vertical slice, applying checks/review/progress records, or deciding whether another Story Loop iteration is allowed.
+description: Run Codex-supervisor one-story discipline for one AFK vertical slice. Use when claiming or executing a queued story, preparing a worker prompt, applying checks/review/progress records, or deciding whether another Story Loop iteration is allowed.
 ---
 
 # Story Loop Runner
@@ -62,10 +62,12 @@ orientation needs dependency setup.
 18. Repeat only if another ready task exists and the user or official host automation tooling
     allows it. Otherwise draft or suggest the next run; do not claim automation was created.
 
-Until the Stage 6 Codex Exec backend exists, do not imply that `codex-supervisor` can launch workers
-itself. Execute the selected story in the current supervised thread, in a manually created worktree,
-or by handing a self-contained worker prompt to Codex explicitly. Record any manual execution as a
-worker run or progress event when the planning helper surface supports it.
+Do not infer worker-launch capability from `ROADMAP.md` or stage order. Launch through the selected
+backend only when the task contract, backend configuration, environment preflight, and planning
+SQLite state support that path. If no launchable backend is available, execute the selected story in
+the current supervised thread only when explicitly appropriate, create a manual worker prompt, or
+record a blocker/HITL task. Record manual execution as a worker run or progress event when the
+planning helper surface supports it, and never describe manual execution as automatic worker launch.
 
 ## Completion Rules
 

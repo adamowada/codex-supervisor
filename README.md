@@ -113,11 +113,11 @@ it is a mutable snapshot, not the queue authority.
 Inspect the live queue before interpreting `task-current` or running broad checks:
 
 ```sh
-uv run codex-supervisor story-loop-status --json
-uv run codex-supervisor task-current --json
-uv run codex-supervisor task-list --current-queue-plans-only
-uv run codex-supervisor plan-summary --current-queue
-uv run codex-supervisor plan-list
+uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
+uv run --no-sync python -B -m codex_supervisor.cli task-current --json
+uv run --no-sync python -B -m codex_supervisor.cli task-list --current-queue-plans-only
+uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
+uv run --no-sync python -B -m codex_supervisor.cli plan-list
 ```
 
 `uv run` can create or update local dependency/cache state if the environment is missing. In a

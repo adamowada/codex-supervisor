@@ -573,8 +573,8 @@ def main(argv: list[str] | None = None) -> int:
         if all_ready_tasks:
             print("No unblocked ready AFK tasks are attached to active plans.")
             print(
-                "Run `uv run codex-supervisor story-loop-status` to distinguish HITL, blocked, "
-                "completed, and empty queue states."
+                "Run `uv run --no-sync python -B -m codex_supervisor.cli story-loop-status` "
+                "to distinguish HITL, blocked, completed, and empty queue states."
             )
             print("Other ready tasks:")
             for task in all_ready_tasks:
@@ -586,8 +586,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         print("No ready supervisor tasks found.")
         print(
-            "Run `uv run codex-supervisor story-loop-status` to confirm whether the queue is "
-            "blocked, completed, or empty."
+            "Run `uv run --no-sync python -B -m codex_supervisor.cli story-loop-status` to confirm "
+            "whether the queue is blocked, completed, or empty."
         )
         return 0
 
@@ -613,7 +613,10 @@ def main(argv: list[str] | None = None) -> int:
                 _print_json(None)
             else:
                 print("No claimable ready AFK task found.")
-                print("Run: uv run codex-supervisor story-loop-status --json")
+                print(
+                    "Run: uv run --no-sync python -B -m codex_supervisor.cli "
+                    "story-loop-status --json"
+                )
             return 0
         if args.json:
             _print_json(claim)
@@ -635,7 +638,7 @@ def main(argv: list[str] | None = None) -> int:
                 _print_json(None)
             elif args.task_id is None:
                 print("No current ready AFK task found.")
-                print("Run: uv run codex-supervisor story-loop-status")
+                print("Run: uv run --no-sync python -B -m codex_supervisor.cli story-loop-status")
             else:
                 print(f"No supervisor task found: {args.task_id}")
             return 1
@@ -1046,7 +1049,8 @@ def _open_read_store(path: Path | None) -> PlanningSQLiteStore | None:
             file=sys.stderr,
         )
         print(
-            "Run: uv run codex-supervisor plan-init --seed-bootstrap-plan",
+            "Run: uv run --no-sync python -B -m codex_supervisor.cli "
+            "plan-init --seed-bootstrap-plan",
             file=sys.stderr,
         )
         return None
@@ -1072,7 +1076,8 @@ def _open_write_store(path: Path | None) -> PlanningSQLiteStore | None:
             file=sys.stderr,
         )
         print(
-            "Run: uv run codex-supervisor plan-init --seed-bootstrap-plan",
+            "Run: uv run --no-sync python -B -m codex_supervisor.cli "
+            "plan-init --seed-bootstrap-plan",
             file=sys.stderr,
         )
         return None

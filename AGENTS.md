@@ -109,11 +109,11 @@ are already present.
 Planning:
 
 ```sh
-uv run codex-supervisor story-loop-status --json
-uv run codex-supervisor task-current --json
-uv run codex-supervisor task-list --current-queue-plans-only
-uv run codex-supervisor plan-summary --current-queue
-uv run codex-supervisor plan-list
+uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
+uv run --no-sync python -B -m codex_supervisor.cli task-current --json
+uv run --no-sync python -B -m codex_supervisor.cli task-list --current-queue-plans-only
+uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
+uv run --no-sync python -B -m codex_supervisor.cli plan-list
 ```
 
 Use read-only planning inspection commands for orientation. `story-loop-status` is the queue state

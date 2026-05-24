@@ -22,23 +22,27 @@ orientation needs dependency setup.
 
 1. Read the minimum stable orientation docs and current git state; do not use mutable handoff prose
    as queue authority.
-2. Run `uv run codex-supervisor story-loop-status --json` and branch on top-level `queue_state`.
-   The default view includes active and blocked current-queue plans; use `--all` only when
-   historical completed, abandoned, or superseded plans are in scope.
+2. Run `uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json` and branch on
+   top-level `queue_state`. The default view includes active and blocked current-queue plans; use
+   `--all` only when historical completed, abandoned, or superseded plans are in scope.
 3. After live queue state is known, read `HANDOFF.md` only as task-relevant mutable context.
-4. If `queue_state` is `running`, run `uv run codex-supervisor task-show <current_task_id> --json`,
-   report the claimed task, inspect worker-run state, and stop unless the task contract says to
-   monitor or repair it.
-5. If `queue_state` is `hitl`, run `uv run codex-supervisor task-show <current_task_id> --json`,
-   report the human checkpoint, and stop.
+4. If `queue_state` is `running`, run
+   `uv run --no-sync python -B -m codex_supervisor.cli task-show <current_task_id> --json`, report
+   the claimed task, inspect worker-run state, and stop unless the task contract says to monitor or
+   repair it.
+5. If `queue_state` is `hitl`, run
+   `uv run --no-sync python -B -m codex_supervisor.cli task-show <current_task_id> --json`, report
+   the human checkpoint, and stop.
 6. If `queue_state` is `blocked`, report blockers and stop unless the active task is explicitly a
    repair task.
 7. If `queue_state` is `completed` or `empty`, report that no executable AFK task remains.
-8. If `queue_state` is `ready`, run `uv run codex-supervisor task-current --json` and execute only
-   the returned task.
-9. Claim the task with `uv run codex-supervisor task-claim --worker-run-id <id> --json` before
-   handing it to a worker, unless you are intentionally executing it inline in this supervised
-   thread.
+8. If `queue_state` is `ready`, run
+   `uv run --no-sync python -B -m codex_supervisor.cli task-current --json` and execute only the
+   returned task.
+9. Claim the task with
+   `uv run --no-sync python -B -m codex_supervisor.cli task-claim --worker-run-id <id> --json`
+   before handing it to a worker, unless you are intentionally executing it inline in this
+   supervised thread.
 10. Draft or load its Goal Contract with `goal-contract-drafter`; if using native Codex Goals, apply
    that skill's Goal Mode preflight and `${CODEX_HOME}/config.toml` fallback before relying on
    `/goal`.

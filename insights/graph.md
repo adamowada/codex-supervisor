@@ -1,8 +1,9 @@
 # Knowledge Graph
 
 Operational pointer: this graph is descriptive memory, not the live queue. For current work, run
-`uv run codex-supervisor story-loop-status --json` and inspect `queue_state` plus
-`current_task_id`. Do not store mutable live task IDs or queue snapshots in this graph.
+`uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json` and inspect
+`queue_state` plus `current_task_id`. Do not store mutable live task IDs or queue snapshots in this
+graph.
 
 ## Nodes
 

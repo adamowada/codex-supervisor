@@ -67,10 +67,12 @@ When starting or resuming `codex-supervisor` in a fresh Codex thread:
 5. Read the minimum stable orientation set: `README.md`, `AGENTS.md`, `PLANS.md`, and
    `insights/README.md`. Do not read mutable `HANDOFF.md` before the live queue unless the user
    explicitly asks for handoff prose first.
-6. Run `uv run codex-supervisor story-loop-status --json` under the same environment condition.
-7. Run `uv run codex-supervisor plan-summary --current-queue` only when the environment is already
-   synced or dependency setup is allowed.
-8. Run `uv run codex-supervisor task-current --json` only to select an executable AFK task.
+6. Run `uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json` under the same
+   environment condition.
+7. Run `uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue` only when
+   the environment is already synced or dependency setup is allowed.
+8. Run `uv run --no-sync python -B -m codex_supervisor.cli task-current --json` only to select an
+   executable AFK task.
    In strict read-only mode with no synced environment, use existing command output, Git state, or
    the read-only SQLite fallback below and report that typed CLI orientation needs dependency setup.
 9. Treat top-level `queue_state` from `story-loop-status --json` as the queue state machine:
@@ -80,8 +82,8 @@ When starting or resuming `codex-supervisor` in a fresh Codex thread:
    `story-loop-status` view includes active and blocked current-queue plans; use `--all` for
    completed, abandoned, or superseded history.
 10. If `story-loop-status` returns `queue_state: "hitl"`, run
-   `uv run codex-supervisor task-show <current_task_id> --json` and report that task as the current
-   human checkpoint.
+   `uv run --no-sync python -B -m codex_supervisor.cli task-show <current_task_id> --json` and
+   report that task as the current human checkpoint.
 11. After the queue state and current task are known, read `HANDOFF.md` as a mutable snapshot, then
    read only the source-of-truth docs and insight files relevant to that task. Use
    `insights/README.md` as the index for insight files.

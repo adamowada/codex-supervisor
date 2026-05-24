@@ -16,6 +16,9 @@ Use `plans/planning.sqlite3` for operational planning state.
   environments, run `uv run` commands only when dependencies are already present. Otherwise use
   existing command output, Git state, or read-only SQLite inspection and report that typed CLI
   orientation needs dependency setup.
+- Prefer `uv run --no-sync python -B -m codex_supervisor.cli ...` for planning orientation and
+  worker evidence. It avoids implicit dependency sync, avoids console-script ambiguity, and keeps
+  Python bytecode/cache writes out of normal queue reads.
 - Do not write ad hoc SQL for mutations. If read-only SQL is the only available way to answer a
   planning question, open the database with `mode=ro`, state that the helper surface is missing, and
   propose the smallest typed helper. Add that helper only when the current turn permits edits.
@@ -57,18 +60,21 @@ you need completed, abandoned, or superseded historical plans.
 
 Fresh-thread recipe:
 
-1. Run `uv run codex-supervisor story-loop-status --json`.
+1. Run `uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json`.
 2. Read top-level `queue_state`; do not infer queue state from `current_task` alone.
 3. If `queue_state` is `hitl`, read `current_task_id` from that output and run
-   `uv run codex-supervisor task-show <current_task_id> --json`.
-4. If `queue_state` is `ready`, run `uv run codex-supervisor task-current --json`, report the
-   selected AFK task, and route execution to `story-loop-runner`.
-5. Use `uv run codex-supervisor task-list --current-queue-plans-only --json` for current-queue task
-   audits that include active and blocked plans.
-6. Use `uv run codex-supervisor plan-summary --current-queue --json` for current-queue milestones,
-   criteria, decisions, progress, artifact links, or worker runs. Use active-only flags only for a
-   deliberately narrow active-plan audit, and use `story-loop-status --all` or `plan-list` when
-   historical rows are in scope.
+   `uv run --no-sync python -B -m codex_supervisor.cli task-show <current_task_id> --json`.
+4. If `queue_state` is `ready`, run
+   `uv run --no-sync python -B -m codex_supervisor.cli task-current --json`, report the selected
+   AFK task, and route execution to `story-loop-runner`.
+5. Use
+   `uv run --no-sync python -B -m codex_supervisor.cli task-list --current-queue-plans-only --json`
+   for current-queue task audits that include active and blocked plans.
+6. Use
+   `uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue --json` for
+   current-queue milestones, criteria, decisions, progress, artifact links, or worker runs. Use
+   active-only flags only for a deliberately narrow active-plan audit, and use
+   `story-loop-status --all` or `plan-list` when historical rows are in scope.
 7. Do not inspect all historical `supervisor_tasks` as a current queue unless debugging drift.
 
 If fallback read-only SQL sees `ready` tasks on completed, abandoned, superseded, or otherwise
@@ -109,16 +115,16 @@ instead. Update locked source-of-truth documents only when a stable planning con
 Read/orient:
 
 ```sh
-uv run codex-supervisor story-loop-status
-uv run codex-supervisor story-loop-status --json
-uv run codex-supervisor task-current --json
-uv run codex-supervisor task-show <task-id> --json
-uv run codex-supervisor task-list --current-queue-plans-only --json
-uv run codex-supervisor plan-summary --current-queue
-uv run codex-supervisor plan-list
-uv run codex-supervisor worker-run-list --json
-uv run codex-supervisor worker-run-show <worker-run-id> --json
-uv run codex-supervisor goal-contract-render --task-id <task-id>
+uv run --no-sync python -B -m codex_supervisor.cli story-loop-status
+uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
+uv run --no-sync python -B -m codex_supervisor.cli task-current --json
+uv run --no-sync python -B -m codex_supervisor.cli task-show <task-id> --json
+uv run --no-sync python -B -m codex_supervisor.cli task-list --current-queue-plans-only --json
+uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
+uv run --no-sync python -B -m codex_supervisor.cli plan-list
+uv run --no-sync python -B -m codex_supervisor.cli worker-run-list --json
+uv run --no-sync python -B -m codex_supervisor.cli worker-run-show <worker-run-id> --json
+uv run --no-sync python -B -m codex_supervisor.cli goal-contract-render --task-id <task-id>
 ```
 
 Initialize/write:
@@ -127,23 +133,23 @@ Use these only when the turn allows repository writes. In read-only, review-only
 edit yet" mode, report the exact command you would run instead of mutating `plans/planning.sqlite3`.
 
 ```sh
-uv run codex-supervisor plan-init --seed-bootstrap-plan
-uv run codex-supervisor plan-upsert ...
-uv run codex-supervisor milestone-upsert ...
-uv run codex-supervisor criterion-upsert ...
-uv run codex-supervisor decision-add ...
-uv run codex-supervisor progress-add ...
-uv run codex-supervisor artifact-link-add ...
-uv run codex-supervisor commit-link-add ...
-uv run codex-supervisor task-upsert ...
-uv run codex-supervisor task-claim --worker-run-id <worker-run-id> ...
-uv run codex-supervisor worker-run-upsert ...
-uv run codex-supervisor plan-status ...
-uv run codex-supervisor milestone-status ...
-uv run codex-supervisor criterion-status ...
-uv run codex-supervisor task-status ...
-uv run codex-supervisor worker-run-status ... --result-path <path>
-uv run codex-supervisor story-loop-record ...
+uv run --no-sync python -B -m codex_supervisor.cli plan-init --seed-bootstrap-plan
+uv run --no-sync python -B -m codex_supervisor.cli plan-upsert ...
+uv run --no-sync python -B -m codex_supervisor.cli milestone-upsert ...
+uv run --no-sync python -B -m codex_supervisor.cli criterion-upsert ...
+uv run --no-sync python -B -m codex_supervisor.cli decision-add ...
+uv run --no-sync python -B -m codex_supervisor.cli progress-add ...
+uv run --no-sync python -B -m codex_supervisor.cli artifact-link-add ...
+uv run --no-sync python -B -m codex_supervisor.cli commit-link-add ...
+uv run --no-sync python -B -m codex_supervisor.cli task-upsert ...
+uv run --no-sync python -B -m codex_supervisor.cli task-claim --worker-run-id <worker-run-id> ...
+uv run --no-sync python -B -m codex_supervisor.cli worker-run-upsert ...
+uv run --no-sync python -B -m codex_supervisor.cli plan-status ...
+uv run --no-sync python -B -m codex_supervisor.cli milestone-status ...
+uv run --no-sync python -B -m codex_supervisor.cli criterion-status ...
+uv run --no-sync python -B -m codex_supervisor.cli task-status ...
+uv run --no-sync python -B -m codex_supervisor.cli worker-run-status ... --result-path <path>
+uv run --no-sync python -B -m codex_supervisor.cli story-loop-record ...
 ```
 
 Use `story-loop-record` for one-story progress when artifact links belong to the same iteration; it

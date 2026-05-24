@@ -102,6 +102,10 @@ Major additions now present:
 - The Stage 6 Codex Exec backend successor is recorded durably as
   `plan-stage6-codex-exec-backend`. After ACP commit `e422e16` and queue reconciliation commit
   `a024555`, its design task is now the next ready AFK task.
+- Bootstrap validation was hardened in commit `5bd711a`: ready/open AFK transitions require
+  executable contracts, verification evidence prefers no-sync/cache-safe commands, historical AFK
+  tasks have structured worker-result evidence, and planning integrity catches historical ready-task
+  drift.
 - Latest six-lane follow-up hardening tightened skill mutation guards, made Codex Exec decision
   wording explicit about Stage 6, added the Matt Pocock MIT skill reuse decision, made worker-result
   snapshot evidence date-bound, and linked remaining checkpoint artifacts in planning SQLite.
@@ -126,12 +130,14 @@ Major additions now present:
   `changed_files` focused on implementation or durable-documentation changes rather than proof
   artifacts.
 
-Implementation checks last passed in the drift-repair working tree on 2026-05-24 with:
+Implementation checks last passed on 2026-05-24 at commit `5bd711a` with:
 
 - `uv run python -B scripts/verify.py`
+- `uv run python -B scripts/verify.py --publication-ready`
 
-This covers 220 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
-hygiene, planning integrity, skill inventory, source inventory, protected locks, and
+This covers 227 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
+hygiene, publication-ready public hygiene, planning integrity, skill inventory, source inventory,
+protected locks, and
 `uv lock --check`. Run `git rev-parse --short HEAD` in the fresh thread for the exact committed
 snapshot, because this mutable handoff should not be treated as a self-identifying commit hash.
 
@@ -149,10 +155,10 @@ Inspect plans/planning.sqlite3 through the existing typed planning helpers and s
 plans, decisions, progress events, and next tasks. Use:
 
 ```sh
-uv run codex-supervisor story-loop-status --json
-uv run codex-supervisor task-current --json
-uv run codex-supervisor task-list --current-queue-plans-only
-uv run codex-supervisor plan-summary --current-queue
+uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
+uv run --no-sync python -B -m codex_supervisor.cli task-current --json
+uv run --no-sync python -B -m codex_supervisor.cli task-list --current-queue-plans-only
+uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
 Use `story-loop-status --json` as the queue state machine. `task-current --json` is only the AFK
@@ -175,8 +181,9 @@ As of this handoff snapshot, the expected state is `queue_state: "ready"` with c
 `task-stage6-codex-exec-backend-design` under active plan `plan-stage6-codex-exec-backend`. The
 bootstrap publication checkpoint is completed and linked to ACP commit
 `e422e16173cafffe87505dd540f54a22c9f1cabd`; queue reconciliation is linked to
-`a024555732bbd24a757bfb4fb85b879509464ac6`. If the database reports a different state, trust the
-database and call out this handoff as stale.
+`a024555732bbd24a757bfb4fb85b879509464ac6`; bootstrap validation hardening is linked to
+`5bd711acac6c3dc63fc37361991d9641d4825d93`. If the database reports a different state, trust the
+database and call out this handoff snapshot as stale.
 
 ROADMAP Stage 5 is implemented locally. Begin from the current database state rather than from stale
 handoff prose.

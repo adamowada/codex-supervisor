@@ -25,10 +25,10 @@ Include:
 ## Drafting Rules
 
 - In `codex-supervisor`, prefer the typed renderer first:
-  `uv run codex-supervisor goal-contract-render --task-id <task-id>`. Use the manual template only
-  when the task is outside planning SQLite or the renderer is unavailable. Run this only when the
-  repo environment is already synced or setup is explicitly in scope; otherwise inspect the task
-  read-only and report the renderer preflight gap.
+  `uv run --no-sync python -B -m codex_supervisor.cli goal-contract-render --task-id <task-id>`.
+  Use the manual template only when the task is outside planning SQLite or the renderer is
+  unavailable. Run this only when the repo environment is already synced or setup is explicitly in
+  scope; otherwise inspect the task read-only and report the renderer preflight gap.
 - Prefer one goal per worker or active thread.
 - Make the stop condition checkable by another Codex thread.
 - Tie every acceptance criterion to a verification surface.

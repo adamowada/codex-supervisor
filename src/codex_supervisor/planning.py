@@ -452,6 +452,19 @@ class PlanningQueueSnapshot:
     criteria: tuple[PlanAcceptanceCriterionRecord, ...]
 
 
+@dataclass(frozen=True)
+class PlanningSummarySnapshot:
+    plans: tuple[PlanRecord, ...]
+    milestones: tuple[PlanMilestoneRecord, ...]
+    criteria: tuple[PlanAcceptanceCriterionRecord, ...]
+    decisions: tuple[PlanDecisionRecord, ...]
+    progress: tuple[PlanProgressRecord, ...]
+    tasks: tuple[SupervisorTaskSummaryRecord, ...]
+    commit_links: tuple[PlanCommitLinkRecord, ...]
+    artifact_links: tuple[PlanArtifactLinkRecord, ...]
+    worker_runs: tuple[WorkerRunRecord, ...]
+
+
 class PlanningSQLiteStore:
     """Repository wrapper around the tracked planning SQLite database."""
 
@@ -857,6 +870,37 @@ class PlanningSQLiteStore:
                 tasks=_list_supervisor_task_summaries(connection),
                 worker_runs=_list_worker_runs(connection),
                 criteria=_list_plan_acceptance_criteria(connection),
+            )
+
+    def read_summary_snapshot(self) -> PlanningSummarySnapshot:
+        """Read plan-summary inputs from a single SQLite snapshot."""
+
+        with self.connect() as connection:
+            milestones = connection.execute(
+                "SELECT * FROM plan_milestones ORDER BY plan_id, sort_order, milestone_id"
+            ).fetchall()
+            decisions = connection.execute(
+                "SELECT * FROM plan_decisions ORDER BY decided_at DESC, decision_id"
+            ).fetchall()
+            progress = connection.execute(
+                "SELECT * FROM plan_progress_events ORDER BY occurred_at DESC, progress_id"
+            ).fetchall()
+            artifact_links = connection.execute(
+                "SELECT * FROM plan_artifact_links ORDER BY plan_id, artifact_id, relationship"
+            ).fetchall()
+            commit_links = connection.execute(
+                "SELECT * FROM plan_commit_links ORDER BY plan_id, commit_sha, relationship"
+            ).fetchall()
+            return PlanningSummarySnapshot(
+                plans=_list_plans(connection),
+                milestones=tuple(_plan_milestone_from_row(row) for row in milestones),
+                criteria=_list_plan_acceptance_criteria(connection),
+                decisions=tuple(_plan_decision_from_row(row) for row in decisions),
+                progress=tuple(_plan_progress_from_row(row) for row in progress),
+                tasks=_list_supervisor_task_summaries(connection),
+                commit_links=tuple(_plan_commit_link_from_row(row) for row in commit_links),
+                artifact_links=tuple(_plan_artifact_link_from_row(row) for row in artifact_links),
+                worker_runs=_list_worker_runs(connection),
             )
 
     def upsert_supervisor_task(

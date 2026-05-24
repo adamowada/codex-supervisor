@@ -32,6 +32,7 @@ from codex_supervisor.planning import (
     PlanDecisionRecord,
     PlanMilestoneRecord,
     PlanningSQLiteStore,
+    PlanningSummarySnapshot,
     PlanProgressRecord,
     PlanRecord,
     SupervisorTaskRecord,
@@ -402,11 +403,11 @@ def main(argv: list[str] | None = None) -> int:
         read_store = _open_read_store(args.path)
         if read_store is None:
             return 1
-        all_plans = _read_or_report(read_store.list_plans)
-        if all_plans is None:
+        snapshot = _read_or_report(read_store.read_summary_snapshot)
+        if snapshot is None:
             return 1
         if args.plan_id is not None:
-            plans = tuple(plan for plan in all_plans if plan.plan_id == args.plan_id)
+            plans = tuple(plan for plan in snapshot.plans if plan.plan_id == args.plan_id)
             if not plans:
                 if args.json:
                     _print_json(())
@@ -417,17 +418,14 @@ def main(argv: list[str] | None = None) -> int:
             print("--active-only and --current-queue are mutually exclusive", file=sys.stderr)
             return 1
         elif args.current_queue:
-            plans = tuple(plan for plan in all_plans if plan.status in CURRENT_QUEUE_PLAN_STATUSES)
+            plans = tuple(
+                plan for plan in snapshot.plans if plan.status in CURRENT_QUEUE_PLAN_STATUSES
+            )
         elif args.active_only:
-            plans = tuple(plan for plan in all_plans if plan.status == "active")
+            plans = tuple(plan for plan in snapshot.plans if plan.status == "active")
         else:
-            plans = all_plans
-        summary_store = read_store
-        summaries = _read_or_report(
-            lambda: tuple(_build_plan_summary_entry(summary_store, plan) for plan in plans)
-        )
-        if summaries is None:
-            return 1
+            plans = snapshot.plans
+        summaries = tuple(_build_plan_summary_entry(snapshot, plan) for plan in plans)
         if args.json:
             _print_json(summaries)
             return 0
@@ -1446,21 +1444,37 @@ def _to_jsonable(value: object) -> Any:
 
 
 def _build_plan_summary_entry(
-    store: PlanningSQLiteStore,
+    snapshot: PlanningSummarySnapshot,
     plan: PlanRecord,
 ) -> dict[str, object]:
-    tasks = tuple(task for task in store.list_supervisor_tasks() if task.plan_id == plan.plan_id)
+    tasks = tuple(task for task in snapshot.tasks if task.plan_id == plan.plan_id)
     task_ids = {task.task_id for task in tasks}
     return {
         "plan": plan,
-        "milestones": store.list_plan_milestones(plan_id=plan.plan_id),
-        "acceptance_criteria": store.list_plan_acceptance_criteria(plan_id=plan.plan_id),
-        "decisions": store.list_plan_decisions(plan_id=plan.plan_id),
-        "progress": store.list_plan_progress(plan_id=plan.plan_id),
+        "milestones": tuple(
+            milestone for milestone in snapshot.milestones if milestone.plan_id == plan.plan_id
+        ),
+        "acceptance_criteria": tuple(
+            criterion for criterion in snapshot.criteria if criterion.plan_id == plan.plan_id
+        ),
+        "decisions": tuple(
+            decision for decision in snapshot.decisions if decision.plan_id == plan.plan_id
+        ),
+        "progress": tuple(
+            progress for progress in snapshot.progress if progress.plan_id == plan.plan_id
+        ),
         "tasks": tasks,
-        "commit_links": store.list_plan_commit_links(plan_id=plan.plan_id),
-        "artifact_links": store.list_plan_artifact_links(plan_id=plan.plan_id),
-        "worker_runs": tuple(run for run in store.list_worker_runs() if run.task_id in task_ids),
+        "commit_links": tuple(
+            commit_link
+            for commit_link in snapshot.commit_links
+            if commit_link.plan_id == plan.plan_id
+        ),
+        "artifact_links": tuple(
+            artifact_link
+            for artifact_link in snapshot.artifact_links
+            if artifact_link.plan_id == plan.plan_id
+        ),
+        "worker_runs": tuple(run for run in snapshot.worker_runs if run.task_id in task_ids),
     }
 
 

@@ -202,6 +202,8 @@ Confidence: confirmed.
 - Skill guardrails now sharpen golden-eval fixtures, preserve test coverage during architecture
   deepening, classify `HANDOFF.md` as mutable snapshot rather than doctrine, and make
   `.out-of-scope/` an opt-in triage pattern.
+- `plan-summary` now reads its plan, task, worker-run, decision, progress, and link inputs through a
+  single typed summary snapshot instead of assembling a report across multiple SQLite reads.
 
 ## Remaining Watch Items
 

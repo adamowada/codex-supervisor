@@ -53,3 +53,12 @@ Ralph demonstrates that autonomous coding loops become easier to control when ea
 with fresh context, selects one incomplete story, runs checks, records progress, and stops or moves
 to the next story. `codex-supervisor` should apply this as Story Loop policy over `AFK` supervisor
 tasks.
+
+## Current Queue Over Active Only
+
+Confidence: confirmed.
+
+Fresh threads need to see blocked successor plans as part of the current queue. Use
+`story-loop-status --json`, `plan-summary --current-queue`, and
+`task-list --current-queue-plans-only` for orientation; reserve active-only views for deliberately
+narrow audits.

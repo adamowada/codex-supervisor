@@ -10,7 +10,21 @@ readme = "README.md"
 requires-python = ">=3.14"
 license = "MIT"
 authors = [{ name = "Adam Owada" }]
+keywords = ["agentic-coding", "codex", "sqlite", "skills", "worktrees"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Software Development :: Build Tools",
+  "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = []
+
+[project.urls]
+Repository = "https://github.com/adamowada/codex-supervisor"
+Issues = "https://github.com/adamowada/codex-supervisor/issues"
 
 [project.scripts]
 codex-supervisor = "codex_supervisor.cli:main"
@@ -26,9 +40,10 @@ dev = [
 package = true
 
 [tool.pytest.ini_options]
-addopts = "-ra"
+addopts = "-ra -p no:cacheprovider"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100

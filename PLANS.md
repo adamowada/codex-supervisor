@@ -48,6 +48,27 @@ plans/planning.sqlite3
 
 The database is initialized by `codex_supervisor.planning.initialize_planning_database()`.
 
+Inspection commands and helpers must open the existing database read-only. Do not initialize,
+migrate, or create `plans/planning.sqlite3` just to answer orientation questions such as the current
+task, current-queue plans, decisions, or recent progress.
+
+Mutations must use typed helpers or CLI commands. `plan-upsert`, `milestone-upsert`, and
+`criterion-upsert` create or replace planning structure; lifecycle/status commands only update
+existing rows. `task-upsert` and `worker-run-upsert` preserve omitted optional contract/evidence
+fields when updating existing rows; pass `--replace` only when intentionally resetting omitted
+fields to empty/default values.
+
+For current-work discovery, `story-loop-status` is the state machine. It distinguishes ready AFK,
+running, HITL, blocked, completed, and empty queues across active and blocked current-queue plans by
+default; `--all` adds completed, abandoned, and superseded history. `task-current` is only the
+executable AFK selector. A null `task-current` result is not enough to say "there is no task" until
+`story-loop-status` also reports `completed` or `empty`; in `running` or `hitl`, inspect the reported
+`current_task_id` with `task-show`.
+
+Use `plan-summary --current-queue` and `task-list --current-queue-plans-only` for fresh-thread
+orientation. Use `--active-only` or `--active-plans-only` only when the task explicitly excludes
+blocked successor plans.
+
 ## Required Tables
 
 ### `plans`
@@ -67,6 +88,10 @@ One row per active, completed, abandoned, or superseded plan.
 | `owner_agent` | Current coordinator. |
 | `superseded_by_plan_id` | Replacement plan ID. |
 | `created_at` / `updated_at` | UTC timestamps. |
+
+Terminal plan states (`completed`, `abandoned`, and `superseded`) must not hide open work. Before a
+plan enters a terminal state, child tasks must be terminal, milestones must be completed or
+cancelled, and acceptance criteria must be completed, failed, or cancelled.
 
 ### `plan_milestones`
 
@@ -106,12 +131,36 @@ Until dedicated Goal Contract tables exist, task-level goal/story-loop metadata 
 - `out_of_scope_json` for non-goals and blocked conditions;
 - `acceptance_criteria_json` for evidence-based stop conditions;
 - `verification_commands_json` for validation surfaces;
-- `worker_runs.metadata_json` for observed native Codex Goal state and story-loop iteration data.
+- `plan_progress_events.details` for story-loop iteration metadata such as task/run IDs;
+- `worker_runs.metadata_json` for observed native Codex Goal state and worker execution metadata.
+
+Open AFK tasks on active or blocked plans must already carry executable contracts: nonempty
+acceptance criteria, cache-safe verification commands, and repo-relative allowed paths. A blocked
+task is not a parking lot for an unsafe future contract; it should be ready to execute once the
+blocker is resolved.
 
 ### `worker_runs`
 
 One row per worker invocation, including backend, worktree, prompt, status, timing, result file, and
 failure class.
+
+Use `task-claim` or the typed claim helper when a worker is taking ownership of the next ready AFK
+task. A claim must update the task to `running` and create the worker run in one transaction so two
+fresh threads cannot claim the same task.
+
+Completed worker runs must point `result_path` at an existing repo-local JSON result artifact and
+link that artifact through `plan_artifact_links` with relationship `worker-result`. The artifact
+must satisfy the Worker Result Contract in `CONTRACTS.md`, including worker-run identity coverage,
+shared `worker_run_ids` entries that are completed runs with the same `result_path`, nonempty
+completed-run evidence fields, zero-exit structured test records, exact acceptance-criterion
+evidence, `changed_files` and `artifacts` entries for the JSON result file itself, and changed files
+covered by task `allowed_paths_json`; markdown reports can be linked separately as supporting
+evidence. Use tracked paths for durable result evidence that must survive publication, and keep
+ignored `artifacts/`, `runs/`, `worktrees/`, and `logs/` for ephemeral local output.
+
+Use `worker-run-status ... --status completed --result-path <json>` or `worker-run-upsert` for normal
+completion writes; the typed helper auto-links the result artifact as `worker-result`. Manual
+`artifact-link-add` is still useful for supporting reports, prompts, or non-result evidence.
 
 ## Correct Usage
 
@@ -123,7 +172,7 @@ Create or update a plan when work:
 - changes how future projects are spawned;
 - touches source locks, planning DB schema, or the insights graph.
 
-For each active plan:
+For each active or blocked current-queue plan:
 
 - create a `plans` row before implementation;
 - add milestones and acceptance criteria;
@@ -141,9 +190,12 @@ Do not:
 - hide durable decisions only in worker logs;
 - create loose markdown plans in the repo root;
 - mark a plan completed until acceptance criteria are verified or waived;
+- mark a plan abandoned, completed, or superseded while it still has open child work;
 - edit locked top-level documents without updating the source lock guard.
 
-## Bootstrap Plan
+## Bootstrap Seed Contract
 
-The initial database should contain `plan-bootstrap-supervisor`, which covers the creation of this
-repo, source-of-truth documents, source clones, Python skeleton, and handoff for implementation.
+The initial database seed should contain `plan-bootstrap-supervisor`, which covers the creation of
+this repo, source-of-truth documents, source clones, Python skeleton, and handoff for implementation.
+This is historical seed doctrine, not the current-work selector. Current work must always come from
+`story-loop-status`, then `task-show <current_task_id>` or `task-current` according to queue state.

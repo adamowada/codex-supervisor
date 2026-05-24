@@ -32,9 +32,11 @@ This skill is informed by the project's domain model. Domain language gives name
 
 ### 1. Explore
 
-Read the repo's configured source-of-truth docs first. For `codex-supervisor`, read the protected top-level docs, `insights/`, and planning SQLite records relevant to the review. For spawned projects, read `docs/agents/source-of-truth.md`, `docs/agents/domain.md`, `CONTEXT.md`, `CONTEXT-MAP.md`, and ADRs when present.
+Read the repo's configured source-of-truth docs first. For `codex-supervisor`, read the protected top-level docs, `insights/`, and planning SQLite records relevant to the review. For spawned projects, read `docs/agents/source-of-truth.md`, `docs/agents/domain.md`, `CONTEXT.md`, `CONTEXT-MAP.md`, and ADRs when present; if those lightweight docs are absent, fall back to the spawned-project top-level scaffold (`README.md`, `AGENTS.md`, `PLANS.md`, `ARCHITECTURE.md`, `CONTRACTS.md`, `SOP.md`, and `HANDOFF.md`).
 
-Then walk the codebase. Spawn read-only Codex explorer subagents when available; otherwise explore locally. Do not follow rigid heuristics. Explore organically and note where you experience friction:
+Then walk the codebase. Spawn read-only Codex explorer subagents when the host exposes subagent
+tools; otherwise explore locally or prepare self-contained read-only prompts. Do not follow rigid
+heuristics. Explore organically and note where you experience friction:
 
 - Where does understanding one concept require bouncing between many small modules?
 - Where are modules **shallow**, with an interface nearly as complex as the implementation?
@@ -49,6 +51,10 @@ Apply the deletion test to anything you suspect is shallow. Would deleting it co
 Prefer a concise Markdown summary unless the user asks for a visual report or the architecture is easier to compare visually.
 
 For `codex-supervisor` and spawned projects, write generated reports under `artifacts/architecture-reviews/` so they stay ignored by git. If the repo has no ignored artifact path, use the OS temp directory and tell the user the absolute path.
+
+If the current turn is read-only, review-only, audit-only, no-edits, or no-mutation, do not write
+generated reports or update durable knowledge. Return the ranked candidates in chat and include the
+proposed report path or knowledge-graph updates as follow-up actions.
 
 When creating HTML, use [HTML-REPORT.md](HTML-REPORT.md). Prefer static local CSS and inline diagrams when the report must work offline. CDN-based Tailwind or Mermaid is acceptable only when network access is allowed and the report notes that dependency.
 
@@ -67,7 +73,10 @@ Use project domain vocabulary plus [LANGUAGE.md](LANGUAGE.md) vocabulary. If a d
 
 **Decision conflicts:** if a candidate contradicts an existing decision record, surface it only when the friction is real enough to warrant revisiting that decision. Mark it clearly.
 
-Do not propose interfaces yet. After candidates are presented, ask the user: "Which of these would you like to explore?"
+Do not propose interfaces yet in interactive mode. After candidates are presented, ask the user:
+"Which of these would you like to explore?" In approved AFK or dangerous full-auto mode, choose the
+top recommendation only when the source-of-truth docs and planning task make the priority clear;
+otherwise return the ranked candidates as HITL follow-up tasks.
 
 ### 3. Grilling Loop
 

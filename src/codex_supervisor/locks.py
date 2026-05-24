@@ -3,8 +3,25 @@
 from __future__ import annotations
 
 import hashlib
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+PROTECTED_FILES = (
+    ".gitignore",
+    ".gitattributes",
+    "README.md",
+    "AGENTS.md",
+    "PLANS.md",
+    "ARCHITECTURE.md",
+    "CONTRACTS.md",
+    "ROADMAP.md",
+    "SOP.md",
+    "TESTING.md",
+    "DECISIONS.md",
+    "LICENSE",
+    "ATTRIBUTIONS.md",
+)
 
 
 @dataclass(frozen=True)
@@ -58,3 +75,22 @@ def check_protected_files(
                 )
             )
     return tuple(failures)
+
+
+def untracked_protected_files(
+    repo_root: Path,
+    protected_files: tuple[str, ...] = PROTECTED_FILES,
+) -> tuple[str, ...]:
+    """Return protected files that are present locally but absent from the git index."""
+
+    completed = subprocess.run(
+        ("git", "ls-files", "-z", "--", *protected_files),
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=False,
+    )
+    tracked = {
+        item.decode("utf-8").replace("\\", "/") for item in completed.stdout.split(b"\0") if item
+    }
+    return tuple(relative_path for relative_path in protected_files if relative_path not in tracked)

@@ -7,6 +7,10 @@ description: Build a throwaway prototype to flesh out a design before committing
 
 A prototype is **throwaway code that answers a question**. The question decides the shape.
 
+If the current user turn is read-only or review-only, do not create prototype files, routes,
+fixtures, scratch databases, or generated assets. Return the proposed prototype shape, run command,
+and cleanup contract only.
+
 ## Pick a branch
 
 Identify which question is being answered — from the user's prompt, the surrounding code, or by asking if the user is around:
@@ -24,6 +28,10 @@ The two branches produce very different artifacts — getting this wrong wastes 
 4. **Skip the polish.** No tests, no error handling beyond what makes the prototype _runnable_, no abstractions. The point is to learn something fast and then delete it.
 5. **Surface the state.** After every action (logic) or on every variant switch (UI), print or render the full relevant state so the user can see what changed.
 6. **Delete or absorb when done.** When the prototype has answered its question, either delete it or fold the validated decision into the real code — don't leave it rotting in the repo.
+
+For full-auto work, create prototypes in an isolated worktree when possible and return a cleanup
+contract: prototype path, run command, learned answer, delete-or-promote decision, and any remaining
+files.
 
 ## When done
 

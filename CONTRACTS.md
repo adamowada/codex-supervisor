@@ -27,6 +27,15 @@ Required fields:
 AFK tasks must be implementable by a worker without new human input. HITL tasks require a human
 decision, design review, credential, or product judgment.
 
+## Agent Taxonomy
+
+- `supervisor`: the coordinator that reads source of truth, selects work, routes skills, and records
+  durable state.
+- `worker`: a fresh-context implementation run responsible for one task contract.
+- `explorer`: a read-only investigation lane that returns findings but does not mutate state.
+- `reviewer`: a fresh-context review lane focused on bugs, regressions, contract drift, and risk.
+- `handoff`: a compact artifact that lets a new thread resume without depending on chat memory.
+
 ## Goal Contract
 
 A Goal Contract is an execution contract for one thread or worker, derived from a supervisor task.
@@ -54,7 +63,9 @@ A story loop executes one vertical slice per iteration.
 
 Required loop rules:
 
-- select the highest-priority ready `AFK` task with no blocked dependencies;
+- select the highest-priority executable `AFK` task on an active plan with no unresolved blockers
+  and with nonempty acceptance criteria, verification commands, and safe repo-relative allowed
+  paths;
 - execute exactly one story before broadening scope;
 - verify with the task's commands or artifacts;
 - run review when required;
@@ -71,17 +82,60 @@ Every worker must emit a structured result.
 
 Required fields:
 
+- `worker_run_id` for a single-run result, or `worker_run_ids` for an intentionally shared
+  synthesized result whose entries are completed worker runs with the same `result_path`
 - `status`: `completed`, `blocked`, `failed`, or `needs_review`
 - `summary`
 - `changed_files`
-- `tests_run`
-- `acceptance_results`
+- `tests_run`: objects with `command`, `exit_code`, and a short result summary
+- `acceptance_results`: exact task acceptance criteria mapped to passing evidence
 - `risks`
 - `follow_up_tasks`
 - `artifacts`
 - `handoff_notes`
 
 Codex workers should use `codex exec --json --output-schema` once the backend is implemented.
+Completed worker-run rows must link `result_path` to an existing repo-local JSON artifact with the
+`worker-result` relationship in `plan_artifact_links`. Local
+integrity checks validate this required field set, field types, status vocabulary, artifact
+existence, worker-run identity coverage, shared `worker_run_ids` membership against completed runs
+with the same `result_path`, task verification coverage with zero exit codes, exact
+acceptance-criterion coverage, changed-file alignment with `allowed_paths_json`, and the
+`plan_artifact_links` relationship.
+Publication-ready durable evidence should live in tracked repo-local paths such as `insights/`;
+ignored paths such as `artifacts/`, `runs/`, `worktrees/`, and `logs/` are ephemeral run output and
+cannot satisfy the publication gate.
+
+When `status` is `completed`, these evidence fields must be nonempty: `summary`, `changed_files`,
+`tests_run`, `acceptance_results`, `artifacts`, and `handoff_notes`. A completed worker result that
+only says "done" without changed files, verification evidence, artifacts, and acceptance mapping is
+not durable enough to advance the Story Loop.
+
+The `changed_files` and `artifacts` lists must both include the JSON result file itself, exactly
+matching the worker-run `result_path`. Supporting reports, logs, and markdown summaries can appear
+alongside it, but they do not replace the result artifact.
+
+Each `tests_run` entry needs a nonblank summary that reports durable evidence without stale
+phrasing such as "passed at the time." If a command no longer passes in the current bootstrap
+checkpoint, do not preserve it as passing evidence; replace it with a current passing verifier or
+record the residual risk separately.
+
+Example `tests_run` entry:
+
+```json
+{"command":"uv run python -B -m pytest -q -p no:cacheprovider","exit_code":0,"summary":"passed"}
+```
+
+Example `acceptance_results` entry:
+
+```json
+{
+  "Default verification passes before handoff.": {
+    "status": "passed",
+    "evidence": "Cache-safe component verification passed; publication-ready verification remains gated by the HITL ACP checkpoint."
+  }
+}
+```
 
 ## Codex Local State Import Contract
 
@@ -123,19 +177,38 @@ security/safety risk, and unclear handoff state.
 
 ## Project Spawn Contract
 
-Any project spawned by the supervisor should begin with:
+Any production-intended project spawned by the supervisor should begin with the base scaffold:
 
 - `README.md`
 - `AGENTS.md`
 - `PLANS.md`
 - `ARCHITECTURE.md`
 - `CONTRACTS.md`
+- `ROADMAP.md`
 - `TESTING.md`
 - `DECISIONS.md`
 - `SOP.md`
+- `LICENSE`
+- `ATTRIBUTIONS.md`
+- `HANDOFF.md`
+- `.gitignore`
+- `.gitattributes`
 - `plans/planning.sqlite3`
+- `scripts/verify.py`
+- `scripts/print_protected_hashes.py`
 - `scripts/check_protected_files.py`
+- `scripts/check_file_justification.py`
+- `scripts/check_planning_integrity.py`
+- `scripts/check_public_repo_hygiene.py`
 - `insights/README.md`
-- project-relevant `.agents/skills/`
 
-This is the default SOP unless the user explicitly asks for a smaller project.
+Add the optional skill/source module only when the project needs repo-local skills or OSS study
+sources:
+
+- `scripts/check_skill_inventory.py`
+- `scripts/check_source_inventory.py`
+- project-relevant `.agents/skills/`
+- `sources/README.md`
+
+This is the default SOP unless the user explicitly asks for a smaller project. Do not create empty
+skill or source inventory surfaces just to satisfy the supervisor pattern.

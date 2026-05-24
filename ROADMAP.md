@@ -1,11 +1,16 @@
 # Roadmap
 
+Roadmap status is descriptive, not the work selector. Fresh threads must use
+`story-loop-status`, `task-current`, and `plans/planning.sqlite3` for current queue state.
+
 ## Stage 0: Bootstrap Repository
 
 Create the repo, source-of-truth documents, ignored source clones, Python skeleton, planning
 database, source locks, and clean handoff.
 
-Status: in progress.
+Status: completed locally. The canonical current state lives in `plans/planning.sqlite3`, and
+publication/reproducible-clean-clone readiness remains blocked until the active HITL ACP checkpoint
+is approved and published.
 
 ## Stage 1: Planning SQLite Core
 
@@ -17,7 +22,15 @@ Implement and test:
 - milestone, acceptance, decision, progress, artifact, commit helpers;
 - task and worker-run tables.
 
+Status: completed. Typed helpers and CLI commands can inspect and mutate plans, decisions,
+progress, artifact links, commit links, supervisor tasks, worker runs, and lifecycle status.
+
 ## Stage 2: Source Locks
+
+Status: partial/completed locally for the bootstrap guard. The protected manifest, hash check
+command, git-index tracking check, and local verification integration are present. A dedicated
+intentional re-lock CLI remains future work; for now, hashes are updated through
+`scripts/print_protected_hashes.py` and `scripts/check_protected_files.py`.
 
 Implement:
 
@@ -48,7 +61,13 @@ Compile plans into vertical-slice tasks:
 
 ## Stage 5: Goal Contracts And Story Loop
 
-Implement:
+Status: completed locally. The current implementation includes typed Goal Contract rendering,
+Story Loop status/progress CLI helpers, source-authority metadata, native Goal Mode preflight
+guidance, HITL-aware loop status, dependency resolution for completed blockers, and tests for stop
+conditions, blocked conditions, Story Loop states, atomic progress/artifact recording, and
+source-of-truth precedence metadata.
+
+Implemented:
 
 - Goal Contract data model and renderer;
 - Goal Contract prompt sections for native Codex Goals and worker prompts;
@@ -58,6 +77,13 @@ Implement:
 - tests for stop conditions, blocked conditions, and source-of-truth precedence.
 
 ## Stage 6: Codex Exec Backend
+
+Do not start this stage from roadmap order alone. Use `story-loop-status` and the current-queue
+planning state first; HITL publication checkpoints block Stage 6 work until resolved.
+
+Status: queued as blocked successor plan `plan-stage6-codex-exec-backend`. It must remain blocked by
+`task-hitl-acp-bootstrap-checkpoint` until the bootstrap ACP/publication checkpoint is approved or
+explicitly superseded.
 
 Launch fresh-context workers:
 

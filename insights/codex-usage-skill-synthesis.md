@@ -7,11 +7,11 @@ This note summarizes the privacy-safe `.codex` audit used to seed repo-local ski
 
 ## Evidence
 
-- `~/.codex` contained about 7,656 files and 2,577 directories.
-- `sessions/` held about 1,674 JSONL session files and `archived_sessions/` held 10 more.
-- `state_5.sqlite` tracked 1,683 threads, 1,228 spawn edges, and 747 dynamic tool rows.
-- `logs_2.sqlite` contained about 396k log rows and about 23.9k shell completions.
-- `ambient-suggestions/` contained 112 suggestions, nearly all pending.
+- `~/.codex` contained roughly 7.7k files and 2.6k directories.
+- `sessions/` held roughly 1.7k JSONL session files plus a small archived-session set.
+- `state_5.sqlite` tracked roughly 1.7k threads, 1.2k spawn edges, and 700+ dynamic tool rows.
+- `logs_2.sqlite` contained roughly 400k log rows and 24k shell completions.
+- `ambient-suggestions/` contained 100+ suggestions, nearly all pending.
 - `goals_1.sqlite`, `agent_jobs`, and app automation tables were present but effectively unused.
 
 ## Patterns
@@ -88,10 +88,10 @@ The integrated skills were normalized for Codex-supervisor on 2026-05-23:
 
 Confidence: `confirmed`
 
-Codex Goals and Ralph-style loops add a missing middle layer between planning SQLite and worker
+Codex Goals and Ralph-informed one-story loops add a missing middle layer between planning SQLite and worker
 execution:
 
 - Goal Contracts define the thread/worker finish line.
 - Story Loop policy constrains autonomous work to one ready vertical slice per iteration.
-- planning SQLite remains the canonical queue; native Codex Goal state and Ralph-style progress are
+- planning SQLite remains the canonical queue; native Codex Goal state and one-story loop progress are
   reconciled as evidence.

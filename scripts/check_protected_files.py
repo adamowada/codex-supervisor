@@ -11,34 +11,63 @@ SRC = REPO_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from codex_supervisor.locks import check_protected_files  # noqa: E402
+from codex_supervisor.locks import (  # noqa: E402
+    PROTECTED_FILES,
+    check_protected_files,
+    untracked_protected_files,
+)
 
 PROTECTED_FILE_HASHES = {
-    "README.md": "0c36b6b2b1e899bfde8d52510fbad22614634400cd78e063b8cbf8f011b0a8b8",
-    "AGENTS.md": "2c2802983acfdc3d39f22e36599dc54d2ee3c582395db55c0ab0b0ab6ee28dc8",
-    "PLANS.md": "e6f80da9df510bb70d2fa075ee1d2b73e988cf332caf190d14e5df8769c43588",
-    "ARCHITECTURE.md": "9ef689a77a54c7d925c69f32e0cfbb5febe3e6587be85e4508419d0f2d9da0b1",
-    "CONTRACTS.md": "707dc320ee17e574cfd532f9e9593805cf4e8eceee5873d6ac5ff2cdf4b6e174",
-    "ROADMAP.md": "11193f0e277821a6122fb1d5adaa675ac480a37dfd3ae42616638b726712b527",
-    "SOP.md": "769ce18d4a22930199e7ece63d7987bbc96dbd38402e05ea9eca959dd9322886",
-    "TESTING.md": "169e8fd1df3edcd94ce2b4dba10daeaff4f43bcdc36952d280511436da71184e",
-    "DECISIONS.md": "96ca4bc8f3b40fd848f5c51fdef203cd48dea698b5199c11ccedc729b5aa4d45",
+    ".gitignore": "818040f7cd8f5bc2504d3cb8a7fbdf3c826e5c37eea6310de2c7a5abf87531ce",
+    ".gitattributes": "287b668a5753e463f837a21c0cd062f3722e45a4ad89cc9075041bfd12d3f0ae",
+    "README.md": "3a7fcdbf72941cfd904d7ccaa2f511e81d0537a2da27f2b2ef8ac26a70236972",
+    "AGENTS.md": "adf1813264b30e36df1170174f13094662ea7bd81b3ee72f254b0f5b2d68e90c",
+    "PLANS.md": "73df420899905cf0ec6a862a49a45389cba63a9c6258d597aa8651902845f882",
+    "ARCHITECTURE.md": "408e738163db90158e76b16d648ab1fe199214221e2f832e0b9b59a733268caa",
+    "CONTRACTS.md": "a8251b1cd6db3945cac6c1670950e2e745db895ccd42d21d8acab861262ec647",
+    "ROADMAP.md": "9fc1b18f5717c27840c50120a3107cb38f49010ae892f4ce15239a72f9b4ae18",
+    "SOP.md": "5bfdf7e552e30a90917028167562479453c141b74a760cd3f88d8d28e0c0991e",
+    "TESTING.md": "5ee5f0ee65370288b4f6a6989f43b026b0be22733cf3780998591624729ccf8f",
+    "DECISIONS.md": "c47fc1614d5a008a96e4e6d5ab4809b2c99bcf61360ffd070d0dbeb0adc3c57f",
     "LICENSE": "17399c1f99877b3e7b981b714cda5954cfac88075d7243b846b101608b86fbba",
-    "ATTRIBUTIONS.md": "7a425e7a9bd4e479f9e387a1a07a8088b4d83d545a39df53a512f5209196f7e9",
+    "ATTRIBUTIONS.md": "de47b55f86f3d6b3484f7ffabcd04cb2bb65bd5eea0d924339e28b96b22585f9",
 }
 
 
 def main() -> int:
+    if tuple(PROTECTED_FILE_HASHES) != PROTECTED_FILES:
+        print(
+            "Protected file manifest drifted from codex_supervisor.locks.PROTECTED_FILES.",
+            file=sys.stderr,
+        )
+        return 1
+    untracked = untracked_protected_files(REPO_ROOT)
     failures = check_protected_files(REPO_ROOT, PROTECTED_FILE_HASHES)
-    if failures:
-        print("Protected source-of-truth files changed unexpectedly.", file=sys.stderr)
-        print("", file=sys.stderr)
-        for failure in failures:
-            print(f"{failure.relative_path}: {failure.reason}", file=sys.stderr)
-            print(f"  expected: {failure.expected_hash}", file=sys.stderr)
-            print(f"  actual:   {failure.actual_hash or 'missing'}", file=sys.stderr)
-        print("", file=sys.stderr)
-        print("Only update locked documents, and then this guard, intentionally.", file=sys.stderr)
+    if untracked or failures:
+        if untracked:
+            print("Protected source-of-truth files are not tracked.", file=sys.stderr)
+            print("", file=sys.stderr)
+            for relative_path in untracked:
+                print(f"{relative_path}: not tracked by git", file=sys.stderr)
+            print("", file=sys.stderr)
+        if failures:
+            print("Protected source-of-truth files changed unexpectedly.", file=sys.stderr)
+            print("", file=sys.stderr)
+            for failure in failures:
+                print(f"{failure.relative_path}: {failure.reason}", file=sys.stderr)
+                print(f"  expected: {failure.expected_hash}", file=sys.stderr)
+                print(f"  actual:   {failure.actual_hash or 'missing'}", file=sys.stderr)
+            print("", file=sys.stderr)
+        if untracked:
+            print(
+                "Add intended protected files before treating the lock check as reproducible.",
+                file=sys.stderr,
+            )
+        if failures:
+            print(
+                "Only update locked documents, and then this guard, intentionally.",
+                file=sys.stderr,
+            )
         return 1
     print("Protected source-of-truth files are unchanged.")
     return 0

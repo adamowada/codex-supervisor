@@ -5,6 +5,10 @@ description: Test-driven development with red-green-refactor loop. Use when user
 
 # Test-Driven Development
 
+If the current user turn is read-only or review-only, do not write tests, edit implementation, update
+trackers/databases, or run repair. Return the proposed red-green slices, public interfaces, and
+verification commands only.
+
 ## Philosophy
 
 **Core principle**: Tests should verify behavior through public interfaces, not implementation details. Code can change entirely; tests shouldn't.
@@ -46,7 +50,7 @@ RIGHT (vertical):
 
 When exploring the codebase, use the project's domain glossary so that test names and interface vocabulary match the project's language, and respect ADRs in the area you're touching.
 
-Before writing any code:
+Before writing any code in interactive mode:
 
 - [ ] Confirm with user what interface changes are needed
 - [ ] Confirm with user which behaviors to test (prioritize)
@@ -58,6 +62,10 @@ Before writing any code:
 Ask: "What should the public interface look like? Which behaviors are most important to test?"
 
 **You can't test everything.** Confirm with the user exactly which behaviors matter most. Focus testing effort on critical paths and complex logic, not every possible edge case.
+
+In approved AFK or dangerous full-auto mode, a clear task contract and Goal Contract can satisfy the
+approval checkpoints. Record assumptions and proceed vertically; do not pause on questions already
+answered by durable source-of-truth documents.
 
 ### 2. Tracer Bullet
 

@@ -1,13 +1,22 @@
 ---
 name: diagnose
-description: Disciplined diagnosis loop for hard bugs and performance regressions. Reproduce → minimise → hypothesise → instrument → fix → regression-test. Use when user says "diagnose this" / "debug this", reports a bug, says something is broken/throwing/failing, or describes a performance regression.
+description: Disciplined diagnosis loop for hard, unclear, flaky, or performance-sensitive bugs. Reproduce -> minimise -> hypothesise -> instrument -> fix -> regression-test. Use when user says "diagnose this" / "debug this", when the failure is not yet understood or reproduced, or when a performance regression needs evidence. For simple known fixes, route to TDD or failure-loop repair instead.
 ---
 
 # Diagnose
 
 A discipline for hard bugs. Skip phases only when explicitly justified.
 
+If the current user turn is read-only or review-only, do not edit files, write fixtures, update
+trackers/databases, or run repair. Return the proposed feedback loop, hypotheses, probes, and
+commands only.
+
 When exploring the codebase, use the project's domain glossary to get a clear mental model of the relevant modules, and check ADRs in the area you're touching.
+
+When a human-in-the-loop repro helper is needed, choose a platform-appropriate template:
+`.agents/skills/diagnose/scripts/hitl_loop_template.py` for cross-platform use, or copy this
+skill's helper into a temporary/project path before editing it. Use a POSIX shell template only when
+the project already has one.
 
 ## Phase 1 — Build a feedback loop
 
@@ -26,7 +35,9 @@ Spend disproportionate effort here. **Be aggressive. Be creative. Refuse to give
 7. **Property / fuzz loop.** If the bug is "sometimes wrong output", run 1000 random inputs and look for the failure mode.
 8. **Bisection harness.** If the bug appeared between two known states (commit, dataset, version), automate "boot at state X, check, repeat" so you can `git bisect run` it.
 9. **Differential loop.** Run the same input through old-version vs new-version (or two configs) and diff outputs.
-10. **HITL bash script.** Last resort. If a human must click, drive _them_ with `scripts/hitl-loop.template.sh` so the loop is still structured. Captured output feeds back to you.
+10. **HITL helper script.** Last resort. If a human must click, drive them with
+    `.agents/skills/diagnose/scripts/hitl_loop_template.py` by default, copying it into a
+    temporary/project path before editing. Captured output feeds back to you.
 
 Build the right feedback loop, and the bug is 90% fixed.
 

@@ -7,6 +7,10 @@ description: Decompose a plan into AFK and HITL vertical-slice tasks for the cod
 
 Break work into thin, independently verifiable vertical slices.
 
+If the current user turn is read-only, review-only, audit-only, no-edits, or no-mutation mode,
+decompose only. Do not write planning SQLite rows, create GitHub issues, update trackers, or write
+prompt artifacts; return the proposed task rows and durable write commands for later approval.
+
 ## Task Shape
 
 Each task needs:

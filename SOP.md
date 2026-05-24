@@ -4,7 +4,7 @@ This SOP is the default structure for new projects spawned by `codex-supervisor`
 
 ## New Project Bootstrap
 
-Every non-trivial spawned project should start with:
+Every non-trivial production-intended spawned project should start with this base scaffold:
 
 ```text
 README.md
@@ -12,17 +12,37 @@ AGENTS.md
 PLANS.md
 ARCHITECTURE.md
 CONTRACTS.md
+ROADMAP.md
 TESTING.md
 DECISIONS.md
 SOP.md
+LICENSE
+ATTRIBUTIONS.md
+HANDOFF.md
+.gitignore
+.gitattributes
 plans/planning.sqlite3
+scripts/verify.py
+scripts/print_protected_hashes.py
 scripts/check_protected_files.py
+scripts/check_file_justification.py
+scripts/check_planning_integrity.py
+scripts/check_public_repo_hygiene.py
 insights/
-.agents/skills/
 ```
 
-Small throwaway prototypes may use a lighter structure, but the supervisor should prefer this shape
-for production-intended apps.
+Add optional skill/source modules only when the project actually needs repo-local skills or OSS
+study sources:
+
+```text
+scripts/check_skill_inventory.py
+scripts/check_source_inventory.py
+.agents/skills/
+sources/README.md
+```
+
+Small throwaway prototypes may use a lighter structure, but the supervisor should prefer the base
+shape for production-intended apps and avoid creating empty optional surfaces.
 
 ## Planning Session
 
@@ -46,13 +66,21 @@ For every AFK task:
 
 1. Create an isolated worktree.
 2. Render a Goal Contract and task prompt from source-of-truth docs and task row.
-3. Launch a fresh-context Codex worker.
-4. Execute one vertical slice/story only.
-5. Capture raw logs and structured result.
-6. Run deterministic checks.
-7. Run automated review.
-8. Repair or mark blocked.
-9. Link artifacts, learnings, and progress events.
+3. Run the worker-launch preflight: `codex --version`, intended `CODEX_HOME`, `/goal` visibility, and
+   feature enablement when needed. Treat `${CODEX_HOME}/config.toml` edits and
+   `codex features enable goals` as setup mutations; use them only when Goal Mode setup is
+   explicitly in scope and writes to the intended Codex home are allowed.
+4. Launch a fresh-context Codex worker through the configured backend. Until the Stage 6 Codex Exec
+   backend exists, execute the contract in the supervised thread or a manually created fresh-context
+   worker prompt.
+5. If native Goals are unavailable, include the Goal Contract in the worker prompt and do not write
+   Codex internal goal databases.
+6. Execute one vertical slice/story only.
+7. Capture raw logs and structured result.
+8. Run deterministic checks.
+9. Run automated review.
+10. Repair or mark blocked.
+11. Link artifacts, learnings, and progress events.
 
 The loop may continue to the next ready task only after the current story has evidence for completion
 or a recorded blocked state.

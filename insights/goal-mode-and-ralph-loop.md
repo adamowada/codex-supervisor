@@ -5,11 +5,25 @@ Confidence: confirmed.
 ## Evidence
 
 - OpenAI's Codex Goals documentation describes goals as durable objectives with validation loops,
-  lifecycle controls, and evidence-based stop conditions.
-- Local `~/.codex/goals_1.sqlite` currently has the shape for thread-scoped goals, but no active
-  rows in the audited environment.
-- `sources/snarktank-ralph` is MIT licensed and implements a fresh-context loop where each iteration
-  picks one unfinished story, runs checks, commits, records progress, and repeats until stories pass.
+  lifecycle controls, evidence-based stop conditions, and lifecycle commands including `/goal`,
+  `/goal pause`, `/goal resume`, and `/goal clear`.
+- Native Codex Goals require a Codex build that supports Goals. Run `codex --version` before relying
+  on `/goal`, then update Codex if needed; the official cookbook says Goals are available starting in
+  Codex 0.128.0.
+- Current official Codex use-case docs say Goals-capable installs may need
+  `[features] goals = true` in `${CODEX_HOME}/config.toml` or `codex features enable goals` before
+  `/goal` is visible.
+- Worker launches must use the intended `CODEX_HOME`; otherwise Codex may load a sandbox home where
+  Goals are disabled or auth is unavailable.
+- Local `~/.codex/goals_1.sqlite` has the shape for thread-scoped goals. Treat row counts as
+  time-sensitive telemetry, not stable doctrine.
+- `sources/README.md` pins `sources/snarktank-ralph` at commit
+  `6c53cb0b831ebe8739c6a003e22af14902d8b0b5` with observed MIT license posture.
+- Ralph's tracked local evidence is strongest in `sources/snarktank-ralph/prompt.md` and
+  `sources/snarktank-ralph/README.md`: each iteration selects one unfinished story, runs quality
+  checks, commits passing work, updates story/progress state, preserves reusable learnings, and
+  repeats until all stories pass. `sources/snarktank-ralph/skills/ralph/SKILL.md` adds the
+  right-sized-story rule: one story should fit in one fresh context window.
 
 ## Synthesis
 
@@ -40,8 +54,14 @@ Confidence: confirmed.
 - Stop condition and blocked condition.
 - Pause, resume, clear, or budget-limited lifecycle handled by Codex tooling rather than raw DB
   writes.
+- Explicit Codex version, `CODEX_HOME`, and Goals feature verification before fresh-context worker
+  launch.
+- Treat `codex features enable goals` or `[features] goals = true` as a write-enabled preflight; in
+  read-only mode, use a prompt-rendered Goal Contract fallback instead.
 
 ## Project Implication
 
-The next implementation stage should add Goal Contract and Story Loop support before the Codex Exec
-backend. This gives every worker a precise objective and every multi-worker run a bounded loop.
+Goal Contract and Story Loop support is now implemented locally and should remain the execution
+bridge before the Codex Exec backend. Future work should preserve that contract, tighten it through
+active planning tasks, and avoid reimplementing Stage 5 unless the database explicitly opens a new
+task for it.

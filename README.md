@@ -6,6 +6,9 @@ Codex.
 The goal is simple and ambitious: after I supply the required product, architecture,
 acceptance, risk, and operating assumptions, Codex should be able to coordinate fresh-context Codex
 workers until the plan is implemented, reviewed, tested, documented, and ready for a human decision.
+Today, this repository implements the planning, Goal Contract, Story Loop, verification, source-lock,
+skill, and handoff layers for that workflow. Automatic Codex Exec worker launch remains a planned
+Stage 6 backend, not a current capability.
 
 This repository is the source of truth for that workflow. It combines patterns from my busiest
 projects:
@@ -15,8 +18,10 @@ projects:
 - `tech-resume`: an `insights/` markdown knowledge graph with provenance and confidence labels.
 - `observe-safety-monorepo`: structured, test-enforced planning and production-grade gates.
 
-It also includes shallow source clones under `sources/` for study and integration experiments. Those
-clones are intentionally ignored by git.
+The local workspace may also include shallow source clones under `sources/` for study and
+integration experiments. Those clones are intentionally ignored by git and are reproducible from
+the pinned clone inventory in `sources/README.md`; `ATTRIBUTIONS.md` records reuse rules and copied
+or adapted material.
 
 ## Dream Workflow
 
@@ -51,16 +56,17 @@ Codex execution. The safety boundary is not permission prompts. The safety bound
 ## Repository Map
 
 ```text
-src/codex_supervisor/      Python supervisor package skeleton
-tests/                     Focused tests for planning and document locks
-scripts/                   Repo maintenance scripts
+src/codex_supervisor/      Python supervisor package
+tests/                     Regression tests for planning, locks, Goal Contracts, Story Loop,
+                           hygiene, inventory, and verification behavior
+scripts/                   Repo maintenance and verification scripts
 plans/planning.sqlite3     Tracked operational planning database
 insights/                  Markdown knowledge graph and learning memory
 .agents/skills/            Repo-specific Codex skills
 sources/                   Ignored shallow clones of OSS inspiration sources
 ```
 
-## Source-Of-Truth Documents
+## Bootstrap And Source-Of-Truth Documents
 
 - `README.md`: human-facing purpose, goals, and operating vision.
 - `AGENTS.md`: instructions for Codex and other coding agents in this repo.
@@ -71,32 +77,114 @@ sources/                   Ignored shallow clones of OSS inspiration sources
 - `SOP.md`: standard operating procedure for projects spawned by the supervisor.
 - `TESTING.md`: testing and verification strategy.
 - `DECISIONS.md`: baseline decisions; ongoing decisions belong in SQLite first.
-- `HANDOFF.md`: clean starting point for the next Codex session.
+- `HANDOFF.md`: mutable starting point for the next Codex session, not a locked stable
+  source-of-truth document; planning SQLite remains canonical for current tasks.
 - `LICENSE`: MIT license for this repository.
-- `ATTRIBUTIONS.md`: public OSS inspiration and integration attribution notes.
+- `ATTRIBUTIONS.md`: reuse rules and attribution notes for copied or adapted material.
+- `.gitignore` / `.gitattributes`: public hygiene, generated-file, line-ending, and binary-file
+  guardrails.
 
-Stable top-level source-of-truth documents are locked by `scripts/check_protected_files.py`.
+Stable top-level source-of-truth documents, excluding the mutable `HANDOFF.md`, are locked by
+`scripts/check_protected_files.py`.
 
-## First Commands
+## Fresh Thread Bootstrap
 
 ```sh
-uv sync --dev
-uv run pytest
-uv run ruff check .
-uv run mypy src
-uv run python scripts/check_protected_files.py
+git status --short --branch
+git rev-parse --short HEAD
 ```
 
-Initialize or inspect the planning database:
+If dependency setup and writes are allowed, also run:
 
 ```sh
-uv run codex-supervisor plan-init
+uv python install 3.14.5
+uv sync --dev
+uv run python --version
+```
+
+Then read `AGENTS.md`, `PLANS.md`, `HANDOFF.md`, and `insights/README.md`. Use those files to find
+task-relevant source-of-truth docs after the live queue is known, instead of front-loading every
+historical audit or insight file.
+Inspect the live queue before interpreting `task-current` or running broad checks:
+
+```sh
+uv run codex-supervisor story-loop-status --json
+uv run codex-supervisor task-current --json
+uv run codex-supervisor task-list --current-queue-plans-only
+uv run codex-supervisor plan-summary --current-queue
 uv run codex-supervisor plan-list
 ```
 
+`uv run` can create or update local dependency/cache state if the environment is missing. In a
+strict read-only audit where dependencies are not already synced, do not run setup or `uv run`; use
+existing command output, Git state, or read-only SQLite inspection and report that dependency setup is
+required for typed CLI orientation.
+
+`plan-list`, `plan-summary`, `story-loop-status`, `task-current`, `task-show`, and `task-list`
+inspect existing planning state without initializing or mutating the database. `story-loop-status`
+reports ready, running, HITL, blocked, completed, and empty queue states across active and blocked
+current-queue plans by default; `--all` adds completed, abandoned, and superseded history.
+`task-current` selects only executable AFK work. Inspect `story-loop-status --json` first, then
+inspect the reported current task ID with `task-show ... --json` when one is present. If
+`task-current --json` returns `null`, do not conclude there is no task until the JSON status reports
+`completed` or `empty`.
+
+Run task-relevant verification after orientation. Check `HANDOFF.md` for the expected verification
+state before interpreting broad gate failures. During an ACP/HITL checkpoint, run the component
+checks named in `HANDOFF.md` first if the broad gate is expected to fail. The broad default gate is:
+
+```sh
+uv run python -B scripts/verify.py
+```
+
+Run the source lock guard after intentional source-of-truth edits or before publication:
+
+```sh
+uv run python -B scripts/check_protected_files.py
+```
+
+During an active ACP/HITL checkpoint, the lock guard may fail until new protected files are tracked
+and hashes are intentionally refreshed.
+
+Initialize or migrate the tracked planning database only when intended:
+
+```sh
+uv run codex-supervisor plan-init --seed-bootstrap-plan
+```
+
+`.python-version` pins Python 3.14.5 because this repo intentionally tracks the latest Python line
+from day one. If your platform does not have Python 3.14.5 installed yet, install it through `uv`
+before running verification.
+
+## Codex Goal Prerequisite
+
+Goal Contracts can be carried into native Codex Goals when the local Codex install supports `/goal`.
+Official OpenAI guidance, indexed in `insights/source-index.md`, says Goals require a Goals-capable
+Codex build and documents lifecycle commands such as `/goal`, `/goal pause`, `/goal resume`, and
+`/goal clear`. Before relying on native Goals, run `codex --version` and update Codex if needed.
+For fresh-context workers, launch Codex with the intended `CODEX_HOME` and verify Goals are enabled:
+
+```toml
+[features]
+goals = true
+```
+
+If `/goal` is not visible on a Goals-capable build, official OpenAI guidance says to enable
+`features.goals` in `${CODEX_HOME}/config.toml` or run `codex features enable goals`. Restart or
+start a fresh Codex session only if the running process does not pick up the config change. Treat
+the config edit and `codex features enable goals` as setup mutations: run them only when Goal Mode
+setup is explicitly in scope. In read-only, review-only, or already-synced worker contexts, render
+the Goal Contract into the worker prompt and continue without writing to Codex internal goal
+databases.
+
+On Windows, `codex --version` can fail when the executable resolved through `WindowsApps` is not
+directly callable from the current shell. Treat that as a Goal Mode preflight failure, not as a
+reason to write local Codex databases directly. Use prompt-rendered Goal Contracts until the Codex
+CLI path and `CODEX_HOME` are confirmed.
+
 ## OSS Inspiration Sources
 
-The ignored `sources/` directory contains shallow clones of:
+The ignored `sources/` directory may contain local shallow clones of:
 
 - `openai/codex`
 - `HarnessLab/claw-code-agent`

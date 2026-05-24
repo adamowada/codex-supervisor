@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+cache/
 .coverage
 htmlcov/
 .venv/
@@ -22,6 +23,15 @@ worktrees/
 artifacts/
 logs/
 *.jsonl
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.db-wal
+*.db-shm
+*.db-journal
 
 # Inspiration/source clones. Keep sources/README.md tracked.
 sources/*
@@ -32,4 +42,3 @@ sources/*
 Thumbs.db
 .idea/
 .vscode/
-

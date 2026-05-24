@@ -1,6 +1,11 @@
 # Triage Labels
 
-Canonical roles:
+Canonical category roles:
+
+- `bug`: something is broken.
+- `enhancement`: new feature or improvement.
+
+Canonical state roles:
 
 - `needs-triage`: maintainer needs to evaluate.
 - `needs-info`: waiting on reporter or HITL.

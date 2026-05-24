@@ -12,10 +12,13 @@ SQLite, filesystem, subprocess, and testing support.
 
 ## D-0002: Codex Exec Is The Primary Worker Primitive
 
-Decision: Fresh-context production workers should use `codex exec --json --output-schema`.
+Decision: Fresh-context production workers should use `codex exec --json --output-schema` once the
+ROADMAP Stage 6 backend is implemented. Until then, `worker_backend=codex_exec` rows are planned
+backend labels and must not be treated as proof that `codex-supervisor` can launch workers itself.
 
 Rationale: `codex exec` is designed for automation, CI, scheduled jobs, explicit sandbox settings,
-JSONL event capture, and schema-constrained output.
+JSONL event capture, and schema-constrained output. Keeping it as the intended primitive lets Stage
+6 design toward the right target without overstating current bootstrap capability.
 
 ## D-0003: MCP Is An Interface, Not The Core
 
@@ -68,7 +71,7 @@ derived from planning SQLite tasks and reconciled back as evidence.
 
 ## D-0009: Story Loops Execute One Vertical Slice
 
-Decision: Ralph-style story loops are adopted as worker execution policy: one fresh-context worker
+Decision: One-story loops are adopted as worker execution policy: one fresh-context worker
 implements one ready vertical slice, verifies it, records progress, and then stops or moves to the
 next ready slice.
 
@@ -76,3 +79,39 @@ Rationale: The Ralph loop demonstrates a practical way to keep autonomous coding
 stories, fresh context, durable progress, quality checks, and a clear stop condition. In
 `codex-supervisor`, planning SQLite replaces Ralph's `prd.json`, and insights/progress records
 replace `progress.txt`.
+
+## D-0010: Verify Codex Goal Availability Before Worker Launch
+
+Decision: Codex-supervisor must treat native Codex Goals as an optional execution surface that
+requires explicit availability checks. Worker launches should check `codex --version`, pass the
+intended `CODEX_HOME`, and verify Goals are enabled before using `/goal`. If `/goal` is unavailable
+on a Goals-capable build, set `[features] goals = true` in `${CODEX_HOME}/config.toml` or run
+`codex features enable goals` only when Goal Mode setup is explicitly in scope and writes to that
+Codex home are allowed. In read-only, review-only, or already-synced worker contexts, use the
+prompt-rendered Goal Contract fallback instead. Restart or start a fresh Codex session only if the
+running process does not pick up an allowed config change.
+
+Rationale: Goal mode can be disabled by feature configuration, and a worker launched with the wrong
+Codex home may load a sandbox config where Goals or authentication are unavailable. Official
+documentation sources for this preflight are indexed in `insights/source-index.md`.
+
+Consequence: Goal Contracts remain useful even when native Goals are unavailable; workers can still
+receive the contract in their prompt, while native Goal state is reconciled only when present.
+
+## D-0011: Reuse MIT-Licensed Matt Pocock Skills With Attribution
+
+Decision: `codex-supervisor` may copy and adapt selected MIT-licensed material from
+`sources/mattpocock-skills` into repo-local skills when the result is aligned with Adam's workflow,
+small-skill doctrine, and this repository's authority matrix. Copied or adapted skill material must
+stay attributed through `ATTRIBUTIONS.md` and `.agents/skills/NOTICE.md`.
+
+Rationale: The upstream skills encode high-quality, composable agent workflows that directly match
+this project's desired operating style: small skill over giant methodology, domain glossary over
+repeated explanation, vertical slice over horizontal layer task, handoff artifact over bloated
+session, sandbox/worktree over risky direct edits, and eval loop over "seems better." MIT licensing
+allows adaptation with attribution, while repo-local editing lets Adam's personal workflow override
+generic upstream defaults.
+
+Consequence: Direct or adapted skill material belongs in `.agents/skills/`, not in ignored
+`sources/` clones. Future copying from any source still requires license review, attribution, and a
+stable decision or planning record before publication.

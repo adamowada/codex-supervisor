@@ -21,4 +21,5 @@ The supervisor should "learn" through versioned skills, not opaque model memory.
 - `knowledge-graph-updater`
 - `factory-task-decomposer`
 - `fresh-context-worker`
-- `ci-repair-loop`
+- `failure-loop-triage`
+- `skill-golden-eval-loop`

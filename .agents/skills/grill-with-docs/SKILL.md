@@ -7,7 +7,13 @@ description: Run a grilling session that challenges a plan against the existing 
 
 Interview the user relentlessly about every aspect of the plan until you reach a shared understanding. Walk down each branch of the design tree, resolving dependencies between decisions one by one. For each question, provide your recommended answer.
 
-Ask one question at a time, waiting for feedback before continuing.
+If the current user turn is read-only or review-only, do not edit durable docs, insights, planning
+SQLite, issues, or tracker state. Return challenged assumptions, recommended answers, and proposed
+source-of-truth updates only.
+
+Ask one question at a time, waiting for feedback before continuing in interactive mode. In approved
+AFK or dangerous full-auto mode, derive answers from durable sources, record assumptions, and turn
+unresolved decisions into explicit HITL blockers instead of stalling.
 
 If a question can be answered by exploring the codebase or source-of-truth docs, explore instead of asking.
 
@@ -17,13 +23,15 @@ If a question can be answered by exploring the codebase or source-of-truth docs,
 
 ## Source Awareness
 
-Start by finding the repo's documented source order. For `codex-supervisor` spawned projects, use:
+Start by finding the repo's documented authority matrix. For `codex-supervisor` spawned projects:
 
-1. Locked source-of-truth docs.
-2. Planning SQLite.
-3. GitHub issues and PRs.
-4. Handoff artifacts.
-5. Chat/session history.
+- locked source-of-truth docs govern durable doctrine, architecture, contracts, testing policy,
+  roadmap intent, and stable operating rules;
+- planning SQLite and `story-loop-status` govern active and blocked current-queue plans, current
+  queue state, task status, worker runs, progress events, and handoff order;
+- GitHub issues and PRs are remote tracker state after reconciliation;
+- handoff artifacts are mutable snapshots;
+- chat/session history is context.
 
 Read `docs/agents/source-of-truth.md` when present. In `codex-supervisor` itself, read the protected top-level docs plus `insights/` before changing durable knowledge.
 

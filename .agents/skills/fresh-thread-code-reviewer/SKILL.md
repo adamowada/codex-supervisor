@@ -7,6 +7,10 @@ description: Prepare or run a fresh-context code review for a repository, branch
 
 Make the review scope and lens explicit before reading deeply.
 
+Reviews are read/report-only unless the user separately asks to fix findings. In read-only,
+review-only, audit-only, no-edits, or no-mutation mode, do not edit files, stage, commit, push,
+mutate trackers, update planning state, or run cache-writing verification commands.
+
 ## Scope Modes
 
 - `everything`: review the whole repo surface and source-of-truth docs.
@@ -25,14 +29,22 @@ If the user did not specify the fixed point for a branch review, ask for it or d
 - `standards`: conformance to documented repo conventions, coding standards, AGENTS.md, ADRs, and source-of-truth rules.
 - `spec`: whether the diff faithfully implements the originating issue, PRD, plan, or task contract.
 
-For architecture-only reviews, use Matt Pocock's `improve-codebase-architecture` ideas as inspiration: domain glossary first, ADRs second, then report friction in terms of module depth, locality, seams, adapters, and leverage.
+For architecture-only reviews, use `improve-codebase-architecture` vocabulary: domain glossary
+first, ADRs second, then report friction in terms of module depth, locality, seams, adapters, and
+leverage.
 
-For branch, commit, diff, or PR reviews, consider Matt Pocock's two-axis review split:
+For normal code reviews, findings must be concrete bugs, regressions, spec misses, security/privacy
+risks, missing tests, or source-of-truth drift. Route broad architecture commentary to
+`improve-codebase-architecture` or task shaping unless the user selected the `architecture` lens.
+
+For branch, commit, diff, or PR reviews, consider a two-axis review split:
 
 - **Standards**: read the repo standards, then report where the diff violates documented expectations.
 - **Spec**: read the originating issue, PRD, plan, or task contract, then report missing requirements, scope creep, and incorrect implementations.
 
-Run Standards and Spec reviews in separate fresh contexts when subagents are available, then aggregate findings without blending the axes.
+Run Standards and Spec reviews in separate fresh contexts when the host exposes subagent tools;
+otherwise prepare self-contained prompts or run the lenses locally in separate passes, then aggregate
+findings without blending the axes.
 
 ## Fresh Prompt Contract
 

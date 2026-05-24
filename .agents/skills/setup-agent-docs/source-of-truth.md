@@ -1,13 +1,15 @@
 # Source Of Truth
 
-Record the repo's authority order.
+Record the repo's authority matrix.
 
-Typical order for `codex-supervisor` spawned projects:
+Typical matrix for `codex-supervisor` spawned projects:
 
-1. Locked source-of-truth docs.
-2. Planning SQLite.
-3. GitHub issues and PRs.
-4. Handoff artifacts.
-5. Chat/session history.
+- Locked source-of-truth docs govern durable doctrine, architecture, contracts, testing policy,
+  roadmap intent, and stable operating rules.
+- Planning SQLite governs active and blocked current-queue plans, current queue state, task status,
+  worker runs, progress events, and handoff order.
+- GitHub issues and PRs govern remote tracker state only after reconciliation into planning SQLite.
+- Handoff artifacts are mutable snapshots.
+- Chat/session history is context, not durable authority.
 
 When sources disagree, stop and surface the conflict unless the repo documents a clear precedence rule.

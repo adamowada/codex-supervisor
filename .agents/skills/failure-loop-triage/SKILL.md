@@ -7,6 +7,10 @@ description: Classify a failed command, CI job, test, lint, typecheck, build, sh
 
 Read the smallest useful failure excerpt and classify before fixing.
 
+If the current user turn is read-only or review-only, do not edit files, update trackers/databases,
+rerun mutating jobs, or apply repair. Return the class, evidence, and proposed next bounded command
+only.
+
 ## Failure Classes
 
 - missing path or wrong cwd;
@@ -28,3 +32,8 @@ Read the smallest useful failure excerpt and classify before fixing.
 3. Re-run the exact failing command.
 4. Broaden only after the narrow command passes.
 5. After three related failures, write a handoff with attempts, evidence, and next hypothesis.
+
+## Result Contract
+
+Report the failure class, evidence excerpt, commands rerun, fix attempted, verification result,
+remaining hypothesis, and whether the next action is AFK repair or HITL.

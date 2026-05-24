@@ -1,6 +1,21 @@
 ---
 name: zoom-out
-description: Tell the agent to zoom out and give broader context or a higher-level perspective. Use when you're unfamiliar with a section of code or need to understand how it fits into the bigger picture.
+description: Produce a higher-level map of an unfamiliar code area. Use when implementation details are hard to place in the broader module, caller, contract, or domain context.
 ---
 
-I don't know this area of code well. Go up a layer of abstraction. Give me a map of all the relevant modules and callers, using the project's domain glossary vocabulary.
+# Zoom Out
+
+Map the broader context before editing.
+
+## Workflow
+
+1. Identify the narrow area the user or current task is focused on.
+2. Read the surrounding modules, callers, tests, docs, and domain glossary terms.
+3. Explain how the area fits into the larger system, where data/control enters and exits, and which
+   source-of-truth contracts govern it.
+4. Call out uncertainty, missing tests, or likely seams for deeper follow-up.
+
+## Result Contract
+
+Return a concise map of relevant modules and callers, the domain vocabulary to use, the governing
+contracts, and the next best skill or investigation path.

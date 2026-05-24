@@ -70,12 +70,16 @@ Native Codex Goals may be used as an execution aid when available, but they are 
 queue. The renderer should derive Goal Contracts from planning SQLite and source-of-truth docs, then
 reconcile observed goal state back into planning SQLite as telemetry.
 
+Worker launch code must verify the Codex version, pass the intended `CODEX_HOME`, and confirm the
+Goals feature is enabled before depending on `/goal`.
+
 ### Story Loop Orchestrator
 
-The Story Loop Orchestrator applies Ralph-style discipline to queued AFK work:
+The Story Loop Orchestrator applies one-story discipline to queued AFK work:
 
 - pick one highest-priority ready vertical slice;
-- launch one fresh-context worker in an isolated workspace;
+- prepare one fresh-context worker in an isolated workspace, and launch it through the Stage 6
+  backend once that backend exists;
 - verify and review the result;
 - record progress, artifacts, learnings, and follow-up tasks;
 - repeat only when another ready slice exists and policy allows it.
@@ -87,11 +91,13 @@ with `prd.json` or `progress.txt`, though it can import Ralph-inspired patterns.
 
 Backends execute one task in one isolated context.
 
-Initial backends:
+Initial planned backends:
 
-- `CodexExecBackend`: primary production backend using `codex exec --json --output-schema`.
+- `CodexExecBackend`: primary production backend using `codex exec --json --output-schema` after
+  ROADMAP Stage 6 is implemented.
 - `ShellBackend`: deterministic checks and maintenance scripts.
-- `ClawCodeBackend`: optional local-model/reference backend inspired by `HarnessLab/claw-code-agent`.
+- `ClawCodeBackend`: optional local-model/reference backend inspired by `HarnessLab/claw-code-agent`;
+  keep it generic and do not copy source while upstream licensing is unclear.
 - `SandcastleBackend`: optional TypeScript orchestration bridge if `mattpocock/sandcastle` is adopted.
 
 ### Project Adapters

@@ -16,9 +16,9 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, the expected queue state is `completed`: no ready, running, blocked, or HITL
-task remains in the current queue. The active plan is still
-`plan-stage6-codex-exec-backend`, but all tracked Stage 6 tasks are complete. If the database
+As of this snapshot, Stage 6 is complete and ACP'd, and Stage 7 is the active current-queue plan.
+The expected queue state after Stage 7A completion is `completed`: no ready, running, blocked, or
+HITL task remains in the current queue until the next Stage 7 slice is shaped. If the database
 reports anything else, trust the database and call this handoff stale.
 
 Recent completed ACP checkpoints:
@@ -27,13 +27,13 @@ Recent completed ACP checkpoints:
 - `200d027`: hardened exact task claiming, Story Loop queue snapshots, completed-plan criteria, and
   worker-result/attribution skill contracts.
 
-The latest full local gate passed after the Stage 6C Codex Exec launch-path update with:
+The latest full local gate passed after the Stage 7A worktree-layout update with:
 
 ```sh
 uv run --no-sync python -B scripts/verify.py
 ```
 
-That run covered 261 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
+That run covered 273 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
 hygiene, planning integrity, skill inventory, source inventory, protected locks, and
 `uv lock --check`.
 
@@ -85,6 +85,15 @@ Stage 6C Codex Exec launch path changed:
   and diff-summary files.
 - `insights/stage6c-codex-exec-launch-worker-result.json`: durable Stage 6C worker-result evidence.
 
+Stage 7A worktree and artifact layout changed:
+
+- `src/codex_supervisor/worktree_artifacts.py`: added deterministic per-worker worktree/run/artifact
+  path layout, ignored-runtime path detection, cleanup containment guards, and changed-file
+  allowed-path validation that does not require files to exist.
+- `tests/test_worktree_artifacts.py`: covers safe layout generation, unsafe traversal/drive/slash
+  identifiers, cleanup containment, relative cleanup targets, and changed-file scope validation.
+- `insights/stage7a-worktree-layout-worker-result.json`: durable Stage 7A worker-result evidence.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -108,11 +117,11 @@ Use story-loop-status as the queue state machine. Use task-current only as the e
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
 If queue_state is completed, shape the next vertical slice in planning SQLite before editing. The
-likely next AFK slice is trusted worktree launch orchestration and artifact path ownership around
-the existing `CodexExecBackend`, or a HITL setup task for resolving the local CLI path and intended
-`CODEX_HOME`. If the local Codex CLI still fails preflight with `Access is denied`, keep the slice
-explicitly non-live or record a HITL blocker. Until that preflight is resolved, do not launch live
-`codex exec`.
+likely next AFK slice is Stage 7B: connect `WorktreeRunLayout` to `WorkerLaunchRequest`
+construction, worker-run metadata, and diff-summary capture through injected runners. Keep it
+explicitly non-live while the local Codex CLI still fails preflight with `Access is denied`; do not
+launch live `codex exec` until an accessible executable path and intended `CODEX_HOME` are
+confirmed.
 ```
 
 ## Active Caveats

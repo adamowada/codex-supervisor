@@ -223,6 +223,10 @@ FILE_PURPOSES = {
         "structured worker-result evidence for the Stage 6C Codex Exec launch-path slice",
         "check_planning_integrity",
     ),
+    "insights/stage7a-worktree-layout-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 7A worktree layout slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
@@ -276,6 +280,9 @@ FILE_PURPOSES = {
     "src/codex_supervisor/worker_results.py": FilePurpose(
         "Worker Result Contract validation", "pytest"
     ),
+    "src/codex_supervisor/worktree_artifacts.py": FilePurpose(
+        "worktree and run-artifact path guards", "pytest"
+    ),
     "tests/test_file_justification.py": FilePurpose("file purpose gate tests", "pytest"),
     "tests/test_goal_contracts.py": FilePurpose("Goal Contract renderer tests", "pytest"),
     "tests/test_locks.py": FilePurpose("protected lock helper tests", "pytest"),
@@ -287,6 +294,9 @@ FILE_PURPOSES = {
     "tests/test_story_loop.py": FilePurpose("Story Loop tests", "pytest"),
     "tests/test_worker_backends.py": FilePurpose("worker backend protocol tests", "pytest"),
     "tests/test_worker_results.py": FilePurpose("worker result validation tests", "pytest"),
+    "tests/test_worktree_artifacts.py": FilePurpose(
+        "worktree and run-artifact guard tests", "pytest"
+    ),
     "tests/test_verify_script.py": FilePurpose("verification runner tests", "pytest"),
     "uv.lock": FilePurpose("locked development dependency graph", "uv lock --check"),
 }

@@ -63,6 +63,7 @@ FAILURE_WORKER_RUN_STATUSES = frozenset({"blocked", "failed", "cancelled"})
 SUCCESSFUL_WORKER_RUN_STATUSES = frozenset({"completed"})
 DRIVE_PATH_PATTERN = re.compile(r"^[A-Za-z]:")
 FULL_COMMIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+CLI_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]+$")
 SHELL_METACHARACTERS = (
     "|",
     "&",
@@ -102,6 +103,31 @@ SAFE_CODEX_SUPERVISOR_CLI_READ_COMMANDS = frozenset(
         "worker-run-show",
     }
 )
+SAFE_CODEX_SUPERVISOR_CLI_FLAGS: dict[str, frozenset[str]] = {
+    "goal-contract-render": frozenset({"--json"}),
+    "plan-list": frozenset({"--json"}),
+    "plan-summary": frozenset({"--json", "--active-only", "--current-queue"}),
+    "story-loop-status": frozenset({"--json", "--all"}),
+    "task-current": frozenset({"--json"}),
+    "task-list": frozenset({"--json", "--active-plans-only", "--current-queue-plans-only"}),
+    "task-show": frozenset({"--json"}),
+    "worker-run-list": frozenset({"--json"}),
+    "worker-run-show": frozenset({"--json"}),
+}
+SAFE_CODEX_SUPERVISOR_CLI_VALUE_OPTIONS: dict[str, dict[str, frozenset[str] | None]] = {
+    "goal-contract-render": {"--task-id": None},
+    "plan-list": {"--status": PLAN_STATUSES},
+    "plan-summary": {"--plan-id": None},
+    "story-loop-status": {"--plan-id": None},
+    "task-list": {"--status": TASK_STATUSES},
+    "task-show": {},
+    "worker-run-list": {"--task-id": None},
+    "worker-run-show": {},
+}
+SAFE_CODEX_SUPERVISOR_CLI_POSITIONAL_COUNTS: dict[str, int] = {
+    "task-show": 1,
+    "worker-run-show": 1,
+}
 
 PLANNING_SCHEMA_TABLE_COLUMNS = {
     "schema_migrations": ("version", "name", "applied_at"),
@@ -1778,9 +1804,86 @@ def _codex_supervisor_cli_command_reason(args: tuple[str, ...]) -> str | None:
     if not args:
         return "codex_supervisor.cli verification is missing a read-only subcommand"
     command = args[0]
-    if command in SAFE_CODEX_SUPERVISOR_CLI_READ_COMMANDS:
+    remaining = args[1:]
+    if command == "--help":
+        if remaining:
+            return "codex_supervisor.cli --help verification does not accept extra arguments"
         return None
+    if command in SAFE_CODEX_SUPERVISOR_CLI_READ_COMMANDS:
+        return _codex_supervisor_cli_read_args_reason(command, remaining)
     return "codex_supervisor.cli verification is limited to read-only subcommands"
+
+
+def _codex_supervisor_cli_read_args_reason(command: str, args: tuple[str, ...]) -> str | None:
+    allowed_flags = SAFE_CODEX_SUPERVISOR_CLI_FLAGS.get(command, frozenset())
+    value_options = SAFE_CODEX_SUPERVISOR_CLI_VALUE_OPTIONS.get(command, {})
+    positional_count = SAFE_CODEX_SUPERVISOR_CLI_POSITIONAL_COUNTS.get(command, 0)
+    positionals: list[str] = []
+    index = 0
+    while index < len(args):
+        token = args[index]
+        matched_option = next(
+            (option for option in value_options if token.startswith(option + "=")),
+            None,
+        )
+        if matched_option is not None:
+            value = token.split("=", 1)[1]
+            reason = _codex_supervisor_cli_value_reason(
+                matched_option,
+                value,
+                value_options[matched_option],
+            )
+            if reason:
+                return reason
+            index += 1
+            continue
+        if token in value_options:
+            if index + 1 >= len(args):
+                return f"{command} {token} verification is missing a value"
+            value = args[index + 1]
+            reason = _codex_supervisor_cli_value_reason(token, value, value_options[token])
+            if reason:
+                return reason
+            index += 2
+            continue
+        if token in allowed_flags:
+            index += 1
+            continue
+        if token.startswith("-"):
+            return f"{command} verification uses unsupported option {token}"
+        positionals.append(token)
+        index += 1
+    if len(positionals) != positional_count:
+        return f"{command} verification expects {positional_count} positional argument(s)"
+    for value in positionals:
+        reason = _plain_cli_identifier_reason(value, "positional argument")
+        if reason:
+            return f"{command} verification {reason}"
+    return None
+
+
+def _codex_supervisor_cli_value_reason(
+    option: str,
+    value: str,
+    allowed_values: frozenset[str] | None,
+) -> str | None:
+    if allowed_values is not None and value not in allowed_values:
+        return f"{option} verification value must be one of: {', '.join(sorted(allowed_values))}"
+    reason = _plain_cli_identifier_reason(value, option)
+    if reason:
+        return reason
+    return None
+
+
+def _plain_cli_identifier_reason(value: str, field_name: str) -> str | None:
+    if not value or value.startswith("-"):
+        return f"{field_name} must be a plain identifier"
+    normalized = value.replace("\\", "/")
+    if "/" in normalized or DRIVE_PATH_PATTERN.match(value):
+        return f"{field_name} must not be a filesystem path"
+    if not CLI_IDENTIFIER_PATTERN.match(value):
+        return f"{field_name} must be a plain identifier"
+    return None
 
 
 def _validate_repo_relative_path_patterns(values: Iterable[object], field_name: str) -> None:
@@ -1847,7 +1950,7 @@ def _validate_status_transition_contract_for_current_queue_plan(
 ) -> None:
     if task.plan_status not in CURRENT_QUEUE_PLAN_STATUSES:
         return
-    if task.task_type != "AFK" or next_status not in OPEN_TASK_STATUSES:
+    if task.task_type != "AFK" or next_status == "pending" or next_status not in OPEN_TASK_STATUSES:
         return
     failures = _afk_execution_contract_failures(
         acceptance_criteria=task.acceptance_criteria,

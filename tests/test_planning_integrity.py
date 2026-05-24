@@ -1929,6 +1929,10 @@ def test_planning_integrity_rejects_unsafe_blocked_afk_contract_values(tmp_path)
         "mypy src scripts",
         "uv run mypy src scripts",
         "python -m codex_supervisor.cli task-upsert --task-id bad",
+        "uv run --no-sync python -B -m codex_supervisor.cli task-list "
+        "--path plans/planning.sqlite3",
+        "uv run --no-sync python -B -m codex_supervisor.cli task-show ../task",
+        "uv run --no-sync codex-supervisor plan-summary --plan-id ../plan",
     ],
 )
 def test_planning_integrity_rejects_mutating_ready_afk_verification_commands(tmp_path, command):
@@ -2051,6 +2055,8 @@ def test_planning_integrity_rejects_drive_relative_artifact_paths(tmp_path):
         "uv run --no-sync python -B -m codex_supervisor.cli --help",
         "uv run --no-sync python -B -m codex_supervisor.cli story-loop-status",
         "uv run --no-sync python -B -m codex_supervisor.cli task-list --status ready",
+        "uv run --no-sync python -B -m codex_supervisor.cli task-show task-ready --json",
+        "uv run --no-sync codex-supervisor goal-contract-render --task-id task-ready --json",
     ],
 )
 def test_planning_integrity_accepts_cache_safe_ready_afk_verification_commands(

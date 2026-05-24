@@ -2319,6 +2319,34 @@ def test_task_status_rejects_open_afk_state_without_execution_contract(tmp_path,
         store.update_supervisor_task_status("task-test", status)
 
 
+def test_task_status_allows_pending_afk_state_without_execution_contract(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Allow pending underspecified AFK work.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-test",
+            plan_id="plan-test",
+            title="Task",
+            goal="Intentionally not execution-ready yet.",
+            task_type="AFK",
+            status="pending",
+        )
+    )
+
+    store.update_supervisor_task_status("task-test", "pending")
+
+    task = open_existing_planning_database(store.path).list_supervisor_tasks()[0]
+    assert task.status == "pending"
+
+
 def test_worker_run_upsert_rejects_reassigning_existing_run_to_another_task(tmp_path):
     store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
     store.upsert_plan(

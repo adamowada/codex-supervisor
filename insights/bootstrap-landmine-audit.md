@@ -195,6 +195,10 @@ Confidence: confirmed.
   stay out of the executable contract until the backend design is reviewed and authorized.
 - Recent handoff checkpoint commits are linked in `plans/planning.sqlite3`, so mutable handoff prose
   and durable plan evidence no longer diverge on checkpoint provenance.
+- Verification-command safety now bounds read-only `codex_supervisor.cli` invocations to approved
+  flags and plain identifiers; `--path` and path-like task or plan arguments are rejected.
+- Pending AFK tasks on current-queue plans are allowed to remain underspecified, while ready,
+  running, blocked, and reviewing AFK states still require executable contracts.
 
 ## Remaining Watch Items
 

@@ -199,6 +199,9 @@ Confidence: confirmed.
   flags and plain identifiers; `--path` and path-like task or plan arguments are rejected.
 - Pending AFK tasks on current-queue plans are allowed to remain underspecified, while ready,
   running, blocked, and reviewing AFK states still require executable contracts.
+- Skill guardrails now sharpen golden-eval fixtures, preserve test coverage during architecture
+  deepening, classify `HANDOFF.md` as mutable snapshot rather than doctrine, and make
+  `.out-of-scope/` an opt-in triage pattern.
 
 ## Remaining Watch Items
 

@@ -13,7 +13,9 @@ task, rubric, and proposed eval protocol only.
 
 ## Workflow
 
-1. Define a tiny golden task with input artifact, expected behavior, and failure modes.
+1. Define one tiny vertical golden task. Include the exact input artifact or fixture, the prompt an
+   evaluator should receive, allowed mutations, expected artifacts, forbidden outputs, and failure
+   modes. If no stable fixture exists, create or propose the smallest one first.
 2. Run the current skill behavior or baseline if available.
 3. Run the revised skill in fresh context when subagents are allowed.
 4. Score with a small rubric: correctness, scope control, verification, privacy, and handoff quality.

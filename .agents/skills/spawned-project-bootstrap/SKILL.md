@@ -16,8 +16,9 @@ gaps only.
 ## Required Scaffold
 
 1. Top-level doctrine: `README.md`, `AGENTS.md`, `PLANS.md`, `ARCHITECTURE.md`, `CONTRACTS.md`,
-   `ROADMAP.md`, `SOP.md`, `TESTING.md`, `DECISIONS.md`, `HANDOFF.md`, `LICENSE`, and
-   `ATTRIBUTIONS.md` when public or source-inspired.
+   `ROADMAP.md`, `SOP.md`, `TESTING.md`, `DECISIONS.md`, `LICENSE`, and `ATTRIBUTIONS.md` when
+   public or source-inspired. Add `HANDOFF.md` as a mutable fresh-thread snapshot, not locked
+   doctrine.
 2. Root repo hygiene: `.gitignore` that excludes local caches, worktrees, generated artifacts, and
    ignored source clones; `.gitattributes` that pins LF text files and marks SQLite/database files
    binary.

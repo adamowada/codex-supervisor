@@ -20,7 +20,8 @@ files. Return the triage recommendation and exact proposed mutations instead.
 ## Reference Docs
 
 - [AGENT-BRIEF.md](AGENT-BRIEF.md) - how to write durable agent briefs.
-- [OUT-OF-SCOPE.md](OUT-OF-SCOPE.md) - how the `.out-of-scope/` knowledge base works.
+- [OUT-OF-SCOPE.md](OUT-OF-SCOPE.md) - optional pattern for repos that have adopted a
+  `.out-of-scope/` knowledge base.
 
 If the issue tracker, role labels, or authority matrix are missing, run `setup-agent-docs` before changing issue state.
 
@@ -80,7 +81,7 @@ Show counts and a one-line summary per issue. Let the maintainer pick unless the
 
 ## Triage A Specific Issue
 
-1. **Gather context.** Read the full issue: body, comments, labels, reporter, dates, linked PRs, and prior triage notes. Read planning SQLite records or source docs linked from the issue. Explore the codebase using the project's domain glossary and ADRs. Read `.out-of-scope/*.md` and surface prior rejections that resemble this issue.
+1. **Gather context.** Read the full issue: body, comments, labels, reporter, dates, linked PRs, and prior triage notes. Read planning SQLite records or source docs linked from the issue. Explore the codebase using the project's domain glossary and ADRs. Read `.out-of-scope/*.md` only when the repo already has that directory or explicitly documents the pattern; surface prior rejections that resemble this issue.
 
 2. **Recommend.** Tell the maintainer your category and state recommendation with reasoning, plus a brief codebase summary relevant to the issue. In full-auto mode, proceed when the evidence is strong and the action is reversible; otherwise pause for HITL.
 
@@ -94,7 +95,7 @@ Show counts and a one-line summary per issue. Let the maintainer pick unless the
    - `ready-for-human`: use the same structure as an agent brief, but state why it cannot be delegated yet.
    - `needs-info`: post triage notes using the template below.
    - `wontfix` bug: post a polite explanation, then close if the maintainer has authorized that outcome.
-   - `wontfix` enhancement: write or update `.out-of-scope/`, link to it from a comment, then close if authorized.
+   - `wontfix` enhancement: if the repo has adopted `.out-of-scope/`, write or update the concept file, link to it from a comment, then close if authorized. Otherwise record the rationale in the repo's configured decision or planning source and propose `.out-of-scope/` as a separate adoption decision.
    - `needs-triage`: apply the role. Add an optional progress comment if useful.
 
 ## Quick State Override

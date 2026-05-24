@@ -4,7 +4,9 @@ Read-only/no-mutation guard: in read-only, readonly, review-only, audit-only, no
 no-mutation mode, draft only. Do not close issues, change labels, write `.out-of-scope/` records, or
 mutate planning SQLite; return proposed tracker and file mutations for later approval.
 
-The `.out-of-scope/` directory stores durable records of rejected feature requests.
+The `.out-of-scope/` directory stores durable records of rejected feature requests only for repos
+that have explicitly adopted this pattern. Do not create or treat this directory as canonical merely
+because this reference file exists.
 
 It exists for:
 

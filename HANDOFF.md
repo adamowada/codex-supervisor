@@ -17,7 +17,7 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
 As of this snapshot, Stage 6 is complete and ACP'd, and Stage 7 is the active current-queue plan.
-The expected queue state after Stage 7C completion is `completed`: no ready, running, blocked, or
+The expected queue state after Stage 7D completion is `completed`: no ready, running, blocked, or
 HITL task remains in the current queue until the next Stage 7 slice is shaped. If the database
 reports anything else, trust the database and call this handoff stale.
 
@@ -27,13 +27,13 @@ Recent completed ACP checkpoints:
 - `200d027`: hardened exact task claiming, Story Loop queue snapshots, completed-plan criteria, and
   worker-result/attribution skill contracts.
 
-The latest full local gate passed after the Stage 7C worker orchestration update with:
+The latest full local gate passed after the Stage 7D worktree state update with:
 
 ```sh
 uv run --no-sync python -B scripts/verify.py
 ```
 
-That run covered 280 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
+That run covered 284 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
 hygiene, planning integrity, skill inventory, source inventory, protected locks, and
 `uv lock --check`.
 
@@ -116,6 +116,16 @@ Stage 7C worker orchestration changed:
 - `insights/stage7c-worker-orchestration-worker-result.json`: durable Stage 7C worker-result
   evidence.
 
+Stage 7D worktree state snapshots changed:
+
+- `src/codex_supervisor/worktree_state.py`: added read-only `inspect_worktree_state`, which uses
+  an injected command runner and shell-free git argv to capture branch, base commit, head commit,
+  dirty status paths, diff-summary paths, raw command evidence, and changed-path violations.
+- `tests/test_worktree_state.py`: covers clean snapshots, dirty out-of-scope path reporting,
+  `worktree_state_failed` command failure classification, and outside-workspace rejection before any
+  runner invocation.
+- `insights/stage7d-worktree-state-worker-result.json`: durable Stage 7D worker-result evidence.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -139,11 +149,11 @@ Use story-loop-status as the queue state machine. Use task-current only as the e
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
 If queue_state is completed, shape the next vertical slice in planning SQLite before editing. A
-likely next AFK slice is Stage 7D: persist orchestration output paths and metadata into planning
-worker-run records through typed helpers, then connect the completed Worker Result artifact to
-planning ingestion without enabling live worktree cleanup. Keep it explicitly non-live while the
-local Codex CLI still fails preflight with `Access is denied`; do not launch live `codex exec` until
-an accessible executable path and intended `CODEX_HOME` are confirmed.
+likely next AFK slice is Stage 7E: cleanup and orphan detection command planning behind
+`validate_cleanup_target`, still using injected command runners and no live deletion by default.
+Keep it explicitly non-live while the local Codex CLI still fails preflight with `Access is denied`;
+do not launch live `codex exec` until an accessible executable path and intended `CODEX_HOME` are
+confirmed.
 ```
 
 ## Active Caveats

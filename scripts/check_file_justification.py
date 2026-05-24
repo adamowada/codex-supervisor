@@ -235,6 +235,10 @@ FILE_PURPOSES = {
         "structured worker-result evidence for the Stage 7C worker orchestration slice",
         "check_planning_integrity",
     ),
+    "insights/stage7d-worktree-state-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 7D worktree state slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
@@ -297,6 +301,9 @@ FILE_PURPOSES = {
     "src/codex_supervisor/worktree_artifacts.py": FilePurpose(
         "worktree and run-artifact path guards", "pytest"
     ),
+    "src/codex_supervisor/worktree_state.py": FilePurpose(
+        "read-only worktree state snapshots", "pytest"
+    ),
     "tests/test_file_justification.py": FilePurpose("file purpose gate tests", "pytest"),
     "tests/test_goal_contracts.py": FilePurpose("Goal Contract renderer tests", "pytest"),
     "tests/test_locks.py": FilePurpose("protected lock helper tests", "pytest"),
@@ -315,6 +322,7 @@ FILE_PURPOSES = {
     "tests/test_worktree_artifacts.py": FilePurpose(
         "worktree and run-artifact guard tests", "pytest"
     ),
+    "tests/test_worktree_state.py": FilePurpose("worktree state snapshot tests", "pytest"),
     "tests/test_verify_script.py": FilePurpose("verification runner tests", "pytest"),
     "uv.lock": FilePurpose("locked development dependency graph", "uv lock --check"),
 }

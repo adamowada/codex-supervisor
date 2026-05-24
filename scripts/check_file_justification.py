@@ -243,6 +243,10 @@ FILE_PURPOSES = {
         "structured worker-result evidence for the Stage 7E cleanup planning slice",
         "check_planning_integrity",
     ),
+    "insights/stage7f-cleanup-plan-cli-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 7F cleanup-plan CLI slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),

@@ -17,9 +17,9 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
 As of this snapshot, Stage 6 is complete and ACP'd, and Stage 7 is the active current-queue plan.
-The expected queue state after Stage 7E completion is `completed`: no ready, running, blocked, or
-HITL task remains in the current queue until the next Stage 7 slice is shaped. If the database
-reports anything else, trust the database and call this handoff stale.
+The expected queue state after Stage 7F completion is `completed` or `empty`, depending on whether
+the completed Stage 7 plan has been marked `completed` and Stage 8 has been shaped yet. If the
+database reports anything else, trust the database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
@@ -27,13 +27,13 @@ Recent completed ACP checkpoints:
 - `200d027`: hardened exact task claiming, Story Loop queue snapshots, completed-plan criteria, and
   worker-result/attribution skill contracts.
 
-The latest full local gate passed after the Stage 7E cleanup planning update with:
+The latest full local gate passed after the Stage 7F cleanup-plan CLI update with:
 
 ```sh
 uv run --no-sync python -B scripts/verify.py
 ```
 
-That run covered 289 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
+That run covered 292 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
 hygiene, planning integrity, skill inventory, source inventory, protected locks, and
 `uv lock --check`.
 
@@ -136,6 +136,16 @@ Stage 7E cleanup and orphan planning changed:
 - `insights/stage7e-cleanup-orphan-planning-worker-result.json`: durable Stage 7E worker-result
   evidence.
 
+Stage 7F cleanup-plan dry-run CLI changed:
+
+- `src/codex_supervisor/cli.py`: added `cleanup-plan`, a non-destructive dry-run command that
+  accepts workspace root, cleanup candidates, active worker-run IDs, reason, and JSON output.
+- `src/codex_supervisor/worktree_cleanup.py`: remains the single cleanup planning implementation
+  used by the CLI.
+- `tests/test_worktree_cleanup.py`: now covers CLI JSON output, human output, active-run skipping,
+  invalid path failure, and proof that candidate directories remain on disk.
+- `insights/stage7f-cleanup-plan-cli-worker-result.json`: durable Stage 7F worker-result evidence.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -158,12 +168,10 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 Use story-loop-status as the queue state machine. Use task-current only as the executable AFK
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
-If queue_state is completed, shape the next vertical slice in planning SQLite before editing. A
-likely next AFK slice is Stage 7F: feed active worker-run IDs from planning SQLite into cleanup
-planning or add a dry-run CLI command that exposes cleanup plans without deleting anything. Keep it
-explicitly non-live while the local Codex CLI still fails preflight with `Access is denied`; do not
-launch live `codex exec` until an accessible executable path and intended `CODEX_HOME` are
-confirmed.
+If queue_state is empty after Stage 7 is marked completed, shape Stage 8 in planning SQLite before
+editing. The next likely plan is Stage 8: Review And Verification Loop. Keep live Codex Exec launch
+disabled while the local Codex CLI still fails preflight with `Access is denied`; do not launch live
+`codex exec` until an accessible executable path and intended `CODEX_HOME` are confirmed.
 ```
 
 ## Active Caveats

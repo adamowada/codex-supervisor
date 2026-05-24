@@ -49,6 +49,8 @@ from codex_supervisor.story_loop import (
     record_story_loop_progress,
 )
 from codex_supervisor.worker_results import WorkerResult
+from codex_supervisor.worktree_artifacts import WorktreeArtifactError
+from codex_supervisor.worktree_cleanup import CleanupPlan, plan_cleanup_targets
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -367,7 +369,34 @@ def main(argv: list[str] | None = None) -> int:
     worker_status_parser.add_argument("--completed-at", default=None)
     worker_status_parser.add_argument("--result-path", default=None)
 
+    cleanup_plan_parser = subparsers.add_parser(
+        "cleanup-plan",
+        help="Build a non-destructive cleanup plan for ignored runtime paths",
+    )
+    cleanup_plan_parser.add_argument("--workspace-root", type=Path, required=True)
+    cleanup_plan_parser.add_argument("--candidate", type=Path, action="append", default=[])
+    cleanup_plan_parser.add_argument("--active-worker-run-id", action="append", default=[])
+    cleanup_plan_parser.add_argument("--reason", default="orphaned_runtime_path")
+    cleanup_plan_parser.add_argument("--json", action="store_true", default=False)
+
     args = parser.parse_args(argv)
+
+    if args.command == "cleanup-plan":
+        try:
+            cleanup_plan = plan_cleanup_targets(
+                workspace_root=args.workspace_root,
+                candidate_paths=tuple(args.candidate),
+                active_worker_run_ids=tuple(args.active_worker_run_id),
+                reason=args.reason,
+            )
+        except WorktreeArtifactError as exc:
+            print(f"cleanup-plan failed: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            _print_json(cleanup_plan)
+        else:
+            _print_cleanup_plan(cleanup_plan)
+        return 0
 
     if args.command == "plan-init":
         path = _planning_path_or_report(args.path)
@@ -1460,6 +1489,28 @@ def _print_json_section(label: str, value: object) -> None:
 
 def _print_json(value: object) -> None:
     print(json.dumps(_to_jsonable(value), indent=2, sort_keys=True, default=str))
+
+
+def _print_cleanup_plan(plan: CleanupPlan) -> None:
+    print(f"workspace_root: {plan.workspace_root}")
+    print("selected:")
+    if not plan.selected_entries:
+        print("- none")
+    for entry in plan.selected_entries:
+        print(
+            f"- {entry.repo_relative_path}\t{entry.runtime_kind}\t"
+            f"worker_run_id={entry.worker_run_id}\treason={entry.reason}\t"
+            f"operation={entry.operation}"
+        )
+    print("skipped:")
+    if not plan.skipped_entries:
+        print("- none")
+    for entry in plan.skipped_entries:
+        print(
+            f"- {entry.repo_relative_path}\t{entry.runtime_kind or 'unsupported'}\t"
+            f"worker_run_id={entry.worker_run_id or 'none'}\t"
+            f"skip_reason={entry.skip_reason}"
+        )
 
 
 def _to_jsonable(value: object) -> Any:

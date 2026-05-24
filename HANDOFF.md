@@ -17,7 +17,7 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
 As of this snapshot, Stage 6 is complete and ACP'd, and Stage 7 is the active current-queue plan.
-The expected queue state after Stage 7A completion is `completed`: no ready, running, blocked, or
+The expected queue state after Stage 7B completion is `completed`: no ready, running, blocked, or
 HITL task remains in the current queue until the next Stage 7 slice is shaped. If the database
 reports anything else, trust the database and call this handoff stale.
 
@@ -27,13 +27,13 @@ Recent completed ACP checkpoints:
 - `200d027`: hardened exact task claiming, Story Loop queue snapshots, completed-plan criteria, and
   worker-result/attribution skill contracts.
 
-The latest full local gate passed after the Stage 7A worktree-layout update with:
+The latest full local gate passed after the Stage 7B worker-launch preparation update with:
 
 ```sh
 uv run --no-sync python -B scripts/verify.py
 ```
 
-That run covered 273 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
+That run covered 276 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
 hygiene, planning integrity, skill inventory, source inventory, protected locks, and
 `uv lock --check`.
 
@@ -94,6 +94,16 @@ Stage 7A worktree and artifact layout changed:
   identifiers, cleanup containment, relative cleanup targets, and changed-file scope validation.
 - `insights/stage7a-worktree-layout-worker-result.json`: durable Stage 7A worker-result evidence.
 
+Stage 7B worker launch preparation changed:
+
+- `src/codex_supervisor/worker_launches.py`: added `prepare_worker_launch_request`, which bridges
+  planning task rows and Stage 7A layout into a `WorkerLaunchRequest` plus worker-run metadata
+  without creating worktrees or launching Codex.
+- `tests/test_worker_launches.py`: covers successful request preparation, metadata field exposure,
+  no filesystem side effects, and unsafe worker-run ID rejection.
+- `insights/stage7b-worker-launch-preparation-worker-result.json`: durable Stage 7B worker-result
+  evidence.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -117,11 +127,11 @@ Use story-loop-status as the queue state machine. Use task-current only as the e
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
 If queue_state is completed, shape the next vertical slice in planning SQLite before editing. The
-likely next AFK slice is Stage 7B: connect `WorktreeRunLayout` to `WorkerLaunchRequest`
-construction, worker-run metadata, and diff-summary capture through injected runners. Keep it
-explicitly non-live while the local Codex CLI still fails preflight with `Access is denied`; do not
-launch live `codex exec` until an accessible executable path and intended `CODEX_HOME` are
-confirmed.
+likely next AFK slice is Stage 7C: connect `WorkerLaunchPreparation` to `CodexExecBackend.run`
+through a non-live orchestrator/fake runner test, including diff-summary capture and changed-file
+validation integration. Keep it explicitly non-live while the local Codex CLI still fails preflight
+with `Access is denied`; do not launch live `codex exec` until an accessible executable path and
+intended `CODEX_HOME` are confirmed.
 ```
 
 ## Active Caveats

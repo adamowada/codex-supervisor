@@ -227,6 +227,10 @@ FILE_PURPOSES = {
         "structured worker-result evidence for the Stage 7A worktree layout slice",
         "check_planning_integrity",
     ),
+    "insights/stage7b-worker-launch-preparation-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 7B worker launch preparation slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
@@ -277,6 +281,9 @@ FILE_PURPOSES = {
     "src/codex_supervisor/worker_backends.py": FilePurpose(
         "worker backend protocol and fake backend", "pytest"
     ),
+    "src/codex_supervisor/worker_launches.py": FilePurpose(
+        "worker launch request preparation", "pytest"
+    ),
     "src/codex_supervisor/worker_results.py": FilePurpose(
         "Worker Result Contract validation", "pytest"
     ),
@@ -293,6 +300,9 @@ FILE_PURPOSES = {
     "tests/test_source_inventory.py": FilePurpose("source inventory gate tests", "pytest"),
     "tests/test_story_loop.py": FilePurpose("Story Loop tests", "pytest"),
     "tests/test_worker_backends.py": FilePurpose("worker backend protocol tests", "pytest"),
+    "tests/test_worker_launches.py": FilePurpose(
+        "worker launch request preparation tests", "pytest"
+    ),
     "tests/test_worker_results.py": FilePurpose("worker result validation tests", "pytest"),
     "tests/test_worktree_artifacts.py": FilePurpose(
         "worktree and run-artifact guard tests", "pytest"

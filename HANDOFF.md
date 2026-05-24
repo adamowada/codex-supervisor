@@ -37,7 +37,7 @@ Major additions now present:
   historical plans, worker-run IDs cannot be reassigned across tasks, and completed worker results
   now require nonempty evidence fields.
 - `story-loop-status` now includes both active and blocked current-queue plans by default, so a
-  blocked successor such as Stage 6 remains visible even after the active HITL checkpoint resolves.
+  successor such as Stage 6 remains visible as soon as the publication checkpoint resolves.
   Use `--all` only when historical completed, abandoned, or superseded plans are needed.
 - Planning queue integrity now rejects terminal or ready task states while a nonterminal worker run
   is still attached, completed worker result paths are validated as repo-local JSON paths at write
@@ -96,9 +96,8 @@ Major additions now present:
   `uv run python -B -m codex_supervisor.cli --help` and
   `uv run --no-sync codex-supervisor --help`.
 - The Stage 6 Codex Exec backend successor is recorded durably as
-  `plan-stage6-codex-exec-backend`, but it is `blocked` by
-  `task-hitl-acp-bootstrap-checkpoint` and must not be treated as executable work until the HITL ACP
-  checkpoint resolves.
+  `plan-stage6-codex-exec-backend`. After ACP commit `e422e16` and queue reconciliation commit
+  `a024555`, its design task is now the next ready AFK task.
 - Latest six-lane follow-up hardening tightened skill mutation guards, made Codex Exec decision
   wording explicit about Stage 6, added the Matt Pocock MIT skill reuse decision, made worker-result
   snapshot evidence date-bound, and linked remaining checkpoint artifacts in planning SQLite.
@@ -108,31 +107,14 @@ Major additions now present:
 - `check_protected_files.py` now reports untracked protected files and hash mismatches together, so
   ACP can see all lock work in one run.
 
-Implementation checks last passed in this dirty worktree on 2026-05-24 at HEAD `5cbc6bc` with:
-
-- `uv run python -B -m pytest -q -p no:cacheprovider` (207 passed)
-- `uv run ruff check . --no-cache`
-- `uv run ruff format --check . --no-cache`
-- `uv run mypy --no-incremental src scripts`
-- `uv run python -B -m codex_supervisor.cli --help`
-- `uv run --no-sync codex-supervisor --help`
-- `uv run python -B scripts/check_file_justification.py`
-- `uv run python -B scripts/check_public_repo_hygiene.py`
-- `uv run python -B scripts/check_planning_integrity.py`
-- `uv run python -B scripts/check_source_inventory.py`
-- `uv run python -B scripts/check_skill_inventory.py`
-- `uv lock --check`
-
-Both the default gate and stricter publication gate were re-run and are expected to fail until the
-HITL ACP checkpoint is resolved. The default gate reaches the protected-file guard after passing
-tests, lint, format, typecheck, CLI smoke, file justification, public hygiene, planning integrity,
-skill inventory, and source inventory; it stops because `.gitattributes` is present but untracked.
-Protected hashes are refreshed for the current intended protected-doc bytes, so after `.gitattributes`
-is staged/tracked the next lock failure should represent new drift. The publication gate stops
-earlier because many intended public files are unstaged or untracked:
+Implementation checks last passed in a clean worktree on 2026-05-24 at HEAD `a024555` with:
 
 - `uv run python -B scripts/verify.py`
 - `uv run python -B scripts/verify.py --publication-ready`
+
+Both commands passed after ACP and planning queue reconciliation. They cover 217 tests, Ruff, format
+check, mypy, CLI smoke checks, file justification, public hygiene, planning integrity, skill
+inventory, source inventory, protected locks, and `uv lock --check`.
 
 ## Next Recommended Session Prompt
 
@@ -140,8 +122,9 @@ earlier because many intended public files are unstaged or untracked:
 Use the codex-supervisor skill. If that skill is not listed in the active Codex session, read
 `.agents/skills/codex-supervisor/SKILL.md` directly and follow it as the repo-local fallback.
 
-Read the minimum orientation set first: README.md, AGENTS.md, PLANS.md, HANDOFF.md, and
-insights/README.md. Do not bulk-read historical audits before inspecting the live queue.
+Read the minimum stable orientation set first: README.md, AGENTS.md, PLANS.md, and
+insights/README.md. Do not read mutable HANDOFF.md or bulk-read historical audits before inspecting
+the live queue.
 
 Inspect plans/planning.sqlite3 through the existing typed planning helpers and summarize active
 plans, decisions, progress events, and next tasks. Use:
@@ -169,17 +152,14 @@ asks for historical backlog rows or reopens the plan.
 
 Snapshot only:
 
-As of this handoff snapshot, the expected state is no ready AFK task, one HITL checkpoint
-(`task-hitl-acp-bootstrap-checkpoint` under `plan-bootstrap-publication-checkpoint`), and one blocked
-successor plan (`plan-stage6-codex-exec-backend`). If the database reports a different state, trust
-the database and call out this handoff as stale. If an older fresh thread reports
-`plan-goal-contracts-story-loop` as the active plan with
-`task-knowledge-graph-six-lane-audit` ready, that thread is reading a stale pre-checkpoint snapshot;
-rerun `story-loop-status --json` and inspect the active HITL task before choosing work.
+As of this handoff snapshot, the expected state is `queue_state: "ready"` with current task
+`task-stage6-codex-exec-backend-design` under active plan `plan-stage6-codex-exec-backend`. The
+bootstrap publication checkpoint is completed and linked to ACP commit `e422e16`; queue
+reconciliation is commit `a024555`. If the database reports a different state, trust the database and
+call out this handoff as stale.
 
 ROADMAP Stage 5 is implemented locally. Begin from the current database state rather than from stale
-handoff prose. If the HITL checkpoint is still ready, do not start Stage 6 until the user approves
-or rejects publication of the bootstrap checkpoint.
+handoff prose.
 
 Until ROADMAP Stage 6 is implemented, `worker_backend=codex_exec` is a planned backend label rather
 than an automatic launcher. Execute ready AFK tasks in the supervised thread, in an explicitly
@@ -189,11 +169,9 @@ created worktree, or through a hand-authored fresh-context worker prompt.
 ## Current Implementation Focus
 
 The next implementation focus should come from `story-loop-status` and `task-current`, not handoff
-prose. At this snapshot, the next action is HITL review/ACP of the bootstrap checkpoint. Stage 5 Goal
-Contract and Story Loop support is implemented locally; preserve or extend it only when the active
-database task requires that. Stage 6 Codex Exec backend is now represented as a blocked successor
-plan and remains the next roadmap implementation layer once bootstrap hardening and publication
-checkpoint work is complete.
+prose. At this snapshot, the next action is the Stage 6 Codex Exec backend design/contract task.
+Stage 5 Goal Contract and Story Loop support is implemented locally; preserve or extend it only when
+the active database task requires that.
 
 Stage 1 is historical context: the planning database can be inspected and mutated through typed
 helpers and CLI commands, including plan, milestone, and criterion creation; lifecycle/status

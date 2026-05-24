@@ -8,9 +8,8 @@ Roadmap status is descriptive, not the work selector. Fresh threads must use
 Create the repo, source-of-truth documents, ignored source clones, Python skeleton, planning
 database, source locks, and clean handoff.
 
-Status: completed locally. The canonical current state lives in `plans/planning.sqlite3`, and
-publication/reproducible-clean-clone readiness remains blocked until the active HITL ACP checkpoint
-is approved and published.
+Status: completed and published. The canonical current state lives in `plans/planning.sqlite3`.
+Bootstrap publication was ACP'd to `origin/main`, and the reproducible clean-clone gates now pass.
 
 ## Stage 1: Planning SQLite Core
 
@@ -79,11 +78,11 @@ Implemented:
 ## Stage 6: Codex Exec Backend
 
 Do not start this stage from roadmap order alone. Use `story-loop-status` and the current-queue
-planning state first; HITL publication checkpoints block Stage 6 work until resolved.
+planning state first.
 
-Status: queued as blocked successor plan `plan-stage6-codex-exec-backend`. It must remain blocked by
-`task-hitl-acp-bootstrap-checkpoint` until the bootstrap ACP/publication checkpoint is approved or
-explicitly superseded.
+Status: active ready successor plan `plan-stage6-codex-exec-backend` after the bootstrap ACP
+publication checkpoint. The current task is the design/contract slice
+`task-stage6-codex-exec-backend-design`.
 
 Launch fresh-context workers:
 

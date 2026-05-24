@@ -190,8 +190,6 @@ Confidence: confirmed.
 
 ## Remaining Watch Items
 
-- Untracked canonical files must be staged in the next ACP before the public repo can be considered
-  reproducible from a clean clone.
 - The Stage 6 Codex Exec backend is not implemented; `worker_backend=codex_exec` is a planned
   backend label until then.
 - Public hygiene checks are useful but intentionally lightweight; consider a stronger secret scanner
@@ -204,6 +202,8 @@ Confidence: confirmed.
 
 ## Recently Fixed And Verified
 
+- The bootstrap publication checkpoint was ACP'd to `origin/main`, `.gitattributes` and the new
+  public bootstrap files are tracked, and the default plus publication-ready verification gates pass.
 - Planning schema version 3 now rebuilds constrained tables and validates critical SQLite DDL
   fragments, including status enums and `review_required` boolean constraints.
 - Fresh-thread orientation now has current-queue CLI flags so blocked successor plans stay visible:

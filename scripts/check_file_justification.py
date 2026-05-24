@@ -259,6 +259,10 @@ FILE_PURPOSES = {
         "structured worker-result evidence for the Stage 8C review result persistence slice",
         "check_planning_integrity",
     ),
+    "insights/stage8d-review-repair-routing-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 8D review repair routing slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
@@ -311,6 +315,9 @@ FILE_PURPOSES = {
     "src/codex_supervisor/review_persistence.py": FilePurpose(
         "review result planning persistence helpers", "pytest"
     ),
+    "src/codex_supervisor/review_repairs.py": FilePurpose(
+        "accepted review finding repair task routing helpers", "pytest"
+    ),
     "src/codex_supervisor/story_loop.py": FilePurpose("Story Loop queue state machine", "pytest"),
     "src/codex_supervisor/worker_backends.py": FilePurpose(
         "worker backend protocol and fake backend", "pytest"
@@ -341,6 +348,7 @@ FILE_PURPOSES = {
     "tests/test_public_repo_hygiene.py": FilePurpose("public hygiene gate tests", "pytest"),
     "tests/test_review_loop.py": FilePurpose("review loop contract tests", "pytest"),
     "tests/test_review_persistence.py": FilePurpose("review result persistence tests", "pytest"),
+    "tests/test_review_repairs.py": FilePurpose("review repair routing tests", "pytest"),
     "tests/test_skill_inventory.py": FilePurpose("skill inventory gate tests", "pytest"),
     "tests/test_source_inventory.py": FilePurpose("source inventory gate tests", "pytest"),
     "tests/test_story_loop.py": FilePurpose("Story Loop tests", "pytest"),

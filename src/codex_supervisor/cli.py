@@ -16,6 +16,11 @@ from codex_supervisor.goal_contracts import (
     render_goal_contract,
     render_goal_contract_markdown,
 )
+from codex_supervisor.insights import (
+    InsightContractError,
+    InsightRecord,
+    validate_insight_record_payload,
+)
 from codex_supervisor.paths import default_planning_database_path
 from codex_supervisor.planning import (
     CLAIM_WORKER_RUN_STATUSES,
@@ -409,6 +414,13 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
     )
     review_ingest_parser.add_argument("--json", action="store_true", default=False)
+
+    insight_validate_parser = subparsers.add_parser(
+        "insight-validate",
+        help="Validate a reusable insight JSON file without writing durable state",
+    )
+    insight_validate_parser.add_argument("--insight-path", type=Path, required=True)
+    insight_validate_parser.add_argument("--json", action="store_true", default=False)
 
     cleanup_plan_parser = subparsers.add_parser(
         "cleanup-plan",
@@ -1022,6 +1034,18 @@ def main(argv: list[str] | None = None) -> int:
             _print_review_result_ingestion(output)
         return 0
 
+    if args.command == "insight-validate":
+        try:
+            insight_record = _load_insight_record(args.insight_path)
+        except (OSError, json.JSONDecodeError, InsightContractError) as exc:
+            print(f"Could not validate insight: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            _print_json(insight_record)
+        else:
+            _print_insight_record(insight_record)
+        return 0
+
     if args.command == "plan-upsert":
         write_store = _open_write_store(args.path)
         if write_store is None:
@@ -1321,6 +1345,11 @@ def _write_story_loop_record_or_report(
 def _load_review_result(path: Path) -> ReviewResult:
     payload = json.loads(path.read_text(encoding="utf-8"))
     return validate_review_result_payload(payload)
+
+
+def _load_insight_record(path: Path) -> InsightRecord:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return validate_insight_record_payload(payload)
 
 
 def _review_result_artifact_id(path: Path, explicit_artifact_id: str | None) -> str:
@@ -1716,6 +1745,22 @@ def _print_review_result_ingestion(output: dict[str, object]) -> None:
                 )
     else:
         print("- none")
+
+
+def _print_insight_record(record: InsightRecord) -> None:
+    print(f"claim: {record.claim}")
+    print(f"confidence: {record.confidence}")
+    print("evidence:")
+    for evidence in record.evidence:
+        print(f"- {evidence}")
+    print(f"scope: {record.scope}")
+    print("supersedes:")
+    if record.supersedes:
+        for superseded in record.supersedes:
+            print(f"- {superseded}")
+    else:
+        print("- none")
+    print(f"next_action: {record.next_action}")
 
 
 def _to_jsonable(value: object) -> Any:

@@ -271,6 +271,10 @@ FILE_PURPOSES = {
         "structured worker-result evidence for the Stage 9A reusable insight contract slice",
         "check_planning_integrity",
     ),
+    "insights/stage9b-insight-cli-validation-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 9B insight validation CLI slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
@@ -354,6 +358,7 @@ FILE_PURPOSES = {
     "tests/test_file_justification.py": FilePurpose("file purpose gate tests", "pytest"),
     "tests/test_goal_contracts.py": FilePurpose("Goal Contract renderer tests", "pytest"),
     "tests/test_insights.py": FilePurpose("reusable insight contract tests", "pytest"),
+    "tests/test_insight_cli.py": FilePurpose("insight validation CLI tests", "pytest"),
     "tests/test_locks.py": FilePurpose("protected lock helper tests", "pytest"),
     "tests/test_planning.py": FilePurpose("planning store and CLI tests", "pytest"),
     "tests/test_planning_integrity.py": FilePurpose("planning integrity gate tests", "pytest"),

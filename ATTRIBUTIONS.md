@@ -1,14 +1,14 @@
 # Attributions
 
-`codex-supervisor` is MIT-licensed original work. It currently uses the repositories below as
-ignored local study sources and possible future integration references. Their source code is not
+`codex-supervisor` is MIT-licensed original work. It uses the repositories below as ignored local
+study sources and possible integration references. Their source code is not
 vendored into this repository as full upstream projects; selected MIT-licensed skill material copied
 or adapted into `.agents/skills/` is documented separately below.
 
 ## Ignored Inspiration Sources
 
 The authoritative source clone inventory lives in `sources/README.md`: upstream URLs, pinned local
-commits, observed license posture, license evidence hashes, and current use posture are validated
+commits, observed license posture, license evidence hashes, and documented use posture are validated
 there by `scripts/check_source_inventory.py`.
 
 This file intentionally does not repeat that table. Keep source-clone metadata in one place to avoid

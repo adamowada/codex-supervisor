@@ -9,10 +9,10 @@ orchestration, durable memory, and production-worthy code.
 uv run python -B scripts/verify.py
 ```
 
-During a HITL ACP/publication checkpoint, the default suite can intentionally fail at the protected
-file lock guard until intended protected files are tracked and hashes have been refreshed. In that
-state, run the component checks listed in `HANDOFF.md` to verify implementation quality, then use
-the default suite again after the checkpoint is staged or resolved.
+During a HITL ACP/publication checkpoint, the protected-file lock guard can fail while intended
+protected files are tracked and hashes are refreshed. In that checkpoint, run the component checks
+listed in `HANDOFF.md` for task-level evidence, then run the default suite again after the lock
+guard is reconciled.
 
 The default suite expands to:
 
@@ -32,9 +32,9 @@ uv run python -B scripts/check_protected_files.py
 uv lock --check
 ```
 
-The default suite must be deterministic and must not launch real Codex workers.
-It sets `PYTHONDONTWRITEBYTECODE=1` and uses cache-safe pytest, Ruff, and mypy flags so verification
-does not depend on stale cache state. Local tooling can still leave ignored environment or cache
+The default suite is deterministic and does not launch real Codex workers. It sets
+`PYTHONDONTWRITEBYTECODE=1` and uses cache-safe pytest, Ruff, and mypy flags so verification does
+not depend on stale cache state. Local tooling can still leave ignored environment or cache
 directories such as `.venv/`, `.mypy_cache/`, or `__pycache__/` when run outside the verifier or by
 dependency setup; those artifacts are ignored and must remain unstaged.
 
@@ -55,58 +55,80 @@ evidence are present in the git index, while ignored `sources/` clones remain un
 folder to match an intentional purpose category.
 
 `scripts/check_skill_inventory.py` protects repo-local skills by requiring frontmatter name and
-description metadata, folder/name agreement, route-map coverage, and no prohibited tool-family drift.
+description metadata, folder/name agreement, route-map coverage, and no prohibited tool-family
+drift.
 
-## Test Layers
+## Required Test Surfaces
 
-### Current Unit And Script Coverage
+### Planning And Queue
 
 - planning records and serialization;
 - planning SQLite drift checks;
-- completed worker-result existence, shared-result identity, and JSON result schema checks;
 - SQLite initialization and idempotency;
-- planning CLI creation, lifecycle, and fresh-thread error handling;
+- schema migrations and critical DDL validation;
+- planning CLI creation, inspection, lifecycle, and fresh-thread error handling;
 - task status transitions;
-- atomic task claiming and running queue-state reporting;
-- Story Loop queue reporting for active and blocked current-queue plans;
-- safe task and worker-run upserts that preserve omitted contract/evidence fields by default;
+- atomic task claiming;
+- running, ready, HITL, blocked, completed, and empty queue reporting;
+- safe task and worker-run upserts that preserve omitted contract/evidence fields by default.
+
+### Contracts And Evidence
+
+- Worker Result Contract schema;
+- task schema and AFK readiness;
+- completed worker-result existence;
+- shared-result identity coverage;
+- artifact-link relationships;
+- exact acceptance-criterion evidence;
+- zero-exit verification records;
+- changed-file alignment with task `allowed_paths_json`;
+- Goal Contract prompt rendering and native-goal fallback text.
+
+### Source Of Truth And Hygiene
+
 - source lock hash calculation;
-- Goal Contract prompt rendering;
-- planning schema v2/v3/v4 migrations and critical DDL validation;
-- Story Loop status and progress recording;
-- public repo hygiene, file purpose, skill inventory, and source inventory checks.
+- protected-file tracking;
+- public repo hygiene;
+- file purpose classification;
+- source inventory validation;
+- skill inventory validation;
+- attribution and ignored-source boundaries.
 
-### Planned Expansion
+### Orchestration
 
-These surfaces are part of the contract but are not implemented deeply enough to call covered yet:
+- Story Loop selection and stop conditions;
+- progress recording;
+- fake worker backend execution;
+- Codex Exec worker-launch preflight;
+- JSONL parsing for worker evidence;
+- worktree setup, diff capture, and cleanup guards;
+- review and repair-loop records.
+
+### Project Intelligence
 
 - project adapter parsing;
-- future planning schema migrations beyond schema version 4;
-- insights graph convention validation;
-- fake worker backend execution;
-- JSONL parsing for worker evidence.
+- verification command selection;
+- insights graph conventions;
+- skill golden task evaluation;
+- Codex local state read-only imports;
+- automation bridge records.
 
-### Future Integration
+## Integration Harness
 
-- create a temporary repo;
-- initialize planning database;
-- compile a plan into tasks;
-- create a worktree;
-- run a fake worker backend;
-- parse fake JSONL;
-- record artifacts and progress.
+Integration tests use temporary repositories and fake worker backends to exercise the factory loop
+without launching live Codex workers:
 
-### Future Contract
+1. create a temporary repo;
+2. initialize planning SQLite;
+3. compile a plan into vertical-slice tasks;
+4. create a worktree;
+5. run a fake worker backend;
+6. parse structured worker evidence;
+7. record artifacts, review results, progress events, and handoff notes;
+8. verify planning integrity and publication hygiene.
 
-Contract tests must protect:
+## Live Full-Auto
 
-- worker result schema;
-- task schema;
-- source lock file shape;
-- planning schema migrations;
-- insights graph conventions.
-
-### Live/Full-Auto
-
-Live Codex execution must be opt-in during early implementation. Once the supervisor matures, live
-full-auto smoke tests may run only in explicitly marked trusted environments.
+Live Codex execution is opt-in and requires an explicitly trusted environment. Live smoke tests use
+disposable worktrees, narrow allowed paths, bounded tasks, structured result schemas, and verification
+commands that can run repeatedly without damaging local state.

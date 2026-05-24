@@ -4,11 +4,11 @@
 
 This repository builds `codex-supervisor`: a Python-first control plane for coordinating
 fresh-context Codex workers, worktrees, checks, reviews, handoffs, skills, and project source of
-truth until production-quality code is produced. The current repo implements planning, Goal
-Contracts, Story Loop state, verification gates, skills, and handoff doctrine; automatic Codex Exec
-worker launch is still a planned backend.
+truth until production-quality code is produced.
 
 The product is not a replacement for Codex. It is a durable orchestration layer around Codex.
+`README.md` describes the end-state product shape. Live operational progress belongs only in
+`plans/planning.sqlite3` and `HANDOFF.md`.
 
 ## Operating Principles
 
@@ -56,6 +56,9 @@ new hashes.
 
 Operational planning state belongs in `plans/planning.sqlite3`. Use typed helpers in
 `codex_supervisor.planning`; do not scatter ad hoc SQL across the project.
+Do not mirror live queue state, stage progress, or task completion notes into protected markdown.
+Protected docs define doctrine, schemas, contracts, and operating rules. `HANDOFF.md` can summarize
+what a new thread needs to know, but the planning database remains the queue authority.
 
 Local Codex databases under `~/.codex` are read-only telemetry inputs. Do not write directly to
 Codex internal SQLite databases. Reconcile observations into project-owned planning SQLite, and use
@@ -150,7 +153,7 @@ Git state, or read-only SQLite inspection.
 
 ## Project Adapters
 
-Initial adapter targets:
+Adapter families:
 
 - `nlp-stock-prediction`: planning SQLite adapter.
 - `observe-safety-monorepo`: markdown plan adapter and validation command adapter.
@@ -160,7 +163,8 @@ Initial adapter targets:
 
 ## Definition Of Done
 
-- The requested behavior is implemented or explicitly documented as staged future work.
+- The selected task contract is satisfied, or the blocker/HITL decision is recorded in planning
+  SQLite.
 - Focused tests cover changed behavior.
 - Relevant checks pass.
 - Source-of-truth docs are updated only when intentionally required.

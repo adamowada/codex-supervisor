@@ -1,6 +1,6 @@
 # Contracts
 
-This document defines durable contracts for the supervisor. Implementation should preserve these
+This document defines durable contracts for the supervisor. Code changes must preserve these
 contracts unless an approved plan changes them.
 
 ## Task Contract
@@ -94,7 +94,7 @@ Required fields:
 - `artifacts`
 - `handoff_notes`
 
-Codex workers should use `codex exec --json --output-schema` once the backend is implemented.
+Codex worker backends emit structured results compatible with `codex exec --json --output-schema`.
 Completed worker-run rows must link `result_path` to an existing repo-local JSON artifact with the
 `worker-result` relationship in `plan_artifact_links`. Local
 integrity checks validate this required field set, field types, status vocabulary, artifact

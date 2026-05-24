@@ -5,7 +5,9 @@ This file defines the planning system for `codex-supervisor`.
 `PLANS.md` is immutable by default. Edit it only when the user specifically asks or when a clearly
 approved plan changes the planning contract.
 
-Active execution plans belong in `plans/planning.sqlite3`, not in markdown files.
+Operational execution plans, task progress, worker-run progress, and live queue state belong in
+`plans/planning.sqlite3`, not in markdown files. This document may define status vocabulary as part
+of the schema contract, but it must not mirror live stage or task progress.
 
 ## Planning Model
 
@@ -19,6 +21,7 @@ The planning database is tracked in git and acts as operational state for Codex.
 
 Markdown remains the source of truth for stable human-facing knowledge. Do not use planning tables
 as a private replacement for `README.md`, `AGENTS.md`, contracts, architecture, SOP, or insights.
+Likewise, do not use protected markdown as a private replacement for the planning database.
 
 ## Codex Local State Reconciliation
 
@@ -198,5 +201,6 @@ Do not:
 
 The initial database seed should contain `plan-bootstrap-supervisor`, which covers the creation of
 this repo, source-of-truth documents, source clones, Python skeleton, and handoff for implementation.
-This is historical seed doctrine, not the current-work selector. Current work must always come from
-`story-loop-status`, then `task-show <current_task_id>` or `task-current` according to queue state.
+This is historical seed doctrine, not the live-work selector. Live work selection must always come
+from `story-loop-status`, then `task-show <current_task_id>` or `task-current` according to queue
+state.

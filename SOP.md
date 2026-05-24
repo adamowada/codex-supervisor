@@ -57,7 +57,7 @@ shape for production-intended apps and avoid creating empty optional surfaces.
 
 ## Planning Session
 
-Before implementation:
+Before code changes:
 
 1. Lock goals.
 2. Lock non-goals.
@@ -83,9 +83,9 @@ For every AFK task:
    explicitly in scope and writes to the intended Codex home are allowed. Record resolved Codex
    executable, version output, config path, feature state, native-goal support for the selected
    backend, and fallback decision in worker metadata.
-4. Launch a fresh-context Codex worker through the configured backend. Until the Stage 6 Codex Exec
-   backend exists, execute the contract in the supervised thread or a manually created fresh-context
-   worker prompt.
+4. Launch a fresh-context Codex worker through the configured backend. If the environment cannot
+   launch the selected backend, record the blocker or create a HITL/manual-run task instead of
+   treating supervised-thread work as unattended worker execution.
 5. If native Goals are unavailable, include the Goal Contract in the worker prompt and do not write
    Codex internal goal databases.
 6. Execute one vertical slice/story only.

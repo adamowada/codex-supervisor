@@ -12,13 +12,14 @@ SQLite, filesystem, subprocess, and testing support.
 
 ## D-0002: Codex Exec Is The Primary Worker Primitive
 
-Decision: Fresh-context production workers should use `codex exec --json --output-schema` once the
-ROADMAP Stage 6 backend is implemented. Until then, `worker_backend=codex_exec` rows are planned
-backend labels and must not be treated as proof that `codex-supervisor` can launch workers itself.
+Decision: Fresh-context production workers use `codex exec --json --output-schema` as the primary
+worker primitive. `worker_backend=codex_exec` identifies the selected backend family; execution
+capability and worker-run evidence are proven only by planning SQLite rows, worker-run artifacts,
+and verification records.
 
 Rationale: `codex exec` is designed for automation, CI, scheduled jobs, explicit sandbox settings,
-JSONL event capture, and schema-constrained output. Keeping it as the intended primitive lets Stage
-6 design toward the right target without overstating current bootstrap capability.
+JSONL event capture, and schema-constrained output. Making it the primary primitive keeps CLI, MCP,
+plugin, and automation paths aligned around one worker contract.
 
 ## D-0003: MCP Is An Interface, Not The Core
 
@@ -115,5 +116,5 @@ allows adaptation with attribution, while repo-local editing lets Adam's persona
 generic upstream defaults.
 
 Consequence: Direct or adapted skill material belongs in `.agents/skills/`, not in ignored
-`sources/` clones. Future copying from any source still requires license review, attribution, and a
-stable decision or planning record before publication.
+`sources/` clones. Copying from any source requires license review, attribution, and a stable
+decision or planning record before publication.

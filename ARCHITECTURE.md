@@ -1,6 +1,7 @@
 # Architecture
 
-`codex-supervisor` is a Python control plane with optional MCP and plugin surfaces.
+`codex-supervisor` is a Python control plane with CLI, Codex Exec worker, MCP, plugin, and
+repo-scaffold surfaces.
 
 ## Core Shape
 
@@ -44,8 +45,8 @@ databases as the canonical queue.
 
 Read-only inputs:
 
-- `~/.codex/state_5.sqlite`: threads, spawn edges, dynamic tools, and empty or future agent-job
-  tables.
+- `~/.codex/state_5.sqlite`: threads, spawn edges, dynamic tools, and agent-job tables when
+  present.
 - `~/.codex/goals_1.sqlite`: per-thread goal rows when present.
 - `~/.codex/logs_2.sqlite`: local execution and application logs for workflow analytics.
 - `~/.codex/sqlite/codex-dev.db`: automation, automation run, and inbox tables when present.
@@ -81,8 +82,8 @@ the Goal Contract into the worker prompt and do not edit Codex config or interna
 The Story Loop Orchestrator applies one-story discipline to queued AFK work:
 
 - pick one highest-priority ready vertical slice;
-- prepare one fresh-context worker in an isolated workspace, and launch it through the Stage 6
-  backend once that backend exists;
+- prepare one fresh-context worker in an isolated workspace and launch it through the configured
+  backend;
 - verify and review the result;
 - record progress, artifacts, learnings, and follow-up tasks;
 - repeat only when another ready slice exists and policy allows it.
@@ -94,10 +95,9 @@ with `prd.json` or `progress.txt`, though it can import Ralph-inspired patterns.
 
 Backends execute one task in one isolated context.
 
-Initial planned backends:
+Backend families:
 
-- `CodexExecBackend`: primary production backend using `codex exec --json --output-schema` after
-  ROADMAP Stage 6 is designed, accepted, and implemented.
+- `CodexExecBackend`: primary production backend using `codex exec --json --output-schema`.
 - `ShellBackend`: deterministic checks and maintenance scripts.
 - `ClawCodeBackend`: optional local-model/reference backend inspired by `HarnessLab/claw-code-agent`;
   keep it generic and do not copy source while upstream licensing is unclear.

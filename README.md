@@ -1,57 +1,103 @@
 # Codex Supervisor
 
-`codex-supervisor` is a Python-first control plane for building an agentic coding factory around
+`codex-supervisor` is the Python-first control plane for an agentic engineering factory around
 Codex.
 
-The goal is simple and ambitious: after I supply the required product, architecture,
-acceptance, risk, and operating assumptions, Codex should be able to coordinate fresh-context Codex
-workers until the plan is implemented, reviewed, tested, documented, and ready for a human decision.
-Today, this repository implements the planning, Goal Contract, Story Loop, verification, source-lock,
-skill, and handoff layers for that workflow. Automatic Codex Exec worker launch remains a planned
-Stage 6 backend, not a current capability.
+It exists so a human can supply goals, constraints, taste, acceptance criteria, and risk tolerance
+once, then let Codex coordinate fresh-context workers until a production-quality result is specified,
+built, reviewed, tested, documented, and ready for a human decision.
 
-This repository is the source of truth for that workflow. It combines patterns from my busiest
-projects:
+This README is the locked end-state product brief for the repository. It describes the target shape
+of the system, not the live task queue. Live operational progress lives only in
+`plans/planning.sqlite3` and `HANDOFF.md`.
 
-- `nlp-stock-prediction`: tracked SQLite planning state with typed access.
-- `codex-subagent-testing`: locked top-level source-of-truth documents protected by SHA-256 hashes.
-- `tech-resume`: an `insights/` markdown knowledge graph with provenance and confidence labels.
-- `observe-safety-monorepo`: structured, test-enforced planning and production-grade gates.
+## Product Shape
 
-The local workspace may also include shallow source clones under `sources/` for study and
-integration experiments. Those clones are intentionally ignored by git and are reproducible from
-the pinned clone inventory in `sources/README.md`; `ATTRIBUTIONS.md` records reuse rules and copied
-or adapted material.
+`codex-supervisor` is a combination of:
 
-## Dream Workflow
+- a Python package, `codex_supervisor`, that owns planning, task contracts, worker orchestration,
+  source locks, project adapters, result records, and learning loops;
+- a CLI, `codex-supervisor`, for humans, scripts, CI jobs, and recurring automation;
+- a Codex Exec harness for launching fresh-context Codex workers in isolated worktrees with
+  structured output contracts;
+- an MCP server that exposes supervisor capabilities to Codex Desktop and other agent harnesses
+  without making MCP the state owner;
+- a Codex plugin and repo-local skills that make the workflow ergonomic inside Codex Desktop;
+- a project scaffold that gives new production-intended projects the same source-of-truth,
+  planning, verification, review, and handoff discipline from day one.
+
+The product is not a replacement for Codex. It is the orchestration layer that gives Codex durable
+state, vertical-slice task boundaries, repeatable review loops, context reset discipline, and a way
+to learn from repeated work.
+
+## Agentic Factory Loop
 
 For any new project:
 
-1. Run an extensive planning session to lock assumptions, contracts, non-goals, risks, and acceptance
-   criteria.
-2. Persist the plan into a tracked SQLite planning database.
+1. Run an extensive planning session to lock goals, non-goals, assumptions, contracts, risks,
+   acceptance criteria, and verification commands.
+2. Persist the plan into tracked SQLite state.
 3. Compile the plan into small vertical-slice tasks marked `AFK` or `HITL`.
-4. Launch fresh-context Codex workers in isolated worktrees.
-5. Give each worker a Goal Contract with objective, boundaries, verification, and stop conditions.
-6. Execute one vertical slice per story-loop iteration.
-7. Require every worker to return structured output.
-8. Run automated checks and automated review before merge.
-9. Record decisions, progress, artifacts, commits, failures, and follow-up tasks.
-10. Update skills and the knowledge graph when repeated patterns or failures reveal something durable.
+4. Render a Goal Contract for each executable AFK slice.
+5. Launch fresh-context Codex workers in disposable worktrees.
+6. Execute exactly one vertical slice per story-loop iteration.
+7. Require every worker to return structured evidence.
+8. Run deterministic checks and automated review before accepting the result.
+9. Repair issues through focused follow-up tasks or record a blocked/HITL decision.
+10. Link commits, artifacts, reviews, decisions, progress events, and handoff notes.
+11. Promote repeated lessons into `insights/` and repo-local skills.
 
-## Intended Operating Mode
+The factory favors:
 
-This system is designed for trusted local or controlled-runner automation using dangerous/full-auto
-Codex execution. The safety boundary is not permission prompts. The safety boundary is:
+- small skill over giant methodology;
+- domain glossary over repeated explanation;
+- vertical slice over horizontal layer task;
+- AFK-ready issue over vague plan item;
+- handoff artifact over bloated session;
+- sandbox/worktree over risky direct edits;
+- eval loop over "seems better."
 
-- disposable worktrees;
-- explicit task scope;
-- structured outputs;
-- deterministic tests and checks;
+## State Authority
+
+Stable doctrine lives in protected source-of-truth documents:
+
+- `README.md`
+- `AGENTS.md`
+- `PLANS.md`
+- `ARCHITECTURE.md`
+- `CONTRACTS.md`
+- `ROADMAP.md`
+- `SOP.md`
+- `TESTING.md`
+- `DECISIONS.md`
+- `LICENSE`
+- `ATTRIBUTIONS.md`
+- `.gitignore`
+- `.gitattributes`
+
+Operational progress lives in:
+
+- `plans/planning.sqlite3` for plans, tasks, worker runs, progress events, decisions, artifacts,
+  verification evidence, and queue state;
+- `HANDOFF.md` for the mutable human-readable resume point.
+
+Protected documents are contracts, not progress ledgers. Edit them only when doctrine changes, then
+refresh the source-lock hashes intentionally.
+
+## Operating Mode
+
+The intended runtime posture is trusted local or controlled-runner full-auto Codex operation. The
+safety boundary is not frequent permission prompts. The safety boundary is:
+
+- isolated worktrees;
+- explicit task contracts;
+- narrow allowed paths;
+- structured worker outputs;
+- deterministic verification;
 - automated review;
-- source-of-truth document locks;
+- source-of-truth locks;
 - durable planning state;
-- auditable logs and artifacts.
+- auditable logs, artifacts, and handoffs.
 
 ## Repository Map
 
@@ -66,32 +112,28 @@ insights/                  Markdown knowledge graph and learning memory
 sources/                   Ignored shallow clones of OSS inspiration sources
 ```
 
-## Bootstrap And Source-Of-Truth Documents
+## Source-Of-Truth Documents
 
-- `README.md`: human-facing purpose, goals, and operating vision.
-- `AGENTS.md`: instructions for Codex and other coding agents in this repo.
+- `README.md`: human-facing product brief and factory goal.
+- `AGENTS.md`: operating instructions for Codex and coding agents in this repo.
 - `PLANS.md`: planning database contract and required planning workflow.
-- `ARCHITECTURE.md`: supervisor architecture and backend boundaries.
-- `CONTRACTS.md`: durable runtime contracts for tasks, workers, adapters, and results.
-- `ROADMAP.md`: staged implementation plan for future Codex sessions.
+- `ARCHITECTURE.md`: system architecture, state ownership, and interface boundaries.
+- `CONTRACTS.md`: durable runtime contracts for tasks, workers, adapters, reviews, and results.
+- `ROADMAP.md`: stable master build plan for new Codex sessions.
 - `SOP.md`: standard operating procedure for projects spawned by the supervisor.
-- `TESTING.md`: testing and verification strategy.
-- `DECISIONS.md`: baseline decisions; ongoing decisions belong in SQLite first.
-- `HANDOFF.md`: mutable starting point for the next Codex session, not a locked stable
-  source-of-truth document; planning SQLite remains canonical for current tasks.
+- `TESTING.md`: verification strategy and required test surfaces.
+- `DECISIONS.md`: stable architectural and workflow decisions.
+- `HANDOFF.md`: mutable resume artifact for the next Codex session.
 - `LICENSE`: MIT license for this repository.
 - `ATTRIBUTIONS.md`: reuse rules and attribution notes for copied or adapted material.
-- `.gitignore` / `.gitattributes`: public hygiene, generated-file, line-ending, and binary-file
+- `.gitignore` and `.gitattributes`: public hygiene, generated-file, line-ending, and binary-file
   guardrails.
-
-Stable top-level source-of-truth documents, excluding the mutable `HANDOFF.md`, are locked by
-`scripts/check_protected_files.py`.
 
 ## Fresh Thread Bootstrap
 
-Use the repo-local `codex-supervisor` skill first. If the skill is not available in the fresh
-thread, read `.agents/skills/codex-supervisor/SKILL.md` directly and follow its bootstrap contract
-before interpreting queue state.
+Use the repo-local `codex-supervisor` skill first. If the skill is unavailable in a fresh thread,
+read `.agents/skills/codex-supervisor/SKILL.md` directly and follow its bootstrap contract before
+interpreting queue state.
 
 ```sh
 git status --short --branch
@@ -107,9 +149,9 @@ uv run python --version
 ```
 
 Then read `AGENTS.md`, `PLANS.md`, and `insights/README.md`. Use those stable files to find
-task-relevant source-of-truth docs after the live queue is known, instead of front-loading every
-historical audit or insight file. Read `HANDOFF.md` only after the live queue has been inspected;
-it is a mutable snapshot, not the queue authority.
+task-relevant source-of-truth docs after the live queue is known. Read `HANDOFF.md` only after the
+live queue has been inspected; it is a mutable snapshot, not the queue authority.
+
 Inspect the live queue before interpreting `task-current` or running broad checks:
 
 ```sh
@@ -121,9 +163,9 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-list
 ```
 
 `uv run` can create or update local dependency/cache state if the environment is missing. In a
-strict read-only audit where dependencies are not already synced, do not run setup or `uv run`; use
-existing command output, Git state, or read-only SQLite inspection and report that dependency setup is
-required for typed CLI orientation.
+strict read-only audit where dependencies are not already synced, use existing command output, Git
+state, or read-only SQLite inspection and report that dependency setup is required for typed CLI
+orientation.
 
 Strict read-only SQLite fallback:
 
@@ -131,18 +173,7 @@ Strict read-only SQLite fallback:
 python -B -c "import json, sqlite3; c=sqlite3.connect('file:plans/planning.sqlite3?mode=ro', uri=True); c.row_factory=sqlite3.Row; rows=c.execute(\"\"\"SELECT p.plan_id,p.status AS plan_status,p.priority,st.task_id,st.title,st.status AS task_status,st.task_type,st.worker_backend,st.blocked_by_json FROM supervisor_tasks st JOIN plans p ON p.plan_id=st.plan_id WHERE p.status IN ('active','blocked') ORDER BY p.status='active' DESC,p.priority DESC,st.status='ready' DESC,st.updated_at DESC,st.task_id\"\"\").fetchall(); print(json.dumps([dict(r) for r in rows], indent=2)); c.close()"
 ```
 
-`plan-list`, `plan-summary`, `story-loop-status`, `task-current`, `task-show`, and `task-list`
-inspect existing planning state without initializing or mutating the database. `story-loop-status`
-reports ready, running, HITL, blocked, completed, and empty queue states across active and blocked
-current-queue plans by default; `--all` adds completed, abandoned, and superseded history.
-`task-current` selects only executable AFK work. Inspect `story-loop-status --json` first, then
-inspect the reported current task ID with `task-show ... --json` when one is present. If
-`task-current --json` returns `null`, do not conclude there is no task until the JSON status reports
-`completed` or `empty`.
-
-Run task-relevant verification after orientation. Check `HANDOFF.md` for the expected verification
-state before interpreting broad gate failures. During an ACP/HITL checkpoint, run the component
-checks named in `HANDOFF.md` first if the broad gate is expected to fail. The broad default gate is:
+Run task-relevant verification after orientation. The broad default gate is:
 
 ```sh
 uv run python -B scripts/verify.py
@@ -154,20 +185,16 @@ Run the source lock guard after intentional source-of-truth edits or before publ
 uv run python -B scripts/check_protected_files.py
 ```
 
-During an active ACP/HITL checkpoint, the lock guard may fail until new protected files are tracked
-and hashes are intentionally refreshed.
-
 Initialize or migrate the tracked planning database only when intended:
 
 ```sh
 uv run codex-supervisor plan-init --seed-bootstrap-plan
 ```
 
-`.python-version` targets the Python 3.14 line because this repo intentionally tracks the latest
-Python line from day one. Use `uv python install 3.14` to install the newest uv-managed 3.14 patch
-available for your platform, or install an exact system Python patch release outside uv when uv does
-not publish that patch for your platform. Run `uv run python --version` before verification and
-confirm it reports Python 3.14.x.
+`.python-version` targets the Python 3.14 line. Use `uv python install 3.14` to install the newest
+uv-managed 3.14 patch available for your platform, or install an exact system Python patch release
+outside uv when uv does not publish that patch for your platform. Run `uv run python --version`
+before verification and confirm it reports Python 3.14.x.
 
 ## Codex Goal Prerequisite
 
@@ -195,12 +222,12 @@ directly callable from the current shell. Treat that as a Goal Mode preflight fa
 reason to write local Codex databases directly. Use prompt-rendered Goal Contracts until the Codex
 CLI path and `CODEX_HOME` are confirmed.
 
-Stage 6 worker metadata should record the Goal Mode preflight evidence explicitly: resolved Codex
-executable, `codex --version` output, intended `CODEX_HOME`, config path and feature state, whether
-the selected worker backend has an official noninteractive native-goal path, and the fallback
-decision when the contract is rendered into the prompt instead.
+Worker metadata records the Goal Mode preflight evidence explicitly: resolved Codex executable,
+`codex --version` output, intended `CODEX_HOME`, config path and feature state, whether the selected
+worker backend has an official noninteractive native-goal path, and the fallback decision when the
+contract is rendered into the prompt instead.
 
-## OSS Inspiration Sources
+## Inspiration Sources
 
 The ignored `sources/` directory may contain local shallow clones of:
 
@@ -214,3 +241,6 @@ The ignored `sources/` directory may contain local shallow clones of:
 - `mattpocock/agent-browser`
 - `mattpocock/node-DeepResearch`
 - `snarktank/ralph`
+
+The authoritative clone inventory lives in `sources/README.md`. `ATTRIBUTIONS.md` records reuse
+rules and copied or adapted material.

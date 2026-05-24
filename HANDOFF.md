@@ -16,8 +16,10 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, Stage 9A reusable insight contract validation is complete in planning SQLite.
-If the database reports anything else, trust the database and call this handoff stale.
+As of this snapshot, Stage 9A reusable insight contract validation is complete in planning SQLite,
+and Stage 9B insight validation CLI is the next ready AFK slice. The expected queue state is
+`ready` with current task `task-stage9b-insight-cli-validation`. If the database reports anything
+else, trust the database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
@@ -231,6 +233,19 @@ Stage 9A reusable insight contract validation changed:
   `uv run --no-sync python -B -m pytest tests/test_insights.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/verify.py`.
 
+Stage 9B insight validation CLI has been shaped:
+
+- `plans/planning.sqlite3`: adds `task-stage9b-insight-cli-validation`,
+  `milestone-stage9b-insight-cli-validation`, and `criterion-stage9b-insight-cli-validation`.
+- Scope: expose Stage 9A insight validation through a local CLI command without writing planning
+  SQLite, insight markdown files, Codex local state, or skills.
+- Allowed paths:
+  `src/codex_supervisor/cli.py`, `tests/test_insight_cli.py`,
+  `scripts/check_file_justification.py`, `plans/planning.sqlite3`, `HANDOFF.md`, and
+  `insights/stage9b-insight-cli-validation-worker-result.json`.
+- Expected focused check:
+  `uv run --no-sync python -B -m pytest tests/test_insight_cli.py tests/test_insights.py -q -p no:cacheprovider`.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -253,10 +268,11 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 Use story-loop-status as the queue state machine. Use task-current only as the executable AFK
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
-If queue_state is completed or empty, shape the next AFK vertical slice from ROADMAP.md Stage 9,
-likely knowledge graph update workflows or golden skill eval fixtures. Keep live Codex Exec launch
-disabled while the local Codex CLI still fails preflight with `Access is denied`; do not launch live
-`codex exec` until an accessible executable path and intended `CODEX_HOME` are confirmed.
+If queue_state is ready, execute `task-stage9b-insight-cli-validation`: expose Stage 9A reusable
+insight validation through the CLI with JSON output and invalid-payload failure coverage. Keep live
+Codex Exec launch disabled while the local Codex CLI still fails preflight with `Access is denied`;
+do not launch live `codex exec` until an accessible executable path and intended `CODEX_HOME` are
+confirmed.
 ```
 
 ## Active Caveats

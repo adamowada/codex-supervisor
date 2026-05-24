@@ -16,10 +16,8 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, Stage 8E review result CLI ingestion is complete in planning SQLite, and Stage
-9A reusable insight contract validation is the next ready AFK slice. The expected queue state is
-`ready` with current task `task-stage9a-insight-contracts`. If the database reports anything else,
-trust the database and call this handoff stale.
+As of this snapshot, Stage 9A reusable insight contract validation is complete in planning SQLite.
+If the database reports anything else, trust the database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
@@ -220,20 +218,18 @@ Stage 8E review result CLI ingestion changed:
   `uv run --no-sync python -B -m pytest tests/test_review_cli.py tests/test_review_persistence.py tests/test_review_repairs.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/verify.py`.
 
-Stage 9A reusable insight contract validation has been shaped:
+Stage 9A reusable insight contract validation changed:
 
-- `plans/planning.sqlite3`: adds `plan-stage9-insights-skill-learning`,
-  `task-stage9a-insight-contracts`, `milestone-stage9a-insight-contracts`, and
-  `criterion-stage9a-insight-contracts`.
-- Scope: add a small validation surface for reusable insight records so future knowledge-graph and
-  skill-learning updates are provenance-backed, confidence-labeled, and testable before they become
-  durable memory.
-- Allowed paths:
-  `src/codex_supervisor/insights.py`, `tests/test_insights.py`,
-  `scripts/check_file_justification.py`, `plans/planning.sqlite3`, `HANDOFF.md`, and
-  `insights/stage9a-insight-contracts-worker-result.json`.
-- Expected focused check:
-  `uv run --no-sync python -B -m pytest tests/test_insights.py -q -p no:cacheprovider`.
+- `src/codex_supervisor/insights.py`: added pure `InsightRecord` and
+  `validate_insight_record_payload` contracts for reusable insight records with required claim,
+  confidence, evidence, scope, optional supersedes, and next-action fields.
+- `tests/test_insights.py`: covers valid records, markdown `next action` compatibility, invalid
+  confidence labels, missing required fields, and blank string/list values.
+- `scripts/check_file_justification.py`: records the new module, tests, and worker-result artifact.
+- `insights/stage9a-insight-contracts-worker-result.json`: durable Stage 9A worker-result evidence.
+- Verification passed:
+  `uv run --no-sync python -B -m pytest tests/test_insights.py -q -p no:cacheprovider`;
+  `uv run --no-sync python -B scripts/verify.py`.
 
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
@@ -257,11 +253,10 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 Use story-loop-status as the queue state machine. Use task-current only as the executable AFK
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
-If queue_state is ready, execute `task-stage9a-insight-contracts`: add reusable insight contract
-validation for the fields defined in `insights/README.md`, with focused tests and no Codex local
-state import. Keep live Codex Exec launch disabled while the local Codex CLI still fails preflight
-with `Access is denied`; do not launch live `codex exec` until an accessible executable path and
-intended `CODEX_HOME` are confirmed.
+If queue_state is completed or empty, shape the next AFK vertical slice from ROADMAP.md Stage 9,
+likely knowledge graph update workflows or golden skill eval fixtures. Keep live Codex Exec launch
+disabled while the local Codex CLI still fails preflight with `Access is denied`; do not launch live
+`codex exec` until an accessible executable path and intended `CODEX_HOME` are confirmed.
 ```
 
 ## Active Caveats

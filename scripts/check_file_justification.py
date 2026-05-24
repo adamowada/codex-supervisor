@@ -267,6 +267,10 @@ FILE_PURPOSES = {
         "structured worker-result evidence for the Stage 8E review result CLI ingestion slice",
         "check_planning_integrity",
     ),
+    "insights/stage9a-insight-contracts-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 9A reusable insight contract slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
@@ -310,6 +314,9 @@ FILE_PURPOSES = {
     "src/codex_supervisor/__init__.py": FilePurpose("Python package marker", "mypy"),
     "src/codex_supervisor/cli.py": FilePurpose("codex-supervisor CLI", "pytest"),
     "src/codex_supervisor/goal_contracts.py": FilePurpose("Goal Contract renderer", "pytest"),
+    "src/codex_supervisor/insights.py": FilePurpose(
+        "reusable insight record validation contracts", "pytest"
+    ),
     "src/codex_supervisor/locks.py": FilePurpose("protected file lock helpers", "pytest"),
     "src/codex_supervisor/paths.py": FilePurpose("repo/planning path discovery", "pytest"),
     "src/codex_supervisor/planning.py": FilePurpose("SQLite planning store", "pytest"),
@@ -346,6 +353,7 @@ FILE_PURPOSES = {
     ),
     "tests/test_file_justification.py": FilePurpose("file purpose gate tests", "pytest"),
     "tests/test_goal_contracts.py": FilePurpose("Goal Contract renderer tests", "pytest"),
+    "tests/test_insights.py": FilePurpose("reusable insight contract tests", "pytest"),
     "tests/test_locks.py": FilePurpose("protected lock helper tests", "pytest"),
     "tests/test_planning.py": FilePurpose("planning store and CLI tests", "pytest"),
     "tests/test_planning_integrity.py": FilePurpose("planning integrity gate tests", "pytest"),

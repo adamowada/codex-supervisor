@@ -16,10 +16,10 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, Stage 8D accepted finding repair routing is complete in planning SQLite, and
-Stage 8E review result CLI ingestion is the next ready AFK slice. The expected queue state is
-`ready` with current task `task-stage8e-review-result-cli-ingestion`. If the database reports
-anything else, trust the database and call this handoff stale.
+As of this snapshot, Stage 8E review result CLI ingestion is complete in planning SQLite. The Stage
+8 review and verification loop has completed its A-E slices, covering review contracts, review
+result validation, review persistence, accepted-finding repair routing, and CLI ingestion. If the
+database reports anything else, trust the database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
@@ -206,16 +206,19 @@ Stage 8D accepted finding repair routing changed:
 - `insights/stage8d-review-repair-routing-worker-result.json`: durable Stage 8D worker-result
   evidence.
 
-Stage 8E review result CLI ingestion has been shaped:
+Stage 8E review result CLI ingestion changed:
 
-- `plans/planning.sqlite3`: adds `task-stage8e-review-result-cli-ingestion` as a ready AFK slice,
-  `milestone-stage8e-review-result-cli-ingestion`, and
-  `criterion-stage8e-review-result-cli-ingestion`.
-- Scope: add a local CLI command that validates review result JSON, persists review evidence and
-  artifact links, and optionally creates accepted-finding repair tasks without launching live review
-  workers.
-- Expected focused check:
-  `uv run --no-sync python -B -m pytest tests/test_review_cli.py tests/test_review_persistence.py tests/test_review_repairs.py -q -p no:cacheprovider`.
+- `src/codex_supervisor/cli.py`: added `review-result-ingest`, which loads review result JSON,
+  validates it through Stage 8B contracts, records Stage 8C review progress/artifact links, and
+  optionally routes accepted findings through Stage 8D repair task creation.
+- `tests/test_review_cli.py`: covers persistence-only ingestion, repair routing, invalid payload
+  failure, idempotent repair-task reruns, and proof that no live worker runs are launched.
+- `scripts/check_file_justification.py`: records the new test and worker-result artifact.
+- `insights/stage8e-review-result-cli-ingestion-worker-result.json`: durable Stage 8E
+  worker-result evidence.
+- Verification passed:
+  `uv run --no-sync python -B -m pytest tests/test_review_cli.py tests/test_review_persistence.py tests/test_review_repairs.py -q -p no:cacheprovider`;
+  `uv run --no-sync python -B scripts/verify.py`.
 
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
@@ -239,10 +242,9 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 Use story-loop-status as the queue state machine. Use task-current only as the executable AFK
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
-If queue_state is ready, execute `task-stage8e-review-result-cli-ingestion`: add the local CLI path
-for validating review result JSON, recording review evidence/artifacts, and optionally routing
-accepted findings into repair tasks. Keep live Codex Exec launch disabled while the local Codex CLI
-still fails preflight with `Access is denied`; do not launch live `codex exec` until an accessible
+If queue_state is completed or empty, shape the next AFK vertical slice from ROADMAP.md Stage 9:
+insights and skill learning. Keep live Codex Exec launch disabled while the local Codex CLI still
+fails preflight with `Access is denied`; do not launch live `codex exec` until an accessible
 executable path and intended `CODEX_HOME` are confirmed.
 ```
 

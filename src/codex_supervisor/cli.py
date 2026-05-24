@@ -44,6 +44,20 @@ from codex_supervisor.planning import (
     open_existing_planning_database,
     unresolved_task_blockers,
 )
+from codex_supervisor.review_loop import (
+    ReviewContractError,
+    ReviewResult,
+    validate_review_result_payload,
+)
+from codex_supervisor.review_persistence import (
+    ReviewResultPersistenceRecord,
+    record_review_result,
+)
+from codex_supervisor.review_repairs import (
+    DEFAULT_REPAIR_VERIFICATION_COMMANDS,
+    ReviewRepairRoutingResult,
+    create_repair_tasks_from_review_result,
+)
 from codex_supervisor.story_loop import (
     build_story_loop_status,
     record_story_loop_progress,
@@ -368,6 +382,33 @@ def main(argv: list[str] | None = None) -> int:
     worker_status_parser.add_argument("--failure-class", default=None)
     worker_status_parser.add_argument("--completed-at", default=None)
     worker_status_parser.add_argument("--result-path", default=None)
+
+    review_ingest_parser = subparsers.add_parser(
+        "review-result-ingest",
+        help="Validate and persist a structured review result JSON file",
+    )
+    review_ingest_parser.add_argument("--path", type=Path, default=None)
+    review_ingest_parser.add_argument("--plan-id", required=True)
+    review_ingest_parser.add_argument("--progress-id", required=True)
+    review_ingest_parser.add_argument("--review-result-path", type=Path, required=True)
+    review_ingest_parser.add_argument(
+        "--review-result-artifact-id",
+        default=None,
+        help=(
+            "Repo-relative artifact ID for the review result JSON. Defaults to "
+            "--review-result-path when it is repo-relative or under the current directory."
+        ),
+    )
+    review_ingest_parser.add_argument("--review-artifact-id", action="append", default=[])
+    review_ingest_parser.add_argument("--create-repair-tasks", action="store_true", default=False)
+    review_ingest_parser.add_argument("--source-task-id", default=None)
+    review_ingest_parser.add_argument("--repair-task-id-prefix", default="task-review-repair")
+    review_ingest_parser.add_argument(
+        "--repair-verification-command",
+        action="append",
+        default=None,
+    )
+    review_ingest_parser.add_argument("--json", action="store_true", default=False)
 
     cleanup_plan_parser = subparsers.add_parser(
         "cleanup-plan",
@@ -927,6 +968,60 @@ def main(argv: list[str] | None = None) -> int:
         _print_mutation_result("worker_run", worker_record.worker_run_id, worker_record, args.json)
         return 0
 
+    if args.command == "review-result-ingest":
+        write_store = _open_write_store(args.path)
+        if write_store is None:
+            return 1
+        try:
+            review_result = _load_review_result(args.review_result_path)
+            review_result_artifact_id = _review_result_artifact_id(
+                args.review_result_path,
+                args.review_result_artifact_id,
+            )
+            persistence_record = record_review_result(
+                write_store,
+                plan_id=args.plan_id,
+                progress_id=args.progress_id,
+                review_result=review_result,
+                review_result_artifact_id=review_result_artifact_id,
+                review_artifact_ids=tuple(args.review_artifact_id),
+            )
+            repair_result: ReviewRepairRoutingResult | None = None
+            if args.create_repair_tasks:
+                repair_verification_commands = (
+                    tuple(args.repair_verification_command)
+                    if args.repair_verification_command is not None
+                    else DEFAULT_REPAIR_VERIFICATION_COMMANDS
+                )
+                repair_result = create_repair_tasks_from_review_result(
+                    write_store,
+                    plan_id=args.plan_id,
+                    review_result=review_result,
+                    source_task_id=args.source_task_id,
+                    task_id_prefix=args.repair_task_id_prefix,
+                    verification_commands=repair_verification_commands,
+                )
+        except (
+            OSError,
+            json.JSONDecodeError,
+            ReviewContractError,
+            ValueError,
+            sqlite3.Error,
+        ) as exc:
+            print(f"Could not ingest review result: {exc}", file=sys.stderr)
+            return 1
+        output = _review_result_ingestion_output(
+            review_result=review_result,
+            persistence_record=persistence_record,
+            repair_result=repair_result,
+            repair_requested=args.create_repair_tasks,
+        )
+        if args.json:
+            _print_json(output)
+        else:
+            _print_review_result_ingestion(output)
+        return 0
+
     if args.command == "plan-upsert":
         write_store = _open_write_store(args.path)
         if write_store is None:
@@ -1223,6 +1318,73 @@ def _write_story_loop_record_or_report(
         return None
 
 
+def _load_review_result(path: Path) -> ReviewResult:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return validate_review_result_payload(payload)
+
+
+def _review_result_artifact_id(path: Path, explicit_artifact_id: str | None) -> str:
+    if explicit_artifact_id is not None:
+        return explicit_artifact_id
+    if not path.is_absolute():
+        return path.as_posix()
+    resolved_path = path.resolve()
+    try:
+        return resolved_path.relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError as exc:
+        msg = (
+            "--review-result-artifact-id is required when --review-result-path is outside "
+            "the current repository"
+        )
+        raise ValueError(msg) from exc
+
+
+def _review_result_ingestion_output(
+    *,
+    review_result: ReviewResult,
+    persistence_record: ReviewResultPersistenceRecord,
+    repair_result: ReviewRepairRoutingResult | None,
+    repair_requested: bool,
+) -> dict[str, object]:
+    repair_tasks: dict[str, object] = {
+        "requested": repair_requested,
+        "created_tasks": (),
+        "created_task_ids": (),
+        "existing_task_ids": (),
+        "skipped_findings": (),
+    }
+    if repair_result is not None:
+        repair_tasks = {
+            "requested": repair_requested,
+            "created_tasks": repair_result.created_tasks,
+            "created_task_ids": tuple(task.task_id for task in repair_result.created_tasks),
+            "existing_task_ids": repair_result.existing_task_ids,
+            "skipped_findings": repair_result.skipped_findings,
+        }
+    return {
+        "review_result": {
+            "review_id": review_result.review_id,
+            "mode": review_result.mode,
+            "target": review_result.target,
+            "finding_counts": {
+                "total": len(review_result.findings),
+                "accepted": len(review_result.accepted_findings),
+                "waived": len(review_result.waived_findings),
+                "needs_hitl": len(
+                    tuple(
+                        finding
+                        for finding in review_result.findings
+                        if finding.status == "needs_hitl"
+                    )
+                ),
+            },
+        },
+        "progress": persistence_record.progress,
+        "artifact_links": persistence_record.artifact_links,
+        "repair_tasks": repair_tasks,
+    }
+
+
 def _select_goal_contract_task(
     store: PlanningSQLiteStore,
     *,
@@ -1511,6 +1673,49 @@ def _print_cleanup_plan(plan: CleanupPlan) -> None:
             f"worker_run_id={entry.worker_run_id or 'none'}\t"
             f"skip_reason={entry.skip_reason}"
         )
+
+
+def _print_review_result_ingestion(output: dict[str, object]) -> None:
+    review_result = cast(dict[str, object], output["review_result"])
+    progress = cast(PlanProgressRecord, output["progress"])
+    artifact_links = cast(tuple[PlanArtifactLinkRecord, ...], output["artifact_links"])
+    repair_tasks = cast(dict[str, object], output["repair_tasks"])
+    print(
+        f"review_result: {review_result['review_id']} "
+        f"({review_result['mode']} for {review_result['target']})"
+    )
+    print(f"progress: {progress.progress_id}")
+    print("artifact_links:")
+    for link in artifact_links:
+        print(f"- {link.artifact_id}\t{link.relationship}")
+    print("repair_tasks:")
+    print(f"requested: {repair_tasks['requested']}")
+    created_task_ids = cast(tuple[str, ...], repair_tasks["created_task_ids"])
+    existing_task_ids = cast(tuple[str, ...], repair_tasks["existing_task_ids"])
+    skipped_findings = cast(tuple[object, ...], repair_tasks["skipped_findings"])
+    print("created:")
+    if created_task_ids:
+        for task_id in created_task_ids:
+            print(f"- {task_id}")
+    else:
+        print("- none")
+    print("existing:")
+    if existing_task_ids:
+        for task_id in existing_task_ids:
+            print(f"- {task_id}")
+    else:
+        print("- none")
+    print("skipped:")
+    if skipped_findings:
+        for skipped in skipped_findings:
+            skipped_json = _to_jsonable(skipped)
+            if isinstance(skipped_json, dict):
+                print(
+                    f"- {skipped_json['finding_id']}\t{skipped_json['status']}\t"
+                    f"{skipped_json['reason']}"
+                )
+    else:
+        print("- none")
 
 
 def _to_jsonable(value: object) -> Any:

@@ -263,6 +263,10 @@ FILE_PURPOSES = {
         "structured worker-result evidence for the Stage 8D review repair routing slice",
         "check_planning_integrity",
     ),
+    "insights/stage8e-review-result-cli-ingestion-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 8E review result CLI ingestion slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
@@ -347,6 +351,7 @@ FILE_PURPOSES = {
     "tests/test_planning_integrity.py": FilePurpose("planning integrity gate tests", "pytest"),
     "tests/test_public_repo_hygiene.py": FilePurpose("public hygiene gate tests", "pytest"),
     "tests/test_review_loop.py": FilePurpose("review loop contract tests", "pytest"),
+    "tests/test_review_cli.py": FilePurpose("review result CLI ingestion tests", "pytest"),
     "tests/test_review_persistence.py": FilePurpose("review result persistence tests", "pytest"),
     "tests/test_review_repairs.py": FilePurpose("review repair routing tests", "pytest"),
     "tests/test_skill_inventory.py": FilePurpose("skill inventory gate tests", "pytest"),

@@ -319,6 +319,35 @@ structured output schemas, captured evidence, and safe result ingestion.
 9. Update `worker_runs`, artifact links, progress events, and queue state transactionally.
 10. Preserve raw evidence while keeping ignored run output out of publication commits.
 
+The first implementation slice is `Stage 6A: backend protocol and fake execution`. It must not
+launch live Codex. It defines the backend request/result data model, writes a fake backend that
+emits a Worker Result Contract fixture, and proves that the same ingestion path can complete a
+worker run without relying on chat memory or a real Codex process.
+
+Stage 6A allowed paths:
+
+- `src/codex_supervisor/worker_backends.py`
+- `src/codex_supervisor/worker_results.py`
+- `src/codex_supervisor/planning.py`
+- `src/codex_supervisor/cli.py`
+- `scripts/check_file_justification.py`
+- `plans/planning.sqlite3`
+- `tests/test_worker_backends.py`
+- `tests/test_worker_results.py`
+- `tests/test_planning.py`
+- `tests/test_story_loop.py`
+
+Stage 6A verification:
+
+```sh
+uv run --no-sync python -B -m pytest tests/test_worker_backends.py tests/test_worker_results.py tests/test_planning.py tests/test_story_loop.py -q -p no:cacheprovider
+uv run --no-sync python -B scripts/verify.py
+```
+
+Stage 6A rollback behavior is deletion of the new backend modules and tests plus removal of the
+successor planning task before any live worker launch is enabled. It must not alter source locks
+unless source-of-truth docs are intentionally edited again.
+
 ### Skills
 
 - `fresh-context-worker`

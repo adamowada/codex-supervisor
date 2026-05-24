@@ -103,6 +103,35 @@ Backend families:
   keep it generic and do not copy source while upstream licensing is unclear.
 - `SandcastleBackend`: optional TypeScript orchestration bridge if `mattpocock/sandcastle` is adopted.
 
+`WorkerBackend` is a narrow boundary between the Story Loop and any execution engine. The Story
+Loop selects and claims a task; the backend receives a `WorkerLaunchRequest` and returns a
+`WorkerLaunchResult`. The request contains the task summary, rendered Goal Contract, repo root,
+worktree path, output paths, sandbox and approval policy, environment overrides, and expected result
+schema. The result contains backend status, exit code, timing, raw evidence paths, changed-file
+summary, failure class, and the worker result JSON path when one was produced.
+
+`CodexExecBackend` owns command construction and process evidence, not queue selection. It must:
+
+- resolve the Codex executable and record the resolution method;
+- run or record the failure of `codex --version`;
+- resolve the intended `CODEX_HOME`, config path, sandbox policy, approval policy, and Goal Mode
+  feature state;
+- decide whether native Goals can be used for this launch path, or render the Goal Contract into
+  the prompt as fallback;
+- build an argv-style command rather than a shell-concatenated string;
+- launch from the isolated worktree, never the supervisor repo by accident;
+- capture JSONL events, stdout, stderr, final-message output, exit code, duration, diff summary, and
+  final structured result;
+- hand the result to the planning/result-ingestion layer for validation and transactional updates.
+
+It must not select the next task, mutate Codex internal SQLite databases, silently edit Codex config,
+push or merge branches, delete worktrees outside the configured workspace root, or mark planning rows
+complete without a Worker Result Contract artifact.
+
+The first implementation slice after this design is intentionally non-live: add the backend request
+and result data model, a fake backend that emits a fixture-compatible worker result, and shared
+result-ingestion tests. That slice proves the boundary before any real `codex exec` process launch.
+
 ### Project Adapters
 
 Adapters translate each project into the supervisor's contracts.

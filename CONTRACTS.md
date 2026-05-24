@@ -139,6 +139,64 @@ Example `acceptance_results` entry:
 }
 ```
 
+## Codex Exec Backend Contract
+
+The Codex Exec backend is the production worker backend for fresh-context Codex runs. It is invoked
+only after the Story Loop has selected and claimed exactly one ready AFK task.
+
+A launch request must contain:
+
+- `worker_run_id` and `task_id`;
+- rendered Goal Contract content;
+- repo root and isolated worktree path;
+- prompt path, JSONL path, stdout path, stderr path, final-message path, result JSON path, and diff
+  summary path;
+- sandbox mode, approval policy, model, reasoning effort, and service tier when configured;
+- intended `CODEX_HOME`, config path, and whether user config should be loaded;
+- expected Worker Result JSON Schema path;
+- task allowed paths and verification commands.
+
+Before launch, the backend records preflight evidence in `worker_runs.metadata_json`:
+
+- resolved Codex executable path or lookup failure;
+- `codex --version` output or failure class;
+- intended `CODEX_HOME`;
+- config path and Goal Mode feature state when observable;
+- selected native-goal or prompt-rendered fallback mode;
+- final argv list;
+- host platform and working directory.
+
+The command contract is argv-based. Implementations must not build one shell string by joining
+quoted fragments. The intended shape is:
+
+```text
+codex exec --json --output-schema <schema-path> --output-last-message <final-message-path> \
+  --sandbox <sandbox-mode> <prompt>
+```
+
+Additional flags such as model, reasoning effort, config overrides, `--ignore-user-config`, or
+working-directory options are allowed only when the installed Codex CLI preflight confirms them or
+the backend records that they are version-gated. On Windows, if the resolved `codex.exe` cannot be
+executed because it points at an inaccessible `WindowsApps` package, the backend must record
+`codex_cli_unavailable` and use no native Goal Mode assumptions.
+
+The backend emits raw evidence even on failure. Failure classes include:
+
+- `codex_cli_unavailable`;
+- `codex_version_failed`;
+- `goal_mode_unavailable`;
+- `worktree_setup_failed`;
+- `codex_exec_failed`;
+- `jsonl_parse_failed`;
+- `worker_result_missing`;
+- `worker_result_invalid`;
+- `changed_paths_out_of_scope`;
+- `verification_failed`.
+
+Only a valid Worker Result Contract artifact can advance a worker run to `completed`. Failed or
+blocked launches keep their raw evidence paths in the worker run metadata and record retry guidance
+in planning SQLite progress.
+
 ## Codex Local State Import Contract
 
 Local Codex state imports are observations, not authority.

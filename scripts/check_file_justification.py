@@ -207,6 +207,22 @@ FILE_PURPOSES = {
         "structured worker-result evidence for historical completed AFK tasks",
         "check_planning_integrity",
     ),
+    "insights/stage6-codex-exec-backend-design-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 6 Codex Exec backend design slice",
+        "check_planning_integrity",
+    ),
+    "insights/stage6a-backend-protocol-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 6A backend protocol slice",
+        "check_planning_integrity",
+    ),
+    "insights/stage6b-codex-exec-preflight-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 6B Codex Exec preflight slice",
+        "check_planning_integrity",
+    ),
+    "insights/stage6c-codex-exec-launch-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 6C Codex Exec launch-path slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
@@ -254,6 +270,12 @@ FILE_PURPOSES = {
     "src/codex_supervisor/paths.py": FilePurpose("repo/planning path discovery", "pytest"),
     "src/codex_supervisor/planning.py": FilePurpose("SQLite planning store", "pytest"),
     "src/codex_supervisor/story_loop.py": FilePurpose("Story Loop queue state machine", "pytest"),
+    "src/codex_supervisor/worker_backends.py": FilePurpose(
+        "worker backend protocol and fake backend", "pytest"
+    ),
+    "src/codex_supervisor/worker_results.py": FilePurpose(
+        "Worker Result Contract validation", "pytest"
+    ),
     "tests/test_file_justification.py": FilePurpose("file purpose gate tests", "pytest"),
     "tests/test_goal_contracts.py": FilePurpose("Goal Contract renderer tests", "pytest"),
     "tests/test_locks.py": FilePurpose("protected lock helper tests", "pytest"),
@@ -263,6 +285,8 @@ FILE_PURPOSES = {
     "tests/test_skill_inventory.py": FilePurpose("skill inventory gate tests", "pytest"),
     "tests/test_source_inventory.py": FilePurpose("source inventory gate tests", "pytest"),
     "tests/test_story_loop.py": FilePurpose("Story Loop tests", "pytest"),
+    "tests/test_worker_backends.py": FilePurpose("worker backend protocol tests", "pytest"),
+    "tests/test_worker_results.py": FilePurpose("worker result validation tests", "pytest"),
     "tests/test_verify_script.py": FilePurpose("verification runner tests", "pytest"),
     "uv.lock": FilePurpose("locked development dependency graph", "uv lock --check"),
 }

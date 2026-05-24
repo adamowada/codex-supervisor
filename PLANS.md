@@ -166,6 +166,21 @@ Use `worker-run-status ... --status completed --result-path <json>` or `worker-r
 completion writes; the typed helper auto-links the result artifact as `worker-result`. Manual
 `artifact-link-add` is still useful for supporting reports, prompts, or non-result evidence.
 
+For `backend = "codex_exec"`, `metadata_json` stores launch preflight and evidence pointers that do
+not deserve first-class columns yet:
+
+- resolved Codex executable and `codex --version` output or failure class;
+- intended `CODEX_HOME`, config path, sandbox mode, approval policy, and Goal Mode feature state;
+- native-goal decision or prompt-rendered fallback decision;
+- argv list used for `codex exec`;
+- stdout, stderr, final-message, JSONL, diff-summary, and raw-result paths;
+- host platform and launch working directory.
+
+The backend may create or update a running row before all evidence paths exist, but a completed row
+must still satisfy the Worker Result Contract and link the result artifact. A failed or blocked row
+should preserve whatever evidence was captured and use `failure_class` plus progress events for
+retry guidance.
+
 ## Correct Usage
 
 Create or update a plan when work:

@@ -48,6 +48,7 @@ from codex_supervisor.story_loop import (
     build_story_loop_status,
     record_story_loop_progress,
 )
+from codex_supervisor.worker_results import WorkerResult
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -874,6 +875,24 @@ def main(argv: list[str] | None = None) -> int:
         )
         if worker_record is None:
             return 1
+        if worker_record.status == "completed":
+            result = _write_value_or_report(
+                lambda: worker_store.ingest_worker_result_for_record(worker_record)
+            )
+            if result is None:
+                return 1
+            updated_worker_record = _read_or_report(
+                lambda: _find_worker_run(worker_store, worker_record.worker_run_id)
+            )
+            if updated_worker_record is None:
+                return 1
+            _print_mutation_result(
+                "worker_run",
+                updated_worker_record.worker_run_id,
+                updated_worker_record,
+                args.json,
+            )
+            return 0
         if not _write_or_report(lambda: worker_store.upsert_worker_run(worker_record)):
             return 1
         _print_mutation_result("worker_run", worker_record.worker_run_id, worker_record, args.json)
@@ -1008,6 +1027,20 @@ def main(argv: list[str] | None = None) -> int:
         if write_store is None:
             return 1
         worker_store = write_store
+        if args.status == "completed":
+            if args.result_path is None:
+                print("worker-run-status completed requires --result-path", file=sys.stderr)
+                return 1
+            ingested_worker_result: WorkerResult | None = _write_value_or_report(
+                lambda: worker_store.ingest_worker_result(
+                    args.worker_run_id,
+                    args.result_path,
+                )
+            )
+            if ingested_worker_result is None:
+                return 1
+            print(f"Updated worker_run {args.worker_run_id} -> {ingested_worker_result.status}")
+            return 0
         if not _write_or_report(
             lambda: worker_store.update_worker_run_status(
                 args.worker_run_id,

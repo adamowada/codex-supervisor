@@ -16,11 +16,10 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, the expected queue state is `ready` with current task
-`task-stage6-codex-exec-backend-design` under active plan `plan-stage6-codex-exec-backend`. If the
-database reports anything else, trust the database and call this handoff stale. The expected
-allowed-path contract for that design task is documentation-only: `ARCHITECTURE.md`, `CONTRACTS.md`,
-`ROADMAP.md`, and `PLANS.md`.
+As of this snapshot, the expected queue state is `completed`: no ready, running, blocked, or HITL
+task remains in the current queue. The active plan is still
+`plan-stage6-codex-exec-backend`, but all tracked Stage 6 tasks are complete. If the database
+reports anything else, trust the database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
@@ -28,15 +27,67 @@ Recent completed ACP checkpoints:
 - `200d027`: hardened exact task claiming, Story Loop queue snapshots, completed-plan criteria, and
   worker-result/attribution skill contracts.
 
-The latest full local gate passed after this handoff and SQLite cleanup with:
+The latest full local gate passed after the Stage 6C Codex Exec launch-path update with:
 
 ```sh
 uv run --no-sync python -B scripts/verify.py
 ```
 
-That run covered 229 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
+That run covered 261 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
 hygiene, planning integrity, skill inventory, source inventory, protected locks, and
 `uv lock --check`.
+
+Stage 6 design changed:
+
+- `ARCHITECTURE.md`: added the `WorkerBackend` boundary and `CodexExecBackend` responsibilities.
+- `CONTRACTS.md`: added the Codex Exec Backend Contract, preflight metadata, argv command contract,
+  and failure classes.
+- `PLANS.md`: documented `worker_runs.metadata_json` for Codex Exec preflight/evidence.
+- `ROADMAP.md`: added Stage 6A allowed paths, verification, and rollback behavior.
+- `scripts/check_protected_files.py`: refreshed protected hashes for intentional doc edits.
+- `plans/planning.sqlite3`: recorded Stage 6 design progress and the blocked Stage 6A successor
+  task.
+
+Stage 6A backend protocol changed:
+
+- `src/codex_supervisor/worker_backends.py`: added launch/result models and a non-live fake backend
+  that emits prompt, JSONL, stdout, stderr, final message, diff summary, and Worker Result JSON
+  evidence.
+- `src/codex_supervisor/worker_results.py`: added Worker Result Contract loading and validation.
+- `src/codex_supervisor/planning.py`: added validated result ingestion, shared worker-run result
+  membership checks, and result-status-based task/run updates.
+- `src/codex_supervisor/cli.py`: routed `worker-run-status --status completed` and
+  `worker-run-upsert --status completed` through Worker Result validation.
+- `tests/test_worker_backends.py`, `tests/test_worker_results.py`, and `tests/test_planning.py`:
+  cover fake backend evidence, result validation, CLI completion, failure/blocked/needs_review
+  preservation, and shared worker-run membership.
+- `insights/stage6a-backend-protocol-worker-result.json`: durable Stage 6A worker-result evidence.
+
+Stage 6B Codex Exec preflight changed:
+
+- `src/codex_supervisor/worker_backends.py`: added `CodexExecBackend.preflight`, executable
+  resolution, `codex --version` evidence capture, WindowsApps access-denied classification, and
+  shell-free `codex exec` argv construction.
+- `tests/test_worker_backends.py`: covers successful preflight metadata, argv construction,
+  launch-disabled no-live behavior, and inaccessible executable failure evidence.
+- `insights/stage6b-codex-exec-preflight-worker-result.json`: durable Stage 6B worker-result
+  evidence.
+
+Stage 6C Codex Exec launch path changed:
+
+- `src/codex_supervisor/worker_backends.py`: added the `launch_enabled` execution branch using an
+  injected command runner. The backend now runs preflight first, avoids exec after preflight failure,
+  returns `completed` only when a Worker Result JSON exists, returns `codex_exec_failed` or
+  `worker_result_missing` for failure paths, and preserves prompt, stdout, stderr, JSONL,
+  final-message, and diff-summary evidence.
+- `tests/test_worker_backends.py`: covers launch success, nonzero exec failure, missing result
+  artifact, preflight failure, launch-disabled behavior, and preservation of runner-produced JSONL
+  and diff-summary files.
+- `insights/stage6c-codex-exec-launch-worker-result.json`: durable Stage 6C worker-result evidence.
+
+Important environment note: local `codex --version` and `codex exec --help` resolved to the
+WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
+unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
 
 ## Next Session Prompt
 
@@ -56,9 +107,12 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 Use story-loop-status as the queue state machine. Use task-current only as the executable AFK
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
-If queue_state is ready, render the Goal Contract for the selected task before editing. Until the
-Stage 6 Codex Exec backend exists, worker_backend=codex_exec is a planned backend label; execute in
-the supervised thread, an explicit worktree, or a hand-authored fresh-context worker prompt.
+If queue_state is completed, shape the next vertical slice in planning SQLite before editing. The
+likely next AFK slice is trusted worktree launch orchestration and artifact path ownership around
+the existing `CodexExecBackend`, or a HITL setup task for resolving the local CLI path and intended
+`CODEX_HOME`. If the local Codex CLI still fails preflight with `Access is denied`, keep the slice
+explicitly non-live or record a HITL blocker. Until that preflight is resolved, do not launch live
+`codex exec`.
 ```
 
 ## Active Caveats

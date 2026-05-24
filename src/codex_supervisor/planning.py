@@ -14,6 +14,12 @@ from pathlib import Path
 from typing import Any, cast
 from urllib.parse import quote
 
+from codex_supervisor.worker_results import (
+    WorkerResult,
+    WorkerResultError,
+    validate_worker_result_file,
+)
+
 JsonObject = dict[str, Any]
 JsonArray = list[Any]
 JsonStringArray = list[str]
@@ -1507,6 +1513,7 @@ class PlanningSQLiteStore:
                         f"{active_run['worker_run_id']} ({active_run['status']})"
                     )
                     raise ValueError(msg)
+            stores_failure_class = status in FAILURE_WORKER_RUN_STATUSES
             stored_failure_class = failure_class if status in FAILURE_WORKER_RUN_STATUSES else None
             stored_completed_at = None if clears_terminal_evidence else completed_at
             stored_result_path = None if clears_terminal_evidence else normalized_result_path
@@ -1517,7 +1524,7 @@ class PlanningSQLiteStore:
                     failure_class = CASE
                         WHEN ? THEN NULL
                         WHEN ? THEN ?
-                        ELSE failure_class
+                        ELSE NULL
                     END,
                     completed_at = CASE
                         WHEN ? THEN NULL
@@ -1532,7 +1539,7 @@ class PlanningSQLiteStore:
                 (
                     status,
                     clears_terminal_evidence,
-                    status not in FAILURE_WORKER_RUN_STATUSES,
+                    stores_failure_class,
                     stored_failure_class,
                     clears_terminal_evidence,
                     stored_completed_at,
@@ -1549,6 +1556,161 @@ class PlanningSQLiteStore:
                     str(row["task_id"]),
                     str(effective_result_path),
                 )
+
+    def ingest_worker_result(
+        self,
+        worker_run_id: str,
+        result_path: str,
+        *,
+        failure_class: str = "worker_result_invalid",
+    ) -> WorkerResult:
+        """Validate worker result evidence, then complete or fail the worker run."""
+
+        _validate_required(worker_run_id, "worker_run_id")
+        _validate_worker_result_path(result_path)
+        task = self._task_for_worker_run(worker_run_id)
+        repo_root = self.path.parent.parent
+        result = None
+        try:
+            result = validate_worker_result_file(
+                repo_root / result_path,
+                repo_root=repo_root,
+                result_path=result_path,
+                worker_run_id=worker_run_id,
+                allowed_paths=tuple(task.allowed_paths),
+                verification_commands=tuple(task.verification_commands),
+                acceptance_criteria=tuple(task.acceptance_criteria),
+            )
+            self._validate_shared_worker_result_membership(
+                worker_run_id,
+                result_path,
+                result.worker_run_ids,
+            )
+        except WorkerResultError as exc:
+            self.update_worker_run_status(
+                worker_run_id,
+                "failed",
+                failure_class=failure_class,
+                result_path=result_path,
+            )
+            raise ValueError(str(exc)) from exc
+        if result.status == "completed":
+            self.update_worker_run_status(worker_run_id, "completed", result_path=result_path)
+        elif result.status in FAILURE_WORKER_RUN_STATUSES:
+            self.update_worker_run_status(
+                worker_run_id,
+                result.status,
+                failure_class=result.status,
+                result_path=result_path,
+            )
+        elif result.status == "needs_review":
+            self.update_worker_run_status(worker_run_id, "needs_review", result_path=result_path)
+        return result
+
+    def ingest_worker_result_for_record(
+        self,
+        record: WorkerRunRecord,
+        *,
+        failure_class: str = "worker_result_invalid",
+    ) -> WorkerResult:
+        """Validate result evidence, then upsert a worker run with the result status."""
+
+        _validate_required(record.worker_run_id, "worker_run_id")
+        _validate_required(record.task_id, "task_id")
+        if not record.result_path:
+            msg = "completed worker runs require result_path"
+            raise ValueError(msg)
+        _validate_worker_result_path(record.result_path)
+        task = self._task_by_id(record.task_id)
+        try:
+            result = validate_worker_result_file(
+                self.path.parent.parent / record.result_path,
+                repo_root=self.path.parent.parent,
+                result_path=record.result_path,
+                worker_run_id=record.worker_run_id,
+                allowed_paths=tuple(task.allowed_paths),
+                verification_commands=tuple(task.verification_commands),
+                acceptance_criteria=tuple(task.acceptance_criteria),
+            )
+            self._validate_shared_worker_result_membership(
+                record.worker_run_id,
+                record.result_path,
+                result.worker_run_ids,
+            )
+        except WorkerResultError as exc:
+            self.upsert_worker_run(
+                _worker_run_record_with_result_status(
+                    record,
+                    status="failed",
+                    result_path=record.result_path,
+                    failure_class=failure_class,
+                )
+            )
+            raise ValueError(str(exc)) from exc
+        result_failure_class = (
+            result.status if result.status in FAILURE_WORKER_RUN_STATUSES else None
+        )
+        self.upsert_worker_run(
+            _worker_run_record_with_result_status(
+                record,
+                status=result.status,
+                result_path=record.result_path,
+                failure_class=result_failure_class,
+            )
+        )
+        return result
+
+    def _task_for_worker_run(self, worker_run_id: str) -> SupervisorTaskSummaryRecord:
+        with self.connect(read_only=True) as connection:
+            row = connection.execute(
+                "SELECT task_id FROM worker_runs WHERE worker_run_id = ?",
+                (worker_run_id,),
+            ).fetchone()
+            _raise_missing(0 if row is None else 1, "worker_run", worker_run_id)
+            return _get_supervisor_task_summary(connection, str(row["task_id"]))
+
+    def _task_by_id(self, task_id: str) -> SupervisorTaskSummaryRecord:
+        with self.connect(read_only=True) as connection:
+            task = _get_supervisor_task_summary(connection, task_id)
+            _raise_missing(0 if task is None else 1, "task", task_id)
+            return task
+
+    def _validate_shared_worker_result_membership(
+        self,
+        worker_run_id: str,
+        result_path: str,
+        worker_run_ids: tuple[str, ...],
+    ) -> None:
+        if len(worker_run_ids) == 1:
+            return
+        normalized_result_path = result_path.replace("\\", "/")
+        with self.connect(read_only=True) as connection:
+            for declared_worker_run_id in worker_run_ids:
+                if declared_worker_run_id == worker_run_id:
+                    continue
+                row = connection.execute(
+                    "SELECT status, result_path FROM worker_runs WHERE worker_run_id = ?",
+                    (declared_worker_run_id,),
+                ).fetchone()
+                if row is None:
+                    msg = (
+                        f"worker_run_ids entry {declared_worker_run_id!r} does not match a "
+                        "known worker run"
+                    )
+                    raise WorkerResultError(msg)
+                if row["status"] != "completed":
+                    msg = (
+                        f"worker_run_ids entry {declared_worker_run_id!r} is "
+                        f"{row['status']}, not completed"
+                    )
+                    raise WorkerResultError(msg)
+                declared_path = str(row["result_path"] or "").replace("\\", "/")
+                if declared_path != normalized_result_path:
+                    msg = (
+                        f"worker_run_ids entry {declared_worker_run_id!r} points at "
+                        f"{declared_path}, not {normalized_result_path}"
+                    )
+                    raise WorkerResultError(msg)
 
     def list_worker_runs(
         self,
@@ -1671,6 +1833,29 @@ def has_completed_worker_run(
     return any(
         run.task_id == task_id and run.status in SUCCESSFUL_WORKER_RUN_STATUSES
         for run in worker_runs
+    )
+
+
+def _worker_run_record_with_result_status(
+    record: WorkerRunRecord,
+    *,
+    status: str,
+    result_path: str,
+    failure_class: str | None,
+) -> WorkerRunRecord:
+    return WorkerRunRecord(
+        worker_run_id=record.worker_run_id,
+        task_id=record.task_id,
+        backend=record.backend,
+        status=status,
+        worktree_path=record.worktree_path,
+        prompt_path=record.prompt_path,
+        jsonl_path=record.jsonl_path,
+        result_path=result_path,
+        started_at=record.started_at,
+        completed_at=record.completed_at,
+        failure_class=failure_class,
+        metadata=record.metadata,
     )
 
 

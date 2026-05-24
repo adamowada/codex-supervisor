@@ -231,6 +231,10 @@ FILE_PURPOSES = {
         "structured worker-result evidence for the Stage 7B worker launch preparation slice",
         "check_planning_integrity",
     ),
+    "insights/stage7c-worker-orchestration-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 7C worker orchestration slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
@@ -284,6 +288,9 @@ FILE_PURPOSES = {
     "src/codex_supervisor/worker_launches.py": FilePurpose(
         "worker launch request preparation", "pytest"
     ),
+    "src/codex_supervisor/worker_orchestration.py": FilePurpose(
+        "worker launch orchestration and changed-path acceptance gates", "pytest"
+    ),
     "src/codex_supervisor/worker_results.py": FilePurpose(
         "Worker Result Contract validation", "pytest"
     ),
@@ -303,6 +310,7 @@ FILE_PURPOSES = {
     "tests/test_worker_launches.py": FilePurpose(
         "worker launch request preparation tests", "pytest"
     ),
+    "tests/test_worker_orchestration.py": FilePurpose("worker orchestration tests", "pytest"),
     "tests/test_worker_results.py": FilePurpose("worker result validation tests", "pytest"),
     "tests/test_worktree_artifacts.py": FilePurpose(
         "worktree and run-artifact guard tests", "pytest"

@@ -17,7 +17,7 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
 As of this snapshot, Stage 6 is complete and ACP'd, and Stage 7 is the active current-queue plan.
-The expected queue state after Stage 7B completion is `completed`: no ready, running, blocked, or
+The expected queue state after Stage 7C completion is `completed`: no ready, running, blocked, or
 HITL task remains in the current queue until the next Stage 7 slice is shaped. If the database
 reports anything else, trust the database and call this handoff stale.
 
@@ -27,13 +27,13 @@ Recent completed ACP checkpoints:
 - `200d027`: hardened exact task claiming, Story Loop queue snapshots, completed-plan criteria, and
   worker-result/attribution skill contracts.
 
-The latest full local gate passed after the Stage 7B worker-launch preparation update with:
+The latest full local gate passed after the Stage 7C worker orchestration update with:
 
 ```sh
 uv run --no-sync python -B scripts/verify.py
 ```
 
-That run covered 276 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
+That run covered 280 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
 hygiene, planning integrity, skill inventory, source inventory, protected locks, and
 `uv lock --check`.
 
@@ -104,6 +104,18 @@ Stage 7B worker launch preparation changed:
 - `insights/stage7b-worker-launch-preparation-worker-result.json`: durable Stage 7B worker-result
   evidence.
 
+Stage 7C worker orchestration changed:
+
+- `src/codex_supervisor/worker_orchestration.py`: added `orchestrate_worker_launch`, which calls
+  `prepare_worker_launch_request`, invokes a supplied backend once with the prepared request, parses
+  the diff-summary evidence, validates changed files against task `allowed_paths`, and rewrites
+  completed out-of-scope results to `failed` with `changed_paths_out_of_scope`.
+- `tests/test_worker_orchestration.py`: covers successful injected `CodexExecBackend` execution,
+  out-of-scope diff rejection, backend failure preservation with changed-path violation metadata,
+  and unsafe worker-run ID rejection.
+- `insights/stage7c-worker-orchestration-worker-result.json`: durable Stage 7C worker-result
+  evidence.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -126,12 +138,12 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 Use story-loop-status as the queue state machine. Use task-current only as the executable AFK
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
-If queue_state is completed, shape the next vertical slice in planning SQLite before editing. The
-likely next AFK slice is Stage 7C: connect `WorkerLaunchPreparation` to `CodexExecBackend.run`
-through a non-live orchestrator/fake runner test, including diff-summary capture and changed-file
-validation integration. Keep it explicitly non-live while the local Codex CLI still fails preflight
-with `Access is denied`; do not launch live `codex exec` until an accessible executable path and
-intended `CODEX_HOME` are confirmed.
+If queue_state is completed, shape the next vertical slice in planning SQLite before editing. A
+likely next AFK slice is Stage 7D: persist orchestration output paths and metadata into planning
+worker-run records through typed helpers, then connect the completed Worker Result artifact to
+planning ingestion without enabling live worktree cleanup. Keep it explicitly non-live while the
+local Codex CLI still fails preflight with `Access is denied`; do not launch live `codex exec` until
+an accessible executable path and intended `CODEX_HOME` are confirmed.
 ```
 
 ## Active Caveats

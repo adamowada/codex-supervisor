@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 08:24 PDT
+Last updated: 2026-05-25 08:27 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,7 +9,7 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current plan: `plan-stage15-release-hardening`.
+- Current plan: no active current-queue work remains; `plan-stage15-release-hardening` is completed.
 - Latest completed task: `task-stage15c-factory-loop-demo`.
 - Latest worker run: `worker-run-stage15c-factory-loop-demo-inline-20260525`.
 - Latest successful local gates:
@@ -19,8 +19,8 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   - `uv run --no-sync python -B scripts/verify.py` - 478 passed plus hygiene, source inventory, skill inventory, planning integrity, and source locks.
   - `uv run --no-sync python -B scripts/verify.py --publication-ready` - 478 passed plus publication-ready hygiene and source locks.
 - Latest successful remote CI: GitHub Actions `Verify` run
-  `https://github.com/adamowada/codex-supervisor/actions/runs/26407789129` for commit
-  `b5d4fbc405380b078bcf38cdb767d0d4b879c44b`.
+  `https://github.com/adamowada/codex-supervisor/actions/runs/26407893287` for commit
+  `8e7e4b5661e1ae88230895b735a105b8f006f9cf`.
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.
@@ -131,8 +131,9 @@ uv run --no-sync python -B scripts/verify.py --publication-ready
 
 ## Next Action
 
-ACP Stage 15C CI evidence, push, inspect remote CI, then select the next current AFK slice from
-planning SQLite.
+No current AFK task remains. The v1 ROADMAP queue is complete in planning SQLite; final follow-up is
+to inspect the CI run for the plan-closure commit and then treat the thread Goal as complete if it
+passes.
 
 ```sh
 uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json

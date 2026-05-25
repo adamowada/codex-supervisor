@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 06:28 PDT
+Last updated: 2026-05-25 06:34 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,15 +9,18 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `completed` for Stage 13; no open current-queue AFK/HITL task remains.
-- Current AFK task: none.
+- Current queue state: `ready`.
+- Current AFK task: `task-stage14a-spawned-project-tier-classifier`.
 - Current worker run: `worker-run-stage13e-pr-issue-evidence-links-inline-20260525` completed.
-- Current plan: `plan-stage13-github-ci-integration` completed.
+- Current plan: `plan-stage14-spawned-project-factory-sop`.
 - Latest completed task in planning: `task-stage13e-pr-issue-evidence-links`.
 - Recent pushed commits:
   - `263354c5c3867be9baa370562225c737e0e63768` - Stage 13D CI evidence implementation.
   - `622c52f685c399e12c347d64ab5a0c4aafed17d9` - Stage 13D completion and Stage 13E shaping.
   - `520b8616e4f525d05dc4d5e4c2f7a4f0e9ac495f` - Stage 13E claim.
+  - `3461945e57450e81d60b19053630214b005c3fd9` - Stage 13E implementation and completion.
+- Latest successful remote CI: GitHub Actions `Verify` run
+  `https://github.com/adamowada/codex-supervisor/actions/runs/26403022698`.
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.
@@ -29,7 +32,7 @@ Review result anchor: stage13e-review-result.
 Summary anchor: stage13e-summary.
 
 Task: `task-stage13e-pr-issue-evidence-links`.
-Status: completed in planning SQLite; ACP and CI inspection pending.
+Status: completed in planning SQLite, pushed, and verified by remote CI.
 
 Implemented:
 
@@ -55,15 +58,36 @@ uv run --no-sync python -B scripts/verify.py
 ```
 
 Publication-ready verification initially failed only because this handoff exceeded the compact
-snapshot line limit. This file has been compacted; rerun publication-ready after staging.
+snapshot line limit. This file was compacted, and publication-ready verification passed after
+staging.
+
+## Stage 14A Ready Task
+
+Task: `task-stage14a-spawned-project-tier-classifier`.
+Plan: `plan-stage14-spawned-project-factory-sop`.
+Review required: yes, because it adds a new core model and CLI public surface.
+
+Goal: add a deterministic, credential-free spawned-project scaffold recommendation model and CLI
+dry-run command so `codex-supervisor` can choose SOP tiers for prototypes versus
+production-intended projects before creating files.
+
+Allowed paths: `src/codex_supervisor/spawned_projects.py`, `src/codex_supervisor/cli.py`,
+`tests/test_spawned_projects.py`, `tests/test_file_justification.py`,
+`scripts/check_file_justification.py`, `plans/planning.sqlite3`, `HANDOFF.md`, and `insights/**`.
+
+Stop instead of guessing if the slice requires a real external project, user product/publication
+policy, a new verification script beyond command-safety scope, or repeated unknown
+publication-ready failure.
 
 ## Next Action
 
-Rerun:
+Claim and execute `task-stage14a-spawned-project-tier-classifier` as the next AFK Story Loop slice.
+Use its planning SQLite task contract as authority and run:
 
 ```sh
+uv run --no-sync python -B -m pytest tests/test_spawned_projects.py tests/test_file_justification.py -q -p no:cacheprovider
+uv run --no-sync python -B scripts/check_planning_integrity.py
+uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
+uv run --no-sync python -B scripts/verify.py
 uv run --no-sync python -B scripts/verify.py --publication-ready
 ```
-
-Then ACP, push, inspect the GitHub Actions `Verify` run for the pushed commit, record the resulting
-CI/commit evidence in planning, and shape the next ROADMAP stage slice.

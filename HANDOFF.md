@@ -16,10 +16,11 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, Stage 9C guarded insight update workflow is complete in planning SQLite. The
-expected queue state is `completed` for active plan `plan-stage9-insights-skill-learning`, with no
-current AFK, HITL, or running task. If the database reports anything else, trust the database and
-call this handoff stale.
+As of this snapshot, Stage 9D skill promotion golden-eval contract work is shaped in planning
+SQLite. The expected queue state is `ready` for active plan
+`plan-stage9-insights-skill-learning`, with current AFK task
+`task-stage9d-skill-promotion-eval-contracts`. If the database reports anything else, trust the
+database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
@@ -272,6 +273,27 @@ Stage 9C guarded insight update workflow changed:
   `uv run --no-sync python -B -m pytest tests/test_insight_updates.py tests/test_insight_cli.py tests/test_insights.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/verify.py`.
 
+Stage 9D skill promotion golden-eval contract work is shaped:
+
+- `plans/planning.sqlite3`: adds ready AFK task
+  `task-stage9d-skill-promotion-eval-contracts`,
+  `milestone-stage9d-skill-promotion-eval-contracts`,
+  `criterion-stage9d-skill-promotion-eval-contracts`, and
+  `progress-stage9d-task-shaped-20260525`.
+- Goal: validate skill promotion proposals with skill name, motivation, provenance, rollback plan,
+  changed paths, and one or more golden-eval evidence records before repo-local skill promotion.
+- Scope: pure validation/CLI tests for skill promotion proposal contracts; no live worker launch,
+  no skill rewrites, no protected-doc edits, no Codex internal SQLite reads/writes, and no OSS
+  adaptation without attribution review.
+- Allowed implementation paths:
+  `src/codex_supervisor/skill_promotion.py`, `src/codex_supervisor/cli.py`,
+  `tests/test_skill_promotion.py`, `scripts/check_file_justification.py`,
+  `plans/planning.sqlite3`, `HANDOFF.md`, and
+  `insights/stage9d-skill-promotion-eval-contracts-worker-result.json`.
+- Verification:
+  `uv run --no-sync python -B -m pytest tests/test_skill_promotion.py -q -p no:cacheprovider`;
+  `uv run --no-sync python -B scripts/verify.py`.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -295,11 +317,12 @@ Use story-loop-status as the queue state machine. Use task-current only as the e
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
 If queue_state is `ready`, run `task-current --json` and execute the current AFK slice with
-story-loop discipline.
+story-loop discipline. The expected current task is
+`task-stage9d-skill-promotion-eval-contracts`.
 
 If queue_state is `completed`, shape the next AFK vertical slice from `ROADMAP.md`. The likely next
-Stage 9 slice is skill-promotion/golden-eval wiring now that guarded insight markdown writes exist,
-or Stage 10 Codex local-state adapter work if the Stage 9 learning loop is intentionally closed.
+slice after Stage 9D is either deeper skill-golden-eval execution wiring or Stage 10 Codex
+local-state adapter work if the Stage 9 learning loop is intentionally closed.
 Keep live Codex Exec launch disabled while the local Codex CLI still fails preflight with
 `Access is denied`; do not launch live `codex exec` until an accessible executable path and intended
 `CODEX_HOME` are confirmed.

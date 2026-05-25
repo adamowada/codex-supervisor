@@ -7,6 +7,8 @@ import pytest
 from codex_supervisor.cli import main
 from codex_supervisor.planning import PlanRecord, initialize_planning_database
 from codex_supervisor.projects import (
+    MAX_HARNESS_CONFIG_BYTES,
+    MAX_HARNESS_PROMPT_BYTES,
     MAX_MARKDOWN_PLAN_BYTES,
     MAX_TASKS_JSON_BYTES,
     build_project_task_seeds,
@@ -383,6 +385,244 @@ def test_markdown_plan_without_marker_falls_back_to_generic_repo(
     (repo / "plans" / "active").mkdir(parents=True)
     (repo / "AGENTS.md").write_text("# Agent notes\n", encoding="utf-8")
     (repo / "plans" / "active" / "notes.md").write_text("# Notes\n", encoding="utf-8")
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "generic_repo"
+    assert entry.status == "ready"
+
+
+def test_harness_config_adapter_extracts_candidates_without_mutating_target(
+    tmp_path: Path,
+) -> None:
+    repo = _write_harness_config_project(tmp_path / "harness-style")
+    config_path = repo / "harness" / "config.json"
+    prompt_path = repo / "prompts" / "browser-smoke.md"
+    before_config = config_path.read_text(encoding="utf-8")
+    before_prompt = prompt_path.read_text(encoding="utf-8")
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "codex_subagent_testing_harness_config"
+    assert entry.status == "ready"
+    assert entry.facts is not None
+    facts = entry.facts
+    assert facts.authority_markers == ("harness/config.json",)
+    assert facts.adapter_findings == ()
+    assert facts.verification_commands == ("uv run --no-sync python -B scripts/run_harness.py",)
+    assert len(facts.candidate_tasks) == 1
+    candidate = facts.candidate_tasks[0]
+    assert candidate.source_id == "harness-config-browser-smoke"
+    assert candidate.source_path == "harness/config.json:runs/browser-smoke"
+    assert candidate.title == "Run browser smoke"
+    assert candidate.goal == "Exercise the browser harness prompt."
+    assert candidate.task_type == "AFK"
+    assert candidate.acceptance_criteria == ("Harness smoke completes.",)
+    assert candidate.verification_commands == ("uv run --no-sync python -B scripts/run_harness.py",)
+    assert candidate.allowed_paths == ("harness/browser.py",)
+    assert candidate.blocked_by == ("task-fixture-data",)
+    assert candidate.source_authority == ("harness/config.json", "prompts/browser-smoke.md")
+    assert config_path.read_text(encoding="utf-8") == before_config
+    assert prompt_path.read_text(encoding="utf-8") == before_prompt
+
+
+def test_project_seed_tasks_cli_applies_harness_config_candidates_only_to_supervisor_db(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    supervisor_db = tmp_path / "supervisor" / "planning.sqlite3"
+    store = initialize_planning_database(supervisor_db)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-harness-seeded-project",
+            slug="harness-seeded-project",
+            title="Harness Seeded Project",
+            goal="Receive harness seeded tasks.",
+            status="active",
+        )
+    )
+    repo = _write_harness_config_project(tmp_path / "target-harness")
+    config_path = repo / "harness" / "config.json"
+    target_before = config_path.read_text(encoding="utf-8")
+
+    assert (
+        main(
+            [
+                "project-seed-tasks",
+                "--path",
+                str(supervisor_db),
+                "--root",
+                str(repo),
+                "--plan-id",
+                "plan-harness-seeded-project",
+                "--apply",
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    tasks = store.list_supervisor_tasks()
+    assert payload["project"]["adapter_type"] == "codex_subagent_testing_harness_config"
+    assert payload["task_ids"] == [tasks[0].task_id]
+    assert tasks[0].scope["source_project"]["adapter_type"] == (
+        "codex_subagent_testing_harness_config"
+    )
+    assert tasks[0].scope["source_candidate"]["source_authority"] == [
+        "harness/config.json",
+        "prompts/browser-smoke.md",
+    ]
+    assert config_path.read_text(encoding="utf-8") == target_before
+
+
+def test_harness_config_adapter_reports_malformed_config_without_generic_fallback(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "malformed-harness"
+    (repo / "harness").mkdir(parents=True)
+    (repo / "harness" / "config.json").write_text("{not json", encoding="utf-8")
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "codex_subagent_testing_harness_config"
+    assert entry.status == "unsupported"
+    assert entry.failure_class == "unsupported_harness_config"
+    assert entry.facts is not None
+    assert "could not be parsed" in entry.facts.adapter_findings[0]
+
+
+def test_harness_config_adapter_reports_oversized_config_without_generic_fallback(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "oversized-harness"
+    (repo / "harness").mkdir(parents=True)
+    (repo / "harness" / "config.json").write_text(
+        "x" * (MAX_HARNESS_CONFIG_BYTES + 1),
+        encoding="utf-8",
+    )
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "codex_subagent_testing_harness_config"
+    assert entry.status == "unsupported"
+    assert entry.failure_class == "unsupported_harness_config"
+    assert entry.facts is not None
+    assert "is larger than" in entry.facts.adapter_findings[0]
+
+
+def test_harness_config_adapter_reports_oversized_prompt_without_generic_fallback(
+    tmp_path: Path,
+) -> None:
+    repo = _write_harness_config_project(
+        tmp_path / "oversized-prompt",
+        prompt_text="x" * (MAX_HARNESS_PROMPT_BYTES + 1),
+    )
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "codex_subagent_testing_harness_config"
+    assert entry.status == "unsupported"
+    assert entry.failure_class == "unsupported_harness_config"
+    assert entry.facts is not None
+    assert "prompts/browser-smoke.md is larger than" in entry.facts.adapter_findings[0]
+
+
+@pytest.mark.parametrize(
+    "prompt_path",
+    ("../secret.md", "C:\\secret.md", "C:secret.md", "/secret.md", "\\secret.md"),
+)
+def test_harness_config_adapter_rejects_unsafe_prompt_paths(
+    tmp_path: Path,
+    prompt_path: str,
+) -> None:
+    repo = _write_harness_config_project(
+        tmp_path / "unsafe-prompt-path",
+        config_payload={
+            "schema": "codex-subagent-testing",
+            "runs": [
+                {
+                    "id": "unsafe",
+                    "title": "Unsafe prompt",
+                    "goal": "Should not resolve outside or through drive syntax.",
+                    "prompt_path": prompt_path,
+                }
+            ],
+        },
+    )
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "codex_subagent_testing_harness_config"
+    assert entry.status == "unsupported"
+    assert entry.failure_class == "unsupported_harness_config"
+    assert entry.facts is not None
+    assert "must include a safe prompt_path" in entry.facts.adapter_findings[0]
+
+
+def test_harness_config_adapter_normalizes_windows_prompt_separators(
+    tmp_path: Path,
+) -> None:
+    repo = _write_harness_config_project(
+        tmp_path / "windows-prompt-path",
+        config_payload={
+            "schema": "codex-subagent-testing",
+            "runs": [
+                {
+                    "id": "windows-path",
+                    "title": "Windows prompt",
+                    "goal": "Normalize Windows relative prompt separators.",
+                    "prompt_path": "prompts\\browser-smoke.md",
+                }
+            ],
+        },
+    )
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.status == "ready"
+    assert entry.facts is not None
+    assert entry.facts.candidate_tasks[0].source_authority == (
+        "harness/config.json",
+        "prompts/browser-smoke.md",
+    )
+
+
+def test_harness_config_adapter_preserves_tasks_collection_in_source_path(
+    tmp_path: Path,
+) -> None:
+    repo = _write_harness_config_project(
+        tmp_path / "tasks-array-harness",
+        config_payload={
+            "schema": "codex-subagent-testing",
+            "tasks": [
+                {
+                    "id": "prompt-task",
+                    "title": "Prompt task",
+                    "goal": "Seed from a tasks array.",
+                    "prompt_path": "prompts/browser-smoke.md",
+                }
+            ],
+        },
+    )
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.status == "ready"
+    assert entry.facts is not None
+    assert entry.facts.candidate_tasks[0].source_path == ("harness/config.json:tasks/prompt-task")
+
+
+def test_harness_config_without_marker_falls_back_to_generic_repo(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "generic-with-harness-notes"
+    (repo / "harness").mkdir(parents=True)
+    (repo / "AGENTS.md").write_text("# Agent notes\n", encoding="utf-8")
+    (repo / "harness" / "config.json").write_text(
+        json.dumps({"runs": []}),
+        encoding="utf-8",
+    )
 
     entry = discover_projects((repo,))[0]
 
@@ -823,6 +1063,62 @@ Goal: Add bounded guardrails.
 ### Blocked By
 - task-data-contract
 """,
+        encoding="utf-8",
+    )
+    return root
+
+
+def _write_harness_config_project(
+    root: Path,
+    *,
+    config_payload: dict[str, object] | None = None,
+    prompt_text: str | None = None,
+) -> Path:
+    (root / "harness").mkdir(parents=True)
+    (root / "prompts").mkdir()
+    (root / "scripts").mkdir()
+    (root / "scripts" / "run_harness.py").write_text("print('run harness')\n", encoding="utf-8")
+    (root / "prompts" / "browser-smoke.md").write_text(
+        prompt_text or "Run the browser smoke harness.\n",
+        encoding="utf-8",
+    )
+    (root / "harness" / "config.json").write_text(
+        json.dumps(
+            config_payload
+            or {
+                "schema": "codex-subagent-testing",
+                "runs": [
+                    {
+                        "id": "browser-smoke",
+                        "title": "Run browser smoke",
+                        "goal": "Exercise the browser harness prompt.",
+                        "status": "ready",
+                        "task_type": "AFK",
+                        "prompt_path": "prompts/browser-smoke.md",
+                        "acceptance_criteria": ["Harness smoke completes."],
+                        "verification_commands": [
+                            "uv run --no-sync python -B scripts/run_harness.py"
+                        ],
+                        "allowed_paths": ["harness/browser.py"],
+                        "blocked_by": ["task-fixture-data"],
+                    },
+                    {
+                        "id": "completed-run",
+                        "title": "Completed harness run",
+                        "goal": "This terminal run should not become a candidate.",
+                        "status": "completed",
+                        "task_type": "AFK",
+                        "prompt_path": "prompts/browser-smoke.md",
+                        "acceptance_criteria": ["Done."],
+                        "verification_commands": [
+                            "uv run --no-sync python -B scripts/run_harness.py"
+                        ],
+                        "allowed_paths": ["harness/done.py"],
+                        "blocked_by": [],
+                    },
+                ],
+            }
+        ),
         encoding="utf-8",
     )
     return root

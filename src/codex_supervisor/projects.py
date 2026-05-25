@@ -24,12 +24,23 @@ MAX_TASKS_JSON_BYTES = 64 * 1024
 MAX_PLANNING_SQLITE_TASK_CANDIDATES = 20
 MAX_MARKDOWN_PLAN_BYTES = 64 * 1024
 MAX_MARKDOWN_PLAN_FILES = 8
+MAX_HARNESS_CONFIG_BYTES = 64 * 1024
+MAX_HARNESS_PROMPT_BYTES = 64 * 1024
+MAX_HARNESS_TASK_CANDIDATES = 20
+MAX_HARNESS_TASK_ENTRIES = 64
 PLANNING_SQLITE_PATH = "plans/planning.sqlite3"
 PLANNING_SQLITE_OPEN_TASK_STATUSES = frozenset(("pending", "ready", "blocked"))
 MARKDOWN_PLAN_DIRECTORIES = ("plans/active", "plans")
 MARKDOWN_PLAN_MARKER = "observe-safety-plan"
 MARKDOWN_PLAN_MARKER_NOT_FOUND_FINDING = "structured markdown plan marker was not found."
 MARKDOWN_PLAN_ACTIVE_STATUSES = frozenset(("active", "ready"))
+HARNESS_CONFIG_CANDIDATES = (
+    "harness/config.json",
+    "harness/tasks.json",
+    "codex-subagent-testing.json",
+)
+HARNESS_CONFIG_MARKER = "codex-subagent-testing"
+HARNESS_CONFIG_MARKER_NOT_FOUND_FINDING = "codex-subagent-testing harness marker was not found."
 VERIFY_SCRIPT_COMMANDS = {
     "scripts/verify.py": "uv run --no-sync python -B scripts/verify.py",
     "scripts/check_protected_files.py": (
@@ -39,6 +50,11 @@ VERIFY_SCRIPT_COMMANDS = {
 MARKDOWN_PLAN_VERIFY_SCRIPT_COMMANDS = {
     "scripts/validate_plan.py": "uv run --no-sync python -B scripts/validate_plan.py",
     "scripts/validate_plans.py": "uv run --no-sync python -B scripts/validate_plans.py",
+    **VERIFY_SCRIPT_COMMANDS,
+}
+HARNESS_VERIFY_SCRIPT_COMMANDS = {
+    "scripts/run_harness.py": "uv run --no-sync python -B scripts/run_harness.py",
+    "scripts/verify_harness.py": "uv run --no-sync python -B scripts/verify_harness.py",
     **VERIFY_SCRIPT_COMMANDS,
 }
 TASK_TYPES = frozenset(("AFK", "HITL"))
@@ -213,6 +229,52 @@ class MarkdownPlanAdapter:
         )
 
 
+class HarnessConfigAdapter:
+    """Bounded read-only adapter for harness/config/prompt projects."""
+
+    adapter_type = "codex_subagent_testing_harness_config"
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def config_path(self) -> Path | None:
+        for relative_path in HARNESS_CONFIG_CANDIDATES:
+            path = self.root / relative_path
+            if path.exists():
+                return path
+        return None
+
+    def facts(self) -> ProjectFacts:
+        verification_commands = tuple(
+            command
+            for relative_path, command in HARNESS_VERIFY_SCRIPT_COMMANDS.items()
+            if _exists(self.root, relative_path)
+        )
+        config_path = self.config_path()
+        candidate_tasks, adapter_findings = _read_harness_config_candidates(
+            self.root,
+            config_path=config_path,
+            default_verification_commands=verification_commands,
+        )
+        config_documents = () if config_path is None else (_relative_path(self.root, config_path),)
+        return ProjectFacts(
+            source_documents=(
+                *config_documents,
+                *tuple(
+                    candidate
+                    for candidate in SOURCE_DOCUMENT_CANDIDATES
+                    if _exists(self.root, candidate)
+                ),
+            ),
+            authority_markers=config_documents,
+            verification_commands=verification_commands,
+            candidate_tasks=candidate_tasks,
+            adapter_findings=adapter_findings,
+            has_planning_database=_exists(self.root, PLANNING_SQLITE_PATH),
+            has_tasks_json=_exists(self.root, "TASKS.json"),
+        )
+
+
 def discover_projects(
     roots: tuple[Path, ...] | list[Path],
     *,
@@ -314,6 +376,32 @@ def _discover_project(root: Path, *, trust_policy: str) -> ProjectRegistryEntry:
                 failure_class="unsupported_markdown_plan",
                 failure_reason=markdown_facts.adapter_findings[0],
             )
+    harness_adapter = HarnessConfigAdapter(resolved_root)
+    if harness_adapter.config_path() is not None:
+        harness_facts = harness_adapter.facts()
+        if not harness_facts.adapter_findings:
+            return ProjectRegistryEntry(
+                project_id=stable_project_id_from_path(resolved_root),
+                root_path=str(resolved_root),
+                adapter_type=harness_adapter.adapter_type,
+                trust_policy=trust_policy,
+                status="ready",
+                facts=harness_facts,
+            )
+        if not (
+            _only_harness_config_marker_missing(harness_facts)
+            and _generic_authority_markers(resolved_root)
+        ):
+            return ProjectRegistryEntry(
+                project_id=stable_project_id_from_path(resolved_root),
+                root_path=str(resolved_root),
+                adapter_type=harness_adapter.adapter_type,
+                trust_policy=trust_policy,
+                status="unsupported",
+                facts=harness_facts,
+                failure_class="unsupported_harness_config",
+                failure_reason=harness_facts.adapter_findings[0],
+            )
     adapter = GenericRepoAdapter(resolved_root)
     facts = adapter.facts()
     if not facts.authority_markers:
@@ -401,6 +489,10 @@ def _generic_non_planning_authority_markers(root: Path) -> tuple[str, ...]:
 
 def _only_markdown_plan_marker_missing(facts: ProjectFacts) -> bool:
     return facts.adapter_findings == (MARKDOWN_PLAN_MARKER_NOT_FOUND_FINDING,)
+
+
+def _only_harness_config_marker_missing(facts: ProjectFacts) -> bool:
+    return facts.adapter_findings == (HARNESS_CONFIG_MARKER_NOT_FOUND_FINDING,)
 
 
 def _read_tasks_json_candidates(
@@ -674,6 +766,124 @@ def _markdown_plan_candidate_from_section(
     )
 
 
+def _read_harness_config_candidates(
+    root: Path,
+    *,
+    config_path: Path | None,
+    default_verification_commands: tuple[str, ...],
+) -> tuple[tuple[ProjectTaskCandidate, ...], tuple[str, ...]]:
+    if config_path is None:
+        return (), ("codex-subagent-testing harness config was not found.",)
+    relative_config_path = _relative_path(root, config_path)
+    try:
+        size = config_path.stat().st_size
+    except OSError as exc:
+        return (), (f"{relative_config_path} could not be inspected: {exc}",)
+    if size > MAX_HARNESS_CONFIG_BYTES:
+        return (), (f"{relative_config_path} is larger than {MAX_HARNESS_CONFIG_BYTES} bytes.",)
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return (), (f"{relative_config_path} could not be parsed: {exc}",)
+    if not isinstance(payload, dict):
+        return (), (f"{relative_config_path} must contain a top-level JSON object.",)
+    if not _harness_config_has_marker(payload):
+        return (), (HARNESS_CONFIG_MARKER_NOT_FOUND_FINDING,)
+
+    entry_collection = "runs" if isinstance(payload.get("runs"), list) else "tasks"
+    raw_entries = payload.get(entry_collection)
+    if not isinstance(raw_entries, list):
+        return (), (f"{relative_config_path} must contain a runs or tasks array.",)
+    findings: list[str] = []
+    if len(raw_entries) > MAX_HARNESS_TASK_ENTRIES:
+        findings.append(
+            "harness config task entry limit exceeded; "
+            f"inspecting first {MAX_HARNESS_TASK_ENTRIES} of {len(raw_entries)} entries."
+        )
+    candidates: list[ProjectTaskCandidate] = []
+    for index, item in enumerate(raw_entries[:MAX_HARNESS_TASK_ENTRIES]):
+        if len(candidates) >= MAX_HARNESS_TASK_CANDIDATES:
+            break
+        candidate = _harness_config_candidate_from_payload(
+            item,
+            index=index,
+            root=root,
+            relative_config_path=relative_config_path,
+            entry_collection=entry_collection,
+            default_verification_commands=default_verification_commands,
+            findings=findings,
+        )
+        if candidate is not None:
+            candidates.append(candidate)
+    return tuple(candidates), tuple(findings)
+
+
+def _harness_config_has_marker(payload: dict[str, object]) -> bool:
+    for key in ("schema", "adapter", "project_type", "kind"):
+        marker = _optional_nonblank_string(payload.get(key))
+        if marker is not None and HARNESS_CONFIG_MARKER in marker.casefold():
+            return True
+    return False
+
+
+def _harness_config_candidate_from_payload(
+    item: object,
+    *,
+    index: int,
+    root: Path,
+    relative_config_path: str,
+    entry_collection: str,
+    default_verification_commands: tuple[str, ...],
+    findings: list[str],
+) -> ProjectTaskCandidate | None:
+    if not isinstance(item, dict):
+        findings.append(f"{relative_config_path} entry {index} is not an object.")
+        return None
+
+    title = _optional_nonblank_string(item.get("title"))
+    goal = _optional_nonblank_string(item.get("goal"))
+    if title is None or goal is None:
+        findings.append(
+            f"{relative_config_path} entry {index} must include nonblank title and goal."
+        )
+        return None
+    status = (_optional_nonblank_string(item.get("status")) or "ready").casefold()
+    if status not in PLANNING_SQLITE_OPEN_TASK_STATUSES:
+        return None
+    task_type = (_optional_nonblank_string(item.get("task_type")) or "AFK").upper()
+    if task_type not in TASK_TYPES:
+        findings.append(
+            f"{relative_config_path} entry {index} has unsupported task_type: {task_type}."
+        )
+        return None
+    prompt_path = _safe_relative_project_path(root, item.get("prompt_path"))
+    if prompt_path is None:
+        findings.append(f"{relative_config_path} entry {index} must include a safe prompt_path.")
+        return None
+    prompt_finding = _harness_prompt_file_finding(root, prompt_path)
+    if prompt_finding is not None:
+        findings.append(prompt_finding)
+        return None
+
+    raw_source_id = _optional_nonblank_string(item.get("id")) or title
+    acceptance_criteria = _string_sequence(item.get("acceptance_criteria"))
+    verification_commands = _string_sequence(item.get("verification_commands"))
+    allowed_paths = _string_sequence(item.get("allowed_paths"))
+    blocked_by = _string_sequence(item.get("blocked_by"))
+    return ProjectTaskCandidate(
+        source_id=f"harness-config-{_slugify(raw_source_id)}",
+        source_path=f"{relative_config_path}:{entry_collection}/{_slugify(raw_source_id)}",
+        title=title,
+        goal=goal,
+        task_type=task_type,
+        acceptance_criteria=acceptance_criteria,
+        verification_commands=verification_commands or default_verification_commands,
+        allowed_paths=allowed_paths,
+        blocked_by=blocked_by,
+        source_authority=(relative_config_path, prompt_path),
+    )
+
+
 def _project_task_candidate_from_payload(
     item: object,
     *,
@@ -821,6 +1031,42 @@ def _markdown_bullet_section(text: str, heading: str) -> tuple[str, ...]:
         if value:
             values.append(value)
     return tuple(values)
+
+
+def _safe_relative_project_path(root: Path, value: object) -> str | None:
+    raw_path = _optional_nonblank_string(value)
+    if raw_path is None:
+        return None
+    windows_path = PureWindowsPath(raw_path)
+    if windows_path.drive or raw_path.startswith(("/", "\\")):
+        return None
+    try:
+        resolved_root = root.resolve()
+        resolved_path = (root / raw_path).resolve()
+        relative_path = resolved_path.relative_to(resolved_root)
+    except OSError, ValueError:
+        return None
+    normalized = relative_path.as_posix()
+    return normalized if normalized and not normalized.startswith("../") else None
+
+
+def _harness_prompt_file_finding(root: Path, prompt_path: str) -> str | None:
+    path = root / prompt_path
+    if not path.exists():
+        return f"{prompt_path} was not found."
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        return f"{prompt_path} could not be inspected: {exc}"
+    if size > MAX_HARNESS_PROMPT_BYTES:
+        return f"{prompt_path} is larger than {MAX_HARNESS_PROMPT_BYTES} bytes."
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return f"{prompt_path} could not be read: {exc}"
+    if not text.strip():
+        return f"{prompt_path} must be nonblank."
+    return None
 
 
 def _normalized_path_key(path: PurePath) -> str:

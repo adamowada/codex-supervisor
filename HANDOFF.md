@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 06:34 PDT
+Last updated: 2026-05-25 06:37 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,9 +9,9 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `ready`.
+- Current queue state: `running`.
 - Current AFK task: `task-stage14a-spawned-project-tier-classifier`.
-- Current worker run: `worker-run-stage13e-pr-issue-evidence-links-inline-20260525` completed.
+- Current worker run: `worker-run-stage14a-spawned-project-tier-classifier-inline-20260525`.
 - Current plan: `plan-stage14-spawned-project-factory-sop`.
 - Latest completed task in planning: `task-stage13e-pr-issue-evidence-links`.
 - Recent pushed commits:
@@ -19,8 +19,9 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   - `622c52f685c399e12c347d64ab5a0c4aafed17d9` - Stage 13D completion and Stage 13E shaping.
   - `520b8616e4f525d05dc4d5e4c2f7a4f0e9ac495f` - Stage 13E claim.
   - `3461945e57450e81d60b19053630214b005c3fd9` - Stage 13E implementation and completion.
+  - `abde5c60a46d9caeea0302c8de606f6f1feaa61c` - Stage 13E CI evidence and Stage 14A shaping.
 - Latest successful remote CI: GitHub Actions `Verify` run
-  `https://github.com/adamowada/codex-supervisor/actions/runs/26403022698`.
+  `https://github.com/adamowada/codex-supervisor/actions/runs/26403205794`.
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.
@@ -65,6 +66,7 @@ staging.
 
 Task: `task-stage14a-spawned-project-tier-classifier`.
 Plan: `plan-stage14-spawned-project-factory-sop`.
+Worker run: `worker-run-stage14a-spawned-project-tier-classifier-inline-20260525`.
 Review required: yes, because it adds a new core model and CLI public surface.
 
 Goal: add a deterministic, credential-free spawned-project scaffold recommendation model and CLI
@@ -81,8 +83,8 @@ publication-ready failure.
 
 ## Next Action
 
-Claim and execute `task-stage14a-spawned-project-tier-classifier` as the next AFK Story Loop slice.
-Use its planning SQLite task contract as authority and run:
+Implement `task-stage14a-spawned-project-tier-classifier` as the current AFK Story Loop slice. Use
+its planning SQLite task contract as authority and run:
 
 ```sh
 uv run --no-sync python -B -m pytest tests/test_spawned_projects.py tests/test_file_justification.py -q -p no:cacheprovider

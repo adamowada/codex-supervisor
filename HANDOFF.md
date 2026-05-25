@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 04:17 PDT
+Last updated: 2026-05-25 04:20 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -26,6 +26,7 @@ Completed task: `task-stage12b-plugin-skill-workflows`.
 - DB result: `worker-result-stage12b-plugin-skill-workflows-result`.
 - Review: `review-stage12b-plugin-skill-workflows-20260525`, 0 findings.
 - Completion progress: `progress-stage12b-plugin-skill-workflows-completed-20260525`.
+- Implementation commit: `46f140dea6c05e6bd1deeb7036aab6346ad6c627`.
 
 Implemented:
 

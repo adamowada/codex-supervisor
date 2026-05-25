@@ -70,6 +70,11 @@ from codex_supervisor.review_repairs import (
     ReviewRepairRoutingResult,
     create_repair_tasks_from_review_result,
 )
+from codex_supervisor.skill_promotion import (
+    SkillPromotionContractError,
+    SkillPromotionProposal,
+    validate_skill_promotion_payload,
+)
 from codex_supervisor.story_loop import (
     build_story_loop_status,
     record_story_loop_progress,
@@ -443,6 +448,13 @@ def main(argv: list[str] | None = None) -> int:
     insight_update_parser.add_argument("--promotion-criterion", action="append", default=[])
     insight_update_parser.add_argument("--provenance", action="append", default=[])
     insight_update_parser.add_argument("--json", action="store_true", default=False)
+
+    skill_promotion_parser = subparsers.add_parser(
+        "skill-promotion-validate",
+        help="Validate a skill promotion proposal without writing durable state",
+    )
+    skill_promotion_parser.add_argument("--proposal-path", type=Path, required=True)
+    skill_promotion_parser.add_argument("--json", action="store_true", default=False)
 
     cleanup_plan_parser = subparsers.add_parser(
         "cleanup-plan",
@@ -1096,6 +1108,18 @@ def main(argv: list[str] | None = None) -> int:
             print(insight_update.markdown, end="")
         return 0
 
+    if args.command == "skill-promotion-validate":
+        try:
+            proposal = _load_skill_promotion_proposal(args.proposal_path)
+        except (OSError, json.JSONDecodeError, SkillPromotionContractError) as exc:
+            print(f"Could not validate skill promotion proposal: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            _print_json(proposal)
+        else:
+            _print_skill_promotion_proposal(proposal)
+        return 0
+
     if args.command == "plan-upsert":
         write_store = _open_write_store(args.path)
         if write_store is None:
@@ -1400,6 +1424,11 @@ def _load_review_result(path: Path) -> ReviewResult:
 def _load_insight_record(path: Path) -> InsightRecord:
     payload = json.loads(path.read_text(encoding="utf-8"))
     return validate_insight_record_payload(payload)
+
+
+def _load_skill_promotion_proposal(path: Path) -> SkillPromotionProposal:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return validate_skill_promotion_payload(payload)
 
 
 def _review_result_artifact_id(path: Path, explicit_artifact_id: str | None) -> str:
@@ -1818,6 +1847,28 @@ def _print_insight_record(record: InsightRecord) -> None:
     else:
         print("- none")
     print(f"next_action: {record.next_action}")
+
+
+def _print_skill_promotion_proposal(proposal: SkillPromotionProposal) -> None:
+    print(f"skill_name: {proposal.skill_name}")
+    print(f"motivation: {proposal.motivation}")
+    print("provenance:")
+    for provenance in proposal.provenance:
+        print(f"- {provenance}")
+    print(f"rollback_plan: {proposal.rollback_plan}")
+    print("changed_paths:")
+    for changed_path in proposal.changed_paths:
+        print(f"- {changed_path}")
+    print("golden_evals:")
+    for evidence in proposal.golden_evals:
+        reviewer = evidence.reviewer or "none"
+        automated = evidence.automated_verdict_rationale or "none"
+        print(f"- {evidence.task_id}: {evidence.status}")
+        print(f"  task_name: {evidence.task_name}")
+        print(f"  baseline_summary: {evidence.baseline_summary}")
+        print(f"  candidate_summary: {evidence.candidate_summary}")
+        print(f"  reviewer: {reviewer}")
+        print(f"  automated_verdict_rationale: {automated}")
 
 
 def _to_jsonable(value: object) -> Any:

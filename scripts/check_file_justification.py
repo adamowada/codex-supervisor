@@ -279,6 +279,10 @@ FILE_PURPOSES = {
         "structured worker-result evidence for the Stage 9C guarded insight update workflow slice",
         "check_planning_integrity",
     ),
+    "insights/stage9d-skill-promotion-eval-contracts-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 9D skill promotion eval contract slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
@@ -327,6 +331,9 @@ FILE_PURPOSES = {
     ),
     "src/codex_supervisor/insight_updates.py": FilePurpose(
         "guarded insight markdown update helpers", "pytest"
+    ),
+    "src/codex_supervisor/skill_promotion.py": FilePurpose(
+        "skill promotion proposal validation contracts", "pytest"
     ),
     "src/codex_supervisor/locks.py": FilePurpose("protected file lock helpers", "pytest"),
     "src/codex_supervisor/paths.py": FilePurpose("repo/planning path discovery", "pytest"),
@@ -377,6 +384,9 @@ FILE_PURPOSES = {
     "tests/test_review_repairs.py": FilePurpose("review repair routing tests", "pytest"),
     "tests/test_skill_inventory.py": FilePurpose("skill inventory gate tests", "pytest"),
     "tests/test_source_inventory.py": FilePurpose("source inventory gate tests", "pytest"),
+    "tests/test_skill_promotion.py": FilePurpose(
+        "skill promotion proposal contract tests", "pytest"
+    ),
     "tests/test_story_loop.py": FilePurpose("Story Loop tests", "pytest"),
     "tests/test_worker_backends.py": FilePurpose("worker backend protocol tests", "pytest"),
     "tests/test_worker_launches.py": FilePurpose(

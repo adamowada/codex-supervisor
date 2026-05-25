@@ -75,6 +75,7 @@ from codex_supervisor.planning import (
     open_existing_planning_database,
     unresolved_task_blockers,
 )
+from codex_supervisor.projects import ProjectRegistryEntry, discover_projects
 from codex_supervisor.review_loop import (
     ReviewContractError,
     ReviewResult,
@@ -110,6 +111,20 @@ def main(argv: list[str] | None = None) -> int:
     init_parser = subparsers.add_parser("plan-init", help="Initialize planning SQLite")
     init_parser.add_argument("--path", type=Path, default=None)
     init_parser.add_argument("--seed-bootstrap-plan", action="store_true", default=False)
+
+    project_list_parser = subparsers.add_parser(
+        "project-list",
+        help="List supervised project roots and adapter facts",
+    )
+    project_list_parser.add_argument(
+        "--root",
+        action="append",
+        type=Path,
+        default=None,
+        help="Explicit project root to inspect. Defaults to the current working directory.",
+    )
+    project_list_parser.add_argument("--trust-policy", default="local_trusted")
+    project_list_parser.add_argument("--json", action="store_true", default=False)
 
     list_parser = subparsers.add_parser("plan-list", help="List plans")
     list_parser.add_argument("--path", type=Path, default=None)
@@ -554,6 +569,21 @@ def main(argv: list[str] | None = None) -> int:
     cleanup_plan_parser.add_argument("--json", action="store_true", default=False)
 
     args = parser.parse_args(argv)
+
+    if args.command == "project-list":
+        roots = tuple(args.root or (Path.cwd(),))
+        entries = discover_projects(roots, trust_policy=args.trust_policy)
+        missing_entries = tuple(entry for entry in entries if entry.status == "missing")
+        if missing_entries:
+            for entry in missing_entries:
+                message = entry.failure_reason or f"Project root does not exist: {entry.root_path}"
+                print(message, file=sys.stderr)
+            return 1
+        if args.json:
+            _print_json(entries)
+            return 0
+        _print_project_registry_entries(entries)
+        return 0
 
     if args.command == "codex-state-inventory":
         inventory = inventory_codex_state(args.codex_home, observed_at=args.observed_at)
@@ -1928,6 +1958,24 @@ def _print_json_list(label: str, values: Sequence[object]) -> None:
 def _print_json_section(label: str, value: object) -> None:
     print(f"{label}:")
     print(json.dumps(_to_jsonable(value), indent=2, sort_keys=True))
+
+
+def _print_project_registry_entries(entries: Sequence[ProjectRegistryEntry]) -> None:
+    if not entries:
+        print("No projects found.")
+        return
+    for entry in entries:
+        print(
+            f"{entry.project_id}\t{entry.status}\t{entry.adapter_type}\t"
+            f"trust={entry.trust_policy}\troot={entry.root_path}"
+        )
+        if entry.facts is not None:
+            source_documents = ", ".join(entry.facts.source_documents) or "none"
+            verification = ", ".join(entry.facts.verification_commands) or "none"
+            print(f"  source_documents: {source_documents}")
+            print(f"  verification_commands: {verification}")
+        if entry.failure_reason:
+            print(f"  failure: {entry.failure_reason}")
 
 
 def _print_json(value: object) -> None:

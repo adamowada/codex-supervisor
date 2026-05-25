@@ -310,6 +310,11 @@ FILE_PURPOSES = {
         "apply slice",
         "check_planning_integrity",
     ),
+    "insights/stage3a-project-registry-generic-adapter-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 3A project registry and generic "
+        "adapter slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
@@ -377,6 +382,10 @@ FILE_PURPOSES = {
     "src/codex_supervisor/locks.py": FilePurpose("protected file lock helpers", "pytest"),
     "src/codex_supervisor/paths.py": FilePurpose("repo/planning path discovery", "pytest"),
     "src/codex_supervisor/planning.py": FilePurpose("SQLite planning store", "pytest"),
+    "src/codex_supervisor/projects.py": FilePurpose(
+        "project registry and generic adapter helpers",
+        "pytest",
+    ),
     "src/codex_supervisor/review_loop.py": FilePurpose(
         "review mode, finding, waiver, and repair draft contracts", "pytest"
     ),
@@ -416,6 +425,10 @@ FILE_PURPOSES = {
     "tests/test_locks.py": FilePurpose("protected lock helper tests", "pytest"),
     "tests/test_planning.py": FilePurpose("planning store and CLI tests", "pytest"),
     "tests/test_planning_integrity.py": FilePurpose("planning integrity gate tests", "pytest"),
+    "tests/test_projects.py": FilePurpose(
+        "project registry and generic adapter tests",
+        "pytest",
+    ),
     "tests/test_public_repo_hygiene.py": FilePurpose("public hygiene gate tests", "pytest"),
     "tests/test_review_loop.py": FilePurpose("review loop contract tests", "pytest"),
     "tests/test_review_cli.py": FilePurpose("review result CLI ingestion tests", "pytest"),

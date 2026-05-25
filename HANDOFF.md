@@ -16,14 +16,17 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, Stage 10D reviewed Codex local-state reconciliation apply work is complete in
-planning SQLite. The expected queue state is `completed` for active plan
-`plan-stage10-codex-state-automation-bridge`, with no current AFK task. Stage 10A, Stage 10B, Stage
-10C, Stage 10D, and Stage 9 are marked completed in planning SQLite. If the database reports
-anything else, trust the database and call this handoff stale.
+As of this snapshot, Stage 10E official Codex automation bridge dry-run work is shaped and ready in
+planning SQLite. The expected queue state is `ready` for active plan
+`plan-stage10-codex-state-automation-bridge`, with current AFK task
+`task-stage10e-codex-automation-bridge-dry-run`. Stage 10A, Stage 10B, Stage 10C, Stage 10D, and
+Stage 9 are marked completed in planning SQLite. If the database reports anything else, trust the
+database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
+- `58a1277`: added the Stage 10D reviewed Codex state reconciliation apply helper, CLI, tests,
+  planning completion, handoff, and worker result.
 - `b2d133d`: shaped the Stage 10D Codex state reconciliation apply task and handoff.
 - `943e893`: added the Stage 10C Codex state reconciliation dry-run helper, CLI, tests, planning
   completion, handoff, and worker result.
@@ -401,6 +404,22 @@ Stage 10D reviewed Codex local-state reconciliation apply changed:
   `uv run --no-sync python -B -m pytest tests/test_codex_state.py tests/test_codex_state_reconciliation.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/verify.py`.
 
+Stage 10E official Codex automation bridge dry-run has been shaped:
+
+- `plans/planning.sqlite3`: adds `task-stage10e-codex-automation-bridge-dry-run` as the ready AFK
+  slice, `milestone-stage10e-codex-automation-bridge-dry-run`, and
+  `criterion-stage10e-codex-automation-bridge-dry-run`.
+- Scope: add a non-mutating helper and CLI that emits reviewed official Codex automation proposals
+  for recurring queue reconciliation and project health checks. The slice must not create/update
+  real Codex automations, write Codex internal SQLite databases, write Codex config, or launch live
+  Codex Exec workers.
+- Allowed implementation paths:
+  `src/codex_supervisor/codex_automation.py`, `src/codex_supervisor/cli.py`,
+  `tests/test_codex_automation.py`, `scripts/check_file_justification.py`, `plans/planning.sqlite3`,
+  `HANDOFF.md`, and `insights/stage10e-codex-automation-bridge-dry-run-worker-result.json`.
+- Expected focused check:
+  `uv run --no-sync python -B -m pytest tests/test_codex_automation.py -q -p no:cacheprovider`.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -426,10 +445,8 @@ selector. If queue_state is hitl or running, inspect current_task_id with task-s
 If queue_state is `ready`, run `task-current --json` and execute the current AFK slice with
 story-loop discipline.
 
-As of this handoff, the expected queue_state is `completed` with no current AFK task. Shape the next
-roadmap slice through typed helpers before implementation. A likely successor is a Stage 10E
-official automation bridge dry-run surface for recurring queue reconciliation and health checks, but
-trust ROADMAP.md and planning SQLite over this suggestion.
+As of this handoff, the expected queue_state is `ready` with current AFK task
+`task-stage10e-codex-automation-bridge-dry-run`. Execute that slice with story-loop discipline.
 Keep live Codex Exec launch disabled while the local Codex CLI still fails preflight with
 `Access is denied`; do not launch live `codex exec` until an accessible executable path and intended
 `CODEX_HOME` are confirmed.

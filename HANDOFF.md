@@ -19,8 +19,8 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   - `uv run --no-sync python -B scripts/verify.py` - 469 passed plus hygiene, source inventory, skill inventory, planning integrity, and source locks.
   - `uv run --no-sync python -B scripts/verify.py --publication-ready` - 469 passed plus publication-ready hygiene and source locks.
 - Latest successful remote CI: GitHub Actions `Verify` run
-  `https://github.com/adamowada/codex-supervisor/actions/runs/26405139863` for commit
-  `79ec62e1e575e1709c5cdec6241403b29944297d`.
+  `https://github.com/adamowada/codex-supervisor/actions/runs/26406106423` for commit
+  `fb628a1e7df1403b0d1fae126ad4aa0b05b971c4`.
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.

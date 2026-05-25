@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from codex_supervisor.worker_results import (
     WorkerResult,
@@ -461,6 +461,34 @@ class PlanCommitLinkRecord:
     plan_id: str
     commit_sha: str
     relationship: str
+
+
+@dataclass(frozen=True)
+class CiRunEvidenceRecord:
+    progress_id: str
+    plan_id: str
+    provider: str
+    run_id: str
+    run_url: str
+    head_sha: str
+    status: str
+    conclusion: str
+    workflow: str | None = None
+    job_id: str | None = None
+    job_name: str | None = None
+    event: str | None = None
+    summary: str | None = None
+    artifact_id: str | None = None
+    artifact_relationship: str = "ci-run"
+    commit_relationship: str = "ci-head"
+    occurred_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class CiRunEvidenceRecorded:
+    progress: PlanProgressRecord
+    artifact_link: PlanArtifactLinkRecord | None
+    commit_link: PlanCommitLinkRecord
 
 
 @dataclass(frozen=True)
@@ -1430,6 +1458,110 @@ class PlanningSQLiteStore:
         with self.connect() as connection:
             rows = connection.execute(query, parameters).fetchall()
         return tuple(_plan_commit_link_from_row(row) for row in rows)
+
+    def record_ci_run_evidence(self, record: CiRunEvidenceRecord) -> CiRunEvidenceRecorded:
+        _validate_ci_run_evidence(record)
+        occurred_at = _format_datetime(record.occurred_at or _utc_now())
+        summary = record.summary or _ci_run_summary(record)
+        details = _dump_json(_ci_run_details(record))
+        progress = PlanProgressRecord(
+            progress_id=record.progress_id,
+            plan_id=record.plan_id,
+            event_type="ci_run_recorded",
+            summary=summary,
+            details=details,
+            linked_artifact_id=record.artifact_id,
+            occurred_at=record.occurred_at,
+        )
+        artifact_link = (
+            PlanArtifactLinkRecord(
+                plan_id=record.plan_id,
+                artifact_id=record.artifact_id,
+                relationship=record.artifact_relationship,
+            )
+            if record.artifact_id is not None
+            else None
+        )
+        commit_link = PlanCommitLinkRecord(
+            plan_id=record.plan_id,
+            commit_sha=record.head_sha,
+            relationship=record.commit_relationship,
+        )
+        with self.connect() as connection:
+            previous_progress = connection.execute(
+                """
+                SELECT plan_id, event_type, linked_artifact_id
+                FROM plan_progress_events
+                WHERE progress_id = ?
+                """,
+                (progress.progress_id,),
+            ).fetchone()
+            if (
+                previous_progress is not None
+                and previous_progress["event_type"] != "ci_run_recorded"
+            ):
+                msg = "progress_id already exists for non-CI progress event"
+                raise ValueError(msg)
+            connection.execute(
+                """
+                INSERT INTO plan_progress_events (
+                    progress_id, plan_id, event_type, summary, details,
+                    linked_artifact_id, occurred_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(progress_id) DO UPDATE SET
+                    plan_id = excluded.plan_id,
+                    event_type = excluded.event_type,
+                    summary = excluded.summary,
+                    details = excluded.details,
+                    linked_artifact_id = excluded.linked_artifact_id,
+                    occurred_at = excluded.occurred_at
+                """,
+                (
+                    progress.progress_id,
+                    progress.plan_id,
+                    progress.event_type,
+                    progress.summary,
+                    progress.details,
+                    progress.linked_artifact_id,
+                    occurred_at,
+                ),
+            )
+            if artifact_link is not None:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO plan_artifact_links(plan_id, artifact_id, relationship)
+                    VALUES (?, ?, ?)
+                    """,
+                    (
+                        artifact_link.plan_id,
+                        artifact_link.artifact_id,
+                        artifact_link.relationship,
+                    ),
+                )
+            _delete_replaced_ci_artifact_link(
+                connection,
+                previous_progress,
+                replacement_artifact_id=record.artifact_id,
+                relationship=record.artifact_relationship,
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO plan_commit_links(plan_id, commit_sha, relationship)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    commit_link.plan_id,
+                    commit_link.commit_sha,
+                    commit_link.relationship,
+                ),
+            )
+            _touch_plan(connection, record.plan_id, occurred_at)
+        return CiRunEvidenceRecorded(
+            progress=progress,
+            artifact_link=artifact_link,
+            commit_link=commit_link,
+        )
 
     def upsert_worker_run(self, record: WorkerRunRecord) -> None:
         _validate_required(record.worker_run_id, "worker_run_id")
@@ -2608,6 +2740,123 @@ def _validate_worker_result_path(value: object) -> None:
     if reason:
         msg = f"completed worker result_path is unsafe: {reason}"
         raise ValueError(msg)
+
+
+def _validate_ci_run_evidence(record: CiRunEvidenceRecord) -> None:
+    _validate_required(record.progress_id, "progress_id")
+    _validate_required(record.plan_id, "plan_id")
+    _validate_required(record.provider, "provider")
+    _validate_required(record.run_id, "run_id")
+    _validate_required(record.run_url, "run_url")
+    _validate_required(record.head_sha, "head_sha")
+    _validate_commit_sha(record.head_sha)
+    _validate_required(record.status, "status")
+    _validate_required(record.conclusion, "conclusion")
+    _validate_required(record.artifact_relationship, "artifact_relationship")
+    _validate_required(record.commit_relationship, "commit_relationship")
+    for field_name, value in (
+        ("provider", record.provider),
+        ("run_id", record.run_id),
+        ("status", record.status),
+        ("conclusion", record.conclusion),
+        ("artifact_relationship", record.artifact_relationship),
+        ("commit_relationship", record.commit_relationship),
+    ):
+        reason = _plain_cli_identifier_reason(value, field_name)
+        if reason:
+            raise ValueError(reason)
+    _validate_web_url(record.run_url, "run_url")
+    if record.artifact_id is not None:
+        _validate_artifact_id(record.artifact_id, "artifact_id")
+    for field_name, optional_value in (
+        ("workflow", record.workflow),
+        ("job_id", record.job_id),
+        ("job_name", record.job_name),
+        ("event", record.event),
+        ("summary", record.summary),
+    ):
+        _validate_optional_ci_text(optional_value, field_name)
+
+
+def _delete_replaced_ci_artifact_link(
+    connection: sqlite3.Connection,
+    previous_progress: sqlite3.Row | None,
+    *,
+    replacement_artifact_id: str | None,
+    relationship: str,
+) -> None:
+    if previous_progress is None:
+        return
+    previous_artifact_id = previous_progress["linked_artifact_id"]
+    if previous_artifact_id is None or previous_artifact_id == replacement_artifact_id:
+        return
+    previous_plan_id = str(previous_progress["plan_id"])
+    remaining_progress = connection.execute(
+        """
+        SELECT 1
+        FROM plan_progress_events
+        WHERE plan_id = ? AND linked_artifact_id = ?
+        LIMIT 1
+        """,
+        (previous_plan_id, previous_artifact_id),
+    ).fetchone()
+    if remaining_progress is not None:
+        return
+    connection.execute(
+        """
+        DELETE FROM plan_artifact_links
+        WHERE plan_id = ? AND artifact_id = ? AND relationship = ?
+        """,
+        (previous_plan_id, previous_artifact_id, relationship),
+    )
+
+
+def _validate_web_url(value: object, field_name: str) -> None:
+    if not isinstance(value, str) or not value.strip():
+        msg = f"{field_name} must be a nonblank URL"
+        raise ValueError(msg)
+    if _contains_control_character(value):
+        msg = f"{field_name} contains control characters"
+        raise ValueError(msg)
+    parsed = urlparse(value.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        msg = f"{field_name} must be an http(s) URL"
+        raise ValueError(msg)
+
+
+def _validate_optional_ci_text(value: object, field_name: str) -> None:
+    if value is None:
+        return
+    if not isinstance(value, str) or not value.strip():
+        msg = f"{field_name} must be nonblank when provided"
+        raise ValueError(msg)
+    if _contains_control_character(value):
+        msg = f"{field_name} contains control characters"
+        raise ValueError(msg)
+
+
+def _ci_run_summary(record: CiRunEvidenceRecord) -> str:
+    workflow = f" {record.workflow}" if record.workflow else ""
+    return (
+        f"Recorded {record.provider}{workflow} CI run {record.run_id}: "
+        f"{record.status}/{record.conclusion} for {record.head_sha}."
+    )
+
+
+def _ci_run_details(record: CiRunEvidenceRecord) -> JsonObject:
+    return {
+        "artifact_id": record.artifact_id,
+        "provider": record.provider,
+        "run_id": record.run_id,
+        "run_url": record.run_url,
+        "head_sha": record.head_sha,
+        "status": record.status,
+        "conclusion": record.conclusion,
+        "workflow": record.workflow,
+        "job_id": record.job_id,
+        "job_name": record.job_name,
+        "event": record.event,
+    }
 
 
 def _validate_task_contract_for_current_queue_plan(

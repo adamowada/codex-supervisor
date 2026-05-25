@@ -58,6 +58,7 @@ from codex_supervisor.planning import (
     TASK_STATUSES,
     TASK_TYPES,
     WORKER_RUN_STATUSES,
+    CiRunEvidenceRecord,
     PlanAcceptanceCriterionRecord,
     PlanArtifactLinkRecord,
     PlanCommitLinkRecord,
@@ -346,6 +347,32 @@ def main(argv: list[str] | None = None) -> int:
     commit_add_parser.add_argument("--commit-sha", required=True)
     commit_add_parser.add_argument("--relationship", required=True)
     commit_add_parser.add_argument("--json", action="store_true", default=False)
+
+    ci_run_parser = subparsers.add_parser(
+        "ci-run-record",
+        help=(
+            "Record CI run evidence as planning progress, an optional artifact link, "
+            "and a commit link"
+        ),
+    )
+    ci_run_parser.add_argument("--path", type=Path, default=None)
+    ci_run_parser.add_argument("--progress-id", required=True)
+    ci_run_parser.add_argument("--plan-id", required=True)
+    ci_run_parser.add_argument("--provider", default="github-actions")
+    ci_run_parser.add_argument("--run-id", required=True)
+    ci_run_parser.add_argument("--run-url", required=True)
+    ci_run_parser.add_argument("--head-sha", required=True)
+    ci_run_parser.add_argument("--status", required=True)
+    ci_run_parser.add_argument("--conclusion", required=True)
+    ci_run_parser.add_argument("--workflow", default=None)
+    ci_run_parser.add_argument("--job-id", default=None)
+    ci_run_parser.add_argument("--job-name", default=None)
+    ci_run_parser.add_argument("--event", default=None)
+    ci_run_parser.add_argument("--summary", default=None)
+    ci_run_parser.add_argument("--artifact-id", default=None)
+    ci_run_parser.add_argument("--artifact-relationship", default="ci-run")
+    ci_run_parser.add_argument("--commit-relationship", default="ci-head")
+    ci_run_parser.add_argument("--json", action="store_true", default=False)
 
     commit_delete_parser = subparsers.add_parser("commit-link-delete", help="Unlink a plan commit")
     commit_delete_parser.add_argument("--path", type=Path, default=None)
@@ -1287,6 +1314,40 @@ def main(argv: list[str] | None = None) -> int:
         if not _write_or_report(lambda: commit_store.add_plan_commit_link(commit_record)):
             return 1
         _print_mutation_result("commit_link", commit_record.commit_sha, commit_record, args.json)
+        return 0
+
+    if args.command == "ci-run-record":
+        write_store = _open_write_store(args.path)
+        if write_store is None:
+            return 1
+        ci_run_store = write_store
+        ci_run_record = CiRunEvidenceRecord(
+            progress_id=args.progress_id,
+            plan_id=args.plan_id,
+            provider=args.provider,
+            run_id=args.run_id,
+            run_url=args.run_url,
+            head_sha=args.head_sha,
+            status=args.status,
+            conclusion=args.conclusion,
+            workflow=args.workflow,
+            job_id=args.job_id,
+            job_name=args.job_name,
+            event=args.event,
+            summary=args.summary,
+            artifact_id=args.artifact_id,
+            artifact_relationship=args.artifact_relationship,
+            commit_relationship=args.commit_relationship,
+        )
+        recorded = _write_value_or_report(
+            lambda: ci_run_store.record_ci_run_evidence(ci_run_record)
+        )
+        if recorded is None:
+            return 1
+        if args.json:
+            _print_json(recorded)
+        else:
+            print(f"Recorded ci_run: {args.provider}/{args.run_id}")
         return 0
 
     if args.command == "commit-link-delete":

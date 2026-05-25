@@ -11,6 +11,7 @@ from codex_supervisor.cli import main
 from codex_supervisor.paths import default_planning_database_path, find_repo_root
 from codex_supervisor.planning import (
     CURRENT_PLANNING_SCHEMA_VERSION,
+    CiRunEvidenceRecord,
     PlanAcceptanceCriterionRecord,
     PlanArtifactLinkRecord,
     PlanCommitLinkRecord,
@@ -941,6 +942,62 @@ def test_cli_write_commands_record_planning_rows(tmp_path, capsys):
     assert main(["plan-summary", "--path", str(db_path), "--plan-id", "plan-write", "--json"]) == 0
     summary = json.loads(capsys.readouterr().out)
     assert summary[0]["worker_runs"][0]["worker_run_id"] == "run-write"
+
+
+def test_cli_ci_run_record_persists_progress_and_commit_link(tmp_path, capsys):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-ci",
+            slug="ci",
+            title="CI Plan",
+            goal="Record CI evidence.",
+            status="active",
+        )
+    )
+
+    assert (
+        main(
+            [
+                "ci-run-record",
+                "--path",
+                str(db_path),
+                "--progress-id",
+                "progress-ci",
+                "--plan-id",
+                "plan-ci",
+                "--run-id",
+                "12345",
+                "--run-url",
+                "https://github.com/example/repo/actions/runs/12345",
+                "--head-sha",
+                FULL_COMMIT_SHA,
+                "--status",
+                "completed",
+                "--conclusion",
+                "success",
+                "--workflow",
+                "Verify",
+                "--event",
+                "push",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    read_store = open_existing_planning_database(db_path)
+    progress = read_store.list_plan_progress(plan_id="plan-ci")[0]
+    details = json.loads(progress.details or "{}")
+
+    assert payload["artifact_link"] is None
+    assert progress.event_type == "ci_run_recorded"
+    assert progress.linked_artifact_id is None
+    assert details["artifact_id"] is None
+    assert details["run_url"] == "https://github.com/example/repo/actions/runs/12345"
+    assert read_store.list_plan_artifact_links(plan_id="plan-ci") == ()
+    assert read_store.list_plan_commit_links(plan_id="plan-ci")[0].commit_sha == FULL_COMMIT_SHA
 
 
 def test_cli_task_upsert_preserves_omitted_optional_fields_on_update(tmp_path, capsys):
@@ -1949,6 +2006,201 @@ def test_plan_progress_linked_artifact_creates_artifact_link(tmp_path):
     assert len(artifact_links) == 1
     assert artifact_links[0].artifact_id == "src/example.py"
     assert artifact_links[0].relationship == "progress-linked-artifact"
+
+
+def test_ci_run_evidence_records_progress_and_commit_link_by_default(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-ci",
+            slug="ci",
+            title="CI Plan",
+            goal="Record CI evidence.",
+            status="active",
+        )
+    )
+
+    recorded = store.record_ci_run_evidence(
+        CiRunEvidenceRecord(
+            progress_id="progress-ci-run",
+            plan_id="plan-ci",
+            provider="github-actions",
+            run_id="12345",
+            run_url="https://github.com/example/repo/actions/runs/12345",
+            head_sha=FULL_COMMIT_SHA,
+            status="completed",
+            conclusion="success",
+            workflow="Verify",
+            job_id="67890",
+            job_name="Verify",
+            event="push",
+        )
+    )
+
+    progress = store.list_plan_progress(plan_id="plan-ci")[0]
+    details = json.loads(progress.details or "{}")
+    commit_links = store.list_plan_commit_links(plan_id="plan-ci")
+
+    assert recorded.artifact_link is None
+    assert progress.event_type == "ci_run_recorded"
+    assert progress.linked_artifact_id is None
+    assert details == {
+        "artifact_id": None,
+        "conclusion": "success",
+        "event": "push",
+        "head_sha": FULL_COMMIT_SHA,
+        "job_id": "67890",
+        "job_name": "Verify",
+        "provider": "github-actions",
+        "run_id": "12345",
+        "run_url": "https://github.com/example/repo/actions/runs/12345",
+        "status": "completed",
+        "workflow": "Verify",
+    }
+    assert store.list_plan_artifact_links(plan_id="plan-ci") == ()
+    assert {(link.commit_sha, link.relationship) for link in commit_links} == {
+        (FULL_COMMIT_SHA, "ci-head")
+    }
+
+
+def test_ci_run_evidence_records_optional_artifact_link(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-ci",
+            slug="ci",
+            title="CI Plan",
+            goal="Record CI evidence.",
+            status="active",
+        )
+    )
+
+    recorded = store.record_ci_run_evidence(
+        CiRunEvidenceRecord(
+            progress_id="progress-ci-run",
+            plan_id="plan-ci",
+            provider="github-actions",
+            run_id="12345",
+            run_url="https://github.com/example/repo/actions/runs/12345",
+            head_sha=FULL_COMMIT_SHA,
+            status="completed",
+            conclusion="success",
+            artifact_id="HANDOFF.md#ci-run-12345",
+        )
+    )
+
+    progress = store.list_plan_progress(plan_id="plan-ci")[0]
+    details = json.loads(progress.details or "{}")
+    artifact_links = store.list_plan_artifact_links(plan_id="plan-ci")
+
+    assert recorded.artifact_link is not None
+    assert recorded.artifact_link.artifact_id == "HANDOFF.md#ci-run-12345"
+    assert progress.linked_artifact_id == "HANDOFF.md#ci-run-12345"
+    assert details["artifact_id"] == "HANDOFF.md#ci-run-12345"
+    assert {(link.artifact_id, link.relationship) for link in artifact_links} == {
+        ("HANDOFF.md#ci-run-12345", "ci-run")
+    }
+
+
+def test_ci_run_evidence_replaces_stale_artifact_link(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-ci",
+            slug="ci",
+            title="CI Plan",
+            goal="Record CI evidence.",
+            status="active",
+        )
+    )
+    store.record_ci_run_evidence(
+        CiRunEvidenceRecord(
+            progress_id="progress-ci-run",
+            plan_id="plan-ci",
+            provider="github-actions",
+            run_id="12345",
+            run_url="https://github.com/example/repo/actions/runs/12345",
+            head_sha=FULL_COMMIT_SHA,
+            status="completed",
+            conclusion="failure",
+            artifact_id="HANDOFF.md#old-ci-run",
+        )
+    )
+
+    recorded = store.record_ci_run_evidence(
+        CiRunEvidenceRecord(
+            progress_id="progress-ci-run",
+            plan_id="plan-ci",
+            provider="github-actions",
+            run_id="12345",
+            run_url="https://github.com/example/repo/actions/runs/12345",
+            head_sha=FULL_COMMIT_SHA,
+            status="completed",
+            conclusion="success",
+        )
+    )
+
+    progress = store.list_plan_progress(plan_id="plan-ci")[0]
+
+    assert recorded.artifact_link is None
+    assert progress.linked_artifact_id is None
+    assert json.loads(progress.details or "{}")["conclusion"] == "success"
+    assert store.list_plan_artifact_links(plan_id="plan-ci") == ()
+
+
+def test_ci_run_evidence_rejects_reusing_non_ci_progress_id(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-ci",
+            slug="ci",
+            title="CI Plan",
+            goal="Record CI evidence.",
+            status="active",
+        )
+    )
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id="progress-ci-run",
+            plan_id="plan-ci",
+            event_type="task_note",
+            summary="Existing non-CI progress.",
+        )
+    )
+
+    with pytest.raises(ValueError, match="progress_id already exists for non-CI"):
+        store.record_ci_run_evidence(
+            CiRunEvidenceRecord(
+                progress_id="progress-ci-run",
+                plan_id="plan-ci",
+                provider="github-actions",
+                run_id="12345",
+                run_url="https://github.com/example/repo/actions/runs/12345",
+                head_sha=FULL_COMMIT_SHA,
+                status="completed",
+                conclusion="success",
+            )
+        )
+
+    assert store.list_plan_progress(plan_id="plan-ci")[0].event_type == "task_note"
+
+
+def test_ci_run_evidence_rejects_non_web_urls(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+
+    with pytest.raises(ValueError, match="run_url must be an http\\(s\\) URL"):
+        store.record_ci_run_evidence(
+            CiRunEvidenceRecord(
+                progress_id="progress-ci-run",
+                plan_id="plan-ci",
+                provider="github-actions",
+                run_id="12345",
+                run_url="file:///tmp/result.txt",
+                head_sha=FULL_COMMIT_SHA,
+                status="completed",
+                conclusion="success",
+            )
+        )
 
 
 def test_planning_helper_surface_covers_queue_tables(tmp_path):

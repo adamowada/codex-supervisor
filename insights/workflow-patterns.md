@@ -207,6 +207,23 @@ Actions run `26400531911` completed successfully for commit
 Next action: when CI planning integrity reports missing git commits, inspect checkout depth before
 changing planning data or integrity semantics.
 
+## External CI Evidence Stays Out Of Artifact Links
+
+Confidence: confirmed.
+
+Planning artifact links are publication artifacts, not arbitrary evidence identifiers. External CI
+run URLs should be stored in typed progress details and paired with a reachable commit link. Only add
+an artifact link when the artifact ID resolves to a repo-local tracked file or a safe anchor on one;
+otherwise publication-ready hygiene will correctly reject the planning state.
+
+Evidence: Stage 13D first recorded GitHub Actions run `26400531911` as a synthetic
+`ci-runs/github-actions/26400531911` artifact link. `scripts/verify.py --publication-ready` failed
+because that path did not exist on disk. The repair made `ci-run-record` default to progress details
+plus a `ci-head` commit link, with `--artifact-id` remaining optional for real repo-local evidence.
+
+Next action: when adding new planning evidence helpers for external systems, keep URLs and remote IDs
+in structured progress details unless the helper also creates or references a real tracked artifact.
+
 ## Cross-Platform Adapters Normalize Before Resolving
 
 Confidence: confirmed.

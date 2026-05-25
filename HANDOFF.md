@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 05:36 PDT
+Last updated: 2026-05-25 05:56 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -20,6 +20,7 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   - `41fa038a1576d5c4087afd143d75b669925a2e4f` - Stage 13C claim.
   - `9e311ae99061bd8978a03d55d22ef0cbf9be4dda` - Stage 13C workflow repair.
   - `eeee711de1e2a275c01f105d8e6a3ab946027a01` - Stage 13C completion evidence.
+  - `c5fe64a85b1a76100487eab79b8a4e9e7e2fd881` - Stage 13D claim.
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.
@@ -99,7 +100,44 @@ Stop conditions:
 - The helper cannot be implemented through typed planning APIs without ad hoc SQL mutations.
 - Verification repeatedly fails without a known repo-local fix.
 
+## Stage 13D Progress
+
+Review anchor: stage13d-review.
+Review result anchor: stage13d-review-result.
+
+Current unpushed implementation state:
+
+- Added typed `CiRunEvidenceRecord` / `CiRunEvidenceRecorded` records and
+  `PlanningSQLiteStore.record_ci_run_evidence`.
+- Added `codex_supervisor.cli ci-run-record` to record CI provider, run URL, head SHA, status,
+  conclusion, workflow/job/event metadata, optional repo-local artifact evidence, and a `ci-head`
+  commit link.
+- Recorded GitHub Actions run `26400531911` for head
+  `9e311ae99061bd8978a03d55d22ef0cbf9be4dda` in planning SQLite as
+  `progress-stage13d-ci-run-record-20260525`.
+- Publication-ready verification caught that synthetic external artifact IDs such as
+  `ci-runs/github-actions/26400531911` are invalid publication artifacts. The helper now stores
+  external run URLs in progress details by default and only creates artifact links when the caller
+  provides a real repo-local artifact ID.
+- Updated `insights/workflow-patterns.md` with the durable rule that external CI evidence belongs
+  in progress details plus commit links, not synthetic artifact links.
+- Review `review-stage13d-ci-run-evidence-links-20260525` found one accepted P2 issue: CI evidence
+  upsert must not overwrite unrelated non-CI progress IDs. The implementation now rejects that
+  collision and `tests/test_planning.py` covers it.
+
+Verification passed with Stage 13D included:
+
+```sh
+uv run --no-sync python -B -m pytest tests/test_planning.py -q -p no:cacheprovider
+uv run --no-sync python -B scripts/check_planning_integrity.py
+uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
+uv run --no-sync python -B scripts/verify.py
+uv run --no-sync python -B scripts/verify.py --publication-ready
+```
+
 ## Next Action
 
-Continue the claimed `task-stage13d-ci-run-evidence-links` run. Implement the typed CI run evidence
-recording path, run the task verification commands and review, then ACP the slice.
+Commit and push the staged Stage 13D implementation/review/insight/handoff state. Then inspect the
+GitHub Actions `Verify` run for the new implementation commit; if it passes, record Stage 13D
+completion in planning SQLite and shape the next Stage 13 AFK slice. If CI fails, record the failure
+and route it as the next repair task.

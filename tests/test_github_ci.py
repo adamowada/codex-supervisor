@@ -30,11 +30,23 @@ def test_verify_workflow_runs_repo_owned_publication_gate() -> None:
     text = _workflow_text()
 
     assert "uses: actions/checkout@v4" in text
+    assert "fetch-depth: 0" in text
     assert "uses: astral-sh/setup-uv@v5" in text
     assert "uses: actions/setup-python@v5" in text
     assert 'python-version: "3.14"' in text
     assert "run: uv sync --dev --locked" in text
     assert "run: uv run python -B scripts/verify.py --publication-ready" in text
+
+
+def test_verify_workflow_fetches_history_for_planning_commit_links() -> None:
+    text = _workflow_text()
+    lines = _meaningful_lines(text)
+
+    checkout_index = next(
+        index for index, line in enumerate(lines) if line.strip() == "uses: actions/checkout@v4"
+    )
+    assert lines[checkout_index + 1].strip() == "with:"
+    assert lines[checkout_index + 2].strip() == "fetch-depth: 0"
 
 
 def _workflow_text() -> str:

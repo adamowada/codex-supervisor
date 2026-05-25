@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 04:40 PDT
+Last updated: 2026-05-25 04:46 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,14 +9,68 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `empty`.
-- Current AFK task: none. `story-loop-status --json` reports no active or blocked current-queue
-  plan after Stage 12 was completed.
+- Current queue state: `ready`.
+- Current AFK task: `task-stage13a-github-actions-verify` on
+  `plan-stage13-github-ci-integration`.
+- Current slice: ROADMAP Stage 13A, add the first GitHub Actions verification workflow and local
+  workflow contract tests so pushes and pull requests to `main` can produce public CI evidence.
 - Latest completed plan: `plan-stage12-codex-plugin-desktop-experience`
   (`Stage 12 Codex Plugin And Desktop Experience`).
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.
+
+## Stage 13A Ready Contract
+
+Plan: `plan-stage13-github-ci-integration`.
+Task: `task-stage13a-github-actions-verify`.
+Status: `ready`.
+Review required: yes, because GitHub Actions workflow files define public CI behavior.
+
+Allowed paths:
+
+- `.github/workflows/verify.yml`
+- `tests/test_github_ci.py`
+- `scripts/check_file_justification.py`
+- `plans/planning.sqlite3`
+- `HANDOFF.md`
+- `insights/**`
+- `.agents/skills/**`
+
+Acceptance criteria:
+
+- Repository includes a GitHub Actions verification workflow that runs on pull requests and pushes
+  to `main` without requiring secrets.
+- The workflow runs the repo-owned setup and verification commands needed for public CI evidence,
+  including `uv sync` and publication-ready verification.
+- Focused workflow contract tests, file-purpose hygiene, planning integrity, full verification, and
+  publication-ready hygiene checks pass with the workflow included.
+
+Verification commands:
+
+```sh
+uv run --no-sync python -B -m pytest tests/test_github_ci.py -q -p no:cacheprovider
+uv run --no-sync python -B scripts/check_file_justification.py
+uv run --no-sync python -B scripts/check_planning_integrity.py
+uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
+uv run --no-sync python -B scripts/verify.py
+uv run --no-sync python -B scripts/verify.py --publication-ready
+```
+
+Stop conditions:
+
+- A HITL task becomes current in planning SQLite.
+- The workflow requires secrets, deployment credentials, paid services, or release publishing.
+- GitHub workflow semantics cannot be locally contract-tested without a new dependency or external
+  service.
+- Verification repeatedly fails without a known repo-local fix.
+
+Remote preflight:
+
+- Repository: `adamowada/codex-supervisor`.
+- Default branch: `main`.
+- Pre-slice head: `2ea64701e714afeba15df526b07e93cf749ae29f`.
+- GitHub connector observed 0 workflow runs and 0 commit statuses for that head.
 
 ## Stage 12C Summary
 
@@ -84,7 +138,7 @@ style, type, planning, public hygiene, source inventory, skill inventory, protec
 
 ## Next Action
 
-Shape the next ROADMAP slice from planning SQLite. With Stage 12 completed, the next likely plan is
-ROADMAP Stage 13: GitHub and CI/CD integration. Confirm the new Goal Contract, allowed paths,
-acceptance criteria, verification commands, stop conditions, and review requirement before claiming
-or executing the next task.
+Claim and execute `task-stage13a-github-actions-verify`. Keep the slice scoped to the workflow,
+focused workflow contract tests, file-purpose hygiene, planning SQLite, and this handoff. After
+implementation, run the task verification commands, complete a fresh-thread-style review, ingest the
+worker result, update the Stage 13A completion evidence, and ACP.

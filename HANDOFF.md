@@ -9,8 +9,9 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `ready`.
+- Current queue state: `running`.
 - Current AFK task: `task-stage13b-linux-path-normalization-ci-repair`.
+- Current worker run: `worker-run-stage13b-linux-path-normalization-ci-repair-inline-20260525`.
 - Current plan: `plan-stage13-github-ci-integration` (`Stage 13 GitHub And CI/CD Integration`).
 - Latest completed task: `task-stage13a-github-actions-verify`.
 - Latest pushed commits:
@@ -24,6 +25,7 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 Task: `task-stage13b-linux-path-normalization-ci-repair`.
 Status: `ready`.
+Worker run: `worker-run-stage13b-linux-path-normalization-ci-repair-inline-20260525`.
 Review required: yes, because the repair changes project adapter behavior and CI evidence routing.
 
 Source CI failure:
@@ -109,5 +111,5 @@ which is now routed into Stage 13B.
 
 ## Next Action
 
-Claim and execute `task-stage13b-linux-path-normalization-ci-repair`. After local verification and
-review, push the repair and inspect the post-repair GitHub Actions result.
+Continue the claimed `task-stage13b-linux-path-normalization-ci-repair` run. After local
+verification and review, push the repair and inspect the post-repair GitHub Actions result.

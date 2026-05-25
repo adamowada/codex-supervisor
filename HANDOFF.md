@@ -29,6 +29,7 @@ Worker run: `worker-run-stage13a-github-actions-verify-inline-20260525`.
 DB result: `worker-result-stage13a-github-actions-verify-result`.
 Review: `review-stage13a-github-actions-verify-20260525`, 0 findings.
 Completion progress: `progress-stage13a-github-actions-verify-completed-20260525`.
+Implementation commit: `0ba7afbd2f65d90b5a290971012045864a7d1a43`.
 
 Implemented:
 

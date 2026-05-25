@@ -8,8 +8,9 @@ once, then let Codex coordinate fresh-context workers until a production-quality
 built, reviewed, tested, documented, and ready for a human decision.
 
 This README is the locked end-state product brief for the repository. It describes the target shape
-of the system, not the live task queue. Live operational progress lives only in
-`plans/planning.sqlite3` and `HANDOFF.md`.
+of the system, not the live task queue. Live operational progress, worker completion records, and
+imported legacy evidence live in `plans/planning.sqlite3`; `HANDOFF.md` is only the current
+human-readable resume snapshot.
 
 ## Product Shape
 
@@ -44,7 +45,8 @@ For any new project:
 7. Require every worker to return structured evidence.
 8. Run deterministic checks and automated review before accepting the result.
 9. Repair issues through focused follow-up tasks or record a blocked/HITL decision.
-10. Link commits, artifacts, reviews, decisions, progress events, and handoff notes.
+10. Link commits, supporting artifacts, reviews, decisions, progress events, and handoff notes in
+    planning SQLite.
 11. Promote repeated lessons into `insights/` and repo-local skills.
 
 The factory favors:
@@ -53,7 +55,7 @@ The factory favors:
 - domain glossary over repeated explanation;
 - vertical slice over horizontal layer task;
 - AFK-ready issue over vague plan item;
-- handoff artifact over bloated session;
+- compact handoff over bloated session;
 - sandbox/worktree over risky direct edits;
 - eval loop over "seems better."
 
@@ -77,9 +79,10 @@ Stable doctrine lives in protected source-of-truth documents:
 
 Operational progress lives in:
 
-- `plans/planning.sqlite3` for plans, tasks, worker runs, progress events, decisions, artifacts,
-  verification evidence, and queue state;
-- `HANDOFF.md` for the mutable human-readable resume point.
+- `plans/planning.sqlite3` for plans, tasks, worker runs, DB-backed worker result records,
+  development-log entries, progress events, decisions, supporting artifacts, verification evidence,
+  imported legacy records, and queue state;
+- `HANDOFF.md` for the compact mutable human-readable resume point only.
 
 Protected documents are contracts, not progress ledgers. Edit them only when doctrine changes, then
 refresh the source-lock hashes intentionally.
@@ -97,7 +100,7 @@ safety boundary is not frequent permission prompts. The safety boundary is:
 - automated review;
 - source-of-truth locks;
 - durable planning state;
-- auditable logs, artifacts, and handoffs.
+- auditable database records, local run evidence, and compact handoffs.
 
 ## Repository Map
 
@@ -123,7 +126,7 @@ sources/                   Ignored shallow clones of OSS inspiration sources
 - `SOP.md`: standard operating procedure for projects spawned by the supervisor.
 - `TESTING.md`: verification strategy and required test surfaces.
 - `DECISIONS.md`: stable architectural and workflow decisions.
-- `HANDOFF.md`: mutable resume artifact for the next Codex session.
+- `HANDOFF.md`: compact mutable resume snapshot for the next Codex session.
 - `LICENSE`: MIT license for this repository.
 - `ATTRIBUTIONS.md`: reuse rules and attribution notes for copied or adapted material.
 - `.gitignore` and `.gitattributes`: public hygiene, generated-file, line-ending, and binary-file

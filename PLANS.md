@@ -144,26 +144,24 @@ blocker is resolved.
 
 ### `worker_runs`
 
-One row per worker invocation, including backend, worktree, prompt, status, timing, result file, and
-failure class.
+One row per worker invocation, including backend, worktree, prompt, status, timing, DB-backed result
+id, and failure class.
 
 Use `task-claim` or the typed claim helper when a worker is taking ownership of the next ready AFK
 task. A claim must update the task to `running` and create the worker run in one transaction so two
 fresh threads cannot claim the same task.
 
-Completed worker runs must point `result_path` at an existing repo-local JSON result artifact and
-link that artifact through `plan_artifact_links` with relationship `worker-result`. The artifact
-must satisfy the Worker Result Contract in `CONTRACTS.md`, including worker-run identity coverage,
-shared `worker_run_ids` entries that are completed runs with the same `result_path`, nonempty
-completed-run evidence fields, zero-exit structured test records, exact acceptance-criterion
-evidence, an `artifacts` entry for the JSON result file itself, and `changed_files` entries limited
-to implementation or durable-documentation paths covered by task `allowed_paths_json`; markdown
-reports can be linked separately as supporting evidence. Use tracked paths for durable result
-evidence that must survive publication, and keep ignored `artifacts/`, `runs/`, `worktrees/`, and
-`logs/` for ephemeral local output.
+Completed worker runs must point `result_id` at `worker_result_records` and have a matching
+`worker_result_run_links` row. `result_path` is a legacy/transient source path only and must be null
+for completed runs after ingestion. The record must satisfy the Worker Result Contract in
+`CONTRACTS.md`, including worker-run identity coverage, shared `worker_run_ids` entries linked to
+the same DB result, nonempty completed-run evidence fields, zero-exit structured test records, exact
+acceptance-criterion evidence, and `changed_files` entries limited to implementation or
+durable-documentation paths covered by task `allowed_paths_json`.
 
-Use `worker-run-status ... --status completed --result-path <json>` or `worker-run-upsert` for normal
-completion writes; the typed helper auto-links the result artifact as `worker-result`. Manual
+Use `worker-run-status ... --status completed --result-path <json>` or `worker-run-upsert` to ingest
+a transient worker JSON source into SQLite. The helper stores the raw JSON payload, structured
+fields, provenance, and run links in the database, then clears filesystem result paths. Manual
 `artifact-link-add` is still useful for supporting reports, prompts, or non-result evidence.
 
 For `backend = "codex_exec"`, `metadata_json` stores launch preflight and evidence pointers that do
@@ -177,9 +175,27 @@ not deserve first-class columns yet:
 - host platform and launch working directory.
 
 The backend may create or update a running row before all evidence paths exist, but a completed row
-must still satisfy the Worker Result Contract and link the result artifact. A failed or blocked row
-should preserve whatever evidence was captured and use `failure_class` plus progress events for
-retry guidance.
+must still satisfy the DB-backed Worker Result Contract. A failed or blocked row should preserve
+whatever evidence was captured and use `failure_class` plus progress events for retry guidance.
+
+### `worker_result_records` and `worker_result_run_links`
+
+`worker_result_records` is the durable home for worker completion/result evidence. Each record keeps
+the normalized status, summary, structured tests, acceptance results, changed files, supporting
+artifacts, risks, follow-up tasks, completion notes, raw payload JSON, source path/hash, source kind,
+import time, and metadata. Raw payloads preserve legacy imports even when their original filesystem
+JSON source is deleted.
+
+`worker_result_run_links` maps one DB result to one or more worker runs. Shared synthesized results
+must link every declared `worker_run_id`; completed worker runs are valid only when the link and the
+`worker_runs.result_id` agree.
+
+### `development_log_entries`
+
+`development_log_entries` is the durable home for imported operational history, completion notes,
+legacy HANDOFF sections, and future running-work records that are too detailed for the compact
+handoff snapshot. Entries can optionally reference a plan, task, worker run, or worker result.
+`HANDOFF.md` must not accumulate historical logs.
 
 ## Correct Usage
 

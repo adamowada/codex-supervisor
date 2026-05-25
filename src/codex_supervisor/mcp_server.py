@@ -168,6 +168,29 @@ def _handle_worker_run_show(arguments: JsonObject, context: McpServerContext) ->
     return run
 
 
+def _handle_worker_result_list(
+    arguments: JsonObject,
+    context: McpServerContext,
+) -> tuple[object, ...]:
+    _reject_unexpected_arguments(arguments)
+    return _open_store(context).list_worker_results()
+
+
+def _handle_worker_result_show(arguments: JsonObject, context: McpServerContext) -> object:
+    result_id = _required_string(arguments, "result_id")
+    result = next(
+        (
+            candidate
+            for candidate in _open_store(context).list_worker_results()
+            if candidate.result_id == result_id
+        ),
+        None,
+    )
+    if result is None:
+        raise McpDispatchError("not_found", f"No worker result found: {result_id}")
+    return result
+
+
 def _open_store(context: McpServerContext) -> PlanningSQLiteStore:
     return open_existing_planning_database(context.resolved_planning_path(), read_only=True)
 
@@ -373,6 +396,21 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
             "additionalProperties": False,
         },
     ),
+    "codex_supervisor.worker_result_list": McpToolDefinition(
+        name="codex_supervisor.worker_result_list",
+        description="List DB-backed worker result records.",
+        input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+    ),
+    "codex_supervisor.worker_result_show": McpToolDefinition(
+        name="codex_supervisor.worker_result_show",
+        description="Show one DB-backed worker result by result_id.",
+        input_schema={
+            "type": "object",
+            "properties": {"result_id": {"type": "string"}},
+            "required": ["result_id"],
+            "additionalProperties": False,
+        },
+    ),
 }
 
 TOOL_HANDLERS: dict[str, McpHandler] = {
@@ -383,4 +421,6 @@ TOOL_HANDLERS: dict[str, McpHandler] = {
     "codex_supervisor.task_show": _handle_task_show,
     "codex_supervisor.worker_run_list": _handle_worker_run_list,
     "codex_supervisor.worker_run_show": _handle_worker_run_show,
+    "codex_supervisor.worker_result_list": _handle_worker_result_list,
+    "codex_supervisor.worker_result_show": _handle_worker_result_show,
 }

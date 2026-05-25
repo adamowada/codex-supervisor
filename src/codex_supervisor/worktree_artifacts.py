@@ -33,7 +33,6 @@ class WorktreeRunLayout:
     final_message_path: str
     diff_summary_path: str
     raw_result_path: str
-    durable_result_path: str
 
     def raw_evidence_paths(self) -> dict[str, str]:
         """Return raw local evidence paths for worker-run metadata."""
@@ -61,7 +60,7 @@ class ChangedPathViolation:
 
 
 def build_worktree_run_layout(task_id: str, worker_run_id: str) -> WorktreeRunLayout:
-    """Build deterministic ignored-run paths and a durable result path."""
+    """Build deterministic ignored-run paths for one worker attempt."""
 
     safe_task_id = _safe_identifier(task_id, "task_id")
     safe_worker_run_id = _safe_identifier(worker_run_id, "worker_run_id")
@@ -80,7 +79,6 @@ def build_worktree_run_layout(task_id: str, worker_run_id: str) -> WorktreeRunLa
         final_message_path=f"{run_directory}/final-message.txt",
         diff_summary_path=f"{run_directory}/diff-summary.txt",
         raw_result_path=f"{artifact_directory}/worker-result.raw.json",
-        durable_result_path=f"worker-results/{safe_worker_run_id}-worker-result.json",
     )
 
 

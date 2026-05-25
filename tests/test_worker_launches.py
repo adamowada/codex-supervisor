@@ -40,9 +40,7 @@ def test_prepare_worker_launch_request_uses_layout_paths_without_touching_files(
     assert request.task_id == "task-stage7b-worker-launch-preparation"
     assert request.repo_root == tmp_path
     assert request.worktree_path == tmp_path / layout.worktree_path
-    assert request.result_path == (
-        "worker-results/worker-run-stage7b-worker-launch-preparation-20260524-worker-result.json"
-    )
+    assert request.result_path == layout.raw_result_path
     assert request.prompt_path == layout.prompt_path
     assert request.jsonl_path == layout.jsonl_path
     assert request.stdout_path == layout.stdout_path
@@ -87,6 +85,7 @@ def test_prepare_worker_launch_request_exposes_worker_run_metadata():
         "ignore_user_config": False,
     }
     assert metadata["raw_evidence_paths"] == preparation.layout.raw_evidence_paths()
+    assert metadata["raw_result_path"] == preparation.layout.raw_result_path
     assert preparation.worker_run_fields() == {
         "worktree_path": preparation.layout.worktree_path,
         "prompt_path": preparation.layout.prompt_path,

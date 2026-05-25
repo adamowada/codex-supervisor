@@ -79,7 +79,7 @@ def prepare_worker_launch_request(
         task_id=task.task_id,
         repo_root=repo_root,
         worktree_path=repo_root / layout.worktree_path,
-        result_path=layout.durable_result_path,
+        result_path=layout.raw_result_path,
         prompt_path=layout.prompt_path,
         jsonl_path=layout.jsonl_path,
         stdout_path=layout.stdout_path,
@@ -136,6 +136,6 @@ def _worker_run_metadata(
             "ignore_user_config": ignore_user_config,
         },
         "worktree_path": layout.worktree_path,
-        "durable_result_path": layout.durable_result_path,
+        "raw_result_path": layout.raw_result_path,
         "raw_evidence_paths": layout.raw_evidence_paths(),
     }

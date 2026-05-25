@@ -14,8 +14,8 @@ SQLite, filesystem, subprocess, and testing support.
 
 Decision: Fresh-context production workers use `codex exec --json --output-schema` as the primary
 worker primitive. `worker_backend=codex_exec` identifies the selected backend family; execution
-capability and worker-run evidence are proven only by planning SQLite rows, worker-run artifacts,
-and verification records.
+capability and worker-run evidence are proven by planning SQLite rows, DB-backed result records,
+captured raw run evidence, and verification records.
 
 Rationale: `codex exec` is designed for automation, CI, scheduled jobs, explicit sandbox settings,
 JSONL event capture, and schema-constrained output. Making it the primary primitive keeps CLI, MCP,
@@ -110,7 +110,7 @@ stay attributed through `ATTRIBUTIONS.md` and `.agents/skills/NOTICE.md`.
 
 Rationale: The upstream skills encode high-quality, composable agent workflows that directly match
 this project's desired operating style: small skill over giant methodology, domain glossary over
-repeated explanation, vertical slice over horizontal layer task, handoff artifact over bloated
+repeated explanation, vertical slice over horizontal layer task, compact handoff over bloated
 session, sandbox/worktree over risky direct edits, and eval loop over "seems better." MIT licensing
 allows adaptation with attribution, while repo-local editing lets Adam's personal workflow override
 generic upstream defaults.
@@ -118,3 +118,17 @@ generic upstream defaults.
 Consequence: Direct or adapted skill material belongs in `.agents/skills/`, not in ignored
 `sources/` clones. Copying from any source requires license review, attribution, and a stable
 decision or planning record before publication.
+
+## D-0012: Worker Completion Records Live Only In Planning SQLite
+
+Decision: Worker completion/result records, imported legacy evidence, and operational history live
+only in `plans/planning.sqlite3`. Worker JSON files are transient import sources, not durable
+repo-local artifacts; `HANDOFF.md` is a compact current handoff snapshot, not a running log.
+
+Rationale: The supervisor needs one canonical operational store that can be queried, validated,
+migrated, and handed off without accumulating parallel markdown ledgers or JSON artifacts.
+SQLite-backed records preserve raw payloads and provenance while keeping the public tree clean.
+
+Consequence: `worker-results/` is ignored and rejected by hygiene checks. Completed worker runs must
+link to `worker_result_records` and `worker_result_run_links`; source-of-truth docs and `insights/`
+stay focused on doctrine and synthesized learning rather than completion logs.

@@ -11,7 +11,7 @@ from codex_supervisor.worktree_artifacts import (
 )
 
 
-def test_build_worktree_run_layout_separates_ignored_and_durable_paths():
+def test_build_worktree_run_layout_keeps_result_source_in_ignored_artifacts():
     layout = build_worktree_run_layout(
         "task-stage7a-worktree-layout-guards",
         "worker-run-stage7a-worktree-layout-20260524",
@@ -25,11 +25,7 @@ def test_build_worktree_run_layout_separates_ignored_and_durable_paths():
     assert layout.raw_result_path == (
         "artifacts/worker-run-stage7a-worktree-layout-20260524/worker-result.raw.json"
     )
-    assert layout.durable_result_path == (
-        "worker-results/worker-run-stage7a-worktree-layout-20260524-worker-result.json"
-    )
     assert all(is_ignored_runtime_path(path) for path in layout.raw_evidence_paths().values())
-    assert not is_ignored_runtime_path(layout.durable_result_path)
 
 
 @pytest.mark.parametrize(
@@ -77,12 +73,10 @@ def test_validate_changed_files_accepts_globs_and_directory_patterns():
         (
             "src/codex_supervisor/worktree_artifacts.py",
             "tests/test_worktree_artifacts.py",
-            "worker-results/stage7a-worktree-layout-worker-result.json",
         ),
         (
             "src/**",
             "tests/test_*.py",
-            "worker-results/stage7a-worktree-layout-worker-result.json",
         ),
     )
 

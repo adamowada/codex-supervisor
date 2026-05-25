@@ -83,7 +83,7 @@ Every worker must emit a structured result.
 Required fields:
 
 - `worker_run_id` for a single-run result, or `worker_run_ids` for an intentionally shared
-  synthesized result whose entries are completed worker runs with the same `result_path`
+  synthesized result whose entries are linked to the same DB result record
 - `status`: `completed`, `blocked`, `failed`, or `needs_review`
 - `summary`
 - `changed_files`
@@ -92,30 +92,29 @@ Required fields:
 - `risks`
 - `follow_up_tasks`
 - `artifacts`
-- `handoff_notes`
+- `completion_notes` or legacy-compatible `handoff_notes`
 
 Codex worker backends emit structured results compatible with `codex exec --json --output-schema`.
-Completed worker-run rows must link `result_path` to an existing repo-local JSON artifact with the
-`worker-result` relationship in `plan_artifact_links`. Local
-integrity checks validate this required field set, field types, status vocabulary, artifact
-existence, worker-run identity coverage, shared `worker_run_ids` membership against completed runs
-with the same `result_path`, task verification coverage with zero exit codes, exact
-acceptance-criterion coverage, implementation changed-file alignment with `allowed_paths_json`, and
-the `plan_artifact_links` relationship.
-Publication-ready durable evidence should live in tracked repo-local paths such as `insights/`;
-ignored paths such as `artifacts/`, `runs/`, `worktrees/`, and `logs/` are ephemeral run output and
-cannot satisfy the publication gate.
+Completed worker-run rows must link `result_id` to `worker_result_records` and
+`worker_result_run_links`; `result_path` is a transient import source and must not be the durable
+completion authority. Local integrity checks validate this required field set, field types, status
+vocabulary, worker-run identity coverage, shared `worker_run_ids` membership against DB result links,
+task verification coverage with zero exit codes, exact acceptance-criterion coverage, implementation
+changed-file alignment with `allowed_paths_json`, and absence of public `worker-results/` artifacts.
+Publication-ready durable evidence lives in planning SQLite plus tracked supporting documents such
+as `insights/`; ignored paths such as `artifacts/`, `runs/`, `worktrees/`, and `logs/` are ephemeral
+run output.
 
 When `status` is `completed`, these evidence fields must be nonempty: `summary`, `changed_files`,
-`tests_run`, `acceptance_results`, `artifacts`, and `handoff_notes`. A completed worker result that
-only says "done" without changed files, verification evidence, artifacts, and acceptance mapping is
-not durable enough to advance the Story Loop.
+`tests_run`, `acceptance_results`, and completion notes. Supporting `artifacts` may be empty when the
+raw worker JSON itself was only an import source. A completed worker result that only says "done"
+without changed files, verification evidence, completion notes, and acceptance mapping is not durable
+enough to advance the Story Loop.
 
-The `artifacts` list must include the JSON result file itself, exactly matching the worker-run
-`result_path`. `changed_files` should list implementation or durable-documentation paths changed by
-the worker, not evidence files that merely prove the run. Supporting reports, logs, and markdown
-summaries can appear alongside the JSON result in `artifacts`, but they do not replace the result
-artifact.
+The DB row preserves the raw JSON payload and source provenance. Structured `changed_files` should
+list implementation or durable-documentation paths changed by the worker, not evidence files that
+merely prove the run. Supporting reports, logs, and markdown summaries can appear in `artifacts`,
+but they do not replace the DB result record.
 
 Each `tests_run` entry needs a nonblank summary that reports durable evidence without stale
 phrasing such as "passed at the time." If a command no longer passes in the current bootstrap

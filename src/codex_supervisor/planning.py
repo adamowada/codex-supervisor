@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shlex
@@ -35,12 +36,13 @@ class PlanningSchemaIndex:
     where_sql: str | None = None
 
 
-CURRENT_PLANNING_SCHEMA_VERSION = 4
+CURRENT_PLANNING_SCHEMA_VERSION = 5
 PLANNING_SCHEMA_MIGRATIONS = (
     (1, "initial_supervisor_planning_schema"),
     (2, "worker_runs_one_nonterminal_per_task_index"),
     (3, "strict_status_and_review_constraints"),
     (4, "strict_commit_link_sha_constraint"),
+    (5, "db_backed_worker_results_and_development_log"),
 )
 PLAN_STATUSES = frozenset({"active", "blocked", "completed", "abandoned", "superseded"})
 CURRENT_QUEUE_PLAN_STATUSES = frozenset({"active", "blocked"})
@@ -56,6 +58,7 @@ TASK_STATUSES = frozenset(
 WORKER_RUN_STATUSES = frozenset(
     {"queued", "running", "blocked", "completed", "failed", "cancelled", "needs_review"}
 )
+WORKER_RESULT_STATUSES = frozenset({"completed", "blocked", "failed", "needs_review"})
 NONTERMINAL_WORKER_RUN_STATUSES = WORKER_RUN_STATUSES - {"completed", "failed", "cancelled"}
 CLAIM_WORKER_RUN_STATUSES = frozenset({"queued", "running"})
 TASK_STATUSES_ALLOWED_WITH_NONTERMINAL_WORKER_RUN = frozenset({"running", "blocked", "reviewing"})
@@ -107,6 +110,8 @@ SAFE_CODEX_SUPERVISOR_CLI_READ_COMMANDS = frozenset(
         "task-show",
         "worker-run-list",
         "worker-run-show",
+        "worker-result-list",
+        "worker-result-show",
     }
 )
 SAFE_CODEX_SUPERVISOR_CLI_FLAGS: dict[str, frozenset[str]] = {
@@ -119,6 +124,8 @@ SAFE_CODEX_SUPERVISOR_CLI_FLAGS: dict[str, frozenset[str]] = {
     "task-show": frozenset({"--json"}),
     "worker-run-list": frozenset({"--json"}),
     "worker-run-show": frozenset({"--json"}),
+    "worker-result-list": frozenset({"--json"}),
+    "worker-result-show": frozenset({"--json"}),
 }
 SAFE_CODEX_SUPERVISOR_CLI_VALUE_OPTIONS: dict[str, dict[str, frozenset[str] | None]] = {
     "goal-contract-render": {"--task-id": None},
@@ -129,10 +136,13 @@ SAFE_CODEX_SUPERVISOR_CLI_VALUE_OPTIONS: dict[str, dict[str, frozenset[str] | No
     "task-show": {},
     "worker-run-list": {"--task-id": None},
     "worker-run-show": {},
+    "worker-result-list": {},
+    "worker-result-show": {},
 }
 SAFE_CODEX_SUPERVISOR_CLI_POSITIONAL_COUNTS: dict[str, int] = {
     "task-show": 1,
     "worker-run-show": 1,
+    "worker-result-show": 1,
 }
 
 PLANNING_SCHEMA_TABLE_COLUMNS = {
@@ -213,9 +223,43 @@ PLANNING_SCHEMA_TABLE_COLUMNS = {
         "prompt_path",
         "jsonl_path",
         "result_path",
+        "result_id",
         "started_at",
         "completed_at",
         "failure_class",
+        "metadata_json",
+    ),
+    "worker_result_records": (
+        "result_id",
+        "status",
+        "summary",
+        "raw_payload_json",
+        "tests_run_json",
+        "acceptance_results_json",
+        "changed_files_json",
+        "artifacts_json",
+        "risks_json",
+        "follow_up_tasks_json",
+        "completion_notes",
+        "source_path",
+        "source_sha256",
+        "source_kind",
+        "imported_at",
+        "metadata_json",
+    ),
+    "worker_result_run_links": ("result_id", "worker_run_id"),
+    "development_log_entries": (
+        "entry_id",
+        "plan_id",
+        "task_id",
+        "worker_run_id",
+        "worker_result_id",
+        "entry_type",
+        "summary",
+        "details",
+        "source_kind",
+        "source_ref",
+        "occurred_at",
         "metadata_json",
     ),
 }
@@ -240,6 +284,23 @@ PLANNING_SCHEMA_INDEXES = (
     PlanningSchemaIndex("supervisor_tasks", "idx_supervisor_tasks_status", ("status",)),
     PlanningSchemaIndex("worker_runs", "idx_worker_runs_task_id", ("task_id",)),
     PlanningSchemaIndex("worker_runs", "idx_worker_runs_status", ("status",)),
+    PlanningSchemaIndex("worker_runs", "idx_worker_runs_result_id", ("result_id",)),
+    PlanningSchemaIndex("worker_result_records", "idx_worker_results_status", ("status",)),
+    PlanningSchemaIndex(
+        "worker_result_run_links",
+        "idx_worker_result_links_run_id",
+        ("worker_run_id",),
+    ),
+    PlanningSchemaIndex(
+        "development_log_entries",
+        "idx_development_log_occurred_at",
+        ("occurred_at",),
+    ),
+    PlanningSchemaIndex(
+        "development_log_entries",
+        "idx_development_log_plan_id",
+        ("plan_id",),
+    ),
     PlanningSchemaIndex(
         "worker_runs",
         "idx_worker_runs_one_nonterminal_per_task",
@@ -303,6 +364,18 @@ PLANNING_SCHEMA_TABLE_REQUIRED_SQL = {
         "'cancelled'",
         "'needs_review'",
     ),
+    "worker_result_records": (
+        "status text not null check(status in",
+        "'completed'",
+        "'blocked'",
+        "'failed'",
+        "'needs_review'",
+        "raw_payload_json text not null",
+    ),
+    "development_log_entries": (
+        "entry_type text not null check(length(entry_type) > 0)",
+        "source_kind text not null check(length(source_kind) > 0)",
+    ),
 }
 
 CONSTRAINED_TABLE_REBUILD_ORDER = (
@@ -314,7 +387,10 @@ CONSTRAINED_TABLE_REBUILD_ORDER = (
     "plan_artifact_links",
     "plan_commit_links",
     "supervisor_tasks",
+    "worker_result_records",
     "worker_runs",
+    "worker_result_run_links",
+    "development_log_entries",
 )
 
 
@@ -438,9 +514,52 @@ class WorkerRunRecord:
     prompt_path: str | None = None
     jsonl_path: str | None = None
     result_path: str | None = None
+    result_id: str | None = None
     started_at: str | None = None
     completed_at: str | None = None
     failure_class: str | None = None
+    metadata: JsonObject = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class WorkerResultRecord:
+    result_id: str
+    status: str
+    summary: str
+    raw_payload: JsonObject
+    tests_run: JsonArray = field(default_factory=list)
+    acceptance_results: JsonObject = field(default_factory=dict)
+    changed_files: JsonStringArray = field(default_factory=list)
+    artifacts: JsonStringArray = field(default_factory=list)
+    risks: JsonArray = field(default_factory=list)
+    follow_up_tasks: JsonArray = field(default_factory=list)
+    completion_notes: str | None = None
+    source_path: str | None = None
+    source_sha256: str | None = None
+    source_kind: str = "worker-result-json"
+    imported_at: str | None = None
+    metadata: JsonObject = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class WorkerResultRunLinkRecord:
+    result_id: str
+    worker_run_id: str
+
+
+@dataclass(frozen=True)
+class DevelopmentLogEntryRecord:
+    entry_id: str
+    entry_type: str
+    summary: str
+    details: str | None = None
+    plan_id: str | None = None
+    task_id: str | None = None
+    worker_run_id: str | None = None
+    worker_result_id: str | None = None
+    source_kind: str = "manual"
+    source_ref: str | None = None
+    occurred_at: datetime | None = None
     metadata: JsonObject = field(default_factory=dict)
 
 
@@ -469,6 +588,9 @@ class PlanningSummarySnapshot:
     commit_links: tuple[PlanCommitLinkRecord, ...]
     artifact_links: tuple[PlanArtifactLinkRecord, ...]
     worker_runs: tuple[WorkerRunRecord, ...]
+    worker_results: tuple[WorkerResultRecord, ...]
+    worker_result_links: tuple[WorkerResultRunLinkRecord, ...]
+    development_log_entries: tuple[DevelopmentLogEntryRecord, ...]
 
 
 class PlanningSQLiteStore:
@@ -514,6 +636,14 @@ class PlanningSQLiteStore:
             connection.executescript(PLANNING_SCHEMA_SQL)
             now = _format_datetime(_utc_now())
             _apply_schema_migrations(connection, now)
+
+    def migrate_to_current_schema(self) -> None:
+        """Apply tracked schema migrations to an existing planning database."""
+
+        with self.connect(read_only=False) as connection:
+            now = _format_datetime(_utc_now())
+            _apply_schema_migrations(connection, now)
+        self.validate_schema()
 
     def schema_version(self) -> int:
         with self.connect() as connection:
@@ -897,6 +1027,18 @@ class PlanningSQLiteStore:
             commit_links = connection.execute(
                 "SELECT * FROM plan_commit_links ORDER BY plan_id, commit_sha, relationship"
             ).fetchall()
+            worker_results = connection.execute(
+                "SELECT * FROM worker_result_records ORDER BY imported_at DESC, result_id"
+            ).fetchall()
+            worker_result_links = connection.execute(
+                "SELECT * FROM worker_result_run_links ORDER BY result_id, worker_run_id"
+            ).fetchall()
+            development_log_entries = connection.execute(
+                """
+                SELECT * FROM development_log_entries
+                ORDER BY occurred_at DESC, entry_id
+                """
+            ).fetchall()
             return PlanningSummarySnapshot(
                 plans=_list_plans(connection),
                 milestones=tuple(_plan_milestone_from_row(row) for row in milestones),
@@ -907,6 +1049,13 @@ class PlanningSQLiteStore:
                 commit_links=tuple(_plan_commit_link_from_row(row) for row in commit_links),
                 artifact_links=tuple(_plan_artifact_link_from_row(row) for row in artifact_links),
                 worker_runs=_list_worker_runs(connection),
+                worker_results=tuple(_worker_result_from_row(row) for row in worker_results),
+                worker_result_links=tuple(
+                    _worker_result_link_from_row(row) for row in worker_result_links
+                ),
+                development_log_entries=tuple(
+                    _development_log_entry_from_row(row) for row in development_log_entries
+                ),
             )
 
     def upsert_supervisor_task(
@@ -1293,6 +1442,11 @@ class PlanningSQLiteStore:
             if record.status in TERMINAL_EVIDENCE_CLEARING_WORKER_RUN_STATUSES
             else record.result_path
         )
+        result_id = (
+            None
+            if record.status in TERMINAL_EVIDENCE_CLEARING_WORKER_RUN_STATUSES
+            else record.result_id
+        )
         completed_at = (
             None
             if record.status in TERMINAL_EVIDENCE_CLEARING_WORKER_RUN_STATUSES
@@ -1301,11 +1455,18 @@ class PlanningSQLiteStore:
         failure_class = (
             record.failure_class if record.status in FAILURE_WORKER_RUN_STATUSES else None
         )
-        if record.status == "completed" and not result_path:
-            msg = "completed worker runs require result_path"
-            raise ValueError(msg)
-        if record.status == "completed":
-            _validate_worker_result_path(result_path)
+        legacy_result_source_path = None
+        if record.status == "completed" and not result_id:
+            if result_path:
+                _validate_worker_result_path(result_path)
+                legacy_result_source_path = result_path
+                result_id = _worker_result_id(result_path, _legacy_result_source_hash(result_path))
+                result_path = None
+            else:
+                msg = "completed worker runs require result_id or result_path source JSON"
+                raise ValueError(msg)
+        elif record.status == "completed":
+            result_path = None
         now = _format_datetime(_utc_now())
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -1321,6 +1482,15 @@ class PlanningSQLiteStore:
                 raise ValueError(msg)
             task_status_row = _task_status_row(connection, record.task_id)
             _raise_missing(0 if task_status_row is None else 1, "task", record.task_id)
+            if record.status == "completed" and legacy_result_source_path is not None:
+                _ensure_legacy_direct_worker_result_record(
+                    connection,
+                    result_id=str(result_id),
+                    worker_run_id=record.worker_run_id,
+                    source_path=legacy_result_source_path,
+                    repo_root=self.path.parent.parent,
+                    imported_at=now,
+                )
             if record.status in NONTERMINAL_WORKER_RUN_STATUSES:
                 _validate_worker_run_can_be_nonterminal(
                     connection,
@@ -1344,10 +1514,10 @@ class PlanningSQLiteStore:
                 """
                 INSERT INTO worker_runs (
                     worker_run_id, task_id, backend, status, worktree_path, prompt_path,
-                    jsonl_path, result_path, started_at, completed_at, failure_class,
+                    jsonl_path, result_path, result_id, started_at, completed_at, failure_class,
                     metadata_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(worker_run_id) DO UPDATE SET
                     backend = excluded.backend,
                     status = excluded.status,
@@ -1355,6 +1525,7 @@ class PlanningSQLiteStore:
                     prompt_path = excluded.prompt_path,
                     jsonl_path = excluded.jsonl_path,
                     result_path = excluded.result_path,
+                    result_id = excluded.result_id,
                     started_at = excluded.started_at,
                     completed_at = excluded.completed_at,
                     failure_class = excluded.failure_class,
@@ -1369,6 +1540,7 @@ class PlanningSQLiteStore:
                     record.prompt_path,
                     record.jsonl_path,
                     result_path,
+                    result_id,
                     record.started_at,
                     completed_at,
                     failure_class,
@@ -1376,8 +1548,14 @@ class PlanningSQLiteStore:
                 ),
             )
             _sync_task_and_plan_for_worker_run(connection, stored_task_id, record.status, now)
-            if record.status == "completed" and result_path is not None:
-                _link_worker_result_artifact(connection, stored_task_id, result_path)
+            if record.status == "completed" and result_id is not None:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO worker_result_run_links(result_id, worker_run_id)
+                    VALUES (?, ?)
+                    """,
+                    (result_id, record.worker_run_id),
+                )
 
     def claim_next_ready_afk_task(
         self,
@@ -1430,10 +1608,10 @@ class PlanningSQLiteStore:
                 """
                 INSERT INTO worker_runs (
                     worker_run_id, task_id, backend, status, worktree_path, prompt_path,
-                    jsonl_path, result_path, started_at, completed_at, failure_class,
+                    jsonl_path, result_path, result_id, started_at, completed_at, failure_class,
                     metadata_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL, NULL, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL, NULL, ?)
                 """,
                 (
                     worker_run_id,
@@ -1470,6 +1648,7 @@ class PlanningSQLiteStore:
         failure_class: str | None = None,
         completed_at: str | None = None,
         result_path: str | None = None,
+        result_id: str | None = None,
     ) -> None:
         _validate_required(worker_run_id, "worker_run_id")
         _validate_required(status, "status")
@@ -1477,24 +1656,39 @@ class PlanningSQLiteStore:
         if result_path is not None and not result_path.strip():
             msg = "result_path must be nonblank when provided"
             raise ValueError(msg)
+        if result_id is not None and not result_id.strip():
+            msg = "result_id must be nonblank when provided"
+            raise ValueError(msg)
         normalized_result_path = result_path.strip() if result_path is not None else None
+        normalized_result_id = result_id.strip() if result_id is not None else None
         now = _format_datetime(_utc_now())
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT task_id, result_path FROM worker_runs WHERE worker_run_id = ?",
+                "SELECT task_id, result_path, result_id FROM worker_runs WHERE worker_run_id = ?",
                 (worker_run_id,),
             ).fetchone()
             _raise_missing(0 if row is None else 1, "worker_run", worker_run_id)
             clears_terminal_evidence = status in TERMINAL_EVIDENCE_CLEARING_WORKER_RUN_STATUSES
-            effective_result_path = (
-                None if clears_terminal_evidence else normalized_result_path or row["result_path"]
+            effective_result_id = (
+                None if clears_terminal_evidence else normalized_result_id or row["result_id"]
             )
-            if status == "completed" and not effective_result_path:
-                msg = "completed worker runs require result_path"
-                raise ValueError(msg)
-            if status == "completed":
-                _validate_worker_result_path(effective_result_path)
+            legacy_result_source_path = None
+            if status == "completed" and not effective_result_id:
+                if normalized_result_path:
+                    _validate_worker_result_path(normalized_result_path)
+                    legacy_result_source_path = normalized_result_path
+                    effective_result_id = _worker_result_id(
+                        normalized_result_path,
+                        _legacy_result_source_hash(normalized_result_path),
+                    )
+                    normalized_result_id = str(effective_result_id)
+                    normalized_result_path = None
+                else:
+                    msg = "completed worker runs require result_id or result_path source JSON"
+                    raise ValueError(msg)
+            elif status == "completed":
+                normalized_result_path = None
             if status in NONTERMINAL_WORKER_RUN_STATUSES:
                 _validate_worker_run_can_be_nonterminal(
                     connection,
@@ -1516,7 +1710,18 @@ class PlanningSQLiteStore:
             stores_failure_class = status in FAILURE_WORKER_RUN_STATUSES
             stored_failure_class = failure_class if status in FAILURE_WORKER_RUN_STATUSES else None
             stored_completed_at = None if clears_terminal_evidence else completed_at
-            stored_result_path = None if clears_terminal_evidence else normalized_result_path
+            clears_result_path = clears_terminal_evidence or status == "completed"
+            stored_result_path = None if clears_result_path else normalized_result_path
+            stored_result_id = None if clears_terminal_evidence else normalized_result_id
+            if status == "completed" and legacy_result_source_path is not None:
+                _ensure_legacy_direct_worker_result_record(
+                    connection,
+                    result_id=str(effective_result_id),
+                    worker_run_id=worker_run_id,
+                    source_path=legacy_result_source_path,
+                    repo_root=self.path.parent.parent,
+                    imported_at=now,
+                )
             cursor = connection.execute(
                 """
                 UPDATE worker_runs
@@ -1533,6 +1738,10 @@ class PlanningSQLiteStore:
                     result_path = CASE
                         WHEN ? THEN NULL
                         ELSE COALESCE(?, result_path)
+                    END,
+                    result_id = CASE
+                        WHEN ? THEN NULL
+                        ELSE COALESCE(?, result_id)
                     END
                 WHERE worker_run_id = ?
                 """,
@@ -1543,18 +1752,22 @@ class PlanningSQLiteStore:
                     stored_failure_class,
                     clears_terminal_evidence,
                     stored_completed_at,
-                    clears_terminal_evidence,
+                    clears_result_path,
                     stored_result_path,
+                    clears_terminal_evidence,
+                    stored_result_id,
                     worker_run_id,
                 ),
             )
             _raise_missing(cursor.rowcount, "worker_run", worker_run_id)
             _sync_task_and_plan_for_worker_run(connection, str(row["task_id"]), status, now)
-            if status == "completed" and effective_result_path is not None:
-                _link_worker_result_artifact(
-                    connection,
-                    str(row["task_id"]),
-                    str(effective_result_path),
+            if status == "completed" and effective_result_id is not None:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO worker_result_run_links(result_id, worker_run_id)
+                    VALUES (?, ?)
+                    """,
+                    (str(effective_result_id), worker_run_id),
                 )
 
     def ingest_worker_result(
@@ -1563,7 +1776,7 @@ class PlanningSQLiteStore:
         result_path: str,
         *,
         failure_class: str = "worker_result_invalid",
-    ) -> WorkerResult:
+    ) -> WorkerResultRecord:
         """Validate worker result evidence, then complete or fail the worker run."""
 
         _validate_required(worker_run_id, "worker_run_id")
@@ -1581,11 +1794,7 @@ class PlanningSQLiteStore:
                 verification_commands=tuple(task.verification_commands),
                 acceptance_criteria=tuple(task.acceptance_criteria),
             )
-            self._validate_shared_worker_result_membership(
-                worker_run_id,
-                result_path,
-                result.worker_run_ids,
-            )
+            self._validate_shared_worker_result_membership(worker_run_id, result.worker_run_ids)
         except WorkerResultError as exc:
             self.update_worker_run_status(
                 worker_run_id,
@@ -1594,31 +1803,24 @@ class PlanningSQLiteStore:
                 result_path=result_path,
             )
             raise ValueError(str(exc)) from exc
-        if result.status == "completed":
-            self.update_worker_run_status(worker_run_id, "completed", result_path=result_path)
-        elif result.status in FAILURE_WORKER_RUN_STATUSES:
-            self.update_worker_run_status(
-                worker_run_id,
-                result.status,
-                failure_class=result.status,
-                result_path=result_path,
-            )
-        elif result.status == "needs_review":
-            self.update_worker_run_status(worker_run_id, "needs_review", result_path=result_path)
-        return result
+        return self.record_worker_result(
+            worker_run_id=worker_run_id,
+            source_path=result_path,
+            result=result,
+        )
 
     def ingest_worker_result_for_record(
         self,
         record: WorkerRunRecord,
         *,
         failure_class: str = "worker_result_invalid",
-    ) -> WorkerResult:
+    ) -> WorkerResultRecord:
         """Validate result evidence, then upsert a worker run with the result status."""
 
         _validate_required(record.worker_run_id, "worker_run_id")
         _validate_required(record.task_id, "task_id")
         if not record.result_path:
-            msg = "completed worker runs require result_path"
+            msg = "worker result ingestion requires result_path source JSON"
             raise ValueError(msg)
         _validate_worker_result_path(record.result_path)
         task = self._task_by_id(record.task_id)
@@ -1634,7 +1836,6 @@ class PlanningSQLiteStore:
             )
             self._validate_shared_worker_result_membership(
                 record.worker_run_id,
-                record.result_path,
                 result.worker_run_ids,
             )
         except WorkerResultError as exc:
@@ -1647,18 +1848,290 @@ class PlanningSQLiteStore:
                 )
             )
             raise ValueError(str(exc)) from exc
-        result_failure_class = (
-            result.status if result.status in FAILURE_WORKER_RUN_STATUSES else None
-        )
         self.upsert_worker_run(
-            _worker_run_record_with_result_status(
-                record,
-                status=result.status,
+            WorkerRunRecord(
+                worker_run_id=record.worker_run_id,
+                task_id=record.task_id,
+                backend=record.backend,
+                status="running",
+                worktree_path=record.worktree_path,
+                prompt_path=record.prompt_path,
+                jsonl_path=record.jsonl_path,
                 result_path=record.result_path,
-                failure_class=result_failure_class,
+                started_at=record.started_at,
+                completed_at=record.completed_at,
+                failure_class=None,
+                metadata=record.metadata,
             )
         )
-        return result
+        return self.record_worker_result(
+            worker_run_id=record.worker_run_id,
+            source_path=record.result_path,
+            result=result,
+        )
+
+    def record_worker_result(
+        self,
+        *,
+        worker_run_id: str,
+        source_path: str,
+        result: WorkerResult,
+        source_kind: str = "worker-result-json",
+    ) -> WorkerResultRecord:
+        """Persist validated worker result evidence in SQLite and link worker runs."""
+
+        _validate_required(worker_run_id, "worker_run_id")
+        _validate_required(source_path, "source_path")
+        _validate_required(source_kind, "source_kind")
+        if worker_run_id not in result.worker_run_ids:
+            msg = "worker result worker_run_ids must include the primary worker run"
+            raise ValueError(msg)
+        repo_root = self.path.parent.parent
+        source_file = repo_root / source_path
+        raw_bytes = source_file.read_bytes()
+        source_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+        result_id = _worker_result_id(source_path, source_sha256)
+        now = _format_datetime(_utc_now())
+        completion_notes = _worker_result_completion_notes(result.payload)
+        record = WorkerResultRecord(
+            result_id=result_id,
+            status=result.status,
+            summary=str(result.payload["summary"]).strip(),
+            raw_payload=result.payload,
+            tests_run=_json_array_field(result.payload, "tests_run"),
+            acceptance_results=_json_object_field(result.payload, "acceptance_results"),
+            changed_files=_durable_support_paths(result.changed_files, source_path),
+            artifacts=_durable_support_paths(result.artifacts, source_path),
+            risks=_json_array_field(result.payload, "risks"),
+            follow_up_tasks=_json_array_field(result.payload, "follow_up_tasks"),
+            completion_notes=completion_notes,
+            source_path=source_path.replace("\\", "/"),
+            source_sha256=source_sha256,
+            source_kind=source_kind,
+            imported_at=now,
+            metadata={"primary_worker_run_id": worker_run_id},
+        )
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            _insert_worker_result_record(connection, record)
+            for linked_worker_run_id in result.worker_run_ids:
+                row = connection.execute(
+                    "SELECT task_id FROM worker_runs WHERE worker_run_id = ?",
+                    (linked_worker_run_id,),
+                ).fetchone()
+                _raise_missing(
+                    0 if row is None else 1,
+                    "worker_run",
+                    linked_worker_run_id,
+                )
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO worker_result_run_links(result_id, worker_run_id)
+                    VALUES (?, ?)
+                    """,
+                    (result_id, linked_worker_run_id),
+                )
+                connection.execute(
+                    """
+                    UPDATE worker_runs
+                    SET status = ?,
+                        result_id = ?,
+                        result_path = NULL,
+                        completed_at = COALESCE(completed_at, ?),
+                        failure_class = CASE
+                            WHEN ? THEN ?
+                            ELSE NULL
+                        END
+                    WHERE worker_run_id = ?
+                    """,
+                    (
+                        result.status,
+                        result_id,
+                        now,
+                        result.status in FAILURE_WORKER_RUN_STATUSES,
+                        result.status if result.status in FAILURE_WORKER_RUN_STATUSES else None,
+                        linked_worker_run_id,
+                    ),
+                )
+                _sync_task_and_plan_for_worker_run(
+                    connection,
+                    str(row["task_id"]),
+                    result.status,
+                    now,
+                )
+        return record
+
+    def list_worker_results(self) -> tuple[WorkerResultRecord, ...]:
+        with self.connect(read_only=True) as connection:
+            rows = connection.execute(
+                "SELECT * FROM worker_result_records ORDER BY imported_at DESC, result_id"
+            ).fetchall()
+        return tuple(_worker_result_from_row(row) for row in rows)
+
+    def upsert_worker_result_record(self, record: WorkerResultRecord) -> None:
+        """Insert or update a DB-backed worker result record."""
+
+        _validate_required(record.result_id, "result_id")
+        _validate_required(record.status, "status")
+        _validate_choice(record.status, WORKER_RESULT_STATUSES, "status")
+        _validate_required(record.summary, "summary")
+        imported_at = record.imported_at or _format_datetime(_utc_now())
+        stored_record = WorkerResultRecord(
+            result_id=record.result_id,
+            status=record.status,
+            summary=record.summary,
+            raw_payload=record.raw_payload,
+            tests_run=record.tests_run,
+            acceptance_results=record.acceptance_results,
+            changed_files=record.changed_files,
+            artifacts=record.artifacts,
+            risks=record.risks,
+            follow_up_tasks=record.follow_up_tasks,
+            completion_notes=record.completion_notes,
+            source_path=record.source_path,
+            source_sha256=record.source_sha256,
+            source_kind=record.source_kind,
+            imported_at=imported_at,
+            metadata=record.metadata,
+        )
+        with self.connect() as connection:
+            _insert_worker_result_record(connection, stored_record)
+
+    def list_worker_result_run_links(self) -> tuple[WorkerResultRunLinkRecord, ...]:
+        with self.connect(read_only=True) as connection:
+            rows = connection.execute(
+                "SELECT * FROM worker_result_run_links ORDER BY result_id, worker_run_id"
+            ).fetchall()
+        return tuple(_worker_result_link_from_row(row) for row in rows)
+
+    def add_development_log_entry(self, record: DevelopmentLogEntryRecord) -> None:
+        _validate_required(record.entry_id, "entry_id")
+        _validate_required(record.entry_type, "entry_type")
+        _validate_required(record.summary, "summary")
+        _validate_required(record.source_kind, "source_kind")
+        occurred_at = _format_datetime(record.occurred_at or _utc_now())
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO development_log_entries(
+                    entry_id, plan_id, task_id, worker_run_id, worker_result_id, entry_type,
+                    summary, details, source_kind, source_ref, occurred_at, metadata_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.entry_id,
+                    record.plan_id,
+                    record.task_id,
+                    record.worker_run_id,
+                    record.worker_result_id,
+                    record.entry_type,
+                    record.summary,
+                    record.details,
+                    record.source_kind,
+                    record.source_ref,
+                    occurred_at,
+                    _dump_json(record.metadata),
+                ),
+            )
+
+    def list_development_log_entries(self) -> tuple[DevelopmentLogEntryRecord, ...]:
+        with self.connect(read_only=True) as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM development_log_entries
+                ORDER BY occurred_at DESC, entry_id
+                """
+            ).fetchall()
+        return tuple(_development_log_entry_from_row(row) for row in rows)
+
+    def clear_legacy_worker_result_filesystem_references(self) -> None:
+        """Remove obsolete worker-results/ references after DB-backed import."""
+
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """
+                UPDATE worker_runs
+                SET result_path = NULL
+                WHERE result_path LIKE 'worker-results/%'
+                """
+            )
+            connection.execute(
+                """
+                DELETE FROM plan_artifact_links
+                WHERE artifact_id LIKE 'worker-results/%'
+                """
+            )
+            connection.execute(
+                """
+                UPDATE plan_progress_events
+                SET linked_artifact_id = NULL
+                WHERE linked_artifact_id LIKE 'worker-results/%'
+                """
+            )
+            rows = connection.execute(
+                """
+                SELECT result_id, changed_files_json, artifacts_json
+                FROM worker_result_records
+                """
+            ).fetchall()
+            for result_id, changed_files_json, artifacts_json in rows:
+                connection.execute(
+                    """
+                    UPDATE worker_result_records
+                    SET changed_files_json = ?,
+                        artifacts_json = ?
+                    WHERE result_id = ?
+                    """,
+                    (
+                        _dump_json(_filter_legacy_worker_result_paths(changed_files_json)),
+                        _dump_json(_filter_legacy_worker_result_paths(artifacts_json)),
+                        result_id,
+                    ),
+                )
+
+    def import_handoff_development_log(
+        self,
+        handoff_path: Path,
+        *,
+        source_ref: str = "HANDOFF.md",
+    ) -> tuple[DevelopmentLogEntryRecord, ...]:
+        """Import legacy HANDOFF.md sections as durable development log records."""
+
+        text = handoff_path.read_text(encoding="utf-8")
+        source_sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        entries = _development_log_entries_from_handoff(
+            text,
+            source_ref=source_ref,
+            source_sha256=source_sha256,
+        )
+        with self.connect() as connection:
+            for entry in entries:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO development_log_entries(
+                        entry_id, plan_id, task_id, worker_run_id, worker_result_id, entry_type,
+                        summary, details, source_kind, source_ref, occurred_at, metadata_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        entry.entry_id,
+                        entry.plan_id,
+                        entry.task_id,
+                        entry.worker_run_id,
+                        entry.worker_result_id,
+                        entry.entry_type,
+                        entry.summary,
+                        entry.details,
+                        entry.source_kind,
+                        entry.source_ref,
+                        _format_datetime(entry.occurred_at or _utc_now()),
+                        _dump_json(entry.metadata),
+                    ),
+                )
+        return entries
 
     def _task_for_worker_run(self, worker_run_id: str) -> SupervisorTaskSummaryRecord:
         with self.connect(read_only=True) as connection:
@@ -1678,12 +2151,10 @@ class PlanningSQLiteStore:
     def _validate_shared_worker_result_membership(
         self,
         worker_run_id: str,
-        result_path: str,
         worker_run_ids: tuple[str, ...],
     ) -> None:
         if len(worker_run_ids) == 1:
             return
-        normalized_result_path = result_path.replace("\\", "/")
         with self.connect(read_only=True) as connection:
             for declared_worker_run_id in worker_run_ids:
                 if declared_worker_run_id == worker_run_id:
@@ -1702,13 +2173,6 @@ class PlanningSQLiteStore:
                     msg = (
                         f"worker_run_ids entry {declared_worker_run_id!r} is "
                         f"{row['status']}, not completed"
-                    )
-                    raise WorkerResultError(msg)
-                declared_path = str(row["result_path"] or "").replace("\\", "/")
-                if declared_path != normalized_result_path:
-                    msg = (
-                        f"worker_run_ids entry {declared_worker_run_id!r} points at "
-                        f"{declared_path}, not {normalized_result_path}"
                     )
                     raise WorkerResultError(msg)
 
@@ -2644,11 +3108,294 @@ def _worker_run_from_row(row: sqlite3.Row) -> WorkerRunRecord:
         prompt_path=str(row["prompt_path"]) if row["prompt_path"] is not None else None,
         jsonl_path=str(row["jsonl_path"]) if row["jsonl_path"] is not None else None,
         result_path=str(row["result_path"]) if row["result_path"] is not None else None,
+        result_id=str(row["result_id"]) if row["result_id"] is not None else None,
         started_at=str(row["started_at"]) if row["started_at"] is not None else None,
         completed_at=str(row["completed_at"]) if row["completed_at"] is not None else None,
         failure_class=str(row["failure_class"]) if row["failure_class"] is not None else None,
         metadata=_load_json_object(str(row["metadata_json"])),
     )
+
+
+def _worker_result_from_row(row: sqlite3.Row) -> WorkerResultRecord:
+    return WorkerResultRecord(
+        result_id=str(row["result_id"]),
+        status=str(row["status"]),
+        summary=str(row["summary"]),
+        raw_payload=_load_json_object(str(row["raw_payload_json"])),
+        tests_run=_load_json_array(str(row["tests_run_json"])),
+        acceptance_results=_load_json_object(str(row["acceptance_results_json"])),
+        changed_files=_load_json_string_array(str(row["changed_files_json"]), "changed_files"),
+        artifacts=_load_json_string_array(str(row["artifacts_json"]), "artifacts"),
+        risks=_load_json_array(str(row["risks_json"])),
+        follow_up_tasks=_load_json_array(str(row["follow_up_tasks_json"])),
+        completion_notes=(
+            str(row["completion_notes"]) if row["completion_notes"] is not None else None
+        ),
+        source_path=str(row["source_path"]) if row["source_path"] is not None else None,
+        source_sha256=str(row["source_sha256"]) if row["source_sha256"] is not None else None,
+        source_kind=str(row["source_kind"]),
+        imported_at=str(row["imported_at"]) if row["imported_at"] is not None else None,
+        metadata=_load_json_object(str(row["metadata_json"])),
+    )
+
+
+def _worker_result_link_from_row(row: sqlite3.Row) -> WorkerResultRunLinkRecord:
+    return WorkerResultRunLinkRecord(
+        result_id=str(row["result_id"]),
+        worker_run_id=str(row["worker_run_id"]),
+    )
+
+
+def _development_log_entry_from_row(row: sqlite3.Row) -> DevelopmentLogEntryRecord:
+    return DevelopmentLogEntryRecord(
+        entry_id=str(row["entry_id"]),
+        plan_id=str(row["plan_id"]) if row["plan_id"] is not None else None,
+        task_id=str(row["task_id"]) if row["task_id"] is not None else None,
+        worker_run_id=str(row["worker_run_id"]) if row["worker_run_id"] is not None else None,
+        worker_result_id=(
+            str(row["worker_result_id"]) if row["worker_result_id"] is not None else None
+        ),
+        entry_type=str(row["entry_type"]),
+        summary=str(row["summary"]),
+        details=str(row["details"]) if row["details"] is not None else None,
+        source_kind=str(row["source_kind"]),
+        source_ref=str(row["source_ref"]) if row["source_ref"] is not None else None,
+        occurred_at=_parse_datetime(str(row["occurred_at"])),
+        metadata=_load_json_object(str(row["metadata_json"])),
+    )
+
+
+def _insert_worker_result_record(
+    connection: sqlite3.Connection,
+    record: WorkerResultRecord,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO worker_result_records(
+            result_id, status, summary, raw_payload_json, tests_run_json,
+            acceptance_results_json, changed_files_json, artifacts_json, risks_json,
+            follow_up_tasks_json, completion_notes, source_path, source_sha256, source_kind,
+            imported_at, metadata_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(result_id) DO UPDATE SET
+            status = excluded.status,
+            summary = excluded.summary,
+            raw_payload_json = excluded.raw_payload_json,
+            tests_run_json = excluded.tests_run_json,
+            acceptance_results_json = excluded.acceptance_results_json,
+            changed_files_json = excluded.changed_files_json,
+            artifacts_json = excluded.artifacts_json,
+            risks_json = excluded.risks_json,
+            follow_up_tasks_json = excluded.follow_up_tasks_json,
+            completion_notes = excluded.completion_notes,
+            source_path = excluded.source_path,
+            source_sha256 = excluded.source_sha256,
+            source_kind = excluded.source_kind,
+            imported_at = excluded.imported_at,
+            metadata_json = excluded.metadata_json
+        """,
+        (
+            record.result_id,
+            record.status,
+            record.summary,
+            _dump_json(record.raw_payload),
+            _dump_json(record.tests_run),
+            _dump_json(record.acceptance_results),
+            _dump_json(record.changed_files),
+            _dump_json(record.artifacts),
+            _dump_json(record.risks),
+            _dump_json(record.follow_up_tasks),
+            record.completion_notes,
+            record.source_path,
+            record.source_sha256,
+            record.source_kind,
+            record.imported_at,
+            _dump_json(record.metadata),
+        ),
+    )
+
+
+def _ensure_legacy_direct_worker_result_record(
+    connection: sqlite3.Connection,
+    *,
+    result_id: str,
+    worker_run_id: str,
+    source_path: str,
+    repo_root: Path,
+    imported_at: str,
+) -> None:
+    row = connection.execute(
+        "SELECT 1 FROM worker_result_records WHERE result_id = ?",
+        (result_id,),
+    ).fetchone()
+    if row is not None:
+        return
+    payload: JsonObject = {
+        "worker_run_id": worker_run_id,
+        "status": "completed",
+        "summary": "Direct worker-run completion recorded in planning SQLite.",
+        "changed_files": [],
+        "tests_run": [],
+        "acceptance_results": {},
+        "risks": [],
+        "follow_up_tasks": [],
+        "artifacts": [],
+        "completion_notes": "Compatibility completion source was normalized into SQLite.",
+    }
+    source_sha256 = _legacy_result_source_hash(source_path)
+    source_file = repo_root / source_path
+    if source_file.is_file():
+        raw_bytes = source_file.read_bytes()
+        source_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+        try:
+            parsed_payload = json.loads(raw_bytes.decode("utf-8"))
+        except UnicodeDecodeError, json.JSONDecodeError:
+            parsed_payload = None
+        if isinstance(parsed_payload, dict):
+            payload = parsed_payload
+            payload.setdefault("worker_run_id", worker_run_id)
+    _insert_worker_result_record(
+        connection,
+        WorkerResultRecord(
+            result_id=result_id,
+            status="completed",
+            summary=(
+                payload["summary"].strip()
+                if isinstance(payload.get("summary"), str) and payload["summary"].strip()
+                else "Direct worker-run completion recorded in planning SQLite."
+            ),
+            raw_payload=payload,
+            tests_run=_json_array_field(payload, "tests_run"),
+            acceptance_results=_json_object_field(payload, "acceptance_results"),
+            changed_files=_filter_legacy_worker_result_paths(
+                _json_array_field(payload, "changed_files")
+            ),
+            artifacts=_filter_legacy_worker_result_paths(_json_array_field(payload, "artifacts")),
+            risks=_json_array_field(payload, "risks"),
+            follow_up_tasks=_json_array_field(payload, "follow_up_tasks"),
+            completion_notes=(
+                _worker_result_completion_notes(payload)
+                or "Compatibility completion source was normalized into SQLite."
+            ),
+            source_path=source_path.replace("\\", "/"),
+            source_sha256=source_sha256,
+            source_kind="legacy-direct-upsert",
+            imported_at=imported_at,
+            metadata={"primary_worker_run_id": worker_run_id},
+        ),
+    )
+
+
+def _worker_result_id(source_path: str, source_sha256: str) -> str:
+    stem = Path(source_path.replace("\\", "/")).stem
+    safe_stem = re.sub(r"[^A-Za-z0-9_.:-]+", "-", stem).strip("-")
+    if safe_stem:
+        return f"worker-result-{safe_stem[:96]}"
+    return f"worker-result-{source_sha256[:24]}"
+
+
+def _legacy_result_source_hash(source_path: str) -> str:
+    return hashlib.sha256(source_path.replace("\\", "/").encode("utf-8")).hexdigest()
+
+
+def _worker_result_completion_notes(payload: JsonObject) -> str | None:
+    value = payload.get("completion_notes", payload.get("handoff_notes"))
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def _durable_support_paths(paths: tuple[str, ...], source_path: str) -> JsonStringArray:
+    normalized_source = source_path.replace("\\", "/").strip()
+    support_paths: list[str] = []
+    for path in paths:
+        normalized = path.replace("\\", "/").strip()
+        if normalized == normalized_source or normalized.startswith("worker-results/"):
+            continue
+        support_paths.append(normalized)
+    return support_paths
+
+
+def _filter_legacy_worker_result_paths(value_json: object) -> JsonStringArray:
+    if isinstance(value_json, list):
+        values = value_json
+    else:
+        try:
+            values = json.loads(str(value_json))
+        except json.JSONDecodeError:
+            return []
+    if not isinstance(values, list):
+        return []
+    return [
+        value.replace("\\", "/").strip()
+        for value in values
+        if isinstance(value, str)
+        and value.strip()
+        and not value.replace("\\", "/").strip().startswith("worker-results/")
+    ]
+
+
+def _json_array_field(payload: JsonObject, key: str) -> JsonArray:
+    value = payload.get(key, [])
+    if isinstance(value, list):
+        return list(value)
+    return []
+
+
+def _json_object_field(payload: JsonObject, key: str) -> JsonObject:
+    value = payload.get(key, {})
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
+def _development_log_entries_from_handoff(
+    text: str,
+    *,
+    source_ref: str,
+    source_sha256: str,
+) -> tuple[DevelopmentLogEntryRecord, ...]:
+    sections: list[tuple[str, str]] = []
+    current_heading: str | None = None
+    current_lines: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if current_heading is not None:
+                sections.append((current_heading, "\n".join(current_lines).strip()))
+            current_heading = line.lstrip("#").strip()
+            current_lines = []
+            continue
+        if current_heading is not None:
+            current_lines.append(line)
+    if current_heading is not None:
+        sections.append((current_heading, "\n".join(current_lines).strip()))
+    if not sections and text.strip():
+        sections.append(("Legacy HANDOFF.md", text.strip()))
+    entries: list[DevelopmentLogEntryRecord] = []
+    imported_at = _utc_now()
+    for index, (heading, details) in enumerate(sections, start=1):
+        section_hash = hashlib.sha256(
+            f"{source_sha256}:{index}:{heading}:{details}".encode()
+        ).hexdigest()
+        summary = heading.strip()[:220] or f"Legacy HANDOFF.md section {index}"
+        entries.append(
+            DevelopmentLogEntryRecord(
+                entry_id=f"handoff-log-{section_hash[:24]}",
+                entry_type="legacy_handoff_section",
+                summary=summary,
+                details=details or None,
+                source_kind="handoff-md",
+                source_ref=f"{source_ref}#section-{index}",
+                occurred_at=imported_at,
+                metadata={
+                    "source_sha256": source_sha256,
+                    "section_index": index,
+                    "legacy_source": source_ref,
+                },
+            )
+        )
+    return tuple(entries)
 
 
 def _touch_plan(connection: sqlite3.Connection, plan_id: str, updated_at: str) -> None:
@@ -2766,22 +3513,42 @@ def _record_schema_migrations(
 
 
 def _rebuild_tables_with_current_constraints(connection: sqlite3.Connection) -> None:
-    old_names = {table: f"__old_{table}" for table in CONSTRAINED_TABLE_REBUILD_ORDER}
+    old_names = {
+        table: f"__old_{table}"
+        for table in CONSTRAINED_TABLE_REBUILD_ORDER
+        if _table_exists(connection, table)
+    }
     for table, old_name in old_names.items():
         connection.execute(f"ALTER TABLE {table} RENAME TO {old_name}")
     connection.executescript(PLANNING_SCHEMA_SQL)
-    for table in CONSTRAINED_TABLE_REBUILD_ORDER:
-        columns = ", ".join(PLANNING_SCHEMA_TABLE_COLUMNS[table])
+    for table, old_name in old_names.items():
+        old_columns = {
+            str(row["name"]) for row in connection.execute(f"PRAGMA table_info({old_name})")
+        }
+        columns_to_copy = tuple(
+            column for column in PLANNING_SCHEMA_TABLE_COLUMNS[table] if column in old_columns
+        )
+        if not columns_to_copy:
+            continue
+        columns = ", ".join(columns_to_copy)
         connection.execute(
             f"""
             INSERT INTO {table} ({columns})
             SELECT {columns}
-            FROM {old_names[table]}
+            FROM {old_name}
             """
         )
-    for table in reversed(CONSTRAINED_TABLE_REBUILD_ORDER):
+    for table in reversed(tuple(old_names)):
         connection.execute(f"DROP TABLE {old_names[table]}")
     connection.executescript(PLANNING_SCHEMA_SQL)
+
+
+def _table_exists(connection: sqlite3.Connection, table: str) -> bool:
+    row = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table,),
+    ).fetchone()
+    return row is not None
 
 
 def _normalize_schema_sql(value: str) -> str:
@@ -2989,6 +3756,7 @@ CREATE TABLE IF NOT EXISTS worker_runs (
     prompt_path TEXT,
     jsonl_path TEXT,
     result_path TEXT,
+    result_id TEXT REFERENCES worker_result_records(result_id) ON DELETE SET NULL,
     started_at TEXT,
     completed_at TEXT,
     failure_class TEXT,
@@ -2997,7 +3765,58 @@ CREATE TABLE IF NOT EXISTS worker_runs (
 
 CREATE INDEX IF NOT EXISTS idx_worker_runs_task_id ON worker_runs(task_id);
 CREATE INDEX IF NOT EXISTS idx_worker_runs_status ON worker_runs(status);
+CREATE INDEX IF NOT EXISTS idx_worker_runs_result_id ON worker_runs(result_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_worker_runs_one_nonterminal_per_task
 ON worker_runs(task_id)
 WHERE status IN ('queued', 'running', 'blocked', 'needs_review');
+
+CREATE TABLE IF NOT EXISTS worker_result_records (
+    result_id TEXT PRIMARY KEY CHECK(length(result_id) > 0),
+    status TEXT NOT NULL CHECK(status IN ('completed', 'blocked', 'failed', 'needs_review')),
+    summary TEXT NOT NULL CHECK(length(summary) > 0),
+    raw_payload_json TEXT NOT NULL,
+    tests_run_json TEXT NOT NULL DEFAULT '[]',
+    acceptance_results_json TEXT NOT NULL DEFAULT '{}',
+    changed_files_json TEXT NOT NULL DEFAULT '[]',
+    artifacts_json TEXT NOT NULL DEFAULT '[]',
+    risks_json TEXT NOT NULL DEFAULT '[]',
+    follow_up_tasks_json TEXT NOT NULL DEFAULT '[]',
+    completion_notes TEXT,
+    source_path TEXT,
+    source_sha256 TEXT,
+    source_kind TEXT NOT NULL CHECK(length(source_kind) > 0),
+    imported_at TEXT NOT NULL,
+    metadata_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_worker_results_status ON worker_result_records(status);
+
+CREATE TABLE IF NOT EXISTS worker_result_run_links (
+    result_id TEXT NOT NULL REFERENCES worker_result_records(result_id) ON DELETE CASCADE,
+    worker_run_id TEXT NOT NULL REFERENCES worker_runs(worker_run_id) ON DELETE CASCADE,
+    PRIMARY KEY(result_id, worker_run_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_worker_result_links_run_id
+ON worker_result_run_links(worker_run_id);
+
+CREATE TABLE IF NOT EXISTS development_log_entries (
+    entry_id TEXT PRIMARY KEY CHECK(length(entry_id) > 0),
+    plan_id TEXT REFERENCES plans(plan_id) ON DELETE SET NULL,
+    task_id TEXT REFERENCES supervisor_tasks(task_id) ON DELETE SET NULL,
+    worker_run_id TEXT REFERENCES worker_runs(worker_run_id) ON DELETE SET NULL,
+    worker_result_id TEXT REFERENCES worker_result_records(result_id) ON DELETE SET NULL,
+    entry_type TEXT NOT NULL CHECK(length(entry_type) > 0),
+    summary TEXT NOT NULL CHECK(length(summary) > 0),
+    details TEXT,
+    source_kind TEXT NOT NULL CHECK(length(source_kind) > 0),
+    source_ref TEXT,
+    occurred_at TEXT NOT NULL,
+    metadata_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_development_log_occurred_at
+ON development_log_entries(occurred_at);
+CREATE INDEX IF NOT EXISTS idx_development_log_plan_id
+ON development_log_entries(plan_id);
 """

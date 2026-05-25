@@ -73,11 +73,6 @@ PURPOSE_RULES = (
         patterns=("insights/**",),
     ),
     PurposeRule(
-        name="worker-result-evidence",
-        purpose="structured worker-result evidence linked from planning SQLite",
-        patterns=("worker-results/*.json",),
-    ),
-    PurposeRule(
         name="planning-state",
         purpose="tracked operational planning queue and current task state",
         patterns=("plans/planning.sqlite3",),
@@ -204,149 +199,6 @@ FILE_PURPOSES = {
     ),
     "insights/bootstrap-landmine-audit.md": FilePurpose(
         "bootstrap landmine audit synthesis", "check_planning_integrity"
-    ),
-    "worker-results/bootstrap-landmine-worker-result.json": FilePurpose(
-        "structured worker-result evidence for completed explorer runs", "check_planning_integrity"
-    ),
-    "worker-results/bootstrap-historical-afk-worker-result.json": FilePurpose(
-        "structured worker-result evidence for historical completed AFK tasks",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage6-codex-exec-backend-design-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 6 Codex Exec backend design slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage6a-backend-protocol-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 6A backend protocol slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage6b-codex-exec-preflight-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 6B Codex Exec preflight slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage6c-codex-exec-launch-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 6C Codex Exec launch-path slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage7a-worktree-layout-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 7A worktree layout slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage7b-worker-launch-preparation-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 7B worker launch preparation slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage7c-worker-orchestration-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 7C worker orchestration slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage7d-worktree-state-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 7D worktree state slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage7e-cleanup-orphan-planning-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 7E cleanup planning slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage7f-cleanup-plan-cli-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 7F cleanup-plan CLI slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage8a-review-contracts-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 8A review contracts slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage8b-review-result-payloads-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 8B review result payload slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage8c-review-result-persistence-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 8C review result persistence slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage8d-review-repair-routing-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 8D review repair routing slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage8e-review-result-cli-ingestion-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 8E review result CLI ingestion slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage9a-insight-contracts-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 9A reusable insight contract slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage9b-insight-cli-validation-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 9B insight validation CLI slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage9c-insight-update-workflow-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 9C guarded insight update workflow slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage9d-skill-promotion-eval-contracts-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 9D skill promotion eval contract slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage10a-codex-state-inventory-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 10A Codex local-state inventory slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage10b-codex-state-observations-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 10B Codex state observation slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage10c-codex-state-reconciliation-dry-run-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 10C Codex state reconciliation dry-run "
-        "slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage10d-codex-state-reconciliation-apply-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 10D Codex state reconciliation apply "
-        "slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage10e-codex-automation-bridge-dry-run-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 10E Codex automation bridge dry-run slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage10f-official-automation-bridge-apply-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 10F official Codex automation bridge "
-        "apply slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage3a-project-registry-generic-adapter-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 3A project registry and generic "
-        "adapter slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage3b-adapter-task-candidates-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 3B adapter task-candidate output slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage3c-project-task-seeding-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 3C project task seeding slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage3d-planning-sqlite-adapter-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 3D planning SQLite adapter slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage3e-markdown-plan-adapter-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 3E structured markdown plan adapter slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage3f-harness-config-adapter-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 3F harness config adapter slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage3g-insights-graph-adapter-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 3G insights graph adapter slice",
-        "check_planning_integrity",
-    ),
-    "worker-results/stage11a-mcp-readonly-tools-worker-result.json": FilePurpose(
-        "structured worker-result evidence for the Stage 11A MCP read-only tools slice",
-        "check_planning_integrity",
     ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
@@ -553,11 +405,6 @@ FOLDER_PURPOSE_RULES = (
         name="insights-memory",
         purpose="durable synthesized learning and knowledge graph memory",
         patterns=("insights", "insights/**"),
-    ),
-    FolderPurposeRule(
-        name="worker-result-evidence",
-        purpose="structured worker-result evidence linked from planning SQLite",
-        patterns=("worker-results",),
     ),
     FolderPurposeRule(
         name="planning-state",

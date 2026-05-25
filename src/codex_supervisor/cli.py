@@ -105,7 +105,6 @@ from codex_supervisor.story_loop import (
     build_story_loop_status,
     record_story_loop_progress,
 )
-from codex_supervisor.worker_results import WorkerResult
 from codex_supervisor.worktree_artifacts import WorktreeArtifactError
 from codex_supervisor.worktree_cleanup import CleanupPlan, plan_cleanup_targets
 
@@ -117,6 +116,12 @@ def main(argv: list[str] | None = None) -> int:
     init_parser = subparsers.add_parser("plan-init", help="Initialize planning SQLite")
     init_parser.add_argument("--path", type=Path, default=None)
     init_parser.add_argument("--seed-bootstrap-plan", action="store_true", default=False)
+
+    migrate_parser = subparsers.add_parser(
+        "plan-migrate-schema",
+        help="Apply tracked planning SQLite schema migrations",
+    )
+    migrate_parser.add_argument("--path", type=Path, default=None)
 
     project_list_parser = subparsers.add_parser(
         "project-list",
@@ -216,6 +221,21 @@ def main(argv: list[str] | None = None) -> int:
     worker_show_parser.add_argument("worker_run_id")
     worker_show_parser.add_argument("--path", type=Path, default=None)
     worker_show_parser.add_argument("--json", action="store_true", default=False)
+
+    worker_result_list_parser = subparsers.add_parser(
+        "worker-result-list",
+        help="List DB-backed worker result records",
+    )
+    worker_result_list_parser.add_argument("--path", type=Path, default=None)
+    worker_result_list_parser.add_argument("--json", action="store_true", default=False)
+
+    worker_result_show_parser = subparsers.add_parser(
+        "worker-result-show",
+        help="Show one DB-backed worker result record",
+    )
+    worker_result_show_parser.add_argument("result_id")
+    worker_result_show_parser.add_argument("--path", type=Path, default=None)
+    worker_result_show_parser.add_argument("--json", action="store_true", default=False)
 
     current_task_parser = subparsers.add_parser(
         "task-current",
@@ -386,6 +406,7 @@ def main(argv: list[str] | None = None) -> int:
     worker_upsert_parser.add_argument("--prompt-path", default=None)
     worker_upsert_parser.add_argument("--jsonl-path", default=None)
     worker_upsert_parser.add_argument("--result-path", default=None)
+    worker_upsert_parser.add_argument("--result-id", default=None)
     worker_upsert_parser.add_argument("--started-at", default=None)
     worker_upsert_parser.add_argument("--completed-at", default=None)
     worker_upsert_parser.add_argument("--failure-class", default=None)
@@ -477,6 +498,7 @@ def main(argv: list[str] | None = None) -> int:
     worker_status_parser.add_argument("--failure-class", default=None)
     worker_status_parser.add_argument("--completed-at", default=None)
     worker_status_parser.add_argument("--result-path", default=None)
+    worker_status_parser.add_argument("--result-id", default=None)
 
     review_ingest_parser = subparsers.add_parser(
         "review-result-ingest",
@@ -614,6 +636,26 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
+    if args.command == "plan-migrate-schema":
+        resolved_path = _planning_path_or_report(args.path)
+        if resolved_path is None:
+            return 1
+        if not resolved_path.exists():
+            print(f"Planning database is not initialized: {resolved_path}", file=sys.stderr)
+            return 1
+        try:
+            store = open_existing_planning_database(
+                resolved_path,
+                read_only=False,
+                validate=False,
+            )
+            store.migrate_to_current_schema()
+        except (ValueError, sqlite3.Error) as exc:
+            print(f"Could not migrate planning database: {exc}", file=sys.stderr)
+            return 1
+        print(f"Migrated planning database to schema {store.schema_version()}")
+        return 0
+
     if args.command == "project-list":
         roots = tuple(args.root or (Path.cwd(),))
         entries = discover_projects(roots, trust_policy=args.trust_policy)
@@ -711,10 +753,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "codex-state-reconcile-apply":
-        store = _open_write_store(args.path)
-        if store is None:
+        write_store = _open_write_store(args.path)
+        if write_store is None:
             return 1
-        apply_store = store
+        apply_store = write_store
         try:
             payload = json.loads(args.report_path.read_text(encoding="utf-8"))
             dry_run_report = codex_state_reconciliation_report_from_payload(payload)
@@ -948,8 +990,59 @@ def main(argv: list[str] | None = None) -> int:
             print(f"task_id: {run.task_id}")
             print(f"backend: {run.backend}")
             print(f"status: {run.status}")
+            if run.result_id:
+                print(f"result_id: {run.result_id}")
             if run.result_path:
                 print(f"result_path: {run.result_path}")
+        return 0
+
+    if args.command == "worker-result-list":
+        read_store = _open_read_store(args.path)
+        if read_store is None:
+            return 1
+        worker_result_store = read_store
+        results = _read_or_report(worker_result_store.list_worker_results)
+        if results is None:
+            return 1
+        if args.json:
+            _print_json(results)
+            return 0
+        if not results:
+            print("No worker result records found.")
+            return 0
+        for result in results:
+            print(f"{result.result_id}\t{result.status}\t{result.summary}")
+        return 0
+
+    if args.command == "worker-result-show":
+        read_store = _open_read_store(args.path)
+        if read_store is None:
+            return 1
+        worker_result_store = read_store
+        results = _read_or_report(
+            lambda: tuple(
+                result
+                for result in worker_result_store.list_worker_results()
+                if result.result_id == args.result_id
+            )
+        )
+        if results is None:
+            return 1
+        if not results:
+            if args.json:
+                _print_json(None)
+                return 1
+            print(f"No worker result found: {args.result_id}")
+            return 1
+        if args.json:
+            _print_json(results[0])
+        else:
+            worker_result = results[0]
+            print(f"result_id: {worker_result.result_id}")
+            print(f"status: {worker_result.status}")
+            print(f"summary: {worker_result.summary}")
+            if worker_result.source_path:
+                print(f"source_path: {worker_result.source_path}")
         return 0
 
     if args.command == "task-current":
@@ -1107,7 +1200,7 @@ def main(argv: list[str] | None = None) -> int:
         write_store = _open_write_store(args.path)
         if write_store is None:
             return 1
-        result = _write_story_loop_record_or_report(
+        story_result = _write_story_loop_record_or_report(
             write_store,
             progress_id=args.progress_id,
             plan_id=args.plan_id,
@@ -1120,9 +1213,9 @@ def main(argv: list[str] | None = None) -> int:
             worker_run_id=args.worker_run_id,
             linked_artifact_id=args.linked_artifact_id,
         )
-        if result is None:
+        if story_result is None:
             return 1
-        _print_mutation_result("story_loop_progress", args.progress_id, result, args.json)
+        _print_mutation_result("story_loop_progress", args.progress_id, story_result, args.json)
         return 0
 
     if args.command == "decision-add":
@@ -1271,6 +1364,7 @@ def main(argv: list[str] | None = None) -> int:
                 prompt_path=args.prompt_path,
                 jsonl_path=args.jsonl_path,
                 result_path=args.result_path,
+                result_id=args.result_id,
                 started_at=args.started_at,
                 completed_at=args.completed_at,
                 failure_class=args.failure_class,
@@ -1281,10 +1375,20 @@ def main(argv: list[str] | None = None) -> int:
         if worker_record is None:
             return 1
         if worker_record.status == "completed":
-            worker_result = _write_value_or_report(
+            if worker_record.result_path is None:
+                if not _write_or_report(lambda: worker_store.upsert_worker_run(worker_record)):
+                    return 1
+                _print_mutation_result(
+                    "worker_run",
+                    worker_record.worker_run_id,
+                    worker_record,
+                    args.json,
+                )
+                return 0
+            ingested_result = _write_value_or_report(
                 lambda: worker_store.ingest_worker_result_for_record(worker_record)
             )
-            if worker_result is None:
+            if ingested_result is None:
                 return 1
             updated_worker_record = _read_or_report(
                 lambda: _find_worker_run(worker_store, worker_record.worker_run_id)
@@ -1539,19 +1643,23 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         worker_store = write_store
         if args.status == "completed":
-            if args.result_path is None:
-                print("worker-run-status completed requires --result-path", file=sys.stderr)
-                return 1
-            ingested_worker_result: WorkerResult | None = _write_value_or_report(
-                lambda: worker_store.ingest_worker_result(
-                    args.worker_run_id,
-                    args.result_path,
+            if args.result_path is None and args.result_id is None:
+                print(
+                    "worker-run-status completed requires --result-path or --result-id",
+                    file=sys.stderr,
                 )
-            )
-            if ingested_worker_result is None:
                 return 1
-            print(f"Updated worker_run {args.worker_run_id} -> {ingested_worker_result.status}")
-            return 0
+            if args.result_path is not None:
+                ingested_worker_result = _write_value_or_report(
+                    lambda: worker_store.ingest_worker_result(
+                        args.worker_run_id,
+                        args.result_path,
+                    )
+                )
+                if ingested_worker_result is None:
+                    return 1
+                print(f"Updated worker_run {args.worker_run_id} -> {ingested_worker_result.status}")
+                return 0
         if not _write_or_report(
             lambda: worker_store.update_worker_run_status(
                 args.worker_run_id,
@@ -1559,6 +1667,7 @@ def main(argv: list[str] | None = None) -> int:
                 failure_class=args.failure_class,
                 completed_at=args.completed_at,
                 result_path=args.result_path,
+                result_id=args.result_id,
             )
         ):
             return 1
@@ -1872,6 +1981,7 @@ def _build_worker_run_upsert_record(
     prompt_path: str | None,
     jsonl_path: str | None,
     result_path: str | None,
+    result_id: str | None,
     started_at: str | None,
     completed_at: str | None,
     failure_class: str | None,
@@ -1900,6 +2010,11 @@ def _build_worker_run_upsert_record(
         result_path=_preserve_or_default(
             result_path,
             existing.result_path if existing else None,
+            None,
+        ),
+        result_id=_preserve_or_default(
+            result_id,
+            existing.result_id if existing else None,
             None,
         ),
         started_at=_preserve_or_default(

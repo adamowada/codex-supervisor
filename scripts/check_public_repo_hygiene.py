@@ -54,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     failures = list(_check_candidate_source_files(REPO_ROOT))
+    failures.extend(_check_candidate_worker_result_files(REPO_ROOT))
     failures.extend(_check_candidate_database_files(REPO_ROOT))
     failures.extend(_check_candidate_text_files(REPO_ROOT))
     failures.extend(_check_database_dumps(REPO_ROOT))
@@ -102,6 +103,17 @@ def _check_candidate_source_files(repo_root: Path) -> tuple[str, ...]:
         normalized = relative_path.replace("\\", "/")
         if normalized.startswith("sources/") and normalized not in ALLOWED_SOURCE_FILES:
             failures.append(f"unexpected public source clone file: {relative_path}")
+    return tuple(failures)
+
+
+def _check_candidate_worker_result_files(repo_root: Path) -> tuple[str, ...]:
+    failures: list[str] = []
+    for relative_path in _candidate_public_files(repo_root):
+        normalized = relative_path.replace("\\", "/")
+        if normalized == "worker-results" or normalized.startswith("worker-results/"):
+            failures.append(
+                f"worker result artifact must live only in planning SQLite: {relative_path}"
+            )
     return tuple(failures)
 
 

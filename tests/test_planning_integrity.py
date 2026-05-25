@@ -18,6 +18,7 @@ from codex_supervisor.planning import (
     PlanProgressRecord,
     PlanRecord,
     SupervisorTaskRecord,
+    WorkerResultRecord,
     WorkerRunRecord,
     initialize_planning_database,
 )
@@ -356,7 +357,7 @@ def test_planning_integrity_rejects_hidden_nonterminal_worker_runs(tmp_path):
     )
 
 
-def test_planning_integrity_requires_completed_worker_run_result_path(tmp_path):
+def test_planning_integrity_requires_completed_worker_run_result_record(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)
@@ -395,7 +396,7 @@ def test_planning_integrity_requires_completed_worker_run_result_path(tmp_path):
     failures = module.check_planning_integrity(db_path)
 
     assert any(
-        failure.check_name == "completed_worker_run_without_result_path" for failure in failures
+        failure.check_name == "completed_worker_run_without_result_record" for failure in failures
     )
 
 
@@ -433,7 +434,7 @@ def test_planning_integrity_rejects_completed_afk_task_without_worker_evidence(t
     )
 
 
-def test_planning_integrity_requires_completed_worker_result_artifact_link(tmp_path):
+def test_planning_integrity_requires_worker_result_run_link(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)
@@ -456,64 +457,19 @@ def test_planning_integrity_requires_completed_worker_result_artifact_link(tmp_p
             status="ready",
         )
     )
-    store.upsert_worker_run(
-        WorkerRunRecord(
-            worker_run_id="run-worker",
-            task_id="task-worker",
-            backend="subagent_explorer",
-            status="completed",
-            result_path="runs/run-worker/result.json",
-        )
-    )
-    with sqlite3.connect(db_path) as connection:
-        connection.execute(
-            """
-            DELETE FROM plan_artifact_links
-            WHERE plan_id = 'plan-worker'
-              AND artifact_id = 'runs/run-worker/result.json'
-              AND relationship = 'worker-result'
-            """
-        )
-    result_path = tmp_path / "runs" / "run-worker" / "result.json"
-    result_path.parent.mkdir(parents=True)
-    result_path.write_text(json_worker_result(), encoding="utf-8")
+    _upsert_db_worker_result(store)
 
     failures = module.check_planning_integrity(db_path)
 
-    assert any(
-        failure.check_name == "completed_worker_run_result_not_linked" for failure in failures
-    )
+    assert any(failure.check_name == "worker_result_without_run_link" for failure in failures)
 
-    store.add_plan_artifact_link(
-        PlanArtifactLinkRecord(
-            plan_id="plan-worker",
-            artifact_id="runs/run-worker/result.json",
-            relationship="supporting-evidence",
-        )
-    )
-
+    _complete_worker_run_with_result(store)
     failures = module.check_planning_integrity(db_path)
 
-    assert any(
-        failure.check_name == "completed_worker_run_result_not_linked" for failure in failures
-    )
-
-    store.add_plan_artifact_link(
-        PlanArtifactLinkRecord(
-            plan_id="plan-worker",
-            artifact_id="runs/run-worker/result.json",
-            relationship="worker-result",
-        )
-    )
-
-    failures = module.check_planning_integrity(db_path)
-
-    assert not any(
-        failure.check_name == "completed_worker_run_result_not_linked" for failure in failures
-    )
+    assert not any(failure.check_name == "worker_result_without_run_link" for failure in failures)
 
 
-def test_planning_integrity_requires_completed_worker_result_file(tmp_path):
+def test_planning_integrity_rejects_worker_results_directory(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)
@@ -536,28 +492,11 @@ def test_planning_integrity_requires_completed_worker_result_file(tmp_path):
             status="ready",
         )
     )
-    store.upsert_worker_run(
-        WorkerRunRecord(
-            worker_run_id="run-worker",
-            task_id="task-worker",
-            backend="subagent_explorer",
-            status="completed",
-            result_path="runs/run-worker/result.json",
-        )
-    )
-    store.add_plan_artifact_link(
-        PlanArtifactLinkRecord(
-            plan_id="plan-worker",
-            artifact_id="runs/run-worker/result.json",
-            relationship="worker-result",
-        )
-    )
+    (tmp_path / "worker-results").mkdir()
 
     failures = module.check_planning_integrity(db_path)
 
-    assert any(
-        failure.check_name == "completed_worker_run_result_missing_on_disk" for failure in failures
-    )
+    assert any(failure.check_name == "worker_results_directory_exists" for failure in failures)
 
 
 def test_planning_integrity_validates_completed_json_worker_result_schema(tmp_path):
@@ -583,25 +522,8 @@ def test_planning_integrity_validates_completed_json_worker_result_schema(tmp_pa
             status="ready",
         )
     )
-    result_path = tmp_path / "runs" / "run-worker" / "result.json"
-    result_path.parent.mkdir(parents=True)
-    result_path.write_text('{"status":"done"}', encoding="utf-8")
-    store.upsert_worker_run(
-        WorkerRunRecord(
-            worker_run_id="run-worker",
-            task_id="task-worker",
-            backend="subagent_explorer",
-            status="completed",
-            result_path="runs/run-worker/result.json",
-        )
-    )
-    store.add_plan_artifact_link(
-        PlanArtifactLinkRecord(
-            plan_id="plan-worker",
-            artifact_id="runs/run-worker/result.json",
-            relationship="worker-result",
-        )
-    )
+    _upsert_db_worker_result(store, payload={"status": "done"})
+    _complete_worker_run_with_result(store)
 
     failures = module.check_planning_integrity(db_path)
 
@@ -609,7 +531,7 @@ def test_planning_integrity_validates_completed_json_worker_result_schema(tmp_pa
         failure.check_name == "completed_worker_run_invalid_result_schema" for failure in failures
     )
 
-    result_path.write_text(json_worker_result(), encoding="utf-8")
+    _upsert_db_worker_result(store, payload=json.loads(json_worker_result()))
 
     failures = module.check_planning_integrity(db_path)
 
@@ -641,27 +563,10 @@ def test_planning_integrity_requires_worker_result_to_identify_run(tmp_path):
             status="ready",
         )
     )
-    result_path = tmp_path / "runs" / "run-worker" / "result.json"
-    result_path.parent.mkdir(parents=True)
     payload = json.loads(json_worker_result())
     payload.pop("worker_run_id")
-    result_path.write_text(json.dumps(payload), encoding="utf-8")
-    store.upsert_worker_run(
-        WorkerRunRecord(
-            worker_run_id="run-worker",
-            task_id="task-worker",
-            backend="subagent_explorer",
-            status="completed",
-            result_path="runs/run-worker/result.json",
-        )
-    )
-    store.add_plan_artifact_link(
-        PlanArtifactLinkRecord(
-            plan_id="plan-worker",
-            artifact_id="runs/run-worker/result.json",
-            relationship="worker-result",
-        )
-    )
+    _upsert_db_worker_result(store, payload=payload)
+    _complete_worker_run_with_result(store)
 
     failures = module.check_planning_integrity(db_path)
 
@@ -694,30 +599,17 @@ def test_planning_integrity_allows_shared_worker_result_with_explicit_run_ids(tm
                 status="ready",
             )
         )
-        store.upsert_worker_run(
-            WorkerRunRecord(
-                worker_run_id=worker_run_id,
-                task_id=f"task-{worker_run_id}",
-                backend="subagent_explorer",
-                status="completed",
-                result_path="runs/shared/result.json",
-            )
-        )
-    result_path = tmp_path / "runs" / "shared" / "result.json"
-    result_path.parent.mkdir(parents=True)
     payload = json.loads(json_worker_result())
     payload.pop("worker_run_id")
     payload["worker_run_ids"] = ["run-worker", "run-second"]
-    payload["changed_files"] = ["runs/shared/result.json"]
-    payload["artifacts"] = ["runs/shared/result.json"]
-    result_path.write_text(json.dumps(payload), encoding="utf-8")
-    store.add_plan_artifact_link(
-        PlanArtifactLinkRecord(
-            plan_id="plan-worker",
-            artifact_id="runs/shared/result.json",
-            relationship="worker-result",
+    _upsert_db_worker_result(store, payload=payload, result_id="worker-result-shared")
+    for worker_run_id in ("run-worker", "run-second"):
+        _complete_worker_run_with_result(
+            store,
+            worker_run_id=worker_run_id,
+            task_id=f"task-{worker_run_id}",
+            result_id="worker-result-shared",
         )
-    )
 
     failures = module.check_planning_integrity(db_path)
 
@@ -726,7 +618,7 @@ def test_planning_integrity_allows_shared_worker_result_with_explicit_run_ids(tm
     )
 
     payload["worker_run_ids"] = ["run-worker"]
-    result_path.write_text(json.dumps(payload), encoding="utf-8")
+    _upsert_db_worker_result(store, payload=payload, result_id="worker-result-shared")
 
     failures = module.check_planning_integrity(db_path)
 
@@ -760,30 +652,17 @@ def test_planning_integrity_rejects_shared_worker_result_with_unknown_run_id(tmp
                 status="ready",
             )
         )
-        store.upsert_worker_run(
-            WorkerRunRecord(
-                worker_run_id=worker_run_id,
-                task_id=f"task-{worker_run_id}",
-                backend="subagent_explorer",
-                status="completed",
-                result_path="runs/shared/result.json",
-            )
-        )
-    result_path = tmp_path / "runs" / "shared" / "result.json"
-    result_path.parent.mkdir(parents=True)
     payload = json.loads(json_worker_result())
     payload.pop("worker_run_id")
     payload["worker_run_ids"] = ["run-worker", "run-second", "run-missing"]
-    payload["changed_files"] = ["runs/shared/result.json"]
-    payload["artifacts"] = ["runs/shared/result.json"]
-    result_path.write_text(json.dumps(payload), encoding="utf-8")
-    store.add_plan_artifact_link(
-        PlanArtifactLinkRecord(
-            plan_id="plan-worker",
-            artifact_id="runs/shared/result.json",
-            relationship="worker-result",
+    _upsert_db_worker_result(store, payload=payload, result_id="worker-result-shared")
+    for worker_run_id in ("run-worker", "run-second"):
+        _complete_worker_run_with_result(
+            store,
+            worker_run_id=worker_run_id,
+            task_id=f"task-{worker_run_id}",
+            result_id="worker-result-shared",
         )
-    )
 
     failures = module.check_planning_integrity(db_path)
 
@@ -793,7 +672,7 @@ def test_planning_integrity_rejects_shared_worker_result_with_unknown_run_id(tmp
     )
 
 
-def test_planning_integrity_rejects_shared_worker_result_with_mismatched_result_path(tmp_path):
+def test_planning_integrity_rejects_shared_worker_result_with_mismatched_result_id(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)
@@ -817,15 +696,6 @@ def test_planning_integrity_rejects_shared_worker_result_with_mismatched_result_
                 status="ready",
             )
         )
-        store.upsert_worker_run(
-            WorkerRunRecord(
-                worker_run_id=worker_run_id,
-                task_id=f"task-{worker_run_id}",
-                backend="subagent_explorer",
-                status="completed",
-                result_path="runs/shared/result.json",
-            )
-        )
     store.upsert_supervisor_task(
         SupervisorTaskRecord(
             task_id="task-run-third",
@@ -836,46 +706,31 @@ def test_planning_integrity_rejects_shared_worker_result_with_mismatched_result_
             status="ready",
         )
     )
-    store.upsert_worker_run(
-        WorkerRunRecord(
-            worker_run_id="run-third",
-            task_id="task-run-third",
-            backend="subagent_explorer",
-            status="completed",
-            result_path="runs/other/result.json",
-        )
-    )
-
-    shared_path = tmp_path / "runs" / "shared" / "result.json"
-    shared_path.parent.mkdir(parents=True)
     shared_payload = json.loads(json_worker_result())
     shared_payload.pop("worker_run_id")
     shared_payload["worker_run_ids"] = ["run-worker", "run-second", "run-third"]
-    shared_payload["changed_files"] = ["runs/shared/result.json"]
-    shared_payload["artifacts"] = ["runs/shared/result.json"]
-    shared_path.write_text(json.dumps(shared_payload), encoding="utf-8")
-
-    other_path = tmp_path / "runs" / "other" / "result.json"
-    other_path.parent.mkdir(parents=True)
     other_payload = json.loads(json_worker_result())
     other_payload["worker_run_id"] = "run-third"
-    other_payload["changed_files"] = ["runs/other/result.json"]
-    other_payload["artifacts"] = ["runs/other/result.json"]
-    other_path.write_text(json.dumps(other_payload), encoding="utf-8")
-
-    for artifact_id in ("runs/shared/result.json", "runs/other/result.json"):
-        store.add_plan_artifact_link(
-            PlanArtifactLinkRecord(
-                plan_id="plan-worker",
-                artifact_id=artifact_id,
-                relationship="worker-result",
-            )
+    _upsert_db_worker_result(store, payload=shared_payload, result_id="worker-result-shared")
+    _upsert_db_worker_result(store, payload=other_payload, result_id="worker-result-other")
+    for worker_run_id in ("run-worker", "run-second"):
+        _complete_worker_run_with_result(
+            store,
+            worker_run_id=worker_run_id,
+            task_id=f"task-{worker_run_id}",
+            result_id="worker-result-shared",
         )
+    _complete_worker_run_with_result(
+        store,
+        worker_run_id="run-third",
+        task_id="task-run-third",
+        result_id="worker-result-other",
+    )
 
     failures = module.check_planning_integrity(db_path)
 
     assert any(
-        "worker_run_ids entry 'run-third' points at runs/other/result.json" in failure.reason
+        "worker_run_ids entry 'run-third' points at worker-result-other" in failure.reason
         for failure in failures
     )
 
@@ -990,10 +845,10 @@ def test_planning_integrity_requires_completed_run_result_status_completed(tmp_p
 
     failures = module.check_planning_integrity(db_path)
 
-    assert any("result status must be 'completed'" in failure.reason for failure in failures)
+    assert any(failure.check_name == "worker_result_status_mismatch" for failure in failures)
 
 
-def test_planning_integrity_requires_repo_local_json_worker_result_path(tmp_path):
+def test_planning_integrity_rejects_worker_run_result_path_references(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)
@@ -1016,44 +871,17 @@ def test_planning_integrity_requires_repo_local_json_worker_result_path(tmp_path
             status="ready",
         )
     )
-    for worker_run_id, result_path in (
-        ("run-url", "https://example.test/result.json"),
-        ("run-parent", "../result.json"),
-        ("run-markdown", "insights/result.md"),
-        ("run-fragment", "runs/run-fragment/result.json#summary"),
-    ):
-        store.upsert_worker_run(
-            WorkerRunRecord(
-                worker_run_id=worker_run_id,
-                task_id="task-worker",
-                backend="subagent_explorer",
-                status="completed",
-                result_path=f"runs/{worker_run_id}/result.json",
-            )
+    _upsert_db_worker_result(store)
+    _complete_worker_run_with_result(store)
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "UPDATE worker_runs SET result_path = ? WHERE worker_run_id = ?",
+            ("worker-results/run-worker-result.json", "run-worker"),
         )
-        with sqlite3.connect(db_path) as connection:
-            connection.execute(
-                "UPDATE worker_runs SET result_path = ? WHERE worker_run_id = ?",
-                (result_path, worker_run_id),
-            )
-        with sqlite3.connect(db_path) as connection:
-            connection.execute(
-                """
-                INSERT INTO plan_artifact_links (plan_id, artifact_id, relationship)
-                VALUES ('plan-worker', ?, 'worker-result')
-                """,
-                (result_path,),
-            )
 
     failures = module.check_planning_integrity(db_path)
 
-    assert (
-        sum(
-            failure.check_name == "completed_worker_run_result_not_repo_local_json"
-            for failure in failures
-        )
-        == 4
-    )
+    assert any(failure.check_name == "worker_result_filesystem_reference" for failure in failures)
 
 
 def test_planning_integrity_validates_worker_result_field_types(tmp_path):
@@ -1227,7 +1055,7 @@ def test_planning_integrity_requires_completed_worker_result_evidence(tmp_path):
     assert "handoff_notes must be nonblank" in reasons
 
 
-def test_planning_integrity_requires_worker_result_paths_to_exist(tmp_path):
+def test_planning_integrity_rejects_worker_results_paths_in_db_records(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)
@@ -1250,38 +1078,19 @@ def test_planning_integrity_requires_worker_result_paths_to_exist(tmp_path):
             status="ready",
         )
     )
-    result_path = tmp_path / "runs" / "run-worker" / "result.json"
-    result_path.parent.mkdir(parents=True)
-    result_path.write_text(
-        json_worker_result().replace(
-            '"changed_files":["runs/run-worker/result.json"]',
-            '"changed_files":["src/missing.py"]',
-        ),
-        encoding="utf-8",
-    )
-    store.upsert_worker_run(
-        WorkerRunRecord(
-            worker_run_id="run-worker",
-            task_id="task-worker",
-            backend="subagent_explorer",
-            status="completed",
-            result_path="runs/run-worker/result.json",
-        )
-    )
-    store.add_plan_artifact_link(
-        PlanArtifactLinkRecord(
-            plan_id="plan-worker",
-            artifact_id="runs/run-worker/result.json",
-            relationship="worker-result",
-        )
-    )
+    payload = json.loads(json_worker_result())
+    payload["changed_files"] = ["worker-results/run-worker-result.json"]
+    _upsert_db_worker_result(store, payload=payload)
+    _complete_worker_run_with_result(store)
 
     failures = module.check_planning_integrity(db_path)
 
-    assert any("changed_files entry does not exist" in failure.reason for failure in failures)
+    assert any(
+        failure.check_name == "worker_result_filesystem_artifact_recorded" for failure in failures
+    )
 
 
-def test_planning_integrity_requires_worker_result_artifacts_to_include_result_path(tmp_path):
+def test_planning_integrity_rejects_worker_results_artifacts_in_db_records(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)
@@ -1304,39 +1113,15 @@ def test_planning_integrity_requires_worker_result_artifacts_to_include_result_p
             status="ready",
         )
     )
-    result_path = tmp_path / "runs" / "run-worker" / "result.json"
-    result_path.parent.mkdir(parents=True)
-    supporting_path = tmp_path / "runs" / "run-worker" / "supporting.json"
-    supporting_path.write_text("{}", encoding="utf-8")
-    result_path.write_text(
-        json_worker_result().replace(
-            '"artifacts":["runs/run-worker/result.json"]',
-            '"artifacts":["runs/run-worker/supporting.json"]',
-        ),
-        encoding="utf-8",
-    )
-    store.upsert_worker_run(
-        WorkerRunRecord(
-            worker_run_id="run-worker",
-            task_id="task-worker",
-            backend="subagent_explorer",
-            status="completed",
-            result_path="runs/run-worker/result.json",
-        )
-    )
-    store.add_plan_artifact_link(
-        PlanArtifactLinkRecord(
-            plan_id="plan-worker",
-            artifact_id="runs/run-worker/result.json",
-            relationship="worker-result",
-        )
-    )
+    payload = json.loads(json_worker_result())
+    payload["artifacts"] = ["worker-results/run-worker-result.json"]
+    _upsert_db_worker_result(store, payload=payload)
+    _complete_worker_run_with_result(store)
 
     failures = module.check_planning_integrity(db_path)
 
     assert any(
-        "artifacts must include result_path runs/run-worker/result.json" in failure.reason
-        for failure in failures
+        failure.check_name == "worker_result_filesystem_artifact_recorded" for failure in failures
     )
 
 
@@ -2200,6 +1985,63 @@ def json_worker_result() -> str:
         '"handoff_notes":"Recorded."'
         "}"
     )
+
+
+def _upsert_db_worker_result(
+    store,
+    *,
+    payload: dict[str, object] | None = None,
+    result_id: str = "worker-result-run-worker",
+    status: str = "completed",
+) -> str:
+    payload = dict(payload or json.loads(json_worker_result()))
+    summary = payload.get("summary")
+    tests_run = payload.get("tests_run")
+    acceptance_results = payload.get("acceptance_results")
+    changed_files = payload.get("changed_files")
+    artifacts = payload.get("artifacts")
+    risks = payload.get("risks")
+    follow_up_tasks = payload.get("follow_up_tasks")
+    notes = payload.get("completion_notes", payload.get("handoff_notes"))
+    store.upsert_worker_result_record(
+        WorkerResultRecord(
+            result_id=result_id,
+            status=status,
+            summary=summary if isinstance(summary, str) and summary.strip() else "Recorded.",
+            raw_payload=payload,
+            tests_run=tests_run if isinstance(tests_run, list) else [],
+            acceptance_results=acceptance_results if isinstance(acceptance_results, dict) else {},
+            changed_files=changed_files if _is_string_list(changed_files) else [],
+            artifacts=artifacts if _is_string_list(artifacts) else [],
+            risks=risks if isinstance(risks, list) else [],
+            follow_up_tasks=follow_up_tasks if isinstance(follow_up_tasks, list) else [],
+            completion_notes=notes if isinstance(notes, str) else None,
+            source_kind="test",
+        )
+    )
+    return result_id
+
+
+def _complete_worker_run_with_result(
+    store,
+    *,
+    worker_run_id: str = "run-worker",
+    task_id: str = "task-worker",
+    result_id: str = "worker-result-run-worker",
+) -> None:
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id=worker_run_id,
+            task_id=task_id,
+            backend="subagent_explorer",
+            status="completed",
+            result_id=result_id,
+        )
+    )
+
+
+def _is_string_list(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
 def _load_planning_integrity_module() -> ModuleType:

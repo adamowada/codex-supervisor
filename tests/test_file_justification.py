@@ -179,7 +179,7 @@ def test_file_justification_rejects_empty_json_and_suffixless_text_files(tmp_pat
     failures_by_path = {failure.relative_path: failure.reason for failure in failures}
 
     assert failures_by_path["worker-results/bootstrap-landmine-worker-result.json"] == (
-        "public text file is empty"
+        "does not match any intentional public-file purpose category"
     )
     assert failures_by_path["LICENSE"] == "public text file is empty"
 

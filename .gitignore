@@ -22,6 +22,7 @@ runs/
 worktrees/
 artifacts/
 logs/
+worker-results/
 *.jsonl
 *.sqlite3-wal
 *.sqlite3-shm

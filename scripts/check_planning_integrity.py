@@ -45,12 +45,18 @@ JSON_OBJECT_COLUMNS = (
     ("supervisor_tasks", "scope_json"),
     ("supervisor_tasks", "out_of_scope_json"),
     ("worker_runs", "metadata_json"),
+    ("worker_result_records", "raw_payload_json"),
+    ("worker_result_records", "acceptance_results_json"),
+    ("worker_result_records", "metadata_json"),
+    ("development_log_entries", "metadata_json"),
 )
 JSON_ARRAY_COLUMNS = (
     ("supervisor_tasks", "acceptance_criteria_json"),
     ("supervisor_tasks", "verification_commands_json"),
     ("supervisor_tasks", "allowed_paths_json"),
     ("supervisor_tasks", "blocked_by_json"),
+    ("worker_result_records", "changed_files_json"),
+    ("worker_result_records", "artifacts_json"),
 )
 WORKER_RESULT_REQUIRED_KEYS = frozenset(
     {
@@ -62,7 +68,6 @@ WORKER_RESULT_REQUIRED_KEYS = frozenset(
         "risks",
         "follow_up_tasks",
         "artifacts",
-        "handoff_notes",
     }
 )
 WORKER_RESULT_STATUSES = frozenset({"completed", "blocked", "failed", "needs_review"})
@@ -143,12 +148,13 @@ def check_planning_integrity(db_path: Path) -> tuple[PlanningIntegrityFailure, .
             failures.extend(_check_nonterminal_worker_runs_match_task_state(connection))
             failures.extend(_check_open_afk_tasks_have_execution_contracts(connection))
             failures.extend(_check_open_afk_task_contract_values(connection))
-            failures.extend(_check_completed_worker_runs_have_result_paths(connection))
+            failures.extend(_check_completed_worker_runs_have_result_records(connection))
             failures.extend(_check_completed_afk_tasks_have_worker_evidence(connection))
-            failures.extend(_check_completed_worker_result_paths_are_local_json(connection))
-            failures.extend(_check_completed_worker_run_results_exist(connection, repo_root))
-            failures.extend(_check_completed_worker_json_results(connection, repo_root))
-            failures.extend(_check_completed_worker_runs_are_linked(connection))
+            failures.extend(_check_worker_result_records_have_run_links(connection))
+            failures.extend(_check_worker_result_records_have_valid_payloads(connection))
+            failures.extend(_check_worker_result_records_align_with_runs(connection))
+            failures.extend(_check_worker_results_not_stored_as_public_files(connection, repo_root))
+            failures.extend(_check_handoff_snapshot_is_compact(repo_root))
             failures.extend(_check_progress_links_are_declared(connection))
             failures.extend(_check_plan_timestamps_cover_progress(connection))
         except sqlite3.Error as exc:
@@ -469,6 +475,8 @@ def _rowid_column(table: str) -> str:
         "plan_milestones": "milestone_id",
         "supervisor_tasks": "task_id",
         "worker_runs": "worker_run_id",
+        "worker_result_records": "result_id",
+        "development_log_entries": "entry_id",
     }[table]
 
 
@@ -531,25 +539,48 @@ def _check_completed_plans_have_completed_criteria(
     )
 
 
-def _check_completed_worker_runs_have_result_paths(
+def _check_completed_worker_runs_have_result_records(
     connection: sqlite3.Connection,
 ) -> tuple[PlanningIntegrityFailure, ...]:
     rows = connection.execute(
         """
-        SELECT worker_run_id
-        FROM worker_runs
-        WHERE status = 'completed'
-          AND (result_path IS NULL OR trim(result_path) = '')
-        ORDER BY worker_run_id
+        SELECT wr.worker_run_id, wr.result_path, wr.result_id
+        FROM worker_runs wr
+        WHERE wr.status = 'completed'
+          AND (
+              wr.result_id IS NULL
+              OR trim(wr.result_id) = ''
+              OR wr.result_path IS NOT NULL
+              OR NOT EXISTS (
+                  SELECT 1
+                  FROM worker_result_records result
+                  WHERE result.result_id = wr.result_id
+                    AND result.status = 'completed'
+              )
+              OR NOT EXISTS (
+                  SELECT 1
+                  FROM worker_result_run_links link
+                  WHERE link.result_id = wr.result_id
+                    AND link.worker_run_id = wr.worker_run_id
+              )
+          )
+        ORDER BY wr.worker_run_id
         """
     ).fetchall()
-    return tuple(
-        PlanningIntegrityFailure(
-            "completed_worker_run_without_result_path",
-            str(worker_run_id),
+    failures: list[PlanningIntegrityFailure] = []
+    for worker_run_id, result_path, result_id in rows:
+        if result_path is not None:
+            reason = f"{worker_run_id}: completed worker run still stores result_path {result_path}"
+        elif result_id is None or not str(result_id).strip():
+            reason = f"{worker_run_id}: completed worker run has no result_id"
+        else:
+            reason = (
+                f"{worker_run_id}: result_id {result_id} is missing, non-completed, or unlinked"
+            )
+        failures.append(
+            PlanningIntegrityFailure("completed_worker_run_without_result_record", reason)
         )
-        for (worker_run_id,) in rows
-    )
+    return tuple(failures)
 
 
 def _check_completed_afk_tasks_have_worker_evidence(
@@ -567,8 +598,14 @@ def _check_completed_afk_tasks_have_worker_evidence(
               FROM worker_runs wr
               WHERE wr.task_id = st.task_id
                 AND wr.status = 'completed'
-                AND wr.result_path IS NOT NULL
-                AND trim(wr.result_path) != ''
+                AND wr.result_id IS NOT NULL
+                AND trim(wr.result_id) != ''
+                AND EXISTS (
+                    SELECT 1
+                    FROM worker_result_run_links link
+                    WHERE link.result_id = wr.result_id
+                      AND link.worker_run_id = wr.worker_run_id
+                )
         )
         ORDER BY st.task_id
         """
@@ -580,6 +617,409 @@ def _check_completed_afk_tasks_have_worker_evidence(
         )
         for task_id, plan_id in rows
     )
+
+
+def _check_worker_result_records_have_run_links(
+    connection: sqlite3.Connection,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    rows = connection.execute(
+        """
+        SELECT result.result_id
+        FROM worker_result_records result
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM worker_result_run_links link
+            WHERE link.result_id = result.result_id
+        )
+        ORDER BY result.result_id
+        """
+    ).fetchall()
+    return tuple(
+        PlanningIntegrityFailure(
+            "worker_result_without_run_link",
+            str(result_id),
+        )
+        for (result_id,) in rows
+    )
+
+
+def _check_worker_result_records_have_valid_payloads(
+    connection: sqlite3.Connection,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    rows = connection.execute(
+        """
+        SELECT
+            result.result_id,
+            result.status,
+            result.raw_payload_json,
+            result.tests_run_json,
+            result.acceptance_results_json,
+            result.changed_files_json,
+            result.artifacts_json,
+            result.completion_notes
+        FROM worker_result_records result
+        ORDER BY result.result_id
+        """
+    ).fetchall()
+    failures: list[PlanningIntegrityFailure] = []
+    for (
+        result_id,
+        status,
+        raw_payload_json,
+        tests_run_json,
+        acceptance_results_json,
+        changed_files_json,
+        artifacts_json,
+        completion_notes,
+    ) in rows:
+        try:
+            payload = json.loads(str(raw_payload_json))
+        except json.JSONDecodeError as exc:
+            failures.append(
+                PlanningIntegrityFailure(
+                    "worker_result_invalid_payload",
+                    f"{result_id}: raw_payload_json is invalid JSON: {exc.msg}",
+                )
+            )
+            continue
+        if not isinstance(payload, dict):
+            failures.append(
+                PlanningIntegrityFailure(
+                    "worker_result_invalid_payload",
+                    f"{result_id}: raw_payload_json must be an object",
+                )
+            )
+            continue
+        failures.extend(_worker_result_type_failures(str(result_id), payload))
+        missing = sorted(WORKER_RESULT_REQUIRED_KEYS - set(payload))
+        if missing:
+            failures.append(
+                PlanningIntegrityFailure(
+                    "worker_result_invalid_payload",
+                    f"{result_id}: missing {', '.join(missing)}",
+                )
+            )
+        if payload.get("status") != status:
+            failures.append(
+                PlanningIntegrityFailure(
+                    "worker_result_status_mismatch",
+                    (
+                        f"{result_id}: row status {status!r} differs from payload "
+                        f"{payload.get('status')!r}"
+                    ),
+                )
+            )
+        if not _payload_has_completion_notes(payload) and not (
+            isinstance(completion_notes, str) and completion_notes.strip()
+        ):
+            failures.append(
+                PlanningIntegrityFailure(
+                    "worker_result_missing_completion_notes",
+                    str(result_id),
+                )
+            )
+        if status == "completed":
+            failures.extend(_completed_worker_result_evidence_failures(str(result_id), payload))
+        failures.extend(_completed_worker_result_test_run_failures(str(result_id), payload))
+        failures.extend(
+            _db_worker_result_path_array_failures(
+                str(result_id),
+                "changed_files_json",
+                str(changed_files_json),
+                reject_worker_results=True,
+            )
+        )
+        failures.extend(
+            _db_worker_result_path_array_failures(
+                str(result_id),
+                "artifacts_json",
+                str(artifacts_json),
+                reject_worker_results=True,
+            )
+        )
+        failures.extend(_db_worker_result_tests_array_failures(str(result_id), str(tests_run_json)))
+        try:
+            acceptance_results = json.loads(str(acceptance_results_json))
+        except json.JSONDecodeError as exc:
+            failures.append(
+                PlanningIntegrityFailure(
+                    "worker_result_invalid_acceptance_results",
+                    f"{result_id}: {exc.msg}",
+                )
+            )
+        else:
+            if not isinstance(acceptance_results, dict):
+                failures.append(
+                    PlanningIntegrityFailure(
+                        "worker_result_invalid_acceptance_results",
+                        f"{result_id}: acceptance_results_json must be an object",
+                    )
+                )
+    return tuple(failures)
+
+
+def _check_worker_result_records_align_with_runs(
+    connection: sqlite3.Connection,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    completed_result_ids_by_run = {
+        str(worker_run_id): str(result_id)
+        for worker_run_id, result_id in connection.execute(
+            """
+            SELECT worker_run_id, result_id
+            FROM worker_runs
+            WHERE status = 'completed'
+              AND result_id IS NOT NULL
+              AND trim(result_id) != ''
+            """
+        ).fetchall()
+    }
+    rows = connection.execute(
+        """
+        SELECT
+            result.result_id,
+            result.status,
+            result.raw_payload_json,
+            result.tests_run_json,
+            result.acceptance_results_json,
+            result.changed_files_json,
+            link.worker_run_id,
+            wr.status,
+            st.verification_commands_json,
+            st.acceptance_criteria_json,
+            st.allowed_paths_json
+        FROM worker_result_records result
+        JOIN worker_result_run_links link ON link.result_id = result.result_id
+        LEFT JOIN worker_runs wr ON wr.worker_run_id = link.worker_run_id
+        LEFT JOIN supervisor_tasks st ON st.task_id = wr.task_id
+        ORDER BY result.result_id, link.worker_run_id
+        """
+    ).fetchall()
+    failures: list[PlanningIntegrityFailure] = []
+    for (
+        result_id,
+        result_status,
+        raw_payload_json,
+        tests_run_json,
+        acceptance_results_json,
+        changed_files_json,
+        worker_run_id,
+        worker_run_status,
+        verification_json,
+        acceptance_json,
+        allowed_paths_json,
+    ) in rows:
+        try:
+            payload = json.loads(str(raw_payload_json))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if result_status == "completed" and worker_run_status != "completed":
+            failures.append(
+                PlanningIntegrityFailure(
+                    "worker_result_run_status_mismatch",
+                    (
+                        f"{result_id}: linked run {worker_run_id} is "
+                        f"{worker_run_status}, not completed"
+                    ),
+                )
+            )
+        if result_status != "completed":
+            continue
+        failures.extend(_completed_worker_result_identity_failures(str(worker_run_id), payload))
+        failures.extend(
+            _completed_worker_result_shared_link_failures(
+                str(worker_run_id),
+                str(result_id),
+                payload,
+                completed_result_ids_by_run,
+            )
+        )
+        payload_for_task = dict(payload)
+        try:
+            tests_run = json.loads(str(tests_run_json))
+        except json.JSONDecodeError:
+            tests_run = payload.get("tests_run")
+        try:
+            acceptance_results = json.loads(str(acceptance_results_json))
+        except json.JSONDecodeError:
+            acceptance_results = payload.get("acceptance_results")
+        try:
+            changed_files = json.loads(str(changed_files_json))
+        except json.JSONDecodeError:
+            changed_files = payload.get("changed_files")
+        payload_for_task["tests_run"] = tests_run
+        payload_for_task["acceptance_results"] = acceptance_results
+        payload_for_task["changed_files"] = changed_files
+        if allowed_paths_json is not None:
+            failures.extend(
+                _completed_worker_result_allowed_path_failures(
+                    str(worker_run_id),
+                    payload_for_task,
+                    str(allowed_paths_json),
+                )
+            )
+        if verification_json is not None and acceptance_json is not None:
+            failures.extend(
+                _completed_worker_result_task_alignment_failures(
+                    str(worker_run_id),
+                    payload_for_task,
+                    str(verification_json),
+                    str(acceptance_json),
+                )
+            )
+    return tuple(failures)
+
+
+def _payload_has_completion_notes(payload: dict[object, object]) -> bool:
+    for key in ("completion_notes", "handoff_notes"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return True
+    return False
+
+
+def _db_worker_result_path_array_failures(
+    result_id: str,
+    field_name: str,
+    value_json: str,
+    *,
+    reject_worker_results: bool,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    try:
+        values = json.loads(value_json)
+    except json.JSONDecodeError as exc:
+        return (
+            PlanningIntegrityFailure(
+                "worker_result_invalid_path_array",
+                f"{result_id}: {field_name} invalid JSON: {exc.msg}",
+            ),
+        )
+    if not isinstance(values, list):
+        return (
+            PlanningIntegrityFailure(
+                "worker_result_invalid_path_array",
+                f"{result_id}: {field_name} must be an array",
+            ),
+        )
+    failures: list[PlanningIntegrityFailure] = []
+    for item in values:
+        reason = _worker_result_entry_path_reason(item)
+        if reason is not None:
+            failures.append(
+                PlanningIntegrityFailure(
+                    "worker_result_invalid_path_array",
+                    f"{result_id}: {field_name} entry is unsafe: {item} ({reason})",
+                )
+            )
+            continue
+        normalized = _normalize_repo_path(str(item))
+        if reject_worker_results and normalized.startswith("worker-results/"):
+            failures.append(
+                PlanningIntegrityFailure(
+                    "worker_result_filesystem_artifact_recorded",
+                    f"{result_id}: {field_name} stores {normalized}",
+                )
+            )
+    return tuple(failures)
+
+
+def _db_worker_result_tests_array_failures(
+    result_id: str,
+    value_json: str,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    try:
+        values = json.loads(value_json)
+    except json.JSONDecodeError as exc:
+        return (
+            PlanningIntegrityFailure(
+                "worker_result_invalid_tests_run",
+                f"{result_id}: tests_run_json invalid JSON: {exc.msg}",
+            ),
+        )
+    if not isinstance(values, list):
+        return (
+            PlanningIntegrityFailure(
+                "worker_result_invalid_tests_run",
+                f"{result_id}: tests_run_json must be an array",
+            ),
+        )
+    return _completed_worker_result_test_run_failures(result_id, {"tests_run": values})
+
+
+def _check_worker_results_not_stored_as_public_files(
+    connection: sqlite3.Connection,
+    repo_root: Path,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    failures: list[PlanningIntegrityFailure] = []
+    worker_results_dir = repo_root / "worker-results"
+    if worker_results_dir.exists():
+        failures.append(
+            PlanningIntegrityFailure(
+                "worker_results_directory_exists",
+                "worker-results/ must not exist in the repo",
+            )
+        )
+    rows = connection.execute(
+        """
+        SELECT 'worker_run' AS source, worker_run_id AS id, result_path AS path
+        FROM worker_runs
+        WHERE result_path IS NOT NULL AND trim(result_path) != ''
+        UNION ALL
+        SELECT 'artifact_link' AS source, plan_id AS id, artifact_id AS path
+        FROM plan_artifact_links
+        WHERE artifact_id LIKE 'worker-results/%'
+        UNION ALL
+        SELECT 'progress_link' AS source, progress_id AS id, linked_artifact_id AS path
+        FROM plan_progress_events
+        WHERE linked_artifact_id LIKE 'worker-results/%'
+        ORDER BY source, id
+        """
+    ).fetchall()
+    for source, identifier, path in rows:
+        failures.append(
+            PlanningIntegrityFailure(
+                "worker_result_filesystem_reference",
+                f"{source} {identifier}: {path}",
+            )
+        )
+    return tuple(failures)
+
+
+def _check_handoff_snapshot_is_compact(repo_root: Path) -> tuple[PlanningIntegrityFailure, ...]:
+    handoff_path = repo_root / "HANDOFF.md"
+    if not handoff_path.exists():
+        if not (repo_root / ".git").exists():
+            return ()
+        return (PlanningIntegrityFailure("handoff_snapshot_missing", "HANDOFF.md is missing"),)
+    text = handoff_path.read_text(encoding="utf-8")
+    failures: list[PlanningIntegrityFailure] = []
+    line_count = len(text.splitlines())
+    if line_count > 180:
+        failures.append(
+            PlanningIntegrityFailure(
+                "handoff_snapshot_too_large",
+                f"HANDOFF.md has {line_count} lines; expected a compact snapshot",
+            )
+        )
+    forbidden_patterns = (
+        "Running Development Log",
+        "Development Log",
+        "Completion Log",
+        "Worker Results",
+        "Stage Log",
+        "Historical Checkpoint",
+    )
+    for pattern in forbidden_patterns:
+        if pattern.lower() in text.lower():
+            failures.append(
+                PlanningIntegrityFailure(
+                    "handoff_contains_historical_log",
+                    f"HANDOFF.md contains {pattern!r}",
+                )
+            )
+            break
+    return tuple(failures)
 
 
 def _check_completed_worker_run_results_exist(
@@ -755,6 +1195,7 @@ def _worker_result_type_failures(
         "risks": list,
         "follow_up_tasks": list,
         "artifacts": list,
+        "completion_notes": str,
         "handoff_notes": str,
     }
     failures: list[PlanningIntegrityFailure] = []
@@ -863,6 +1304,43 @@ def _completed_worker_result_shared_identity_failures(
     return tuple(failures)
 
 
+def _completed_worker_result_shared_link_failures(
+    worker_run_id: str,
+    result_id: str,
+    payload: dict[object, object],
+    completed_result_ids_by_run: dict[str, str],
+) -> tuple[PlanningIntegrityFailure, ...]:
+    worker_run_ids = payload.get("worker_run_ids")
+    if not isinstance(worker_run_ids, list):
+        return ()
+
+    failures: list[PlanningIntegrityFailure] = []
+    for value in worker_run_ids:
+        if not isinstance(value, str) or not value.strip():
+            continue
+        declared_worker_run_id = value.strip()
+        declared_result_id = completed_result_ids_by_run.get(declared_worker_run_id)
+        if declared_result_id == result_id:
+            continue
+        if declared_result_id is None:
+            reason = (
+                f"{worker_run_id}: worker_run_ids entry {declared_worker_run_id!r} does not "
+                "match a completed worker run for this result_id"
+            )
+        else:
+            reason = (
+                f"{worker_run_id}: worker_run_ids entry {declared_worker_run_id!r} points at "
+                f"{declared_result_id}, not {result_id}"
+            )
+        failures.append(
+            PlanningIntegrityFailure(
+                "completed_worker_run_invalid_result_schema",
+                reason,
+            )
+        )
+    return tuple(failures)
+
+
 def _completed_worker_result_evidence_failures(
     worker_run_id: str,
     payload: dict[object, object],
@@ -898,15 +1376,21 @@ def _completed_worker_result_evidence_failures(
                 f"{worker_run_id}: completed result requires acceptance_results evidence",
             )
         )
-    for key in ("summary", "handoff_notes"):
-        value = payload.get(key)
-        if isinstance(value, str) and not value.strip():
-            failures.append(
-                PlanningIntegrityFailure(
-                    "completed_worker_run_invalid_result_schema",
-                    f"{worker_run_id}: {key} must be nonblank",
-                )
+    summary = payload.get("summary")
+    if isinstance(summary, str) and not summary.strip():
+        failures.append(
+            PlanningIntegrityFailure(
+                "completed_worker_run_invalid_result_schema",
+                f"{worker_run_id}: summary must be nonblank",
             )
+        )
+    if not _payload_has_completion_notes(payload):
+        failures.append(
+            PlanningIntegrityFailure(
+                "completed_worker_run_invalid_result_schema",
+                f"{worker_run_id}: completion_notes or handoff_notes must be nonblank",
+            )
+        )
     return tuple(failures)
 
 

@@ -84,12 +84,12 @@ def validate_worker_result_payload(
     changed_files = _string_list(payload, "changed_files", require_nonempty=completed)
     artifacts = _string_list(payload, "artifacts", require_nonempty=completed)
     _require_nonblank(payload, "summary")
-    _require_nonblank(payload, "handoff_notes")
+    _require_completion_notes(payload)
     _require_list(payload, "risks")
     _require_nonempty_list(payload, "follow_up_tasks", allow_empty=True)
     _validate_tests_run(payload, verification_commands, require_success=completed)
     _validate_acceptance_results(payload, acceptance_criteria, require_passed=completed)
-    _validate_artifacts(repo_root, artifacts, result_path, require_durable=completed)
+    _validate_artifacts(repo_root, artifacts)
     _validate_changed_files(repo_root, changed_files, allowed_paths)
     return WorkerResult(
         payload=payload,
@@ -148,6 +148,15 @@ def _require_nonblank(payload: JsonObject, key: str) -> None:
     if not isinstance(value, str) or not value.strip():
         msg = f"{key} must be nonblank"
         raise WorkerResultError(msg)
+
+
+def _require_completion_notes(payload: JsonObject) -> None:
+    for key in ("completion_notes", "handoff_notes"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return
+    msg = "completion_notes or handoff_notes must be nonblank"
+    raise WorkerResultError(msg)
 
 
 def _require_list(payload: JsonObject, key: str) -> None:
@@ -224,21 +233,8 @@ def _validate_acceptance_results(
 def _validate_artifacts(
     repo_root: Path,
     artifacts: tuple[str, ...],
-    result_path: str,
-    *,
-    require_durable: bool,
 ) -> None:
-    normalized_result_path = _normalize(result_path)
     normalized_artifacts = tuple(_normalize(path) for path in artifacts)
-    if require_durable and _is_ignored_run_output(normalized_result_path):
-        msg = (
-            "completed worker result_path must be durable tracked evidence: "
-            f"{normalized_result_path}"
-        )
-        raise WorkerResultError(msg)
-    if require_durable and normalized_result_path not in normalized_artifacts:
-        msg = f"artifacts must include result_path {normalized_result_path}"
-        raise WorkerResultError(msg)
     for artifact in normalized_artifacts:
         _validate_repo_relative_path(repo_root, artifact, "artifacts")
 
@@ -254,10 +250,6 @@ def _validate_changed_files(
         if not any(_matches_allowed_path(changed_file, allowed) for allowed in normalized_allowed):
             msg = f"{changed_file} is not covered by allowed_paths"
             raise WorkerResultError(msg)
-
-
-def _is_ignored_run_output(path: str) -> bool:
-    return path.split("/", 1)[0] in {"artifacts", "logs", "runs", "worktrees"}
 
 
 def _validate_repo_relative_path(repo_root: Path, value: str, field_name: str) -> None:

@@ -80,7 +80,7 @@ def test_orchestrate_worker_launch_runs_prepared_codex_backend_and_accepts_allow
     assert calls[1][0][1:4] == ("exec", "--json", "--output-schema")
     assert result.launch_result.status == "completed"
     assert result.launch_result.result_path == (
-        "worker-results/worker-run-stage7c-worker-orchestration-20260524-worker-result.json"
+        "artifacts/worker-run-stage7c-worker-orchestration-20260524/worker-result.raw.json"
     )
     assert result.changed_files == ("src/codex_supervisor/worker_orchestration.py",)
     assert result.changed_files_source == "diff_summary"
@@ -194,7 +194,7 @@ def test_orchestrate_worker_launch_rejects_unsafe_worker_run_id(tmp_path: Path) 
 
 
 def _write_backend_success(tmp_path: Path, *, worker_run_id: str, changed_file: str) -> None:
-    result_file = tmp_path / "worker-results" / f"{worker_run_id}-worker-result.json"
+    result_file = tmp_path / "artifacts" / worker_run_id / "worker-result.raw.json"
     result_file.parent.mkdir(parents=True)
     result_file.write_text('{"status":"completed"}\n', encoding="utf-8")
     final_file = tmp_path / "runs" / worker_run_id / "final-message.txt"

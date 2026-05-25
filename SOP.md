@@ -89,14 +89,15 @@ For every AFK task:
 5. If native Goals are unavailable, include the Goal Contract in the worker prompt and do not write
    Codex internal goal databases.
 6. Execute one vertical slice/story only.
-7. Capture raw logs and structured result.
+7. Capture raw logs and a transient structured result source, then ingest completion evidence into
+   planning SQLite.
 8. Run deterministic checks.
 9. Run automated review.
 10. Repair or mark blocked.
-11. Link artifacts, learnings, and progress events.
+11. Link supporting artifacts, learnings, progress events, and DB-backed worker result records.
 
-The loop may continue to the next ready task only after the current story has evidence for completion
-or a recorded blocked state.
+The loop may continue to the next ready task only after the current story has DB-backed evidence for
+completion or a recorded blocked state.
 
 ## Control Tower Reconciliation
 
@@ -104,7 +105,8 @@ On a recurring schedule or before a major supervision session:
 
 1. Read local Codex state databases in read-only mode.
 2. Summarize active and stale threads by project.
-3. Identify orphaned handoffs, abandoned worktrees, repeated failures, and high-fanout thread trees.
+3. Identify stale handoff snapshots, abandoned worktrees, repeated failures, and high-fanout thread
+   trees.
 4. Compare local Codex observations with `plans/planning.sqlite3`.
 5. Create proposed plan links, progress events, AFK tasks, or HITL tasks.
 6. Suggest Codex automations through official automation tooling when recurring checks would help.
@@ -143,5 +145,5 @@ The supervisor should absorb:
 - retry loops;
 - check execution;
 - review loops;
-- handoffs;
+- compact handoffs;
 - routine project bootstrap.

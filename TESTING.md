@@ -10,9 +10,9 @@ uv run python -B scripts/verify.py
 ```
 
 During a HITL ACP/publication checkpoint, the protected-file lock guard can fail while intended
-protected files are tracked and hashes are refreshed. In that checkpoint, run the component checks
-listed in `HANDOFF.md` for task-level evidence, then run the default suite again after the lock
-guard is reconciled.
+protected files are tracked and hashes are refreshed. In that checkpoint, run task-relevant component
+checks recorded in planning SQLite or the compact `HANDOFF.md` snapshot, then run the default suite
+again after the lock guard is reconciled.
 
 The default suite expands to:
 
@@ -76,9 +76,9 @@ drift.
 
 - Worker Result Contract schema;
 - task schema and AFK readiness;
-- completed worker-result existence;
-- shared-result identity coverage;
-- artifact-link relationships;
+- completed DB-backed worker result records;
+- shared-result identity coverage through result/run links;
+- supporting artifact-link relationships;
 - exact acceptance-criterion evidence;
 - zero-exit verification records;
 - changed-file alignment with task `allowed_paths_json`;
@@ -124,7 +124,8 @@ without launching live Codex workers:
 4. create a worktree;
 5. run a fake worker backend;
 6. parse structured worker evidence;
-7. record artifacts, review results, progress events, and handoff notes;
+7. record supporting artifacts, review results, progress events, DB-backed worker results, and
+   compact handoff notes;
 8. verify planning integrity and publication hygiene.
 
 ## Live Full-Auto

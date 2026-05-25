@@ -14,7 +14,7 @@ from codex_supervisor.worker_results import (
 def test_worker_result_validation_accepts_completed_contract(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
-    result_path = "worker-results/run-worker-result.json"
+    result_path = "artifacts/run-worker/worker-result.raw.json"
     result_file = tmp_path / result_path
     result_file.parent.mkdir(parents=True)
     result_file.write_text(json.dumps(_worker_result()), encoding="utf-8")
@@ -31,7 +31,7 @@ def test_worker_result_validation_accepts_completed_contract(tmp_path):
 
     assert result.worker_run_ids == ("run-worker",)
     assert result.changed_files == ("src/worker.py",)
-    assert result.artifacts == ("worker-results/run-worker-result.json",)
+    assert result.artifacts == ("artifacts/run-worker/worker-result.raw.json",)
 
 
 @pytest.mark.parametrize("status", ["blocked", "failed", "needs_review"])
@@ -67,22 +67,26 @@ def test_worker_result_validation_accepts_noncompleted_contract_without_success_
     assert result.artifacts == ()
 
 
-def test_completed_worker_result_must_use_durable_tracked_result_path(tmp_path):
+def test_completed_worker_result_can_use_transient_raw_json_source(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
+    result_file = tmp_path / "artifacts" / "run-worker" / "worker-result.raw.json"
+    result_file.parent.mkdir(parents=True)
+    result_file.write_text("{}", encoding="utf-8")
     payload = _worker_result()
-    payload["artifacts"] = ["runs/run-worker/result.json"]
+    payload["artifacts"] = ["artifacts/run-worker/worker-result.raw.json"]
 
-    with pytest.raises(WorkerResultError, match="durable tracked evidence"):
-        validate_worker_result_payload(
-            payload,
-            repo_root=tmp_path,
-            result_path="runs/run-worker/result.json",
-            worker_run_id="run-worker",
-            allowed_paths=("src/**",),
-            verification_commands=("python -B -m pytest -p no:cacheprovider",),
-            acceptance_criteria=("Criterion passes.",),
-        )
+    result = validate_worker_result_payload(
+        payload,
+        repo_root=tmp_path,
+        result_path="artifacts/run-worker/worker-result.raw.json",
+        worker_run_id="run-worker",
+        allowed_paths=("src/**",),
+        verification_commands=("python -B -m pytest -p no:cacheprovider",),
+        acceptance_criteria=("Criterion passes.",),
+    )
+
+    assert result.artifacts == ("artifacts/run-worker/worker-result.raw.json",)
 
 
 def test_worker_result_validation_requires_task_verification_command(tmp_path):
@@ -92,7 +96,7 @@ def test_worker_result_validation_requires_task_verification_command(tmp_path):
         validate_worker_result_payload(
             payload,
             repo_root=tmp_path,
-            result_path="worker-results/run-worker-result.json",
+            result_path="artifacts/run-worker/worker-result.raw.json",
             worker_run_id="run-worker",
             allowed_paths=("src/**",),
             verification_commands=("python -B scripts/verify.py",),
@@ -103,7 +107,7 @@ def test_worker_result_validation_requires_task_verification_command(tmp_path):
 def test_worker_result_validation_requires_changed_files_within_allowed_paths(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
-    result_file = tmp_path / "worker-results" / "run-worker-result.json"
+    result_file = tmp_path / "artifacts" / "run-worker" / "worker-result.raw.json"
     result_file.parent.mkdir(parents=True)
     result_file.write_text("{}", encoding="utf-8")
     payload = _worker_result()
@@ -112,7 +116,7 @@ def test_worker_result_validation_requires_changed_files_within_allowed_paths(tm
         validate_worker_result_payload(
             payload,
             repo_root=tmp_path,
-            result_path="worker-results/run-worker-result.json",
+            result_path="artifacts/run-worker/worker-result.raw.json",
             worker_run_id="run-worker",
             allowed_paths=("tests/**",),
             verification_commands=("python -B -m pytest -p no:cacheprovider",),
@@ -130,7 +134,7 @@ def test_worker_result_validation_requires_acceptance_evidence(tmp_path):
         validate_worker_result_payload(
             payload,
             repo_root=tmp_path,
-            result_path="worker-results/run-worker-result.json",
+            result_path="artifacts/run-worker/worker-result.raw.json",
             worker_run_id="run-worker",
             allowed_paths=("src/**",),
             verification_commands=("python -B -m pytest -p no:cacheprovider",),
@@ -159,6 +163,6 @@ def _worker_result() -> dict[str, object]:
         },
         "risks": ["No live backend was launched."],
         "follow_up_tasks": [],
-        "artifacts": ["worker-results/run-worker-result.json"],
-        "handoff_notes": "Ready.",
+        "artifacts": ["artifacts/run-worker/worker-result.raw.json"],
+        "completion_notes": "Ready.",
     }

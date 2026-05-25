@@ -7,8 +7,9 @@ fresh-context Codex workers, worktrees, checks, reviews, handoffs, skills, and p
 truth until production-quality code is produced.
 
 The product is not a replacement for Codex. It is a durable orchestration layer around Codex.
-`README.md` describes the end-state product shape. Live operational progress belongs only in
-`plans/planning.sqlite3` and `HANDOFF.md`.
+`README.md` describes the end-state product shape. Live operational progress, worker completion
+records, imported legacy records, and development-log entries belong in `plans/planning.sqlite3`.
+`HANDOFF.md` is only the current compact resume snapshot.
 
 ## Operating Principles
 
@@ -56,9 +57,11 @@ new hashes.
 
 Operational planning state belongs in `plans/planning.sqlite3`. Use typed helpers in
 `codex_supervisor.planning`; do not scatter ad hoc SQL across the project.
-Do not mirror live queue state, stage progress, or task completion notes into protected markdown.
-Protected docs define doctrine, schemas, contracts, and operating rules. `HANDOFF.md` can summarize
-what a new thread needs to know, but the planning database remains the queue authority.
+Do not mirror live queue state, stage progress, worker results, development logs, completion
+records, or imported legacy evidence into protected markdown or repo-local JSON artifacts. Protected
+docs define doctrine, schemas, contracts, and operating rules. `HANDOFF.md` can summarize what a new
+thread needs to know right now, but it must not become a historical log and the planning database
+remains the queue authority.
 
 Local Codex databases under `~/.codex` are read-only telemetry inputs. Do not write directly to
 Codex internal SQLite databases. Reconcile observations into project-owned planning SQLite, and use
@@ -94,7 +97,7 @@ feature state, whether the backend has an official noninteractive native-goal pa
 prompt-rendered fallback decision.
 
 Synthesized durable learning belongs in `insights/`. Do not bury reusable workflow lessons only in
-chat, logs, or worker summaries.
+chat, logs, worker summaries, or completion records.
 
 ## Common Commands
 
@@ -168,6 +171,8 @@ Adapter families:
 - Focused tests cover changed behavior.
 - Relevant checks pass.
 - Source-of-truth docs are updated only when intentionally required.
-- Planning SQLite records the plan, decisions, progress, and verification state.
-- Handoff information is captured in `HANDOFF.md` or a plan progress record.
+- Planning SQLite records the plan, decisions, progress, worker results, imported legacy evidence,
+  and verification state.
+- Handoff information is captured in compact current form in `HANDOFF.md`; operational history and
+  completion detail stay in planning SQLite.
 - No cloned `sources/` repositories, worker runs, worktrees, logs, or secrets are staged.

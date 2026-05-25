@@ -19,6 +19,7 @@ from codex_supervisor.planning import (
     PlanProgressRecord,
     PlanRecord,
     SupervisorTaskRecord,
+    WorkerResultRecord,
     WorkerRunRecord,
     initialize_planning_database,
     open_existing_planning_database,
@@ -933,7 +934,9 @@ def test_cli_write_commands_record_planning_rows(tmp_path, capsys):
 
     assert main(["worker-run-show", "--path", str(db_path), "run-write", "--json"]) == 0
     worker_run = json.loads(capsys.readouterr().out)
-    assert worker_run["result_path"] == "insights/run-write-result.json"
+    assert worker_run["result_path"] is None
+    assert worker_run["result_id"] == "worker-result-run-write-result"
+    assert read_store.list_worker_results()[0].source_path == "insights/run-write-result.json"
 
     assert main(["plan-summary", "--path", str(db_path), "--plan-id", "plan-write", "--json"]) == 0
     summary = json.loads(capsys.readouterr().out)
@@ -2244,7 +2247,7 @@ def test_completed_worker_runs_reject_unsafe_result_paths(tmp_path, result_path)
         store.update_worker_run_status("run-test", "completed", result_path=result_path)
 
 
-def test_worker_run_status_rejects_blank_result_path_without_erasing_existing_path(tmp_path):
+def test_worker_run_status_rejects_blank_result_path_without_erasing_existing_result_id(tmp_path):
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)
     store.upsert_plan(
@@ -2280,7 +2283,8 @@ def test_worker_run_status_rejects_blank_result_path_without_erasing_existing_pa
         store.update_worker_run_status("run-test", "completed", result_path="")
 
     run = open_existing_planning_database(db_path).list_worker_runs(task_id="task-test")[0]
-    assert run.result_path == "runs/run-test/result.json"
+    assert run.result_path is None
+    assert run.result_id == "worker-result-result"
 
 
 def test_task_status_cannot_hide_active_worker_run(tmp_path):
@@ -2669,17 +2673,14 @@ def test_worker_run_status_can_complete_with_result_path_without_full_upsert(tmp
 
     run = open_existing_planning_database(db_path).list_worker_runs(task_id="task-test")[0]
     assert run.status == "completed"
-    assert run.result_path == "worker-results/run-test-result.json"
+    assert run.result_path is None
+    assert run.result_id == "worker-result-run-test-result"
     assert run.prompt_path == "runs/run-test/prompt.md"
     assert run.metadata == {"kept": True}
     task = open_existing_planning_database(db_path).list_supervisor_tasks()[0]
     assert task.status == "reviewing"
-    links = open_existing_planning_database(db_path).list_plan_artifact_links(plan_id="plan-test")
-    assert any(
-        link.artifact_id == "worker-results/run-test-result.json"
-        and link.relationship == "worker-result"
-        for link in links
-    )
+    result_record = open_existing_planning_database(db_path).list_worker_results()[0]
+    assert result_record.source_path == "worker-results/run-test-result.json"
 
 
 def test_worker_run_status_reports_worker_result_status_when_not_completed(tmp_path, capsys):
@@ -2892,7 +2893,8 @@ def test_worker_run_status_clears_failure_class_on_completion(tmp_path):
 
     run = open_existing_planning_database(db_path).list_worker_runs(task_id="task-test")[0]
     assert run.status == "completed"
-    assert run.result_path == "worker-results/run-test-result.json"
+    assert run.result_path is None
+    assert run.result_id == "worker-result-run-test-result"
     assert run.failure_class is None
 
 
@@ -3065,16 +3067,12 @@ def test_worker_result_ingestion_completes_after_validation(tmp_path):
     read_store = open_existing_planning_database(db_path)
     task = read_store.list_supervisor_tasks()[0]
     run = read_store.list_worker_runs(task_id="task-test")[0]
-    links = read_store.list_plan_artifact_links(plan_id="plan-test")
-    assert result.changed_files == ("src/worker.py",)
+    assert result.changed_files == ["src/worker.py"]
     assert task.status == "completed"
     assert run.status == "completed"
-    assert run.result_path == "worker-results/run-test-result.json"
-    assert any(
-        link.artifact_id == "worker-results/run-test-result.json"
-        and link.relationship == "worker-result"
-        for link in links
-    )
+    assert run.result_path is None
+    assert run.result_id == "worker-result-run-test-result"
+    assert read_store.list_worker_result_run_links()[0].result_id == run.result_id
 
 
 def test_worker_result_ingestion_failure_preserves_evidence_without_completion(tmp_path):
@@ -3186,7 +3184,8 @@ def test_worker_result_ingestion_preserves_noncompleted_worker_result_status(
     assert task.status == status
     assert run.status == status
     assert run.failure_class == status
-    assert run.result_path == "runs/run-test/result.json"
+    assert run.result_path is None
+    assert run.result_id == "worker-result-result"
 
 
 def test_worker_result_ingestion_needs_review_preserves_evidence(tmp_path):
@@ -3234,7 +3233,8 @@ def test_worker_result_ingestion_needs_review_preserves_evidence(tmp_path):
     assert task.status == "reviewing"
     assert run.status == "needs_review"
     assert run.failure_class is None
-    assert run.result_path == "runs/run-test/result.json"
+    assert run.result_path is None
+    assert run.result_id == "worker-result-result"
 
 
 def test_worker_result_ingestion_rejects_uncompleted_shared_worker_run(tmp_path):
@@ -3371,10 +3371,16 @@ def test_worker_result_ingestion_accepts_matching_completed_shared_worker_run(tm
 
     result = store.ingest_worker_result("run-test", "insights/shared-result.json")
 
-    run = open_existing_planning_database(db_path).list_worker_runs(task_id="task-test")[0]
-    assert result.worker_run_ids == ("run-test", "run-other")
+    read_store = open_existing_planning_database(db_path)
+    run = read_store.list_worker_runs(task_id="task-test")[0]
+    links = read_store.list_worker_result_run_links()
+    assert sorted(link.worker_run_id for link in links if link.result_id == result.result_id) == [
+        "run-other",
+        "run-test",
+    ]
     assert run.status == "completed"
-    assert run.result_path == "insights/shared-result.json"
+    assert run.result_path is None
+    assert run.result_id == result.result_id
 
 
 def test_cli_reports_clean_error_when_planning_path_cannot_be_inferred(
@@ -3595,3 +3601,59 @@ def _write_worker_result(
     else:
         payload["worker_run_ids"] = list(worker_run_ids)
     path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _upsert_worker_result_record(
+    store,
+    result_id: str,
+    *,
+    status: str = "completed",
+    summary: str = "Worker result.",
+) -> None:
+    store.upsert_worker_result_record(
+        WorkerResultRecord(
+            result_id=result_id,
+            status=status,
+            summary=summary,
+            raw_payload={
+                "worker_run_id": "test-worker",
+                "status": status,
+                "summary": summary,
+                "changed_files": ["src/worker.py"] if status == "completed" else [],
+                "tests_run": [
+                    {
+                        "command": "python -B -m pytest -p no:cacheprovider",
+                        "exit_code": 0,
+                        "summary": "passed",
+                    }
+                ]
+                if status == "completed"
+                else [],
+                "acceptance_results": {"done": {"status": "passed", "evidence": "ok"}}
+                if status == "completed"
+                else {},
+                "risks": [],
+                "follow_up_tasks": [],
+                "artifacts": [],
+                "completion_notes": "Ready.",
+            },
+            tests_run=[
+                {
+                    "command": "python -B -m pytest -p no:cacheprovider",
+                    "exit_code": 0,
+                    "summary": "passed",
+                }
+            ]
+            if status == "completed"
+            else [],
+            acceptance_results={"done": {"status": "passed", "evidence": "ok"}}
+            if status == "completed"
+            else {},
+            changed_files=["src/worker.py"] if status == "completed" else [],
+            artifacts=[],
+            risks=[],
+            follow_up_tasks=[],
+            completion_notes="Ready.",
+            source_kind="test",
+        )
+    )

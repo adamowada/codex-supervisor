@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 08:18 PDT
+Last updated: 2026-05-25 08:24 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -19,10 +19,8 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   - `uv run --no-sync python -B scripts/verify.py` - 478 passed plus hygiene, source inventory, skill inventory, planning integrity, and source locks.
   - `uv run --no-sync python -B scripts/verify.py --publication-ready` - 478 passed plus publication-ready hygiene and source locks.
 - Latest successful remote CI: GitHub Actions `Verify` run
-  `https://github.com/adamowada/codex-supervisor/actions/runs/26406847892` for commit
-  `5ea019ecf434cece0db73f15e0c47a88362d467b`.
-- Latest evidence-only push: `4def6b62cc4196af50e7a78df406af7b7ca1553f`; GitHub Actions
-  `Verify` run `https://github.com/adamowada/codex-supervisor/actions/runs/26406204031` passed.
+  `https://github.com/adamowada/codex-supervisor/actions/runs/26407789129` for commit
+  `b5d4fbc405380b078bcf38cdb767d0d4b879c44b`.
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.
@@ -133,8 +131,8 @@ uv run --no-sync python -B scripts/verify.py --publication-ready
 
 ## Next Action
 
-ACP Stage 15C, push, inspect remote CI, then select the next current AFK slice from planning
-SQLite.
+ACP Stage 15C CI evidence, push, inspect remote CI, then select the next current AFK slice from
+planning SQLite.
 
 ```sh
 uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json

@@ -16,6 +16,7 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 - Completed task: `task-stage12a-plugin-mcp-scaffold`.
 - Worker run: `worker-run-stage12a-plugin-mcp-scaffold-inline-20260525`, completed with DB result
   `worker-result-stage12a-plugin-mcp-scaffold-result`.
+- Implementation commit: `02a4ae986f3ed7fed8506787b9f863fe35aac1bd`.
 - Execution mode: inline supervised fallback. `codex --version` still resolves to the WindowsApps
   `codex.exe` path and fails with access denied, so no live Codex worker was launched.
 

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from codex_supervisor.cli import main
 from codex_supervisor.planning import (
+    CiRunEvidenceRecord,
     PlanProgressRecord,
     PlanRecord,
     initialize_planning_database,
@@ -12,6 +13,8 @@ from codex_supervisor.planning import (
 from codex_supervisor.release import build_release_readiness_report
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+TARGET_COMMIT = "a" * 40
+STALE_COMMIT = "b" * 40
 
 
 def test_release_readiness_report_surfaces_repo_evidence_and_external_os_gap(
@@ -20,16 +23,19 @@ def test_release_readiness_report_surfaces_repo_evidence_and_external_os_gap(
     report = build_release_readiness_report(
         REPO_ROOT,
         planning_db_path=tmp_path / "missing.sqlite3",
+        target_commit=TARGET_COMMIT,
     )
     checks = {(check.section, check.name): check for check in report.checks}
 
     assert report.ready is False
-    assert report.passing_checks >= 7
+    assert report.target_commit == TARGET_COMMIT
+    assert report.passing_checks >= 8
     assert report.gap_checks >= 1
     assert checks[("cli", "Package CLI entry point")].status == "pass"
     assert checks[("mcp", "MCP server and stdio tests")].status == "pass"
     assert checks[("plugin", "Codex Desktop plugin surface")].status == "pass"
     assert checks[("project_scaffold", "Spawned-project dry-run scaffold surface")].status == "pass"
+    assert checks[("project_scaffold", "Spawned-project apply surface")].status == "pass"
     assert checks[("verification", "Publication-ready verification posture")].status == "pass"
     assert checks[("verification", "Integrity and hygiene gates")].status == "pass"
     external_os = checks[("os_validation", "External Windows install validation evidence")]
@@ -49,11 +55,16 @@ def test_release_readiness_uses_reviewed_windows_validation_evidence(tmp_path: P
                 "uv run --no-sync python -B -m codex_supervisor.cli --help",
                 "uv run --no-sync python -B scripts/verify.py --publication-ready",
             ],
+            "head_sha": TARGET_COMMIT,
             "environment": {"os": "Windows", "python": "3.14.5"},
         },
     )
 
-    report = build_release_readiness_report(REPO_ROOT, planning_db_path=db_path)
+    report = build_release_readiness_report(
+        REPO_ROOT,
+        planning_db_path=db_path,
+        target_commit=TARGET_COMMIT,
+    )
     external_os = next(
         check
         for check in report.checks
@@ -68,6 +79,37 @@ def test_release_readiness_uses_reviewed_windows_validation_evidence(tmp_path: P
     assert any("environment: os=Windows" in item for item in external_os.evidence)
 
 
+def test_release_readiness_rejects_stale_windows_validation_evidence(
+    tmp_path: Path,
+) -> None:
+    db_path = _validation_db(
+        tmp_path,
+        details={
+            "platform": "windows",
+            "status": "passed",
+            "reviewed": True,
+            "head_sha": STALE_COMMIT,
+            "commands": ["uv run --no-sync python -B -m codex_supervisor.cli --help"],
+        },
+    )
+
+    report = build_release_readiness_report(
+        REPO_ROOT,
+        planning_db_path=db_path,
+        target_commit=TARGET_COMMIT,
+    )
+    external_os = next(
+        check
+        for check in report.checks
+        if (check.section, check.name)
+        == ("os_validation", "External Windows install validation evidence")
+    )
+
+    assert external_os.status == "gap"
+    assert any("stale:" in item and STALE_COMMIT in item for item in external_os.evidence)
+    assert any(TARGET_COMMIT in item for item in external_os.evidence)
+
+
 def test_release_readiness_rejects_unreviewed_windows_validation_evidence(
     tmp_path: Path,
 ) -> None:
@@ -77,11 +119,16 @@ def test_release_readiness_rejects_unreviewed_windows_validation_evidence(
             "platform": "windows",
             "status": "passed",
             "reviewed": False,
+            "head_sha": TARGET_COMMIT,
             "commands": ["uv run --no-sync python -B -m codex_supervisor.cli --help"],
         },
     )
 
-    report = build_release_readiness_report(REPO_ROOT, planning_db_path=db_path)
+    report = build_release_readiness_report(
+        REPO_ROOT,
+        planning_db_path=db_path,
+        target_commit=TARGET_COMMIT,
+    )
     external_os = next(
         check
         for check in report.checks
@@ -94,7 +141,7 @@ def test_release_readiness_rejects_unreviewed_windows_validation_evidence(
 
 
 def test_release_readiness_report_marks_missing_repo_surfaces_as_gaps(tmp_path: Path) -> None:
-    report = build_release_readiness_report(tmp_path)
+    report = build_release_readiness_report(tmp_path, target_commit=TARGET_COMMIT)
     checks = {(check.section, check.name): check for check in report.checks}
     mcp_check = next(check for check in report.checks if check.section == "mcp")
 
@@ -126,6 +173,8 @@ def test_cli_release_readiness_emits_json(capsys) -> None:
                 str(REPO_ROOT),
                 "--planning-db",
                 str(REPO_ROOT / "missing.sqlite3"),
+                "--commit",
+                TARGET_COMMIT,
                 "--json",
             ]
         )
@@ -136,6 +185,7 @@ def test_cli_release_readiness_emits_json(capsys) -> None:
     checks = {(check["section"], check["name"]): check for check in payload["checks"]}
 
     assert payload["ready"] is False
+    assert payload["target_commit"] == TARGET_COMMIT
     assert checks[("cli", "Package CLI entry point")]["status"] == "pass"
     assert (
         checks[("os_validation", "External Windows install validation evidence")]["status"] == "gap"
@@ -151,6 +201,8 @@ def test_cli_release_readiness_emits_human_report(capsys) -> None:
                 str(REPO_ROOT),
                 "--planning-db",
                 str(REPO_ROOT / "missing.sqlite3"),
+                "--commit",
+                TARGET_COMMIT,
             ]
         )
         == 0
@@ -158,21 +210,58 @@ def test_cli_release_readiness_emits_human_report(capsys) -> None:
 
     output = capsys.readouterr().out
 
+    assert f"target_commit: {TARGET_COMMIT}" in output
     assert "release_ready: False" in output
     assert "os_validation" in output
     assert "External Windows install validation evidence" in output
 
 
-def test_cli_release_readiness_accepts_planning_db(capsys, tmp_path: Path) -> None:
-    db_path = _validation_db(
-        tmp_path,
-        details={
-            "platform": "windows",
-            "status": "passed",
-            "reviewed": True,
-            "commands": ["uv run --no-sync python -B scripts/verify.py --publication-ready"],
-        },
+def test_release_readiness_requires_current_live_and_ci_evidence(tmp_path: Path) -> None:
+    db_path = _release_db(tmp_path, target_commit=TARGET_COMMIT)
+
+    report = build_release_readiness_report(
+        REPO_ROOT,
+        planning_db_path=db_path,
+        target_commit=TARGET_COMMIT,
     )
+    checks = {(check.section, check.name): check for check in report.checks}
+
+    assert report.ready is True
+    assert checks[("ci", "Current successful CI for target commit")].status == "pass"
+    assert checks[("verification", "Current publication-ready verification evidence")].status == (
+        "pass"
+    )
+    assert checks[("live_evidence", "Live worker smoke evidence")].status == "pass"
+    assert checks[("live_evidence", "Live review smoke evidence")].status == "pass"
+    assert checks[("live_evidence", "Mutating MCP smoke evidence")].status == "pass"
+    assert checks[("live_evidence", "Real project bootstrap smoke evidence")].status == "pass"
+
+
+def test_release_readiness_rejects_stale_ci_and_live_evidence(tmp_path: Path) -> None:
+    db_path = _release_db(tmp_path, target_commit=STALE_COMMIT)
+
+    report = build_release_readiness_report(
+        REPO_ROOT,
+        planning_db_path=db_path,
+        target_commit=TARGET_COMMIT,
+    )
+    checks = {(check.section, check.name): check for check in report.checks}
+
+    assert report.ready is False
+    assert checks[("ci", "Current successful CI for target commit")].status == "gap"
+    assert any(
+        "stale:" in item and STALE_COMMIT in item
+        for item in checks[("ci", "Current successful CI for target commit")].evidence
+    )
+    assert checks[("live_evidence", "Live worker smoke evidence")].status == "gap"
+    assert any(
+        "stale:" in item and STALE_COMMIT in item
+        for item in checks[("live_evidence", "Live worker smoke evidence")].evidence
+    )
+
+
+def test_cli_release_readiness_accepts_planning_db(capsys, tmp_path: Path) -> None:
+    db_path = _release_db(tmp_path, target_commit=TARGET_COMMIT)
 
     assert (
         main(
@@ -182,6 +271,8 @@ def test_cli_release_readiness_accepts_planning_db(capsys, tmp_path: Path) -> No
                 str(REPO_ROOT),
                 "--planning-db",
                 str(db_path),
+                "--commit",
+                TARGET_COMMIT,
                 "--json",
             ]
         )
@@ -191,10 +282,11 @@ def test_cli_release_readiness_accepts_planning_db(capsys, tmp_path: Path) -> No
     payload = json.loads(capsys.readouterr().out)
     checks = {(check["section"], check["name"]): check for check in payload["checks"]}
 
-    assert (
-        checks[("os_validation", "External Windows install validation evidence")]["status"]
-        == "pass"
+    assert payload["ready"] is True
+    assert checks[("os_validation", "External Windows install validation evidence")]["status"] == (
+        "pass"
     )
+    assert checks[("live_evidence", "Live worker smoke evidence")]["status"] == "pass"
 
 
 def _validation_db(tmp_path: Path, *, details: dict[str, object]) -> Path:
@@ -218,4 +310,95 @@ def _validation_db(tmp_path: Path, *, details: dict[str, object]) -> Path:
             details=json.dumps(details),
         )
     )
+    return db_path
+
+
+def _release_db(tmp_path: Path, *, target_commit: str) -> Path:
+    db_path = _validation_db(
+        tmp_path,
+        details={
+            "platform": "windows",
+            "status": "passed",
+            "reviewed": True,
+            "head_sha": target_commit,
+            "commands": [
+                "uv run --no-sync python -B -m codex_supervisor.cli --help",
+                "uv run --no-sync python -B scripts/verify.py --publication-ready",
+            ],
+            "environment": {"os": "Windows", "python": "3.14.5"},
+        },
+    )
+    store = initialize_planning_database(db_path)
+    store.record_ci_run_evidence(
+        CiRunEvidenceRecord(
+            progress_id="progress-ci-current",
+            plan_id="plan-release",
+            provider="github-actions",
+            run_id="12345",
+            run_url="https://github.com/owner/repo/actions/runs/12345",
+            head_sha=target_commit,
+            status="completed",
+            conclusion="success",
+            workflow="Verify",
+        )
+    )
+    for event_type, details in (
+        (
+            "publication_ready_verification_recorded",
+            {
+                "status": "passed",
+                "head_sha": target_commit,
+                "commands": ["uv run --no-sync python -B scripts/verify.py --publication-ready"],
+            },
+        ),
+        (
+            "live_worker_smoke_recorded",
+            {
+                "status": "passed",
+                "head_sha": target_commit,
+                "live": True,
+                "commands": [
+                    "uv run --no-sync python -B -m codex_supervisor.cli story-loop-run-once"
+                ],
+            },
+        ),
+        (
+            "live_review_smoke_recorded",
+            {
+                "status": "passed",
+                "head_sha": target_commit,
+                "live": True,
+                "commands": ["uv run --no-sync python -B -m codex_supervisor.cli review-run-live"],
+            },
+        ),
+        (
+            "mutating_mcp_smoke_recorded",
+            {
+                "status": "passed",
+                "head_sha": target_commit,
+                "mutating": True,
+                "commands": ["codex-supervisor MCP task_upsert smoke"],
+            },
+        ),
+        (
+            "real_project_bootstrap_smoke_recorded",
+            {
+                "status": "passed",
+                "head_sha": target_commit,
+                "writes_files": True,
+                "commands": [
+                    "uv run --no-sync python -B -m codex_supervisor.cli spawned-project-apply"
+                ],
+            },
+        ),
+    ):
+        store.add_plan_progress(
+            PlanProgressRecord(
+                progress_id=f"progress-{event_type}",
+                plan_id="plan-release",
+                event_type=event_type,
+                summary=f"Recorded {event_type}.",
+                details=json.dumps(details),
+            )
+        )
     return db_path

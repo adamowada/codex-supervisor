@@ -17,10 +17,16 @@ def test_factory_loop_demo_runs_all_stages_and_cleans_workspace(tmp_path: Path) 
     report = run_factory_loop_demo(workspace_root=tmp_path)
 
     assert report.success is True
+    assert report.release_evidence is False
     assert report.cleanup_performed is True
     assert report.workspace_retained is False
     assert tuple(stage.name for stage in report.stages) == DEMO_STAGE_NAMES
     assert {stage.status for stage in report.stages} == {"pass"}
+    assert any(
+        "not v1 release readiness evidence" in evidence
+        for stage in report.stages
+        for evidence in stage.evidence
+    )
     assert not (tmp_path / DEMO_PROJECT_NAME).exists()
 
 
@@ -34,7 +40,7 @@ def test_factory_loop_demo_can_keep_workspace_for_inspection(tmp_path: Path) -> 
     assert (
         (project_root / "README.md")
         .read_text(encoding="utf-8")
-        .endswith("Fake worker completed.\n")
+        .endswith("Deterministic local backend completed.\n")
     )
     assert (project_root / "plans" / "planning.sqlite3").exists()
     assert (project_root / "artifacts").exists()
@@ -55,6 +61,7 @@ def test_cli_factory_loop_demo_emits_json_and_cleans_workspace(
     payload = json.loads(capsys.readouterr().out)
 
     assert payload["success"] is True
+    assert payload["release_evidence"] is False
     assert payload["project_name"] == DEMO_PROJECT_NAME
     assert payload["cleanup_performed"] is True
     assert [stage["name"] for stage in payload["stages"]] == list(DEMO_STAGE_NAMES)

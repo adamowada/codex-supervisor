@@ -27,14 +27,14 @@ DEMO_PROJECT_NAME = "factory-loop-demo-project"
 DEMO_PLAN_ID = "plan-demo-factory-loop"
 DEMO_TASK_ID = "task-demo-update-readme"
 DEMO_WORKER_RUN_ID = "worker-run-demo-update-readme"
-DEMO_ACCEPTANCE = "README.md is updated by the fake worker."
+DEMO_ACCEPTANCE = "README.md is updated by the deterministic local backend."
 DEMO_VERIFICATION_COMMAND = "python -B -m pytest -q -p no:cacheprovider"
 DEMO_STAGE_NAMES = (
     "temporary_project_setup",
     "planning_sqlite_initialization",
     "task_shaping_and_claiming",
     "worktree_preparation",
-    "fake_worker_execution",
+    "local_backend_execution",
     "changed_path_validation",
     "worker_result_ingestion",
     "review_progress_recording",
@@ -55,6 +55,7 @@ class FactoryLoopDemoStage:
 class FactoryLoopDemoReport:
     success: bool
     project_name: str
+    release_evidence: bool
     cleanup_performed: bool
     workspace_retained: bool
     completed_stages: int
@@ -132,7 +133,7 @@ def _run_factory_loop_demo_in_workspace(
             WorkerRunRecord(
                 worker_run_id=DEMO_WORKER_RUN_ID,
                 task_id=DEMO_TASK_ID,
-                backend="fake",
+                backend="local-demo",
                 status="running",
             )
         )
@@ -162,8 +163,8 @@ def _run_factory_loop_demo_in_workspace(
         )
         stages.append(
             _stage(
-                "fake_worker_execution",
-                f"fake backend completed with status {result.launch_result.status}",
+                "local_backend_execution",
+                f"deterministic local backend completed with status {result.launch_result.status}",
             )
         )
         stages.append(
@@ -190,11 +191,19 @@ def _run_factory_loop_demo_in_workspace(
                 progress_id="progress-demo-review",
                 plan_id=DEMO_PLAN_ID,
                 event_type="review_result_recorded",
-                summary="Recorded zero-finding fake review for factory-loop demo.",
+                summary=(
+                    "Recorded zero-finding local review marker for factory-loop demo; "
+                    "not v1 release readiness evidence."
+                ),
                 details=json.dumps({"finding_counts": {"total": 0}}),
             )
         )
-        stages.append(_stage("review_progress_recording", "recorded zero-finding review"))
+        stages.append(
+            _stage(
+                "review_progress_recording",
+                "recorded zero-finding local review marker; not v1 release readiness evidence",
+            )
+        )
 
         store.add_plan_progress(
             PlanProgressRecord(
@@ -205,6 +214,7 @@ def _run_factory_loop_demo_in_workspace(
                 details=json.dumps(
                     {
                         "project": DEMO_PROJECT_NAME,
+                        "release_evidence": False,
                         "worker_run_id": DEMO_WORKER_RUN_ID,
                         "changed_files": list(result.changed_files),
                         "stages": list(DEMO_STAGE_NAMES),
@@ -214,7 +224,10 @@ def _run_factory_loop_demo_in_workspace(
             )
         )
         stages.append(
-            _stage("factory_loop_progress_recording", "recorded factory-loop demo progress")
+            _stage(
+                "factory_loop_progress_recording",
+                "recorded factory-loop demo progress; not v1 release readiness evidence",
+            )
         )
 
         store.update_plan_acceptance_criterion_status("criterion-demo-readme", "completed")
@@ -235,6 +248,7 @@ def _run_factory_loop_demo_in_workspace(
     return FactoryLoopDemoReport(
         success=all(stage.status == "pass" for stage in stages),
         project_name=DEMO_PROJECT_NAME,
+        release_evidence=False,
         cleanup_performed=not keep_workspace,
         workspace_retained=keep_workspace,
         completed_stages=len(stages),
@@ -247,13 +261,13 @@ def _demo_task() -> SupervisorTaskRecord:
         task_id=DEMO_TASK_ID,
         plan_id=DEMO_PLAN_ID,
         title="Update demo README",
-        goal="Use a fake worker to update README.md.",
+        goal="Use a deterministic local backend to update README.md.",
         task_type="AFK",
         status="running",
         acceptance_criteria=[DEMO_ACCEPTANCE],
         verification_commands=[DEMO_VERIFICATION_COMMAND],
         allowed_paths=["README.md"],
-        worker_backend="fake",
+        worker_backend="local-demo",
         review_required=True,
     )
 
@@ -265,10 +279,13 @@ def _stage(name: str, evidence: str) -> FactoryLoopDemoStage:
 class _FactoryLoopDemoBackend:
     def run(self, request: WorkerLaunchRequest) -> WorkerLaunchResult:
         readme = request.repo_root / "README.md"
-        readme.write_text("# Factory Loop Demo\n\nFake worker completed.\n", encoding="utf-8")
+        readme.write_text(
+            "# Factory Loop Demo\n\nDeterministic local backend completed.\n",
+            encoding="utf-8",
+        )
         _write_text(request.repo_root, request.diff_summary_path, "README.md\n")
         _write_text(request.repo_root, request.jsonl_path, '{"event":"assistant.step"}\n')
-        _write_text(request.repo_root, request.stdout_path, "fake worker stdout\n")
+        _write_text(request.repo_root, request.stdout_path, "local backend stdout\n")
         _write_text(request.repo_root, request.stderr_path, "")
         _write_text(request.repo_root, request.final_message_path, "Factory demo complete.\n")
         _write_text(
@@ -290,7 +307,7 @@ class _FactoryLoopDemoBackend:
             stderr_path=request.stderr_path,
             final_message_path=request.final_message_path,
             diff_summary_path=request.diff_summary_path,
-            metadata={"backend": "factory_loop_demo_fake"},
+            metadata={"backend": "factory_loop_demo_local"},
         )
 
 
@@ -298,25 +315,28 @@ def _worker_result_payload() -> dict[str, object]:
     return {
         "worker_run_id": DEMO_WORKER_RUN_ID,
         "status": "completed",
-        "summary": "Fake worker updated README.md.",
+        "summary": "Deterministic local backend updated README.md.",
         "changed_files": ["README.md"],
         "tests_run": [
             {
                 "command": DEMO_VERIFICATION_COMMAND,
                 "exit_code": 0,
-                "summary": "fake verification passed",
+                "summary": "local verification passed",
             }
         ],
         "acceptance_results": {
             DEMO_ACCEPTANCE: {
                 "status": "passed",
-                "evidence": "README.md contains the fake worker completion text.",
+                "evidence": "README.md contains the deterministic local completion text.",
             }
         },
         "risks": [],
         "follow_up_tasks": [],
         "artifacts": ["README.md"],
-        "completion_notes": "Factory-loop demo completed with fake worker evidence.",
+        "completion_notes": (
+            "Factory-loop demo completed with local-only evidence; not v1 release readiness "
+            "evidence."
+        ),
     }
 
 

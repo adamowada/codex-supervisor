@@ -2,8 +2,9 @@
 
 - `claim`: The six-lane v1 review found that the tree had strong planning, result, hygiene, and
   source-lock foundations, but v1 was not yet live-operational. The live worker, MCP mutation, and
-  real project bootstrap/adapters, and live review integrity slices have now landed; release
-  evidence, automation apply, and security/public-hygiene hardening remain unresolved blockers.
+  real project bootstrap/adapters, live review integrity, and release-evidence readiness slices
+  have now landed; automation apply, current live evidence capture, and security/public-hygiene
+  hardening remain unresolved blockers.
 - `confidence`: confirmed
 - `evidence`: `plans/planning.sqlite3` plan `plan-v1-live-operational-hardening`, progress
   `progress-v1-six-lane-review-digested-20260525`, six read-only explorer reports, and the local
@@ -12,8 +13,7 @@
   adapters, spawned-project bootstrap, review routing, release readiness, security, and public
   hygiene.
 - `supersedes`: none
-- `next action`: Continue with current release evidence, security/public-hygiene, and final
-  completion-audit tasks.
+- `next action`: Continue with security/public-hygiene and final completion-audit/live-smoke tasks.
 
 ## Normalized Finding Clusters
 
@@ -31,8 +31,10 @@
 - `review`: live reviewer launch, review-required completion enforcement, prevalidated repair
   routing, and repair-task collision equivalence checks are now implemented. Keep review evidence
   tied to explicit `review_enforcement_enabled` markers so legacy planning history remains readable.
-- `release`: release readiness can pass stale CI/Windows evidence and shallow dry-run/demo surfaces
-  instead of current live worker, review, MCP, and real bootstrap smoke evidence.
+- `release`: release readiness now targets a commit, defaults to current `HEAD`, rejects stale
+  CI/Windows evidence, requires current publication-ready verification plus live worker/review,
+  mutating MCP, and real bootstrap smoke evidence, and explicitly excludes the factory-loop demo as
+  v1 release evidence.
 - `security-hygiene`: worker result ingestion preserves unknown raw payload fields, Codex-state
   reconciliation can link phantom artifacts, and CI action pinning needs a deliberate supply-chain
   posture.
@@ -104,5 +106,22 @@
 - Planning integrity now enforces review evidence for completed `review_required` tasks after a
   plan records `review_enforcement_enabled`; this avoids rewriting legacy history while guarding
   future completions.
-- Remaining v1 hardening clusters are still real blockers until their tasks land: current release
-  evidence, automation apply, and security/public-hygiene follow-ups outside the review slice.
+- Remaining v1 hardening clusters are still real blockers until their tasks land: current live
+  evidence capture, automation apply, and security/public-hygiene follow-ups outside the review
+  slice.
+
+## Release Evidence Slice Update
+
+- `task-v1-release-current-live-evidence` makes `release-readiness` resolve a target commit
+  (defaulting to `git rev-parse HEAD`) and reject stale `ci_run_recorded` and
+  `release_validation_recorded` rows whose `head_sha` does not match that target.
+- Release readiness now requires current-commit evidence rows for successful CI, Windows
+  validation, publication-ready verification, live worker smoke, live review smoke, mutating MCP
+  smoke, and real project bootstrap smoke before it can report ready.
+- The spawned-project readiness check now verifies the real `spawned-project-apply` surface, not
+  only dry-run classify/propose paths.
+- `factory-loop-demo` remains a deterministic local exercise but is marked `release_evidence=false`
+  and its progress/evidence strings say it is not v1 release-readiness evidence.
+- Remaining v1 hardening clusters are still real blockers until their tasks land: current live
+  evidence capture, automation apply, and security/public-hygiene follow-ups outside the release
+  readiness slice.

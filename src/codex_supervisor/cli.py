@@ -226,6 +226,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     release_readiness_parser.add_argument("--repo-root", type=Path, default=None)
     release_readiness_parser.add_argument("--planning-db", type=Path, default=None)
+    release_readiness_parser.add_argument("--commit", default=None)
     release_readiness_parser.add_argument("--json", action="store_true", default=False)
 
     factory_demo_parser = subparsers.add_parser(
@@ -940,6 +941,7 @@ def main(argv: list[str] | None = None) -> int:
         release_report = build_release_readiness_report(
             args.repo_root,
             planning_db_path=args.planning_db,
+            target_commit=args.commit,
         )
         if args.json:
             _print_json(release_report)
@@ -2702,6 +2704,7 @@ def _print_spawned_project_apply_result(result: SpawnedProjectScaffoldApplyResul
 
 def _print_release_readiness_report(report: ReleaseReadinessReport) -> None:
     print(f"repo_root: {report.repo_root}")
+    print(f"target_commit: {report.target_commit}")
     print(f"release_ready: {report.ready}")
     print(f"passing_checks: {report.passing_checks}")
     print(f"gap_checks: {report.gap_checks}")
@@ -2717,6 +2720,7 @@ def _print_release_readiness_report(report: ReleaseReadinessReport) -> None:
 def _print_factory_loop_demo_report(report: FactoryLoopDemoReport) -> None:
     print(f"success: {report.success}")
     print(f"project_name: {report.project_name}")
+    print(f"release_evidence: {report.release_evidence}")
     print(f"cleanup_performed: {report.cleanup_performed}")
     print(f"workspace_retained: {report.workspace_retained}")
     print(f"completed_stages: {report.completed_stages}")

@@ -3,22 +3,31 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from codex_supervisor.planning import open_existing_planning_database
+from codex_supervisor.planning import PlanProgressRecord, open_existing_planning_database
 
 RELEASE_READINESS_SECTIONS = (
     "cli",
     "mcp",
     "plugin",
     "project_scaffold",
+    "ci",
+    "live_evidence",
     "verification",
     "documentation",
     "os_validation",
 )
 RELEASE_VALIDATION_EVENT_TYPE = "release_validation_recorded"
+CI_RUN_EVENT_TYPE = "ci_run_recorded"
+PUBLICATION_READY_EVENT_TYPE = "publication_ready_verification_recorded"
+LIVE_WORKER_SMOKE_EVENT_TYPE = "live_worker_smoke_recorded"
+LIVE_REVIEW_SMOKE_EVENT_TYPE = "live_review_smoke_recorded"
+MUTATING_MCP_SMOKE_EVENT_TYPE = "mutating_mcp_smoke_recorded"
+REAL_PROJECT_BOOTSTRAP_SMOKE_EVENT_TYPE = "real_project_bootstrap_smoke_recorded"
 
 
 @dataclass(frozen=True)
@@ -33,6 +42,7 @@ class ReleaseReadinessCheck:
 @dataclass(frozen=True)
 class ReleaseReadinessReport:
     repo_root: str
+    target_commit: str | None
     ready: bool
     checks: tuple[ReleaseReadinessCheck, ...]
     passing_checks: int
@@ -50,26 +60,50 @@ def build_release_readiness_report(
     repo_root: Path | None = None,
     *,
     planning_db_path: Path | None = None,
+    target_commit: str | None = None,
 ) -> ReleaseReadinessReport:
     """Inspect repo-owned release evidence without running checks or contacting remotes."""
 
     root = (repo_root or Path.cwd()).resolve()
     planning_path = planning_db_path or root / "plans" / "planning.sqlite3"
+    resolved_target_commit = _resolve_target_commit(root, target_commit)
+    progress_events = _planning_progress(planning_path)
     checks = (
         _cli_check(root),
         _mcp_check(root),
         _plugin_check(root),
         _project_scaffold_check(root),
+        _project_scaffold_apply_check(root),
+        _current_ci_check(progress_events, resolved_target_commit, planning_path),
         _publication_verification_check(root),
+        _current_publication_verification_check(
+            progress_events,
+            resolved_target_commit,
+            planning_path,
+        ),
         _integrity_gate_check(root),
         _documentation_check(root),
         _linux_ci_check(root),
-        _external_os_validation_check(root, planning_path),
+        _external_os_validation_check(
+            root,
+            planning_path,
+            progress_events,
+            resolved_target_commit,
+        ),
+        _live_worker_smoke_check(progress_events, resolved_target_commit, planning_path),
+        _live_review_smoke_check(progress_events, resolved_target_commit, planning_path),
+        _mutating_mcp_smoke_check(progress_events, resolved_target_commit, planning_path),
+        _real_project_bootstrap_smoke_check(
+            progress_events,
+            resolved_target_commit,
+            planning_path,
+        ),
     )
     passing_checks = sum(1 for check in checks if check.status == "pass")
     gap_checks = sum(1 for check in checks if check.status == "gap")
     return ReleaseReadinessReport(
         repo_root=str(root),
+        target_commit=resolved_target_commit,
         ready=gap_checks == 0,
         checks=checks,
         passing_checks=passing_checks,
@@ -148,6 +182,32 @@ def _project_scaffold_check(root: Path) -> ReleaseReadinessCheck:
             _evidence("CLI exposes spawned-project-propose", has_propose),
         ),
         next_action="Restore spawned-project classifier/proposal model, CLI commands, and tests.",
+    )
+
+
+def _project_scaffold_apply_check(root: Path) -> ReleaseReadinessCheck:
+    cli = _text(root / "src" / "codex_supervisor" / "cli.py")
+    spawned_projects = _text(root / "src" / "codex_supervisor" / "spawned_projects.py")
+    tests = _text(root / "tests" / "test_spawned_projects.py")
+    has_apply_cli = "spawned-project-apply" in cli
+    has_apply_service = "def apply_spawned_project_scaffold" in spawned_projects
+    has_apply_tests = "spawned_project_apply" in tests
+    passed = has_apply_cli and has_apply_service and has_apply_tests
+    return _check(
+        section="project_scaffold",
+        name="Spawned-project apply surface",
+        passed=passed,
+        evidence=(
+            _evidence("CLI exposes spawned-project-apply", has_apply_cli),
+            _evidence(
+                "src/codex_supervisor/spawned_projects.py writes selected scaffolds",
+                has_apply_service,
+            ),
+            _evidence("tests cover spawned-project apply behavior", has_apply_tests),
+        ),
+        next_action=(
+            "Restore the spawned-project apply command, scaffold writer, and apply tests."
+        ),
     )
 
 
@@ -248,8 +308,88 @@ def _linux_ci_check(root: Path) -> ReleaseReadinessCheck:
     )
 
 
-def _external_os_validation_check(root: Path, planning_db_path: Path) -> ReleaseReadinessCheck:
-    evidence = _windows_validation_evidence(planning_db_path)
+def _current_ci_check(
+    progress_events: tuple[PlanProgressRecord, ...],
+    target_commit: str | None,
+    planning_db_path: Path,
+) -> ReleaseReadinessCheck:
+    if target_commit is None:
+        return _missing_target_commit_check(
+            section="ci",
+            name="Current successful CI for target commit",
+        )
+    matching, stale = _matching_progress_events(
+        progress_events,
+        event_type=CI_RUN_EVENT_TYPE,
+        target_commit=target_commit,
+    )
+    valid = []
+    for progress, details in matching:
+        status = str(details.get("status", "")).casefold()
+        conclusion = str(details.get("conclusion", "")).casefold()
+        if status == "completed" and conclusion == "success":
+            valid.append((progress, details))
+    if valid:
+        progress, details = valid[0]
+        run_url = details.get("run_url")
+        evidence = [
+            f"present: {CI_RUN_EVENT_TYPE} {progress.progress_id} records successful CI "
+            f"for {target_commit}",
+        ]
+        if isinstance(run_url, str) and run_url.strip():
+            evidence.append(f"present: run_url: {run_url}")
+        return _check(
+            section="ci",
+            name="Current successful CI for target commit",
+            passed=True,
+            evidence=tuple(evidence),
+            next_action="Record successful GitHub Actions evidence for the target commit.",
+        )
+    return _check(
+        section="ci",
+        name="Current successful CI for target commit",
+        passed=False,
+        evidence=_current_evidence_gap(
+            planning_db_path,
+            event_type=CI_RUN_EVENT_TYPE,
+            target_commit=target_commit,
+            stale=stale,
+            current_count=len(matching),
+            missing=(
+                "missing: ci_run_recorded progress with matching head_sha, "
+                "status=completed, and conclusion=success"
+            ),
+        ),
+        next_action="Record successful GitHub Actions evidence for the target commit.",
+    )
+
+
+def _current_publication_verification_check(
+    progress_events: tuple[PlanProgressRecord, ...],
+    target_commit: str | None,
+    planning_db_path: Path,
+) -> ReleaseReadinessCheck:
+    return _release_progress_evidence_check(
+        progress_events,
+        target_commit,
+        planning_db_path,
+        section="verification",
+        name="Current publication-ready verification evidence",
+        event_type=PUBLICATION_READY_EVENT_TYPE,
+        command_fragment="scripts/verify.py --publication-ready",
+        next_action=(
+            "Record publication_ready_verification_recorded evidence for the target commit."
+        ),
+    )
+
+
+def _external_os_validation_check(
+    root: Path,
+    planning_db_path: Path,
+    progress_events: tuple[PlanProgressRecord, ...],
+    target_commit: str | None,
+) -> ReleaseReadinessCheck:
+    evidence = _windows_validation_evidence(progress_events, target_commit)
     if evidence is not None:
         return _check(
             section="os_validation",
@@ -266,24 +406,102 @@ def _external_os_validation_check(root: Path, planning_db_path: Path) -> Release
                 "tagging release."
             ),
         )
+    evidence_items: tuple[str, ...]
+    if target_commit is None:
+        evidence_items = ("missing: target commit could not be resolved",)
+    else:
+        evidence_items = _windows_validation_gap_evidence(
+            root,
+            planning_db_path,
+            progress_events,
+            target_commit,
+        )
     return _check(
         section="os_validation",
         name="External Windows install validation evidence",
         passed=False,
-        evidence=_windows_validation_gap_evidence(root, planning_db_path),
+        evidence=evidence_items,
         next_action=(
             "Run and record a bounded Windows install validation artifact before tagging release."
         ),
     )
 
 
-def _windows_validation_evidence(planning_db_path: Path) -> ReleaseValidationEvidence | None:
-    if not planning_db_path.exists():
-        return None
-    try:
-        store = open_existing_planning_database(planning_db_path, read_only=True)
-        progress_events = store.list_plan_progress()
-    except Exception:
+def _live_worker_smoke_check(
+    progress_events: tuple[PlanProgressRecord, ...],
+    target_commit: str | None,
+    planning_db_path: Path,
+) -> ReleaseReadinessCheck:
+    return _release_progress_evidence_check(
+        progress_events,
+        target_commit,
+        planning_db_path,
+        section="live_evidence",
+        name="Live worker smoke evidence",
+        event_type=LIVE_WORKER_SMOKE_EVENT_TYPE,
+        required_truthy=("live",),
+        next_action="Record live_worker_smoke_recorded evidence for the target commit.",
+    )
+
+
+def _live_review_smoke_check(
+    progress_events: tuple[PlanProgressRecord, ...],
+    target_commit: str | None,
+    planning_db_path: Path,
+) -> ReleaseReadinessCheck:
+    return _release_progress_evidence_check(
+        progress_events,
+        target_commit,
+        planning_db_path,
+        section="live_evidence",
+        name="Live review smoke evidence",
+        event_type=LIVE_REVIEW_SMOKE_EVENT_TYPE,
+        required_truthy=("live",),
+        next_action="Record live_review_smoke_recorded evidence for the target commit.",
+    )
+
+
+def _mutating_mcp_smoke_check(
+    progress_events: tuple[PlanProgressRecord, ...],
+    target_commit: str | None,
+    planning_db_path: Path,
+) -> ReleaseReadinessCheck:
+    return _release_progress_evidence_check(
+        progress_events,
+        target_commit,
+        planning_db_path,
+        section="live_evidence",
+        name="Mutating MCP smoke evidence",
+        event_type=MUTATING_MCP_SMOKE_EVENT_TYPE,
+        required_truthy=("mutating",),
+        next_action="Record mutating_mcp_smoke_recorded evidence for the target commit.",
+    )
+
+
+def _real_project_bootstrap_smoke_check(
+    progress_events: tuple[PlanProgressRecord, ...],
+    target_commit: str | None,
+    planning_db_path: Path,
+) -> ReleaseReadinessCheck:
+    return _release_progress_evidence_check(
+        progress_events,
+        target_commit,
+        planning_db_path,
+        section="live_evidence",
+        name="Real project bootstrap smoke evidence",
+        event_type=REAL_PROJECT_BOOTSTRAP_SMOKE_EVENT_TYPE,
+        required_truthy=("writes_files",),
+        next_action=(
+            "Record real_project_bootstrap_smoke_recorded evidence for the target commit."
+        ),
+    )
+
+
+def _windows_validation_evidence(
+    progress_events: tuple[PlanProgressRecord, ...],
+    target_commit: str | None,
+) -> ReleaseValidationEvidence | None:
+    if target_commit is None:
         return None
     for progress in progress_events:
         if progress.event_type != RELEASE_VALIDATION_EVENT_TYPE:
@@ -293,7 +511,14 @@ def _windows_validation_evidence(planning_db_path: Path) -> ReleaseValidationEvi
         status = str(details.get("status", "")).casefold()
         reviewed = details.get("reviewed") is True
         commands = _string_tuple(details.get("commands"))
-        if platform != "windows" or status != "passed" or not reviewed or not commands:
+        head_sha = _details_head_sha(details)
+        if (
+            platform != "windows"
+            or status != "passed"
+            or not reviewed
+            or not commands
+            or head_sha != target_commit
+        ):
             continue
         return ReleaseValidationEvidence(
             progress_id=progress.progress_id,
@@ -303,17 +528,236 @@ def _windows_validation_evidence(planning_db_path: Path) -> ReleaseValidationEvi
     return None
 
 
-def _windows_validation_gap_evidence(root: Path, planning_db_path: Path) -> tuple[str, ...]:
+def _windows_validation_gap_evidence(
+    root: Path,
+    planning_db_path: Path,
+    progress_events: tuple[PlanProgressRecord, ...],
+    target_commit: str,
+) -> tuple[str, ...]:
     evidence = []
     if planning_db_path.exists():
         evidence.append(f"present: {_relative(root, planning_db_path)}")
     else:
         evidence.append(f"missing: {_relative(root, planning_db_path)}")
+    matching, stale = _matching_progress_events(
+        progress_events,
+        event_type=RELEASE_VALIDATION_EVENT_TYPE,
+        target_commit=target_commit,
+    )
+    evidence.extend(_stale_evidence(stale))
+    if matching:
+        evidence.append(
+            "missing: matching release_validation_recorded progress also needs "
+            "platform=windows, status=passed, reviewed=true, and at least one command"
+        )
     evidence.append(
         "missing: release_validation_recorded progress with platform=windows, status=passed, "
-        "reviewed=true, and at least one command"
+        f"reviewed=true, head_sha={target_commit}, and at least one command"
     )
     return tuple(evidence)
+
+
+def _release_progress_evidence_check(
+    progress_events: tuple[PlanProgressRecord, ...],
+    target_commit: str | None,
+    planning_db_path: Path,
+    *,
+    section: str,
+    name: str,
+    event_type: str,
+    next_action: str,
+    required_truthy: tuple[str, ...] = (),
+    command_fragment: str | None = None,
+) -> ReleaseReadinessCheck:
+    if target_commit is None:
+        return _missing_target_commit_check(section=section, name=name)
+    matching, stale = _matching_progress_events(
+        progress_events,
+        event_type=event_type,
+        target_commit=target_commit,
+    )
+    valid: list[tuple[PlanProgressRecord, dict[str, Any]]] = []
+    for progress, details in matching:
+        commands = _string_tuple(details.get("commands"))
+        if not _release_status_passed(details):
+            continue
+        if not commands:
+            continue
+        if command_fragment and not any(command_fragment in command for command in commands):
+            continue
+        if any(details.get(field_name) is not True for field_name in required_truthy):
+            continue
+        valid.append((progress, details))
+    if valid:
+        progress, details = valid[0]
+        commands = _string_tuple(details.get("commands"))
+        truthy_evidence = tuple(f"present: {field_name}=true" for field_name in required_truthy)
+        return _check(
+            section=section,
+            name=name,
+            passed=True,
+            evidence=(
+                f"present: {event_type} {progress.progress_id} records current evidence "
+                f"for {target_commit}",
+                *(f"present: command passed: {command}" for command in commands),
+                *truthy_evidence,
+            ),
+            next_action=next_action,
+        )
+    missing = (
+        f"missing: {event_type} progress with status=passed, head_sha={target_commit}, "
+        "and at least one command"
+    )
+    if command_fragment:
+        missing += f" including {command_fragment}"
+    for field_name in required_truthy:
+        missing += f", {field_name}=true"
+    return _check(
+        section=section,
+        name=name,
+        passed=False,
+        evidence=_current_evidence_gap(
+            planning_db_path,
+            event_type=event_type,
+            target_commit=target_commit,
+            stale=stale,
+            current_count=len(matching),
+            missing=missing,
+        ),
+        next_action=next_action,
+    )
+
+
+def _missing_target_commit_check(*, section: str, name: str) -> ReleaseReadinessCheck:
+    return _check(
+        section=section,
+        name=name,
+        passed=False,
+        evidence=("missing: target commit could not be resolved",),
+        next_action="Provide --commit or run release-readiness from a Git checkout.",
+    )
+
+
+def _current_evidence_gap(
+    planning_db_path: Path,
+    *,
+    event_type: str,
+    target_commit: str,
+    stale: tuple[tuple[PlanProgressRecord, str], ...],
+    current_count: int,
+    missing: str,
+) -> tuple[str, ...]:
+    evidence = []
+    db_label = planning_db_path.name or "planning database"
+    if planning_db_path.exists():
+        evidence.append(f"present: planning database {db_label}")
+    else:
+        evidence.append(f"missing: planning database {db_label}")
+    evidence.extend(_stale_evidence(stale))
+    if current_count:
+        evidence.append(
+            f"missing: {event_type} progress for {target_commit} did not satisfy "
+            "the release evidence schema"
+        )
+    evidence.append(missing)
+    return tuple(evidence)
+
+
+def _stale_evidence(
+    stale: tuple[tuple[PlanProgressRecord, str], ...],
+) -> tuple[str, ...]:
+    return tuple(
+        f"stale: {progress.event_type} {progress.progress_id} targets {head_sha}"
+        for progress, head_sha in stale
+    )
+
+
+def _matching_progress_events(
+    progress_events: tuple[PlanProgressRecord, ...],
+    *,
+    event_type: str,
+    target_commit: str,
+) -> tuple[
+    tuple[tuple[PlanProgressRecord, dict[str, Any]], ...],
+    tuple[tuple[PlanProgressRecord, str], ...],
+]:
+    matching: list[tuple[PlanProgressRecord, dict[str, Any]]] = []
+    stale: list[tuple[PlanProgressRecord, str]] = []
+    for progress in progress_events:
+        if progress.event_type != event_type:
+            continue
+        details = _json_object(progress.details)
+        head_sha = _details_head_sha(details)
+        if head_sha == target_commit:
+            matching.append((progress, details))
+        elif head_sha:
+            stale.append((progress, head_sha))
+    return tuple(matching), tuple(stale)
+
+
+def _release_status_passed(details: dict[str, Any]) -> bool:
+    return str(details.get("status", "")).casefold() in {
+        "pass",
+        "passed",
+        "success",
+        "succeeded",
+    }
+
+
+def _details_head_sha(details: dict[str, Any]) -> str | None:
+    for key in ("head_sha", "target_commit", "commit_sha"):
+        value = details.get(key)
+        if isinstance(value, str):
+            normalized = _normalize_commit(value)
+            if normalized is not None:
+                return normalized
+    environment = details.get("environment")
+    if isinstance(environment, dict):
+        value = environment.get("head_sha")
+        if isinstance(value, str):
+            return _normalize_commit(value)
+    return None
+
+
+def _planning_progress(planning_db_path: Path) -> tuple[PlanProgressRecord, ...]:
+    if not planning_db_path.exists():
+        return ()
+    try:
+        store = open_existing_planning_database(planning_db_path, read_only=True)
+        return store.list_plan_progress()
+    except Exception:
+        return ()
+
+
+def _resolve_target_commit(root: Path, target_commit: str | None) -> str | None:
+    if target_commit is not None:
+        return _normalize_commit(target_commit)
+    return _current_head(root)
+
+
+def _current_head(root: Path) -> str | None:
+    try:
+        result = subprocess.run(
+            ("git", "rev-parse", "HEAD"),
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    return _normalize_commit(result.stdout.strip())
+
+
+def _normalize_commit(value: str) -> str | None:
+    normalized = value.strip().casefold()
+    if len(normalized) != 40:
+        return None
+    if any(character not in "0123456789abcdef" for character in normalized):
+        return None
+    return normalized
 
 
 def _path_check(

@@ -328,3 +328,19 @@ same structured payload.
 
 Next action: when creating temporary JSON for planning CLI ingestion on Windows, use a no-BOM writer
 and rerun the ingest command before recording progress.
+
+## Planning Writer Helpers Must Opt Out Of Read-Only
+
+Confidence: confirmed.
+
+`open_existing_planning_database(...)` defaults to a read-only store. Inline typed-helper scripts are
+still the right escape hatch when CLI JSON quoting would be fragile, but writer scripts must pass
+`read_only=False` explicitly before calling upsert or progress methods.
+
+Evidence: Stage 15B shaping first used the typed planning store without `read_only=False` and SQLite
+rejected the milestone write as an attempt to write a read-only database. Re-running the same typed
+helper script with `open_existing_planning_database(default_planning_database_path(),
+read_only=False)` created the milestone, criteria, task, and shaping progress correctly.
+
+Next action: when using inline Python for planning mutations, import `default_planning_database_path`
+and open the store with `read_only=False`; reserve the default for orientation and audits.

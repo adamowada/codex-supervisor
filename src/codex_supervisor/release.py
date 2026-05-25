@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+from codex_supervisor.planning import open_existing_planning_database
 
 RELEASE_READINESS_SECTIONS = (
     "cli",
@@ -14,6 +18,7 @@ RELEASE_READINESS_SECTIONS = (
     "documentation",
     "os_validation",
 )
+RELEASE_VALIDATION_EVENT_TYPE = "release_validation_recorded"
 
 
 @dataclass(frozen=True)
@@ -34,10 +39,22 @@ class ReleaseReadinessReport:
     gap_checks: int
 
 
-def build_release_readiness_report(repo_root: Path | None = None) -> ReleaseReadinessReport:
+@dataclass(frozen=True)
+class ReleaseValidationEvidence:
+    progress_id: str
+    commands: tuple[str, ...]
+    environment: tuple[str, ...]
+
+
+def build_release_readiness_report(
+    repo_root: Path | None = None,
+    *,
+    planning_db_path: Path | None = None,
+) -> ReleaseReadinessReport:
     """Inspect repo-owned release evidence without running checks or contacting remotes."""
 
     root = (repo_root or Path.cwd()).resolve()
+    planning_path = planning_db_path or root / "plans" / "planning.sqlite3"
     checks = (
         _cli_check(root),
         _mcp_check(root),
@@ -47,7 +64,7 @@ def build_release_readiness_report(repo_root: Path | None = None) -> ReleaseRead
         _integrity_gate_check(root),
         _documentation_check(root),
         _linux_ci_check(root),
-        _external_os_validation_check(root),
+        _external_os_validation_check(root, planning_path),
     )
     passing_checks = sum(1 for check in checks if check.status == "pass")
     gap_checks = sum(1 for check in checks if check.status == "gap")
@@ -231,16 +248,72 @@ def _linux_ci_check(root: Path) -> ReleaseReadinessCheck:
     )
 
 
-def _external_os_validation_check(root: Path) -> ReleaseReadinessCheck:
+def _external_os_validation_check(root: Path, planning_db_path: Path) -> ReleaseReadinessCheck:
+    evidence = _windows_validation_evidence(planning_db_path)
+    if evidence is not None:
+        return _check(
+            section="os_validation",
+            name="External Windows install validation evidence",
+            passed=True,
+            evidence=(
+                f"present: {RELEASE_VALIDATION_EVENT_TYPE} {evidence.progress_id} "
+                "records reviewed Windows setup validation",
+                *(f"present: command passed: {command}" for command in evidence.commands),
+                *(f"present: environment: {fact}" for fact in evidence.environment),
+            ),
+            next_action=(
+                "Run and record a bounded Windows install validation artifact before "
+                "tagging release."
+            ),
+        )
     return _check(
         section="os_validation",
         name="External Windows install validation evidence",
         passed=False,
-        evidence=("No tracked external Windows install validation evidence is recorded.",),
+        evidence=_windows_validation_gap_evidence(root, planning_db_path),
         next_action=(
             "Run and record a bounded Windows install validation artifact before tagging release."
         ),
     )
+
+
+def _windows_validation_evidence(planning_db_path: Path) -> ReleaseValidationEvidence | None:
+    if not planning_db_path.exists():
+        return None
+    try:
+        store = open_existing_planning_database(planning_db_path, read_only=True)
+        progress_events = store.list_plan_progress()
+    except Exception:
+        return None
+    for progress in progress_events:
+        if progress.event_type != RELEASE_VALIDATION_EVENT_TYPE:
+            continue
+        details = _json_object(progress.details)
+        platform = str(details.get("platform", "")).casefold()
+        status = str(details.get("status", "")).casefold()
+        reviewed = details.get("reviewed") is True
+        commands = _string_tuple(details.get("commands"))
+        if platform != "windows" or status != "passed" or not reviewed or not commands:
+            continue
+        return ReleaseValidationEvidence(
+            progress_id=progress.progress_id,
+            commands=commands,
+            environment=_environment_facts(details.get("environment")),
+        )
+    return None
+
+
+def _windows_validation_gap_evidence(root: Path, planning_db_path: Path) -> tuple[str, ...]:
+    evidence = []
+    if planning_db_path.exists():
+        evidence.append(f"present: {_relative(root, planning_db_path)}")
+    else:
+        evidence.append(f"missing: {_relative(root, planning_db_path)}")
+    evidence.append(
+        "missing: release_validation_recorded progress with platform=windows, status=passed, "
+        "reviewed=true, and at least one command"
+    )
+    return tuple(evidence)
 
 
 def _path_check(
@@ -287,6 +360,37 @@ def _check(
 def _evidence(description: str, present: bool) -> str:
     prefix = "present" if present else "missing"
     return f"{prefix}: {description}"
+
+
+def _json_object(value: str | None) -> dict[str, Any]:
+    if not value:
+        return {}
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    if isinstance(payload, dict):
+        return payload
+    return {}
+
+
+def _string_tuple(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    strings = tuple(item for item in value if isinstance(item, str) and item.strip())
+    if len(strings) != len(value):
+        return ()
+    return strings
+
+
+def _environment_facts(value: object) -> tuple[str, ...]:
+    if not isinstance(value, dict):
+        return ()
+    facts = []
+    for key, item in sorted(value.items()):
+        if isinstance(key, str) and isinstance(item, str) and item.strip():
+            facts.append(f"{key}={item}")
+    return tuple(facts)
 
 
 def _text(path: Path) -> str:

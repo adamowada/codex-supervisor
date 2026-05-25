@@ -208,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Dry-run release readiness audit from repo-owned evidence",
     )
     release_readiness_parser.add_argument("--repo-root", type=Path, default=None)
+    release_readiness_parser.add_argument("--planning-db", type=Path, default=None)
     release_readiness_parser.add_argument("--json", action="store_true", default=False)
 
     list_parser = subparsers.add_parser("plan-list", help="List plans")
@@ -839,7 +840,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "release-readiness":
-        release_report = build_release_readiness_report(args.repo_root)
+        release_report = build_release_readiness_report(
+            args.repo_root,
+            planning_db_path=args.planning_db,
+        )
         if args.json:
             _print_json(release_report)
         else:

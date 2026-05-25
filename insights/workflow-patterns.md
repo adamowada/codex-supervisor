@@ -187,6 +187,24 @@ indexed blobs, matching the CI posture the workflow will use after publication.
 Next action: for future CI or release workflow slices, run publication-ready verification only after
 the intended public files are staged, and prefer locked dependency setup inside CI workflows.
 
+## CI Planning Integrity Needs Reachable Commit Links
+
+Confidence: confirmed.
+
+Planning integrity checks that validate DB commit links depend on the local git object database. A
+CI checkout with `fetch-depth: 1` can pass tests, lint, typecheck, and public hygiene, then fail
+planning integrity because historical commits linked from `plans/planning.sqlite3` are not present.
+For publication-ready CI, fetch enough history for commit-link validation instead of deleting
+historical links or weakening the integrity rule.
+
+Evidence: The Stage 13B post-repair GitHub Actions `Verify` run passed all 441 tests on Linux plus
+ruff, formatting, mypy, CLI help, file-purpose, and public hygiene. It then failed
+`scripts/check_planning_integrity.py` with missing historical commit links because the workflow used
+the default shallow checkout.
+
+Next action: when CI planning integrity reports missing git commits, inspect checkout depth before
+changing planning data or integrity semantics.
+
 ## Cross-Platform Adapters Normalize Before Resolving
 
 Confidence: confirmed.

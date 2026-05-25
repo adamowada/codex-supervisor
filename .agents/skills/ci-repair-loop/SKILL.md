@@ -16,6 +16,9 @@ summary, likely class, and proposed bounded repair loop only.
 3. Summarize the failing command or job, first bad frame, affected owner area, and whether the
    failure is likely infrastructure, dependency, flaky test, product regression, type/lint drift, or
    missing fixture/setup.
+   - If a publication-ready CI job passes tests and hygiene, then `scripts/check_planning_integrity.py`
+     reports missing commit links, inspect checkout depth and git history availability before
+     proposing planning data deletion or integrity-rule changes.
 4. Route actual repair to `failure-loop-triage`; use its richer failure classes and result contract.
 5. Re-run the failing command or job first after repair.
 6. Re-run the broader gate only after the narrow failure is resolved.

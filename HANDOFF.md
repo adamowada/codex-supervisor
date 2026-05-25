@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 06:37 PDT
+Last updated: 2026-05-25 06:56 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,11 +9,12 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `running`.
-- Current AFK task: `task-stage14a-spawned-project-tier-classifier`.
-- Current worker run: `worker-run-stage14a-spawned-project-tier-classifier-inline-20260525`.
+- Current queue state: `ready`.
+- Current AFK task: `task-stage14b-spawned-project-scaffold-proposal`.
+- Current worker run: `worker-run-stage14a-spawned-project-tier-classifier-inline-20260525`
+  completed.
 - Current plan: `plan-stage14-spawned-project-factory-sop`.
-- Latest completed task in planning: `task-stage13e-pr-issue-evidence-links`.
+- Latest completed task in planning: `task-stage14a-spawned-project-tier-classifier`.
 - Recent pushed commits:
   - `263354c5c3867be9baa370562225c737e0e63768` - Stage 13D CI evidence implementation.
   - `622c52f685c399e12c347d64ab5a0c4aafed17d9` - Stage 13D completion and Stage 13E shaping.
@@ -62,12 +63,15 @@ Publication-ready verification initially failed only because this handoff exceed
 snapshot line limit. This file was compacted, and publication-ready verification passed after
 staging.
 
-## Stage 14A Ready Task
+## Stage 14A Summary
 
 Task: `task-stage14a-spawned-project-tier-classifier`.
 Plan: `plan-stage14-spawned-project-factory-sop`.
 Worker run: `worker-run-stage14a-spawned-project-tier-classifier-inline-20260525`.
 Review required: yes, because it adds a new core model and CLI public surface.
+Review anchor: stage14a-review.
+Review result anchor: stage14a-review-result.
+Summary anchor: stage14a-summary.
 
 Goal: add a deterministic, credential-free spawned-project scaffold recommendation model and CLI
 dry-run command so `codex-supervisor` can choose SOP tiers for prototypes versus
@@ -81,15 +85,41 @@ Stop instead of guessing if the slice requires a real external project, user pro
 policy, a new verification script beyond command-safety scope, or repeated unknown
 publication-ready failure.
 
-## Next Action
+Implemented locally:
 
-Implement `task-stage14a-spawned-project-tier-classifier` as the current AFK Story Loop slice. Use
-its planning SQLite task contract as authority and run:
+- Added `src/codex_supervisor/spawned_projects.py` with typed `SpawnedProjectBrief` and
+  `SpawnedProjectRecommendation` contracts plus deterministic tier recommendation.
+- Added `spawned-project-classify` CLI dry-run output for prototype, base, supervisor-managed,
+  publication-ready, durable-learning, repo-local skill, and source-study recommendations.
+- Added `tests/test_spawned_projects.py` and file-purpose entries for the new public files.
+- Review `review-stage14a-spawned-project-tier-classifier-20260525` found one accepted P2
+  source-of-truth drift: durable learning must not imply empty skill/source-study surfaces. The
+  repair split durable-learning insight files from repo-local skill and source-study files.
+- Updated `insights/workflow-patterns.md` with the optional-tier trigger lesson.
+
+Verification passed locally:
 
 ```sh
 uv run --no-sync python -B -m pytest tests/test_spawned_projects.py tests/test_file_justification.py -q -p no:cacheprovider
-uv run --no-sync python -B scripts/check_planning_integrity.py
-uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
 uv run --no-sync python -B scripts/verify.py
+```
+
+## Stage 14B Ready Task
+
+Task: `task-stage14b-spawned-project-scaffold-proposal`.
+Goal: extend the Stage 14A classifier into deterministic dry-run scaffold proposals with ordered
+file actions, planning/source-lock/verification guidance, insights/skill/source-study guidance, and
+first AFK task guidance, without writing external project files.
+
+Allowed paths are the Stage 14A implementation surfaces plus `plans/planning.sqlite3`, `HANDOFF.md`,
+and `insights/**`. Review is required because this expands spawned-project bootstrap CLI output and
+scaffold contract semantics.
+
+## Next Action
+
+ACP Stage 14A completion plus Stage 14B shaping, push, inspect remote CI, then claim and execute
+`task-stage14b-spawned-project-scaffold-proposal`.
+
+```sh
 uv run --no-sync python -B scripts/verify.py --publication-ready
 ```

@@ -104,6 +104,13 @@ from codex_supervisor.skill_promotion import (
     SkillPromotionProposal,
     validate_skill_promotion_payload,
 )
+from codex_supervisor.spawned_projects import (
+    PROJECT_COMPLEXITIES,
+    TRUST_POLICIES,
+    SpawnedProjectBrief,
+    SpawnedProjectRecommendation,
+    recommend_spawned_project_scaffold,
+)
 from codex_supervisor.story_loop import (
     build_story_loop_status,
     record_story_loop_progress,
@@ -177,6 +184,35 @@ def main(argv: list[str] | None = None) -> int:
         help="Write the generated task seeds to planning SQLite. Omit for dry-run output.",
     )
     project_seed_parser.add_argument("--json", action="store_true", default=False)
+
+    spawned_classify_parser = subparsers.add_parser(
+        "spawned-project-classify",
+        help="Dry-run spawned project scaffold tier recommendation",
+    )
+    spawned_classify_parser.add_argument("--name", required=True)
+    spawned_classify_parser.add_argument(
+        "--complexity",
+        choices=sorted(PROJECT_COMPLEXITIES),
+        default="standard",
+    )
+    spawned_classify_parser.add_argument(
+        "--trust-policy",
+        choices=sorted(TRUST_POLICIES),
+        default="local_trusted",
+    )
+    spawned_classify_parser.add_argument(
+        "--production-intended",
+        action="store_true",
+        default=False,
+    )
+    spawned_classify_parser.add_argument("--public-or-shared", action="store_true", default=False)
+    spawned_classify_parser.add_argument("--unattended-workers", action="store_true", default=False)
+    spawned_classify_parser.add_argument("--durable-queue", action="store_true", default=False)
+    spawned_classify_parser.add_argument("--protected-docs", action="store_true", default=False)
+    spawned_classify_parser.add_argument("--durable-learning", action="store_true", default=False)
+    spawned_classify_parser.add_argument("--repo-local-skills", action="store_true", default=False)
+    spawned_classify_parser.add_argument("--source-study", action="store_true", default=False)
+    spawned_classify_parser.add_argument("--json", action="store_true", default=False)
 
     list_parser = subparsers.add_parser("plan-list", help="List plans")
     list_parser.add_argument("--path", type=Path, default=None)
@@ -788,6 +824,28 @@ def main(argv: list[str] | None = None) -> int:
             _print_json(seed_result)
         else:
             _print_project_task_seed_result(entry, task_seeds, applied=args.apply)
+        return 0
+
+    if args.command == "spawned-project-classify":
+        recommendation = recommend_spawned_project_scaffold(
+            SpawnedProjectBrief(
+                name=args.name,
+                complexity=args.complexity,
+                production_intended=args.production_intended,
+                public_or_shared=args.public_or_shared,
+                unattended_workers=args.unattended_workers,
+                durable_queue=args.durable_queue,
+                protected_docs=args.protected_docs,
+                durable_learning=args.durable_learning,
+                repo_local_skills=args.repo_local_skills,
+                source_study=args.source_study,
+                trust_policy=args.trust_policy,
+            )
+        )
+        if args.json:
+            _print_json(recommendation)
+        else:
+            _print_spawned_project_recommendation(recommendation)
         return 0
 
     if args.command == "codex-state-inventory":
@@ -2396,6 +2454,19 @@ def _print_project_task_seed_result(
     print(f"{action} project task seeds for {entry.project_id}:")
     for seed in task_seeds:
         print(f"- {seed.task_id}\t{seed.status}\t{seed.task_type}\t{seed.title}")
+
+
+def _print_spawned_project_recommendation(
+    recommendation: SpawnedProjectRecommendation,
+) -> None:
+    print(f"project: {recommendation.project_name}")
+    print(f"tiers: {', '.join(recommendation.tiers)}")
+    _print_json_list("required_files", recommendation.required_files)
+    _print_json_list("verification_commands", recommendation.verification_commands)
+    print(f"planning_guidance: {recommendation.planning_guidance}")
+    print(f"first_task_guidance: {recommendation.first_task_guidance}")
+    print(f"classification_reason: {recommendation.classification_reason}")
+    _print_json_list("warnings", recommendation.warnings)
 
 
 def _print_json(value: object) -> None:

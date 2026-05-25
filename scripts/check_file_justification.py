@@ -322,6 +322,9 @@ FILE_PURPOSES = {
     "src/codex_supervisor/review_repairs.py": FilePurpose(
         "accepted review finding repair task routing helpers", "pytest"
     ),
+    "src/codex_supervisor/spawned_projects.py": FilePurpose(
+        "spawned-project scaffold recommendation contracts", "pytest"
+    ),
     "src/codex_supervisor/story_loop.py": FilePurpose("Story Loop queue state machine", "pytest"),
     "src/codex_supervisor/worker_backends.py": FilePurpose(
         "worker backend protocol and fake backend", "pytest"
@@ -369,6 +372,9 @@ FILE_PURPOSES = {
     "tests/test_review_repairs.py": FilePurpose("review repair routing tests", "pytest"),
     "tests/test_skill_inventory.py": FilePurpose("skill inventory gate tests", "pytest"),
     "tests/test_source_inventory.py": FilePurpose("source inventory gate tests", "pytest"),
+    "tests/test_spawned_projects.py": FilePurpose(
+        "spawned-project scaffold recommendation tests", "pytest"
+    ),
     "tests/test_skill_promotion.py": FilePurpose(
         "skill promotion proposal contract tests", "pytest"
     ),

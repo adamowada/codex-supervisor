@@ -242,6 +242,24 @@ cover both replacement and removal.
 Next action: when adding or reviewing evidence helpers, test both first-record and re-record paths,
 including removal of optional artifact or commit evidence.
 
+## Optional Scaffold Tiers Need Separate Triggers
+
+Confidence: confirmed.
+
+Spawned-project scaffolds should not bundle optional surfaces together just because they often travel
+as a family. Durable learning, repo-local skills, and source-study evidence have different costs and
+should be recommended by separate brief signals. This keeps small projects and learning-only
+projects from receiving empty skill directories, source inventories, or attribution surfaces that
+they have not earned.
+
+Evidence: Stage 14A review found that `durable_learning=True` initially selected the combined
+skills/source-study surface, including `.agents/skills/` and `sources/README.md`. The repair split
+durable-learning insight files from repo-local skill files and source-study files, with regression
+coverage proving that durable learning alone does not create empty optional skill/source surfaces.
+
+Next action: when adding scaffold classifiers or bootstrap templates, test each optional tier both
+alone and in combination with adjacent tiers.
+
 ## Cross-Platform Adapters Normalize Before Resolving
 
 Confidence: confirmed.

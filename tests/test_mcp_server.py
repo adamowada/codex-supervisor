@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from codex_supervisor.mcp_server import (
@@ -13,7 +14,7 @@ from codex_supervisor.planning import (
 )
 
 
-def test_list_mcp_tools_exposes_read_only_tool_schemas(tmp_path: Path) -> None:
+def test_list_mcp_tools_exposes_read_and_default_on_mutating_schemas(tmp_path: Path) -> None:
     context = McpServerContext(repo_root=tmp_path)
 
     tools = list_mcp_tools(context=context)
@@ -22,7 +23,15 @@ def test_list_mcp_tools_exposes_read_only_tool_schemas(tmp_path: Path) -> None:
     assert "codex_supervisor.project_list" in names
     assert "codex_supervisor.story_loop_status" in names
     assert "codex_supervisor.task_show" in names
-    assert all(tool["annotations"]["readOnlyHint"] is True for tool in tools)
+    assert "codex_supervisor.task_upsert" in names
+    assert "codex_supervisor.task_claim" in names
+    assert "codex_supervisor.progress_add" in names
+    assert "codex_supervisor.artifact_link_add" in names
+    assert "codex_supervisor.story_loop_run_once" in names
+    read_tools = [tool for tool in tools if tool["name"] == "codex_supervisor.task_show"]
+    assert all(tool["annotations"]["readOnlyHint"] is True for tool in read_tools)
+    mutating_tool = next(tool for tool in tools if tool["name"] == "codex_supervisor.task_upsert")
+    assert "annotations" not in mutating_tool
     task_show = next(tool for tool in tools if tool["name"] == "codex_supervisor.task_show")
     assert task_show["inputSchema"]["required"] == ["task_id"]
 
@@ -45,6 +54,25 @@ def test_project_list_tool_delegates_to_project_registry(tmp_path: Path) -> None
     assert project["adapter_type"] == "generic_repo"
     assert project["status"] == "ready"
     assert project["facts"]["authority_markers"] == ["AGENTS.md", "PLANS.md"]
+    assert project["root_path"].startswith("<project-root:")
+    assert str(repo.resolve()) not in json.dumps(result, sort_keys=True)
+
+
+def test_project_list_tool_rejects_roots_outside_configured_scope(tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed"
+    outside = tmp_path / "outside"
+    allowed.mkdir()
+    outside.mkdir()
+    context = McpServerContext(repo_root=allowed, project_roots=(allowed,))
+
+    result = dispatch_mcp_tool(
+        "codex_supervisor.project_list",
+        {"root_paths": [str(outside)]},
+        context=context,
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "out_of_scope_root"
 
 
 def test_planning_read_tools_delegate_without_mutating_or_launching(tmp_path: Path) -> None:
@@ -157,6 +185,131 @@ def test_dispatch_reports_validation_unknown_and_missing_errors(tmp_path: Path) 
     assert unknown_tool["error"]["code"] == "unknown_tool"
     assert not_found["error"]["code"] == "not_found"
     assert invalid_status["error"]["code"] == "validation_error"
+
+
+def test_mutating_mcp_tools_update_planning_state_by_default(tmp_path: Path) -> None:
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    initialize_planning_database(db_path)
+    context = McpServerContext(repo_root=tmp_path, planning_path=db_path)
+
+    plan = dispatch_mcp_tool(
+        "codex_supervisor.plan_upsert",
+        {
+            "plan_id": "plan-mutate",
+            "slug": "mutate",
+            "title": "Mutate",
+            "goal": "Exercise MCP mutations.",
+            "status": "active",
+            "priority": 10,
+        },
+        context=context,
+    )
+    task = dispatch_mcp_tool(
+        "codex_supervisor.task_upsert",
+        {
+            "task_id": "task-mutate",
+            "plan_id": "plan-mutate",
+            "title": "Mutate through MCP",
+            "goal": "Create a production task through MCP.",
+            "task_type": "AFK",
+            "status": "ready",
+            "acceptance_criteria": ["MCP mutation works."],
+            "verification_commands": ["uv run --no-sync python -B scripts/verify.py"],
+            "allowed_paths": ["src/codex_supervisor/mcp_server.py"],
+            "review_required": False,
+        },
+        context=context,
+    )
+    progress = dispatch_mcp_tool(
+        "codex_supervisor.progress_add",
+        {
+            "progress_id": "progress-mutate",
+            "plan_id": "plan-mutate",
+            "event_type": "verified",
+            "summary": "MCP mutation path exercised.",
+        },
+        context=context,
+    )
+    artifact = dispatch_mcp_tool(
+        "codex_supervisor.artifact_link_add",
+        {
+            "plan_id": "plan-mutate",
+            "artifact_id": "insights/v1-hardening-review.md",
+            "relationship": "evidence",
+        },
+        context=context,
+    )
+    claim = dispatch_mcp_tool(
+        "codex_supervisor.task_claim",
+        {"worker_run_id": "worker-run-mutate", "task_id": "task-mutate"},
+        context=context,
+    )
+
+    assert plan["data"]["plan_id"] == "plan-mutate"
+    assert task["data"]["task_id"] == "task-mutate"
+    assert progress["data"]["progress_id"] == "progress-mutate"
+    assert artifact["data"]["artifact_id"] == "insights/v1-hardening-review.md"
+    assert claim["data"]["worker_run"]["worker_run_id"] == "worker-run-mutate"
+    shown = dispatch_mcp_tool(
+        "codex_supervisor.task_show",
+        {"task_id": "task-mutate"},
+        context=context,
+    )
+    assert shown["data"]["status"] == "running"
+
+
+def test_disabled_mutations_hide_mutating_tools_and_reject_dispatch(tmp_path: Path) -> None:
+    context = McpServerContext(repo_root=tmp_path, mutations_enabled=False)
+
+    tools = list_mcp_tools(context=context)
+    result = dispatch_mcp_tool(
+        "codex_supervisor.task_upsert",
+        {"task_id": "task-muted"},
+        context=context,
+    )
+
+    names = {tool["name"] for tool in tools}
+    assert "codex_supervisor.project_list" in names
+    assert "codex_supervisor.task_upsert" not in names
+    assert result["error"]["code"] == "mcp_mutations_disabled"
+
+
+def test_story_loop_run_once_tool_routes_to_production_service(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    initialize_planning_database(db_path)
+    captured: dict[str, object] = {}
+
+    def fake_run_live_story_loop_once(store, **kwargs):
+        captured["store_path"] = store.path
+        captured.update(kwargs)
+        return {"status": "completed", "worker_run_id": kwargs["worker_run_id"]}
+
+    monkeypatch.setattr(
+        "codex_supervisor.mcp_server.run_live_story_loop_once",
+        fake_run_live_story_loop_once,
+    )
+    context = McpServerContext(repo_root=tmp_path, planning_path=db_path)
+
+    result = dispatch_mcp_tool(
+        "codex_supervisor.story_loop_run_once",
+        {
+            "worker_run_id": "worker-run-live",
+            "codex_bin": "codex",
+            "environment": {"CODEX_SUPERVISOR_TEST": "1"},
+        },
+        context=context,
+    )
+
+    assert result["ok"] is True
+    assert result["data"] == {"status": "completed", "worker_run_id": "worker-run-live"}
+    assert captured["store_path"] == db_path.resolve()
+    assert captured["repo_root"] == tmp_path.resolve()
+    assert captured["worker_run_id"] == "worker-run-live"
+    assert captured["codex_executable"] == "codex"
+    assert captured["environment"] == {"CODEX_SUPERVISOR_TEST": "1"}
 
 
 def test_disabled_mcp_context_hides_tools_and_rejects_dispatch(tmp_path: Path) -> None:

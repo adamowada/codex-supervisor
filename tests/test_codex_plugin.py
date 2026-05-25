@@ -34,7 +34,7 @@ def test_plugin_manifest_describes_stage12_desktop_surface() -> None:
     assert isinstance(interface, dict)
     assert interface["displayName"] == "Codex Supervisor"
     assert interface["category"] == "Developer Tools"
-    assert interface["capabilities"] == ["Interactive", "Read"]
+    assert interface["capabilities"] == ["Interactive", "Read", "Write"]
     assert interface["websiteURL"] == "https://github.com/adamowada/codex-supervisor"
     assert interface["brandColor"] == "#2563EB"
 
@@ -67,7 +67,7 @@ def test_mcp_config_launches_repo_stdio_server_without_live_worker() -> None:
     serialized = json.dumps(server, sort_keys=True)
     assert "codex exec" not in serialized
     assert "worker" not in serialized.lower()
-    assert "write" not in serialized.lower()
+    assert "--disable-mutations" not in serialized
 
 
 def test_plugin_docs_name_desktop_roles_and_queue_authority() -> None:
@@ -88,7 +88,8 @@ def test_plugin_docs_name_desktop_roles_and_queue_authority() -> None:
         "ACP",
         "Handoff",
         "does not publish a marketplace entry",
-        "add mutating MCP tools",
+        "mutating MCP tools are enabled by default",
+        "--disable-mutations",
     ]
     for phrase in required_phrases:
         assert phrase in readme
@@ -106,7 +107,7 @@ def test_plugin_skill_is_valid_and_maps_desktop_workflows() -> None:
 
     required_phrases = [
         "plans/planning.sqlite3",
-        "MCP tools for read-only inspection",
+        "MCP tools for inspection and guarded mutation",
         "uv run --no-sync python -B -m codex_supervisor.cli",
         ".agents/skills/skill-router/SKILL.md",
         "spawned-project-bootstrap",
@@ -160,8 +161,14 @@ def test_clean_plugin_install_verifier_discovers_skill_and_mcp_lifecycle() -> No
                         "id": "tools-list",
                         "result": {
                             "tools": [
+                                {"name": "codex_supervisor.artifact_link_add"},
+                                {"name": "codex_supervisor.progress_add"},
                                 {"name": "codex_supervisor.story_loop_status"},
+                                {"name": "codex_supervisor.story_loop_run_once"},
+                                {"name": "codex_supervisor.task_claim"},
                                 {"name": "codex_supervisor.task_show"},
+                                {"name": "codex_supervisor.task_upsert"},
+                                {"name": "codex_supervisor.review_result_ingest"},
                             ]
                         },
                     }

@@ -17,8 +17,14 @@ MANIFEST_RELATIVE_PATH = Path(".codex-plugin") / "plugin.json"
 MCP_PROTOCOL_VERSION = "2025-11-25"
 REQUIRED_MCP_TOOLS = frozenset(
     {
+        "codex_supervisor.artifact_link_add",
+        "codex_supervisor.progress_add",
         "codex_supervisor.story_loop_status",
+        "codex_supervisor.story_loop_run_once",
+        "codex_supervisor.task_claim",
         "codex_supervisor.task_show",
+        "codex_supervisor.task_upsert",
+        "codex_supervisor.review_result_ingest",
     }
 )
 

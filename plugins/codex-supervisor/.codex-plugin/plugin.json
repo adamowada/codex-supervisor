@@ -19,13 +19,14 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Codex Supervisor",
-    "shortDescription": "Inspect supervisor queues and evidence from Codex Desktop.",
-    "longDescription": "Codex Supervisor exposes the repository's read-only MCP stdio server so Codex Desktop can inspect planning SQLite queue state, current tasks, project facts, and worker evidence through the Python core.",
+    "shortDescription": "Operate supervisor queues and evidence from Codex Desktop.",
+    "longDescription": "Codex Supervisor exposes the repository's MCP stdio server so Codex Desktop can inspect and mutate planning SQLite queue state, current tasks, project facts, worker evidence, live Story Loop launches, and review ingestion through the Python core.",
     "developerName": "Adam Owada",
     "category": "Developer Tools",
     "capabilities": [
       "Interactive",
-      "Read"
+      "Read",
+      "Write"
     ],
     "websiteURL": "https://github.com/adamowada/codex-supervisor",
     "defaultPrompt": [

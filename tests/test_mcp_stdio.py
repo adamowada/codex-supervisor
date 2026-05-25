@@ -134,6 +134,52 @@ def test_disabled_context_returns_empty_tools_and_tool_error_result(tmp_path: Pa
     assert tool_result["structuredContent"]["error"]["code"] == "mcp_disabled"
 
 
+def test_disable_mutations_flag_hides_mutating_stdio_tools(tmp_path: Path) -> None:
+    db_path = _planning_fixture(tmp_path)
+    output = io.StringIO()
+
+    exit_code = main(
+        io.StringIO(
+            "\n".join(
+                [
+                    json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize"}),
+                    json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+                    json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
+                    json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 3,
+                            "method": "tools/call",
+                            "params": {
+                                "name": "codex_supervisor.task_upsert",
+                                "arguments": {"task_id": "task-muted"},
+                            },
+                        }
+                    ),
+                    "",
+                ]
+            )
+        ),
+        output,
+        argv=[
+            "--repo-root",
+            str(tmp_path),
+            "--planning-path",
+            str(db_path),
+            "--disable-mutations",
+        ],
+    )
+    responses = _parse_output(output)
+
+    assert exit_code == 0
+    tools = responses[1]["result"]["tools"]
+    assert "codex_supervisor.task_show" in {tool["name"] for tool in tools}
+    assert "codex_supervisor.task_upsert" not in {tool["name"] for tool in tools}
+    tool_result = responses[2]["result"]
+    assert tool_result["isError"] is True
+    assert tool_result["structuredContent"]["error"]["code"] == "mcp_mutations_disabled"
+
+
 def test_dispatcher_failure_is_mcp_tool_error_without_stdout_contamination(
     tmp_path: Path,
 ) -> None:

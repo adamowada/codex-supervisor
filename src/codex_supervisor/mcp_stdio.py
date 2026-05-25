@@ -1,12 +1,14 @@
-"""Stdio JSON-RPC transport for the read-only MCP supervisor tools."""
+"""Stdio JSON-RPC transport for the MCP supervisor tools."""
 
 from __future__ import annotations
 
+import argparse
 import io
 import json
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Final, TextIO
 
 from codex_supervisor import __version__
@@ -46,7 +48,7 @@ def _default_tool_lister(context: McpServerContext) -> tuple[JsonObject, ...]:
 
 @dataclass
 class McpStdioServer:
-    """Stateful MCP stdio session around the read-only tool dispatcher."""
+    """Stateful MCP stdio session around the tool dispatcher."""
 
     context: McpServerContext = field(default_factory=McpServerContext)
     tool_dispatcher: ToolDispatcher = _default_tool_dispatcher
@@ -150,7 +152,10 @@ class McpStdioServer:
                     "title": "Codex Supervisor",
                     "version": __version__,
                 },
-                "instructions": "Read-only codex-supervisor inspection tools.",
+                "instructions": (
+                    "Codex Supervisor inspection and guarded mutation tools backed by "
+                    "planning SQLite."
+                ),
             },
         )
 
@@ -210,13 +215,42 @@ def main(
     output_stream: TextIO | None = None,
     *,
     context: McpServerContext | None = None,
+    argv: list[str] | None = None,
 ) -> int:
     """Run the MCP stdio server with injectable streams for tests."""
 
     return serve_stdio(
         input_stream or _default_input_stream(),
         output_stream or _default_output_stream(),
-        context=context,
+        context=context or _context_from_args(argv),
+    )
+
+
+def _context_from_args(argv: list[str] | None) -> McpServerContext:
+    parser = argparse.ArgumentParser(prog="codex-supervisor-mcp")
+    parser.add_argument("--repo-root", type=Path, default=None)
+    parser.add_argument("--planning-path", type=Path, default=None)
+    parser.add_argument(
+        "--project-root",
+        action="append",
+        type=Path,
+        default=[],
+        help="Allowed project root for project_list. Repeat for multiple roots.",
+    )
+    parser.add_argument("--trust-policy", default="local_trusted")
+    parser.add_argument(
+        "--disable-mutations",
+        action="store_true",
+        default=False,
+        help="Hide and reject mutating MCP tools for this server process.",
+    )
+    args = parser.parse_args(argv)
+    return McpServerContext(
+        repo_root=args.repo_root,
+        planning_path=args.planning_path,
+        project_roots=tuple(args.project_root),
+        trust_policy=args.trust_policy,
+        mutations_enabled=not args.disable_mutations,
     )
 
 

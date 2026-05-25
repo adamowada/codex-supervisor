@@ -28,6 +28,13 @@ LIVE_WORKER_SMOKE_EVENT_TYPE = "live_worker_smoke_recorded"
 LIVE_REVIEW_SMOKE_EVENT_TYPE = "live_review_smoke_recorded"
 MUTATING_MCP_SMOKE_EVENT_TYPE = "mutating_mcp_smoke_recorded"
 REAL_PROJECT_BOOTSTRAP_SMOKE_EVENT_TYPE = "real_project_bootstrap_smoke_recorded"
+EVIDENCE_ONLY_RELEASE_PATHS = frozenset(
+    {
+        "HANDOFF.md",
+        "plans/planning.sqlite3",
+    }
+)
+EVIDENCE_ONLY_RELEASE_PREFIXES = ("insights/",)
 
 
 @dataclass(frozen=True)
@@ -732,7 +739,10 @@ def _planning_progress(planning_db_path: Path) -> tuple[PlanProgressRecord, ...]
 def _resolve_target_commit(root: Path, target_commit: str | None) -> str | None:
     if target_commit is not None:
         return _normalize_commit(target_commit)
-    return _current_head(root)
+    current_head = _current_head(root)
+    if current_head is None:
+        return None
+    return _release_subject_commit(root, current_head)
 
 
 def _current_head(root: Path) -> str | None:
@@ -749,6 +759,64 @@ def _current_head(root: Path) -> str | None:
     if result.returncode != 0:
         return None
     return _normalize_commit(result.stdout.strip())
+
+
+def _release_subject_commit(root: Path, commit: str) -> str:
+    """Return the code/doc commit audited by trailing evidence-only commits."""
+
+    current = commit
+    while True:
+        parent = _single_parent(root, current)
+        if parent is None:
+            return current
+        changed_paths = _changed_paths_for_commit(root, current)
+        if not changed_paths:
+            return current
+        if not all(_is_evidence_only_release_path(path) for path in changed_paths):
+            return current
+        current = parent
+
+
+def _single_parent(root: Path, commit: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ("git", "rev-list", "--parents", "-n", "1", commit),
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    if result.returncode != 0:
+        return None
+    parts = result.stdout.strip().split()
+    if len(parts) != 2:
+        return None
+    return _normalize_commit(parts[1])
+
+
+def _changed_paths_for_commit(root: Path, commit: str) -> tuple[str, ...]:
+    try:
+        result = subprocess.run(
+            ("git", "diff-tree", "--no-commit-id", "--name-only", "-r", commit),
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return ()
+    if result.returncode != 0:
+        return ()
+    return tuple(line.strip().replace("\\", "/") for line in result.stdout.splitlines() if line)
+
+
+def _is_evidence_only_release_path(path: str) -> bool:
+    normalized = path.strip().replace("\\", "/")
+    return normalized in EVIDENCE_ONLY_RELEASE_PATHS or normalized.startswith(
+        EVIDENCE_ONLY_RELEASE_PREFIXES
+    )
 
 
 def _normalize_commit(value: str) -> str | None:

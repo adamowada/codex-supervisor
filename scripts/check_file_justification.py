@@ -224,6 +224,9 @@ FILE_PURPOSES = {
     "insights/project-sop.md": FilePurpose(
         "spawned-project SOP insight", "check_file_justification"
     ),
+    "insights/release-readiness-evidence.md": FilePurpose(
+        "release-readiness evidence-targeting insight", "check_file_justification"
+    ),
     "insights/skill-learning-loop.md": FilePurpose(
         "skill evolution and eval loop doctrine", "check_skill_inventory"
     ),

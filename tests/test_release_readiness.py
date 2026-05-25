@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from codex_supervisor.cli import main
@@ -10,7 +11,7 @@ from codex_supervisor.planning import (
     PlanRecord,
     initialize_planning_database,
 )
-from codex_supervisor.release import build_release_readiness_report
+from codex_supervisor.release import _resolve_target_commit, build_release_readiness_report
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TARGET_COMMIT = "a" * 40
@@ -289,6 +290,46 @@ def test_cli_release_readiness_accepts_planning_db(capsys, tmp_path: Path) -> No
     assert checks[("live_evidence", "Live worker smoke evidence")]["status"] == "pass"
 
 
+def test_release_readiness_defaults_to_subject_commit_after_evidence_commit(
+    tmp_path: Path,
+) -> None:
+    _git(tmp_path, "init")
+    _git(tmp_path, "config", "user.email", "codex@example.test")
+    _git(tmp_path, "config", "user.name", "Codex Test")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "code.py").write_text("print('v1')\n", encoding="utf-8")
+    _git(tmp_path, "add", "src/code.py")
+    _git(tmp_path, "commit", "-m", "code")
+    code_commit = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
+
+    (tmp_path / "plans").mkdir()
+    (tmp_path / "plans" / "planning.sqlite3").write_text("evidence\n", encoding="utf-8")
+    (tmp_path / "HANDOFF.md").write_text("handoff\n", encoding="utf-8")
+    (tmp_path / "insights").mkdir()
+    (tmp_path / "insights" / "release.md").write_text("insight\n", encoding="utf-8")
+    _git(tmp_path, "add", "plans/planning.sqlite3", "HANDOFF.md", "insights/release.md")
+    _git(tmp_path, "commit", "-m", "release evidence")
+
+    assert _resolve_target_commit(tmp_path, None) == code_commit
+
+
+def test_release_readiness_keeps_head_when_latest_commit_changes_code(tmp_path: Path) -> None:
+    _git(tmp_path, "init")
+    _git(tmp_path, "config", "user.email", "codex@example.test")
+    _git(tmp_path, "config", "user.name", "Codex Test")
+    (tmp_path / "plans").mkdir()
+    (tmp_path / "plans" / "planning.sqlite3").write_text("evidence\n", encoding="utf-8")
+    _git(tmp_path, "add", "plans/planning.sqlite3")
+    _git(tmp_path, "commit", "-m", "evidence")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "code.py").write_text("print('v2')\n", encoding="utf-8")
+    _git(tmp_path, "add", "src/code.py")
+    _git(tmp_path, "commit", "-m", "code")
+    head_commit = _git(tmp_path, "rev-parse", "HEAD").stdout.strip()
+
+    assert _resolve_target_commit(tmp_path, None) == head_commit
+
+
 def _validation_db(tmp_path: Path, *, details: dict[str, object]) -> Path:
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)
@@ -311,6 +352,18 @@ def _validation_db(tmp_path: Path, *, details: dict[str, object]) -> Path:
         )
     )
     return db_path
+
+
+def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        ("git", *args),
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    return result
 
 
 def _release_db(tmp_path: Path, *, target_commit: str) -> Path:

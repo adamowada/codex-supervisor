@@ -27,6 +27,8 @@ Use it for synthesized, provenance-backed knowledge about:
 - `bootstrap-landmine-audit.md`: confirmed bootstrap drift and quality findings from six-lane
   explorer audits.
 - `project-sop.md`: project bootstrap SOP distilled for spawned projects.
+- `release-readiness-evidence.md`: release-readiness policy for evidence-only ACP commits that
+  validate a code or doctrine commit.
 - `skill-learning-loop.md`: how skills should be updated and tested over time.
 - `v1-hardening-clarifications.md`: resolved v1 hardening policy for live Codex work, ACP cadence,
   MCP mutation defaults, adapters, project scaffolding, and skill promotion.

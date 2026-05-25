@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 04:46 PDT
+Last updated: 2026-05-25 04:47 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,9 +9,10 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `ready`.
+- Current queue state: `running`.
 - Current AFK task: `task-stage13a-github-actions-verify` on
   `plan-stage13-github-ci-integration`.
+- Current worker run: `worker-run-stage13a-github-actions-verify-inline-20260525`.
 - Current slice: ROADMAP Stage 13A, add the first GitHub Actions verification workflow and local
   workflow contract tests so pushes and pull requests to `main` can produce public CI evidence.
 - Latest completed plan: `plan-stage12-codex-plugin-desktop-experience`
@@ -24,7 +25,8 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 Plan: `plan-stage13-github-ci-integration`.
 Task: `task-stage13a-github-actions-verify`.
-Status: `ready`.
+Status: `running`.
+Worker run: `worker-run-stage13a-github-actions-verify-inline-20260525`.
 Review required: yes, because GitHub Actions workflow files define public CI behavior.
 
 Allowed paths:
@@ -138,7 +140,7 @@ style, type, planning, public hygiene, source inventory, skill inventory, protec
 
 ## Next Action
 
-Claim and execute `task-stage13a-github-actions-verify`. Keep the slice scoped to the workflow,
-focused workflow contract tests, file-purpose hygiene, planning SQLite, and this handoff. After
-implementation, run the task verification commands, complete a fresh-thread-style review, ingest the
-worker result, update the Stage 13A completion evidence, and ACP.
+Continue the claimed `task-stage13a-github-actions-verify` worker run. Keep the slice scoped to the
+workflow, focused workflow contract tests, file-purpose hygiene, planning SQLite, and this handoff.
+After implementation, run the task verification commands, complete a fresh-thread-style review,
+ingest the worker result, update the Stage 13A completion evidence, and ACP.

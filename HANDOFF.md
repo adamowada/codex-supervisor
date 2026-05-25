@@ -16,13 +16,15 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, Stage 9D skill promotion golden-eval contract work is complete in planning
-SQLite. The expected queue state is `completed` for active plan
-`plan-stage9-insights-skill-learning`, with no current AFK, HITL, or running task. If the database
-reports anything else, trust the database and call this handoff stale.
+As of this snapshot, Stage 10A Codex local-state inventory work is shaped in planning SQLite. The
+expected queue state is `ready` for active plan
+`plan-stage10-codex-state-automation-bridge`, with current AFK task
+`task-stage10a-codex-state-inventory`. Stage 9 is marked completed in planning SQLite. If the
+database reports anything else, trust the database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
+- `04931a8`: added Stage 9D skill promotion proposal and golden-eval evidence contracts.
 - `34df19e`: shaped the Stage 9D skill promotion golden-eval contract task and handoff.
 - `bf9386f`: shaped the Stage 9C guarded insight update workflow task and handoff.
 - `0d7570d`: added the Stage 9B insight validation CLI and completed the Stage 9B worker-result
@@ -31,14 +33,14 @@ Recent completed ACP checkpoints:
 - `200d027`: hardened exact task claiming, Story Loop queue snapshots, completed-plan criteria, and
   worker-result/attribution skill contracts.
 
-The latest full local gate passed after the Stage 9C guarded insight update workflow implementation
+The latest full local gate passed after the Stage 9D skill promotion eval contract implementation
 with:
 
 ```sh
 uv run --no-sync python -B scripts/verify.py
 ```
 
-That run covered 342 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
+That run covered 354 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
 hygiene, planning integrity, skill inventory, source inventory, protected locks, and
 `uv lock --check`.
 
@@ -296,6 +298,32 @@ Stage 9D skill promotion golden-eval contract work changed:
   `uv run --no-sync python -B -m pytest tests/test_skill_promotion.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/verify.py`.
 
+Stage 10A Codex local-state inventory work is shaped:
+
+- `plans/planning.sqlite3`: marks `plan-stage9-insights-skill-learning` completed and adds active
+  plan `plan-stage10-codex-state-automation-bridge` with ready AFK task
+  `task-stage10a-codex-state-inventory`, milestone
+  `milestone-stage10a-codex-state-inventory`, criterion
+  `criterion-stage10a-codex-state-inventory`, and
+  `progress-stage10a-task-shaped-20260525`.
+- Goal: add a privacy-safe read-only helper and CLI for inventorying documented Codex local SQLite
+  databases by metadata only, producing normalized observations for future reconciliation without
+  reading row payloads or writing Codex internal state.
+- Scope: inspect a supplied Codex home path for documented SQLite databases such as
+  `state_5.sqlite`, `goals_1.sqlite`, `logs_2.sqlite`, and `sqlite/codex-dev.db`; record
+  existence/status, table names, row counts, and source database/table provenance; handle missing
+  or corrupt databases as nonfatal observations.
+- Out of scope: writing under `~/.codex`, printing raw chats/logs/auth/token values or row payloads,
+  official automation mutation, planning reconciliation beyond this task's own records, protected
+  source-of-truth edits, and live worker launch.
+- Allowed implementation paths:
+  `src/codex_supervisor/codex_state.py`, `src/codex_supervisor/cli.py`,
+  `tests/test_codex_state.py`, `scripts/check_file_justification.py`, `plans/planning.sqlite3`,
+  `HANDOFF.md`, and `insights/stage10a-codex-state-inventory-worker-result.json`.
+- Verification:
+  `uv run --no-sync python -B -m pytest tests/test_codex_state.py -q -p no:cacheprovider`;
+  `uv run --no-sync python -B scripts/verify.py`.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -319,11 +347,11 @@ Use story-loop-status as the queue state machine. Use task-current only as the e
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
 If queue_state is `ready`, run `task-current --json` and execute the current AFK slice with
-story-loop discipline.
+story-loop discipline. The expected current task is `task-stage10a-codex-state-inventory`.
 
 If queue_state is `completed`, shape the next AFK vertical slice from `ROADMAP.md`. The likely next
-slice is either deeper skill-golden-eval execution wiring or Stage 10 Codex local-state adapter work
-if the Stage 9 learning loop is intentionally closed.
+slice after Stage 10A is deeper Codex local-state summarization/reconciliation or automation bridge
+work.
 Keep live Codex Exec launch disabled while the local Codex CLI still fails preflight with
 `Access is denied`; do not launch live `codex exec` until an accessible executable path and intended
 `CODEX_HOME` are confirmed.

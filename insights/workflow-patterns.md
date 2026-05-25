@@ -277,3 +277,21 @@ cross-platform adapter contract gap.
 
 Next action: when adapters accept human-authored paths, test both POSIX-style and Windows-style
 relative separators, plus `..\\` traversal rejection, before relying on local Windows-only results.
+
+## CLI Branch Locals Need Specific Names
+
+Confidence: confirmed.
+
+Large argparse dispatch functions still share one Python function scope across all command
+branches. Reusing a broad local name like `proposal` for different dataclass result types can pass
+tests and lint, then fail mypy once a new branch introduces a second incompatible assignment. Name
+branch-local values by domain, such as `skill_proposal` or `spawned_project_proposal`, when the
+dispatch function handles multiple typed command families.
+
+Evidence: Stage 14B added `spawned-project-propose` and initially reused `proposal` in the same
+`main()` scope where skill-promotion validation also used `proposal`. Full verification passed
+tests, Ruff, and formatting but mypy rejected the later skill-promotion branch until the local was
+renamed to `skill_proposal`.
+
+Next action: when adding CLI subcommands to `src/codex_supervisor/cli.py`, run mypy before review
+and avoid generic local result names in command branches that return different typed records.

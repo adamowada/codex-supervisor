@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 06:54 PDT
+Last updated: 2026-05-25 07:22 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,11 +9,11 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `running`.
-- Current AFK task: `task-stage14b-spawned-project-scaffold-proposal`.
-- Current worker run: `worker-run-stage14b-spawned-project-scaffold-proposal-inline-20260525`.
-- Current plan: `plan-stage14-spawned-project-factory-sop`.
-- Latest completed task in planning: `task-stage14a-spawned-project-tier-classifier`.
+- Current queue state: `ready`.
+- Current AFK task: `task-stage15a-release-readiness-audit`.
+- Current worker run: none yet.
+- Current plan: `plan-stage15-release-hardening`.
+- Latest completed task in planning: `task-stage14b-spawned-project-scaffold-proposal`.
 - Recent pushed commits:
   - `263354c5c3867be9baa370562225c737e0e63768` - Stage 13D CI evidence implementation.
   - `622c52f685c399e12c347d64ab5a0c4aafed17d9` - Stage 13D completion and Stage 13E shaping.
@@ -104,23 +104,41 @@ uv run --no-sync python -B -m pytest tests/test_spawned_projects.py tests/test_f
 uv run --no-sync python -B scripts/verify.py
 ```
 
-## Stage 14B Ready Task
+## Stage 14B Summary
 
 Task: `task-stage14b-spawned-project-scaffold-proposal`.
 Worker run: `worker-run-stage14b-spawned-project-scaffold-proposal-inline-20260525`.
-Goal: extend the Stage 14A classifier into deterministic dry-run scaffold proposals with ordered
-file actions, planning/source-lock/verification guidance, insights/skill/source-study guidance, and
-first AFK task guidance, without writing external project files.
+Status: completed in planning SQLite; Stage 14 plan is completed.
+Review anchor: stage14b-review.
+Review result anchor: stage14b-review-result.
+Summary anchor: stage14b-summary.
 
-Allowed paths are the Stage 14A implementation surfaces plus `plans/planning.sqlite3`, `HANDOFF.md`,
-and `insights/**`. Review is required because this expands spawned-project bootstrap CLI output and
-scaffold contract semantics.
+Goal: extend the Stage 14A classifier into deterministic dry-run scaffold proposals without writing
+external project files.
+
+Implemented locally:
+
+- Added typed scaffold proposal contracts for ordered file actions, planning/source-lock guidance,
+  insight/skill/source-study guidance, and first-task guidance.
+- Added `spawned-project-propose` CLI dry-run JSON output.
+- Added prototype and full production/public/unattended proposal coverage in
+  `tests/test_spawned_projects.py`.
+- Review `review-stage14b-spawned-project-scaffold-proposal-20260525` found no actionable issues.
+- Updated `insights/workflow-patterns.md` with the mypy/CLI branch-local naming lesson.
+
+Verification passed locally:
+
+```sh
+uv run --no-sync python -B -m pytest tests/test_spawned_projects.py tests/test_file_justification.py -q -p no:cacheprovider
+uv run --no-sync python -B scripts/verify.py
+uv run --no-sync python -B scripts/verify.py --publication-ready
+```
 
 ## Next Action
 
-ACP the Stage 14B claim/evidence checkpoint, push, inspect remote CI, then implement
-`task-stage14b-spawned-project-scaffold-proposal`.
+ACP the Stage 14B completion plus Stage 15A shaping checkpoint, push, inspect remote CI, then claim
+and implement `task-stage15a-release-readiness-audit`.
 
 ```sh
-uv run --no-sync python -B scripts/verify.py --publication-ready
+uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 ```

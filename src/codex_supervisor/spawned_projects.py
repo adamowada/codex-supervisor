@@ -98,6 +98,40 @@ class SpawnedProjectRecommendation:
     warnings: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class SpawnedProjectScaffoldAction:
+    path: str
+    action: str
+    tier: str
+    purpose: str
+
+
+@dataclass(frozen=True)
+class SpawnedProjectFirstTaskProposal:
+    title: str
+    task_type: str
+    status: str
+    goal: str
+    acceptance_criteria: tuple[str, ...]
+    verification_commands: tuple[str, ...]
+    allowed_paths: tuple[str, ...]
+    review_required: bool
+
+
+@dataclass(frozen=True)
+class SpawnedProjectScaffoldProposal:
+    project_name: str
+    recommendation: SpawnedProjectRecommendation
+    file_actions: tuple[SpawnedProjectScaffoldAction, ...]
+    planning_actions: tuple[str, ...]
+    source_lock_actions: tuple[str, ...]
+    insight_actions: tuple[str, ...]
+    skill_actions: tuple[str, ...]
+    source_study_actions: tuple[str, ...]
+    first_task: SpawnedProjectFirstTaskProposal
+    writes_files: bool = False
+
+
 def recommend_spawned_project_scaffold(
     brief: SpawnedProjectBrief,
 ) -> SpawnedProjectRecommendation:
@@ -159,6 +193,26 @@ def recommend_spawned_project_scaffold(
         planning_guidance=_planning_guidance(brief),
         classification_reason=_classification_reason(brief, tuple(tiers)),
         warnings=_warnings(brief, tuple(tiers)),
+    )
+
+
+def build_spawned_project_scaffold_proposal(
+    brief: SpawnedProjectBrief,
+) -> SpawnedProjectScaffoldProposal:
+    """Build a deterministic scaffold proposal without writing project files."""
+
+    recommendation = recommend_spawned_project_scaffold(brief)
+    file_actions = tuple(_file_actions_for_recommendation(recommendation))
+    return SpawnedProjectScaffoldProposal(
+        project_name=brief.name,
+        recommendation=recommendation,
+        file_actions=file_actions,
+        planning_actions=_planning_actions_for_recommendation(recommendation),
+        source_lock_actions=_source_lock_actions_for_recommendation(recommendation),
+        insight_actions=_insight_actions_for_recommendation(recommendation),
+        skill_actions=_skill_actions_for_recommendation(recommendation),
+        source_study_actions=_source_study_actions_for_recommendation(recommendation),
+        first_task=_first_task_for_recommendation(recommendation, file_actions),
     )
 
 
@@ -245,3 +299,162 @@ def _warnings(
             "is needed."
         )
     return tuple(warnings)
+
+
+def _file_actions_for_recommendation(
+    recommendation: SpawnedProjectRecommendation,
+) -> tuple[SpawnedProjectScaffoldAction, ...]:
+    return tuple(
+        SpawnedProjectScaffoldAction(
+            path=path,
+            action="create_if_missing",
+            tier=_tier_for_path(recommendation, path),
+            purpose=_purpose_for_path(path),
+        )
+        for path in recommendation.required_files
+    )
+
+
+def _tier_for_path(recommendation: SpawnedProjectRecommendation, path: str) -> str:
+    if "prototype-light" in recommendation.tiers:
+        return "prototype-light"
+    if path in SUPERVISOR_MANAGED_FILES:
+        return "supervisor-managed"
+    if path in PUBLICATION_READY_FILES:
+        return "publication-ready"
+    if path in DURABLE_LEARNING_FILES:
+        return "durable-learning"
+    if path in REPO_LOCAL_SKILL_FILES:
+        return "repo-local-skills"
+    if path in SOURCE_STUDY_FILES:
+        return "source-study"
+    return "base"
+
+
+def _purpose_for_path(path: str) -> str:
+    purposes = {
+        ".agents/skills/": "repo-local skill surfaces when repeated project workflows appear",
+        ".gitattributes": "cross-platform text and binary normalization",
+        ".gitignore": "local runtime, cache, source clone, and artifact exclusion",
+        "AGENTS.md": "agent operating instructions",
+        "ARCHITECTURE.md": "system structure and ownership boundaries",
+        "ATTRIBUTIONS.md": "source and inspiration attribution record",
+        "CONTRACTS.md": "interfaces, data contracts, and worker result contracts",
+        "DECISIONS.md": "durable architecture and workflow decisions",
+        "HANDOFF.md": "compact mutable fresh-thread resume snapshot",
+        "LICENSE": "publication license posture",
+        "PLANS.md": "planning doctrine and durable queue policy",
+        "README.md": "human-facing project purpose and bootstrap guide",
+        "ROADMAP.md": "stage plan and done-when gates",
+        "SOP.md": "standard operating procedure",
+        "TESTING.md": "verification strategy",
+        "insights/README.md": "durable learning index",
+        "insights/graph.md": "synthesized durable learning graph",
+        "insights/open-questions.md": "learning questions that should not be buried in chat",
+        "plans/planning.sqlite3": "canonical operational planning queue",
+        "scripts/check_file_justification.py": "public file purpose gate",
+        "scripts/check_planning_integrity.py": "planning SQLite integrity gate",
+        "scripts/check_protected_files.py": "source-of-truth lock gate",
+        "scripts/check_public_repo_hygiene.py": "public hygiene gate",
+        "scripts/check_skill_inventory.py": "repo-local skill inventory gate",
+        "scripts/check_source_inventory.py": "source-study inventory gate",
+        "scripts/print_protected_hashes.py": "protected file hash helper",
+        "scripts/verify.py": "project verification entrypoint",
+        "sources/README.md": "source-study inventory and attribution guide",
+    }
+    return purposes.get(path, "spawned project scaffold file")
+
+
+def _planning_actions_for_recommendation(
+    recommendation: SpawnedProjectRecommendation,
+) -> tuple[str, ...]:
+    if "supervisor-managed" not in recommendation.tiers:
+        return ("Defer planning SQLite until the work spans multiple AFK slices.",)
+    return (
+        "Initialize plans/planning.sqlite3 only for projects that need durable queue state.",
+        "Seed one active plan with milestones, acceptance criteria, and first AFK/HITL tasks.",
+        "Keep operational history in planning SQLite and HANDOFF.md as a compact resume snapshot.",
+    )
+
+
+def _source_lock_actions_for_recommendation(
+    recommendation: SpawnedProjectRecommendation,
+) -> tuple[str, ...]:
+    if "supervisor-managed" not in recommendation.tiers:
+        return ("Skip source locks until stable protected docs exist.",)
+    return (
+        "Draft protected source-of-truth docs first.",
+        "Add source locks only after stable docs exist and protected hashes are intentional.",
+    )
+
+
+def _insight_actions_for_recommendation(
+    recommendation: SpawnedProjectRecommendation,
+) -> tuple[str, ...]:
+    if "durable-learning" not in recommendation.tiers:
+        return ("Keep lessons in the handoff until durable learning is needed.",)
+    return (
+        "Create insight index and graph files before repeated workflow lessons are lost.",
+        "Record synthesized learning in insights/ instead of chat-only notes.",
+    )
+
+
+def _skill_actions_for_recommendation(
+    recommendation: SpawnedProjectRecommendation,
+) -> tuple[str, ...]:
+    if "repo-local-skills" not in _recommended_action_tiers(recommendation):
+        return ("Skip repo-local skills until a repeated project workflow appears.",)
+    return (
+        "Create only project-specific skills that remove repeated instructions.",
+        "Validate skill inventory before publication.",
+    )
+
+
+def _source_study_actions_for_recommendation(
+    recommendation: SpawnedProjectRecommendation,
+) -> tuple[str, ...]:
+    if "source-study" not in _recommended_action_tiers(recommendation):
+        return ("Skip source-study surfaces unless OSS/source inspiration is actually used.",)
+    return (
+        "Create sources/README.md before importing or studying external source material.",
+        "Record attribution posture before publication.",
+    )
+
+
+def _first_task_for_recommendation(
+    recommendation: SpawnedProjectRecommendation,
+    file_actions: tuple[SpawnedProjectScaffoldAction, ...],
+) -> SpawnedProjectFirstTaskProposal:
+    if "prototype-light" in recommendation.tiers:
+        return SpawnedProjectFirstTaskProposal(
+            title="Build first prototype slice",
+            task_type="AFK",
+            status="ready",
+            goal="Create one directly verifiable prototype slice before adding optional ceremony.",
+            acceptance_criteria=(
+                "The prototype behavior is usable and covered by a focused check.",
+            ),
+            verification_commands=recommendation.verification_commands,
+            allowed_paths=("README.md", "scripts/verify.py"),
+            review_required=False,
+        )
+    return SpawnedProjectFirstTaskProposal(
+        title="Bootstrap spawned project scaffold",
+        task_type="AFK",
+        status="ready",
+        goal="Create the selected scaffold files and seed the first vertical implementation slice.",
+        acceptance_criteria=(
+            "Selected scaffold files exist with project-specific goals and acceptance criteria.",
+            "Verification commands pass for the scaffold.",
+            "HANDOFF.md contains a compact current resume snapshot.",
+        ),
+        verification_commands=recommendation.verification_commands,
+        allowed_paths=tuple(action.path for action in file_actions),
+        review_required=True,
+    )
+
+
+def _recommended_action_tiers(
+    recommendation: SpawnedProjectRecommendation,
+) -> frozenset[str]:
+    return frozenset(action.tier for action in _file_actions_for_recommendation(recommendation))

@@ -109,6 +109,8 @@ from codex_supervisor.spawned_projects import (
     TRUST_POLICIES,
     SpawnedProjectBrief,
     SpawnedProjectRecommendation,
+    SpawnedProjectScaffoldProposal,
+    build_spawned_project_scaffold_proposal,
     recommend_spawned_project_scaffold,
 )
 from codex_supervisor.story_loop import (
@@ -189,30 +191,13 @@ def main(argv: list[str] | None = None) -> int:
         "spawned-project-classify",
         help="Dry-run spawned project scaffold tier recommendation",
     )
-    spawned_classify_parser.add_argument("--name", required=True)
-    spawned_classify_parser.add_argument(
-        "--complexity",
-        choices=sorted(PROJECT_COMPLEXITIES),
-        default="standard",
+    _add_spawned_project_brief_arguments(spawned_classify_parser)
+
+    spawned_propose_parser = subparsers.add_parser(
+        "spawned-project-propose",
+        help="Dry-run spawned project scaffold file and task proposal",
     )
-    spawned_classify_parser.add_argument(
-        "--trust-policy",
-        choices=sorted(TRUST_POLICIES),
-        default="local_trusted",
-    )
-    spawned_classify_parser.add_argument(
-        "--production-intended",
-        action="store_true",
-        default=False,
-    )
-    spawned_classify_parser.add_argument("--public-or-shared", action="store_true", default=False)
-    spawned_classify_parser.add_argument("--unattended-workers", action="store_true", default=False)
-    spawned_classify_parser.add_argument("--durable-queue", action="store_true", default=False)
-    spawned_classify_parser.add_argument("--protected-docs", action="store_true", default=False)
-    spawned_classify_parser.add_argument("--durable-learning", action="store_true", default=False)
-    spawned_classify_parser.add_argument("--repo-local-skills", action="store_true", default=False)
-    spawned_classify_parser.add_argument("--source-study", action="store_true", default=False)
-    spawned_classify_parser.add_argument("--json", action="store_true", default=False)
+    _add_spawned_project_brief_arguments(spawned_propose_parser)
 
     list_parser = subparsers.add_parser("plan-list", help="List plans")
     list_parser.add_argument("--path", type=Path, default=None)
@@ -827,25 +812,19 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "spawned-project-classify":
-        recommendation = recommend_spawned_project_scaffold(
-            SpawnedProjectBrief(
-                name=args.name,
-                complexity=args.complexity,
-                production_intended=args.production_intended,
-                public_or_shared=args.public_or_shared,
-                unattended_workers=args.unattended_workers,
-                durable_queue=args.durable_queue,
-                protected_docs=args.protected_docs,
-                durable_learning=args.durable_learning,
-                repo_local_skills=args.repo_local_skills,
-                source_study=args.source_study,
-                trust_policy=args.trust_policy,
-            )
-        )
+        recommendation = recommend_spawned_project_scaffold(_spawned_project_brief_from_args(args))
         if args.json:
             _print_json(recommendation)
         else:
             _print_spawned_project_recommendation(recommendation)
+        return 0
+
+    if args.command == "spawned-project-propose":
+        proposal = build_spawned_project_scaffold_proposal(_spawned_project_brief_from_args(args))
+        if args.json:
+            _print_json(proposal)
+        else:
+            _print_spawned_project_proposal(proposal)
         return 0
 
     if args.command == "codex-state-inventory":
@@ -1742,14 +1721,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "skill-promotion-validate":
         try:
-            proposal = _load_skill_promotion_proposal(args.proposal_path)
+            skill_proposal = _load_skill_promotion_proposal(args.proposal_path)
         except (OSError, json.JSONDecodeError, SkillPromotionContractError) as exc:
             print(f"Could not validate skill promotion proposal: {exc}", file=sys.stderr)
             return 1
         if args.json:
-            _print_json(proposal)
+            _print_json(skill_proposal)
         else:
-            _print_skill_promotion_proposal(proposal)
+            _print_skill_promotion_proposal(skill_proposal)
         return 0
 
     if args.command == "plan-upsert":
@@ -2467,6 +2446,60 @@ def _print_spawned_project_recommendation(
     print(f"first_task_guidance: {recommendation.first_task_guidance}")
     print(f"classification_reason: {recommendation.classification_reason}")
     _print_json_list("warnings", recommendation.warnings)
+
+
+def _print_spawned_project_proposal(proposal: SpawnedProjectScaffoldProposal) -> None:
+    print(f"project: {proposal.project_name}")
+    print(f"writes_files: {proposal.writes_files}")
+    print(f"tiers: {', '.join(proposal.recommendation.tiers)}")
+    print("file_actions:")
+    for action in proposal.file_actions:
+        print(f"- {action.path}\t{action.action}\t{action.tier}\t{action.purpose}")
+    _print_json_list("planning_actions", proposal.planning_actions)
+    _print_json_list("source_lock_actions", proposal.source_lock_actions)
+    _print_json_list("insight_actions", proposal.insight_actions)
+    _print_json_list("skill_actions", proposal.skill_actions)
+    _print_json_list("source_study_actions", proposal.source_study_actions)
+    print(f"first_task: {proposal.first_task.title}")
+
+
+def _add_spawned_project_brief_arguments(command_parser: argparse.ArgumentParser) -> None:
+    command_parser.add_argument("--name", required=True)
+    command_parser.add_argument(
+        "--complexity",
+        choices=sorted(PROJECT_COMPLEXITIES),
+        default="standard",
+    )
+    command_parser.add_argument(
+        "--trust-policy",
+        choices=sorted(TRUST_POLICIES),
+        default="local_trusted",
+    )
+    command_parser.add_argument("--production-intended", action="store_true", default=False)
+    command_parser.add_argument("--public-or-shared", action="store_true", default=False)
+    command_parser.add_argument("--unattended-workers", action="store_true", default=False)
+    command_parser.add_argument("--durable-queue", action="store_true", default=False)
+    command_parser.add_argument("--protected-docs", action="store_true", default=False)
+    command_parser.add_argument("--durable-learning", action="store_true", default=False)
+    command_parser.add_argument("--repo-local-skills", action="store_true", default=False)
+    command_parser.add_argument("--source-study", action="store_true", default=False)
+    command_parser.add_argument("--json", action="store_true", default=False)
+
+
+def _spawned_project_brief_from_args(args: argparse.Namespace) -> SpawnedProjectBrief:
+    return SpawnedProjectBrief(
+        name=args.name,
+        complexity=args.complexity,
+        production_intended=args.production_intended,
+        public_or_shared=args.public_or_shared,
+        unattended_workers=args.unattended_workers,
+        durable_queue=args.durable_queue,
+        protected_docs=args.protected_docs,
+        durable_learning=args.durable_learning,
+        repo_local_skills=args.repo_local_skills,
+        source_study=args.source_study,
+        trust_policy=args.trust_policy,
+    )
 
 
 def _print_json(value: object) -> None:

@@ -27,6 +27,12 @@ Run the MCP server directly during local checks:
 uv run --no-sync python -B -m codex_supervisor.mcp_stdio
 ```
 
+Verify the plugin source from a clean local discovery context:
+
+```sh
+uv run --no-sync python -B scripts/verify_codex_plugin_install.py
+```
+
 ## Workflow Map
 
 | Desktop workflow | Route through |

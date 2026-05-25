@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
+
+from scripts.verify_codex_plugin_install import verify_codex_plugin_install
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = REPO_ROOT / "plugins" / "codex-supervisor"
@@ -73,6 +76,7 @@ def test_plugin_docs_name_desktop_roles_and_queue_authority() -> None:
     required_phrases = [
         "codex_supervisor.mcp_stdio",
         "uv run --no-sync python -B -m codex_supervisor.mcp_stdio",
+        "uv run --no-sync python -B scripts/verify_codex_plugin_install.py",
         "skills/codex-supervisor/SKILL.md",
         "plans/planning.sqlite3",
         "HANDOFF.md",
@@ -132,3 +136,59 @@ def test_plugin_files_do_not_contain_placeholders_or_absolute_local_paths() -> N
         assert "[TODO:" not in text
         for forbidden in ("C:" + "\\Users", "/" + "Users" + "/"):
             assert forbidden not in text
+
+
+def test_clean_plugin_install_verifier_discovers_skill_and_mcp_lifecycle() -> None:
+    captured: dict[str, object] = {}
+
+    def fake_runner(
+        command: tuple[str, ...],
+        cwd: Path,
+        payload: str,
+        timeout_seconds: int,
+    ) -> subprocess.CompletedProcess[str]:
+        captured["command"] = command
+        captured["cwd"] = cwd
+        captured["payload"] = payload
+        captured["timeout_seconds"] = timeout_seconds
+        stdout = "\n".join(
+            [
+                json.dumps({"jsonrpc": "2.0", "id": "install-init", "result": {}}),
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": "tools-list",
+                        "result": {
+                            "tools": [
+                                {"name": "codex_supervisor.story_loop_status"},
+                                {"name": "codex_supervisor.task_show"},
+                            ]
+                        },
+                    }
+                ),
+            ]
+        )
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    summary = verify_codex_plugin_install(repo_root=REPO_ROOT, runner=fake_runner)
+
+    assert summary["ok"] is True
+    assert summary["plugin"] == "codex-supervisor"
+    assert summary["plugin_source"] == "plugins/codex-supervisor"
+    assert summary["clean_profile_isolated"] is True
+    assert summary["real_codex_home_mutated"] is False
+    assert summary["skills"] == ["codex-supervisor"]
+    assert "codex_supervisor.story_loop_status" in summary["mcp_tools"]
+    assert captured["command"] == (
+        "uv",
+        "run",
+        "--no-sync",
+        "python",
+        "-B",
+        "-m",
+        "codex_supervisor.mcp_stdio",
+    )
+    assert captured["cwd"] == REPO_ROOT
+    payload = str(captured["payload"])
+    assert '"method": "initialize"' in payload
+    assert '"method": "tools/list"' in payload

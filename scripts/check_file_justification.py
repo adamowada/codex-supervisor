@@ -257,6 +257,10 @@ FILE_PURPOSES = {
     "scripts/check_source_inventory.py": FilePurpose("source clone inventory gate", "pytest"),
     "scripts/print_protected_hashes.py": FilePurpose("protected hash refresh helper", "pytest"),
     "scripts/verify.py": FilePurpose("aggregated local verification runner", "pytest"),
+    "scripts/verify_codex_plugin_install.py": FilePurpose(
+        "Codex Desktop plugin clean-discovery smoke verifier",
+        "pytest",
+    ),
     "sources/README.md": FilePurpose("ignored source clone inventory", "check_source_inventory"),
     ".agents/skills/worker-result-contract.md": FilePurpose(
         "shared worker-result contract for repo-local skills", "check_skill_inventory"

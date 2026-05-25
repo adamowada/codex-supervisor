@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 04:27 PDT
+Last updated: 2026-05-25 04:39 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,104 +9,52 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `ready`.
-- Active plan: `plan-stage12-codex-plugin-desktop-experience`
-  (`Stage 12 Codex Plugin And Desktop Experience`, priority 78).
-- Current AFK task: `task-stage12c-plugin-clean-discovery`.
+- Current queue state: `empty`.
+- Current AFK task: none. `story-loop-status --json` reports no active or blocked current-queue
+  plan after Stage 12 was completed.
+- Latest completed plan: `plan-stage12-codex-plugin-desktop-experience`
+  (`Stage 12 Codex Plugin And Desktop Experience`).
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.
 
-## Stage 12C Contract
+## Stage 12C Summary
 
-Goal: add a repo-owned clean Codex Desktop plugin discovery smoke verifier that validates the plugin
-source from an isolated temporary profile/project, proves manifest, skills, MCP cwd, and MCP stdio
-lifecycle behavior, and keeps real Desktop install state, marketplace writes, and live worker launch
-out of scope.
+Completed task: `task-stage12c-plugin-clean-discovery`.
 
-Allowed paths:
-
-```text
-plugins/codex-supervisor/**
-scripts/verify_codex_plugin_install.py
-tests/test_codex_plugin.py
-scripts/check_file_justification.py
-plans/planning.sqlite3
-HANDOFF.md
-insights/**
-.agents/skills/**
-```
-
-Acceptance criteria:
-
-- A repo-owned clean plugin install smoke verifier uses an isolated temporary Codex profile/project
-  and validates plugin discovery without writing real Codex Desktop state.
-- The verifier proves plugin manifest relative paths, packaged skills, MCP config cwd resolution,
-  and the configured MCP stdio lifecycle from the plugin source.
-- Focused plugin tests, file-purpose hygiene, planning integrity, full verification, and
-  publication-ready hygiene checks pass with the clean-discovery verifier included.
-
-Verification commands:
-
-```sh
-uv run --no-sync python -B -m pytest tests/test_codex_plugin.py -q -p no:cacheprovider
-uv run --no-sync python -B scripts/check_file_justification.py
-uv run --no-sync python -B scripts/check_planning_integrity.py
-uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
-uv run --no-sync python -B scripts/verify.py
-uv run --no-sync python -B scripts/verify.py --publication-ready
-```
-
-Stop conditions:
-
-- A HITL task becomes current in planning SQLite.
-- The slice requires mutating a real Codex Desktop profile, marketplace registry, external
-  credentials, or UI automation.
-- The verifier cannot prove discovery without relying on machine-local Desktop state.
-- Verification repeatedly fails without a known repo-local fix.
-
-Out of scope:
-
-- Actual Codex Desktop GUI automation or user profile mutation.
-- Marketplace or personal plugin registry writes.
-- Live Codex worker launch or mutating MCP tools.
-- GitHub/CI integration, release packaging, or Stage 13 behavior.
-
-## Stage 12B Summary
-
-Completed task: `task-stage12b-plugin-skill-workflows`.
-
-- Worker run: `worker-run-stage12b-plugin-skill-workflows-inline-20260525`.
-- DB result: `worker-result-stage12b-plugin-skill-workflows-result`.
-- Review: `review-stage12b-plugin-skill-workflows-20260525`, 0 findings.
-- Completion progress: `progress-stage12b-plugin-skill-workflows-completed-20260525`.
-- Implementation commit: `46f140dea6c05e6bd1deeb7036aab6346ad6c627`.
+- Worker run: `worker-run-stage12c-plugin-clean-discovery-inline-20260525`.
+- DB result: `worker-result-stage12c-plugin-clean-discovery-result`.
+- Review: `review-stage12c-plugin-clean-discovery-20260525`, 0 findings.
+- Completion progress: `progress-stage12c-plugin-clean-discovery-completed-20260525`.
+- Stage 12 plan status: `completed`.
 
 Implemented:
 
-- Added `skills/codex-supervisor/SKILL.md` under the repo-local plugin as a Desktop-discoverable
-  workflow entrypoint.
-- Added `"skills": "./skills/"` to `plugins/codex-supervisor/.codex-plugin/plugin.json`.
-- Documented the Desktop workflow map for project bootstrap, queue inspection, worker launch,
-  review, ACP, and handoff in `plugins/codex-supervisor/README.md`.
-- Extended `tests/test_codex_plugin.py` and `scripts/check_file_justification.py` for the packaged
-  skill surface.
+- Added `scripts/verify_codex_plugin_install.py`, a clean local plugin discovery smoke verifier.
+- The verifier creates an isolated temporary `codex-home` and fresh project, validates plugin
+  manifest relative paths and packaged skills, resolves the MCP cwd to the repo root, and exercises
+  the configured MCP stdio server through `initialize` and `tools/list`.
+- Documented the smoke-check command in `plugins/codex-supervisor/README.md`.
+- Expanded `tests/test_codex_plugin.py` to cover verifier discovery and MCP lifecycle behavior.
+- Added file-purpose coverage for the new verifier.
+- Captured the command-safety shaping lesson in `insights/workflow-patterns.md` and
+  `.agents/skills/afk-issue-shaper/SKILL.md`.
 
-Out of scope remains unchanged for the next Stage 12 slice:
+Residual Stage 12 risk:
 
-- Clean Codex Desktop profile install verification.
-- Marketplace or personal plugin registry writes.
-- Bulk-copying the repo-local `.agents/skills/` library into the plugin archive.
-- Mutating MCP tools, GitHub/CI integration, release packaging, or live worker launch.
+- The verifier proves clean local plugin source discovery and MCP stdio startup, but it does not
+  automate the Codex Desktop GUI or mutate a real Desktop profile.
+- Marketplace or personal plugin registry writes remain out of scope.
+- Live worker launch and mutating MCP tools remain out of scope until backend preflight and queue
+  scope explicitly allow them.
 
 ## Verification Evidence
 
-Passed after the Stage 12B implementation:
+Passed after the Stage 12C implementation:
 
 ```sh
+uv run --no-sync python -B scripts/verify_codex_plugin_install.py
 uv run --no-sync python -B -m pytest tests/test_codex_plugin.py -q -p no:cacheprovider
-uv run --with pyyaml --no-project python -B <plugin-creator>/scripts/validate_plugin.py plugins/codex-supervisor
-uv run --with pyyaml --no-project python -B <skill-creator>/scripts/quick_validate.py plugins/codex-supervisor/skills/codex-supervisor
 uv run --no-sync python -B scripts/check_file_justification.py
 uv run --no-sync python -B scripts/check_planning_integrity.py
 uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
@@ -114,21 +62,28 @@ uv run --no-sync python -B scripts/verify.py
 uv run --no-sync python -B scripts/verify.py --publication-ready
 ```
 
-`scripts/verify.py` and `scripts/verify.py --publication-ready` both passed with 435 tests plus
+`scripts/verify.py` and `scripts/verify.py --publication-ready` both passed with 436 tests plus
 style, type, planning, public hygiene, source inventory, skill inventory, protected-file, and
 `uv lock --check` gates.
 
-## Prior Checkpoints
+## Prior Stage 12 Checkpoints
 
 - Stage 12A completed task: `task-stage12a-plugin-mcp-scaffold`.
 - Stage 12A worker run: `worker-run-stage12a-plugin-mcp-scaffold-inline-20260525`, completed with
   DB result `worker-result-stage12a-plugin-mcp-scaffold-result`.
 - Stage 12A implementation commit: `02a4ae986f3ed7fed8506787b9f863fe35aac1bd`.
 - Stage 12A evidence link commit: `332d2e7f5f18775d765c757ea030b754008bff1e`.
-- Stage 12B shaping commit: `64c5c7924f61e120eadc2259dcca72db719757b1`.
+- Stage 12B completed task: `task-stage12b-plugin-skill-workflows`.
+- Stage 12B worker run: `worker-run-stage12b-plugin-skill-workflows-inline-20260525`, completed
+  with DB result `worker-result-stage12b-plugin-skill-workflows-result`.
+- Stage 12B implementation commit: `46f140dea6c05e6bd1deeb7036aab6346ad6c627`.
+- Stage 12B evidence link commit: `1be4832a26ab9918a46c163a0b0d9af1cb8f4682`.
+- Stage 12C shaping commit: `f75c304`.
+- Stage 12C claim commit: `7660bf4`.
 
 ## Next Action
 
-Execute `task-stage12c-plugin-clean-discovery` through the Story Loop. Run the task verification
-commands, perform the required fresh-thread-style review, fix accepted findings, update planning
-SQLite and this handoff, then ACP the step.
+Shape the next ROADMAP slice from planning SQLite. With Stage 12 completed, the next likely plan is
+ROADMAP Stage 13: GitHub and CI/CD integration. Confirm the new Goal Contract, allowed paths,
+acceptance criteria, verification commands, stop conditions, and review requirement before claiming
+or executing the next task.

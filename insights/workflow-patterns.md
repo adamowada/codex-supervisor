@@ -146,3 +146,23 @@ the transient JSON and removing `worker-results/` after ingestion restored plann
 Next action: before ingesting completed worker results, prefer only the task's official verification
 commands in `tests_run`, keep external validators in review notes or handoff summaries, and delete
 the ignored `worker-results/` import directory immediately after the DB row is created.
+
+## New Verification Scripts Need Command-Safety Promotion
+
+Confidence: confirmed.
+
+Planning SQLite validates task verification commands against an approved read-only command shape.
+Brand-new `scripts/*.py` files are not automatically safe as canonical task commands, even when the
+script is read-only and useful. Until the script is intentionally added to the command-safety
+allow-list, use focused pytest or existing approved checks as the task verification command and run
+the new script as extra review or handoff evidence.
+
+Evidence: Stage 12C shaping first tried to use
+`uv run --no-sync python -B scripts/verify_codex_plugin_install.py` as a criterion verifier, and
+planning rejected it because Python verification is limited to approved scripts or modules. The task
+was shaped with focused plugin tests and full verify as canonical commands, while the new smoke
+verifier still ran directly as extra evidence.
+
+Next action: when shaping tasks that introduce new verifier scripts, either include command-safety
+promotion and tests in scope or keep the canonical task commands on already-approved verification
+surfaces.

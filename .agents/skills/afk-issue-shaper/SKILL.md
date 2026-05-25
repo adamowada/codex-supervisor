@@ -37,3 +37,8 @@ Prefer a small shippable behavior over a horizontal layer such as "build backend
 
 Before launch, the issue should map directly to `supervisor_tasks` columns and be convertible into a
 Goal Contract without new human input.
+
+Use only planning-safe verification commands in the task contract. New `scripts/*.py` verifiers are
+not automatically accepted by planning SQLite command-safety checks; either include explicit
+command-safety promotion in the slice or use focused pytest/full verify as canonical commands and
+run the new script as extra evidence during review or handoff.

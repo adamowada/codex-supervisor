@@ -402,7 +402,18 @@ def test_codex_exec_backend_launch_success_returns_result_path_and_preserves_fin
         == "artifacts/run-worker/worker-result.raw.json"
     )
     assert (tmp_path / "runs" / "run-worker" / "stdout.txt").read_text() == ('{"event":"done"}\n')
-    assert (tmp_path / "runs" / "run-worker" / "worker-result.schema.json").exists()
+    schema = json.loads(
+        (tmp_path / "runs" / "run-worker" / "worker-result.schema.json").read_text()
+    )
+    assert schema["additionalProperties"] is False
+    assert "worker_run_ids" not in schema["properties"]
+    assert schema["properties"]["tests_run"]["items"]["additionalProperties"] is False
+    assert (
+        schema["properties"]["acceptance_results"]["properties"]["Criterion passes."][
+            "additionalProperties"
+        ]
+        is False
+    )
     assert (tmp_path / "runs" / "run-worker" / "final-message.txt").read_text() == (
         "assistant final\n"
     )

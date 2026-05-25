@@ -40,3 +40,17 @@
 - `supersedes`: none
 - `next action`: Build Codex Exec argv from resolved repo/worktree paths while preserving
   repo-relative paths only in redacted metadata and planning records.
+
+## Worker Result Structured Output Schema
+
+- `claim`: Live Worker Result schemas passed to Codex Exec must use strict Structured Outputs
+  objects with `additionalProperties: false`, and acceptance-result keys should be generated from
+  the task contract.
+- `confidence`: confirmed
+- `evidence`: failed worker run `worker-run-v1-live-worker-smoke-abspath-20260525`, OpenAI
+  Structured Outputs documentation, `src/codex_supervisor/worker_backends.py`, and
+  `tests/test_worker_backends.py`.
+- `scope`: `CodexExecBackend` output schemas supplied through `codex exec --output-schema`.
+- `supersedes`: none
+- `next action`: Keep Worker Result validation stricter than the model schema when needed, but make
+  the model-facing schema acceptable to the live API.

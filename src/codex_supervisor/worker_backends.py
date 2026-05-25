@@ -677,13 +677,23 @@ def _ensure_result_schema_available(request: WorkerLaunchRequest) -> str | None:
         return f"schema path is missing or not a runtime artifact: {request.result_schema_path}"
     schema_path.parent.mkdir(parents=True, exist_ok=True)
     schema_path.write_text(
-        json.dumps(_worker_result_output_schema(), indent=2, sort_keys=True) + "\n",
+        json.dumps(_worker_result_output_schema(request), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     return None
 
 
-def _worker_result_output_schema() -> JsonObject:
+def _worker_result_output_schema(request: WorkerLaunchRequest) -> JsonObject:
+    acceptance_result_schema = {
+        "type": "object",
+        "required": ["status", "evidence"],
+        "properties": {
+            "status": {"enum": ["passed", "failed", "blocked"]},
+            "evidence": {"type": "string"},
+        },
+        "additionalProperties": False,
+    }
+    acceptance_results = dict.fromkeys(request.acceptance_criteria, acceptance_result_schema)
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -697,16 +707,12 @@ def _worker_result_output_schema() -> JsonObject:
             "risks",
             "follow_up_tasks",
             "artifacts",
+            "completion_notes",
         ],
         "properties": {
-            "worker_run_id": {"type": "string", "minLength": 1},
-            "worker_run_ids": {
-                "type": "array",
-                "items": {"type": "string", "minLength": 1},
-                "minItems": 1,
-            },
+            "worker_run_id": {"type": "string"},
             "status": {"enum": ["completed", "blocked", "failed", "needs_review"]},
-            "summary": {"type": "string", "minLength": 1},
+            "summary": {"type": "string"},
             "changed_files": {"type": "array", "items": {"type": "string"}},
             "tests_run": {
                 "type": "array",
@@ -714,21 +720,25 @@ def _worker_result_output_schema() -> JsonObject:
                     "type": "object",
                     "required": ["command", "exit_code", "summary"],
                     "properties": {
-                        "command": {"type": "string", "minLength": 1},
+                        "command": {"type": "string"},
                         "exit_code": {"type": "integer"},
-                        "summary": {"type": "string", "minLength": 1},
+                        "summary": {"type": "string"},
                     },
-                    "additionalProperties": True,
+                    "additionalProperties": False,
                 },
             },
-            "acceptance_results": {"type": "object"},
+            "acceptance_results": {
+                "type": "object",
+                "required": list(request.acceptance_criteria),
+                "properties": acceptance_results,
+                "additionalProperties": False,
+            },
             "risks": {"type": "array", "items": {"type": "string"}},
             "follow_up_tasks": {"type": "array", "items": {"type": "string"}},
             "artifacts": {"type": "array", "items": {"type": "string"}},
             "completion_notes": {"type": "string"},
-            "handoff_notes": {"type": "string"},
         },
-        "additionalProperties": True,
+        "additionalProperties": False,
     }
 
 

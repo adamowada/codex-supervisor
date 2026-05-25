@@ -822,9 +822,10 @@ def compose_worker_prompt(request: WorkerLaunchRequest) -> str:
 def _worker_visible_result_path(request: WorkerLaunchRequest) -> str:
     """Return a path the worker can use from its configured worktree cwd."""
 
-    target = request.repo_root / request.result_path
+    target = (request.repo_root / request.result_path).resolve(strict=False)
+    worktree_path = request.worktree_path.resolve(strict=False)
     try:
-        return Path(os.path.relpath(target, request.worktree_path)).as_posix()
+        return Path(os.path.relpath(target, worktree_path)).as_posix()
     except ValueError:
         return request.result_path
 
@@ -833,18 +834,20 @@ def _build_codex_exec_argv(
     request: WorkerLaunchRequest,
     executable_path: str,
 ) -> tuple[str, ...]:
+    repo_root = request.repo_root.resolve(strict=False)
+    worktree_path = request.worktree_path.resolve(strict=False)
     argv = [
         executable_path,
         "exec",
         "--json",
         "--output-schema",
-        str(request.repo_root / request.result_schema_path),
+        str((repo_root / request.result_schema_path).resolve(strict=False)),
         "--output-last-message",
-        str(request.repo_root / request.final_message_path),
+        str((repo_root / request.final_message_path).resolve(strict=False)),
         "--sandbox",
         request.sandbox_mode,
         "--cd",
-        str(request.worktree_path),
+        str(worktree_path),
     ]
     if request.model is not None:
         argv.extend(("--model", request.model))

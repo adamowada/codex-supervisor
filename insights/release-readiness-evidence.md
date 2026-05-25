@@ -26,3 +26,17 @@
 - `supersedes`: none
 - `next action`: Keep the subprocess environment allowlist minimal, but compare environment keys
   case-insensitively and preserve the host-provided key spelling.
+
+## Live Codex Exec Paths
+
+- `claim`: Live Codex Exec argv paths must be absolute when the supervisor also sets the subprocess
+  working directory, otherwise relative `--cd`, schema, and output paths are resolved from the wrong
+  directory.
+- `confidence`: confirmed
+- `evidence`: failed worker run `worker-run-v1-live-worker-smoke-envfix-20260525` in
+  `plans/planning.sqlite3`, `src/codex_supervisor/worker_backends.py`, and
+  `tests/test_worker_backends.py`.
+- `scope`: `CodexExecBackend` live launches with repo-root-relative run artifacts and worktrees.
+- `supersedes`: none
+- `next action`: Build Codex Exec argv from resolved repo/worktree paths while preserving
+  repo-relative paths only in redacted metadata and planning records.

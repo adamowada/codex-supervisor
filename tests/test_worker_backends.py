@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from pathlib import Path
 
 from codex_supervisor.worker_backends import (
     CodexExecBackend,
@@ -212,6 +213,39 @@ def test_codex_exec_backend_fails_closed_for_unsupported_options(tmp_path):
     assert "reasoning_effort" in preflight.version_stderr
     assert "service_tier" in preflight.version_stderr
     assert "native_goal_mode" in preflight.version_stderr
+
+
+def test_codex_exec_backend_uses_absolute_paths_for_relative_repo_request(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    worktree = tmp_path / "worktrees" / "run-worker"
+    worktree.mkdir(parents=True)
+
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+
+    request = _codex_exec_request(
+        Path("."),
+        worktree_path=Path("worktrees/run-worker"),
+    )
+
+    preflight = CodexExecBackend(
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=runner,
+    ).preflight(request)
+
+    output_schema_path = Path(preflight.argv[4])
+    final_message_path = Path(preflight.argv[6])
+    cd_path = Path(preflight.argv[10])
+    assert output_schema_path.is_absolute()
+    assert final_message_path.is_absolute()
+    assert cd_path.is_absolute()
+    assert output_schema_path == tmp_path / "runs" / "run-worker" / "worker-result.schema.json"
+    assert final_message_path == tmp_path / "runs" / "run-worker" / "final-message.txt"
+    assert cd_path == worktree
 
 
 def test_codex_exec_backend_fails_closed_on_codex_home_environment_conflict(tmp_path):

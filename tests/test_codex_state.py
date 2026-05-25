@@ -291,9 +291,8 @@ def test_codex_state_reconciliation_dry_run_builds_proposed_actions(
         if proposal.source_id == "state_5.sqlite::threads::thread"
     ]
     assert [proposal.action_type for proposal in thread_proposals] == [
-        "artifact-link",
-        "progress-event",
         "follow-up-finding",
+        "progress-event",
     ]
     progress_proposal = thread_proposals[1]
     assert progress_proposal.proposal_id.startswith("codex-state-")
@@ -334,12 +333,10 @@ def test_codex_state_reconciliation_dry_run_is_deterministic(
 
     assert first.proposals == second.proposals
     assert [(proposal.source_id, proposal.action_type) for proposal in first.proposals] == [
-        ("state_5.sqlite::agent_jobs::agent_job", "artifact-link"),
-        ("state_5.sqlite::agent_jobs::agent_job", "progress-event"),
         ("state_5.sqlite::agent_jobs::agent_job", "follow-up-finding"),
-        ("state_5.sqlite::threads::thread", "artifact-link"),
-        ("state_5.sqlite::threads::thread", "progress-event"),
+        ("state_5.sqlite::agent_jobs::agent_job", "progress-event"),
         ("state_5.sqlite::threads::thread", "follow-up-finding"),
+        ("state_5.sqlite::threads::thread", "progress-event"),
     ]
 
 
@@ -431,7 +428,7 @@ def test_codex_state_reconcile_dry_run_cli_prints_json_without_payloads_or_mutat
     assert _file_snapshot(workspace) == before_workspace
     assert payload["observed_at"] == OBSERVED_AT
     assert payload["observations"][0]["source_id"] == "state_5.sqlite::threads::thread"
-    assert payload["proposals"][0]["action_type"] == "artifact-link"
+    assert payload["proposals"][0]["action_type"] == "follow-up-finding"
     assert payload["proposals"][0]["action_status"] == "proposed"
     assert payload["proposals"][0]["proposal_id"].startswith("codex-state-")
     assert payload["proposals"][0]["raw_snapshot_hash"]

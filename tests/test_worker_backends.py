@@ -6,13 +6,13 @@ import subprocess
 from codex_supervisor.worker_backends import (
     CodexExecBackend,
     CommandExecutionResult,
-    FakeWorkerBackend,
+    ContractWorkerBackend,
     WorkerLaunchRequest,
     _minimal_process_environment,
 )
 
 
-def test_fake_worker_backend_emits_contract_compatible_result(tmp_path):
+def test_contract_worker_backend_emits_contract_compatible_result(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
     request = WorkerLaunchRequest(
@@ -37,7 +37,7 @@ def test_fake_worker_backend_emits_contract_compatible_result(tmp_path):
         acceptance_criteria=("Criterion passes.",),
     )
 
-    result = FakeWorkerBackend(changed_files=("src/worker.py",)).run(request)
+    result = ContractWorkerBackend(changed_files=("src/worker.py",)).run(request)
 
     assert result.status == "completed"
     assert result.result_path == "artifacts/run-worker/worker-result.raw.json"
@@ -54,7 +54,7 @@ def test_fake_worker_backend_emits_contract_compatible_result(tmp_path):
     assert (tmp_path / "runs" / "run-worker" / "prompt.md").read_text() == "Do the slice."
     assert (tmp_path / "runs" / "run-worker" / "events.jsonl").exists()
     assert (tmp_path / "runs" / "run-worker" / "stdout.txt").read_text() == (
-        "Fake worker completed the requested slice.\n"
+        "Contract worker completed the requested slice.\n"
     )
     assert (tmp_path / "runs" / "run-worker" / "stderr.txt").read_text() == ""
     assert (tmp_path / "runs" / "run-worker" / "diff-summary.txt").read_text() == (
@@ -62,7 +62,7 @@ def test_fake_worker_backend_emits_contract_compatible_result(tmp_path):
     )
 
 
-def test_fake_worker_backend_can_return_failure_without_result_file(tmp_path):
+def test_contract_worker_backend_can_return_failure_without_result_file(tmp_path):
     request = WorkerLaunchRequest(
         worker_run_id="run-worker",
         task_id="task-worker",
@@ -85,7 +85,7 @@ def test_fake_worker_backend_can_return_failure_without_result_file(tmp_path):
         acceptance_criteria=("Criterion passes.",),
     )
 
-    result = FakeWorkerBackend(
+    result = ContractWorkerBackend(
         changed_files=(),
         failure_class="codex_cli_unavailable",
     ).run(request)
@@ -101,9 +101,11 @@ def test_fake_worker_backend_can_return_failure_without_result_file(tmp_path):
     assert not (tmp_path / "artifacts" / "run-worker" / "worker-result.raw.json").exists()
     assert (tmp_path / "runs" / "run-worker" / "prompt.md").read_text() == "Do the slice."
     assert (tmp_path / "runs" / "run-worker" / "stderr.txt").read_text() == (
-        "Fake worker failed: codex_cli_unavailable\n"
+        "Contract worker failed: codex_cli_unavailable\n"
     )
-    assert "fake.failed" in (tmp_path / "runs" / "run-worker" / "events.jsonl").read_text()
+    assert (
+        "contract_worker.failed" in (tmp_path / "runs" / "run-worker" / "events.jsonl").read_text()
+    )
 
 
 def test_codex_exec_backend_preflight_builds_list_argv_without_launching(tmp_path):

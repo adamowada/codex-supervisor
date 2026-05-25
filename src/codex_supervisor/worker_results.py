@@ -9,6 +9,23 @@ from pathlib import Path
 from typing import Any
 
 JsonObject = dict[str, Any]
+MAX_WORKER_RESULT_BYTES = 256 * 1024
+WORKER_RESULT_PAYLOAD_KEYS = frozenset(
+    {
+        "acceptance_results",
+        "artifacts",
+        "changed_files",
+        "completion_notes",
+        "follow_up_tasks",
+        "handoff_notes",
+        "risks",
+        "status",
+        "summary",
+        "tests_run",
+        "worker_run_id",
+        "worker_run_ids",
+    }
+)
 
 
 class WorkerResultError(ValueError):
@@ -24,15 +41,26 @@ class WorkerResult:
     worker_run_ids: tuple[str, ...]
     changed_files: tuple[str, ...]
     artifacts: tuple[str, ...]
+    redacted_payload_keys: tuple[str, ...] = ()
 
 
 def load_worker_result(path: Path) -> JsonObject:
     """Load a worker result JSON file as an object."""
 
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        raw_bytes = path.read_bytes()
+        if len(raw_bytes) > MAX_WORKER_RESULT_BYTES:
+            msg = (
+                "worker result is too large: "
+                f"{len(raw_bytes)} bytes exceeds {MAX_WORKER_RESULT_BYTES}"
+            )
+            raise WorkerResultError(msg)
+        payload = json.loads(raw_bytes.decode("utf-8"))
     except json.JSONDecodeError as exc:
         msg = f"worker result is not valid JSON: {exc.msg}"
+        raise WorkerResultError(msg) from exc
+    except UnicodeDecodeError as exc:
+        msg = f"worker result is not valid UTF-8: {exc.reason}"
         raise WorkerResultError(msg) from exc
     except FileNotFoundError as exc:
         msg = f"worker result does not exist: {path}"
@@ -78,6 +106,8 @@ def validate_worker_result_payload(
 ) -> WorkerResult:
     """Validate a Worker Result Contract object against a task contract."""
 
+    redacted_payload_keys = worker_result_unknown_payload_keys(payload)
+    payload = sanitize_worker_result_payload(payload)
     status = _result_status(payload)
     worker_run_ids = _worker_run_ids(payload, worker_run_id)
     completed = status == "completed"
@@ -97,7 +127,20 @@ def validate_worker_result_payload(
         worker_run_ids=worker_run_ids,
         changed_files=changed_files,
         artifacts=artifacts,
+        redacted_payload_keys=redacted_payload_keys,
     )
+
+
+def sanitize_worker_result_payload(payload: JsonObject) -> JsonObject:
+    """Return only Worker Result Contract fields safe to persist in tracked SQLite."""
+
+    return {key: payload[key] for key in sorted(WORKER_RESULT_PAYLOAD_KEYS) if key in payload}
+
+
+def worker_result_unknown_payload_keys(payload: JsonObject) -> tuple[str, ...]:
+    """List non-contract keys omitted from persisted raw worker-result payloads."""
+
+    return tuple(sorted(key for key in payload if key not in WORKER_RESULT_PAYLOAD_KEYS))
 
 
 def _result_status(payload: JsonObject) -> str:

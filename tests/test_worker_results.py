@@ -4,7 +4,14 @@ import json
 
 import pytest
 
+from codex_supervisor.planning import (
+    PlanRecord,
+    SupervisorTaskRecord,
+    WorkerRunRecord,
+    initialize_planning_database,
+)
 from codex_supervisor.worker_results import (
+    MAX_WORKER_RESULT_BYTES,
     WorkerResultError,
     validate_worker_result_file,
     validate_worker_result_payload,
@@ -140,6 +147,76 @@ def test_worker_result_validation_requires_acceptance_evidence(tmp_path):
             verification_commands=("python -B -m pytest -p no:cacheprovider",),
             acceptance_criteria=("Criterion passes.",),
         )
+
+
+def test_worker_result_validation_rejects_oversized_json(tmp_path):
+    result_path = "artifacts/run-worker/worker-result.raw.json"
+    result_file = tmp_path / result_path
+    result_file.parent.mkdir(parents=True)
+    result_file.write_text(
+        json.dumps({"padding": "x" * MAX_WORKER_RESULT_BYTES}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(WorkerResultError, match="too large"):
+        validate_worker_result_file(
+            result_file,
+            repo_root=tmp_path,
+            result_path=result_path,
+            worker_run_id="run-worker",
+            allowed_paths=("src/**",),
+            verification_commands=("python -B -m pytest -p no:cacheprovider",),
+            acceptance_criteria=("Criterion passes.",),
+        )
+
+
+def test_worker_result_ingestion_redacts_unknown_raw_payload_fields(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker-result",
+            slug="worker-result",
+            title="Worker Result",
+            goal="Store worker results safely.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-worker-result",
+            title="Worker",
+            goal="Complete worker result.",
+            task_type="AFK",
+            status="running",
+            acceptance_criteria=["Criterion passes."],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+        )
+    )
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-worker",
+            task_id="task-worker",
+            backend="codex_exec",
+            status="running",
+        )
+    )
+    result_path = "artifacts/run-worker/worker-result.raw.json"
+    payload = _worker_result()
+    payload["secret_notes"] = "do-not-store-this"
+    result_file = tmp_path / result_path
+    result_file.parent.mkdir(parents=True)
+    result_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    record = store.ingest_worker_result("run-worker", result_path)
+
+    assert "secret_notes" not in record.raw_payload
+    assert "secret_notes" in record.metadata["redacted_raw_payload_keys"]
+    assert "do-not-store-this" not in json.dumps(record.raw_payload, sort_keys=True)
 
 
 def _worker_result() -> dict[str, object]:

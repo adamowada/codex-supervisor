@@ -85,6 +85,23 @@ def test_public_hygiene_rejects_invalid_utf8_text_candidates(tmp_path):
     assert any("not valid UTF-8" in failure for failure in failures)
 
 
+def test_public_hygiene_rejects_production_placeholder_markers(tmp_path):
+    module = _load_hygiene_module()
+    package_root = tmp_path / "src" / "codex_supervisor"
+    package_root.mkdir(parents=True)
+    (package_root / "worker_backends.py").write_text(
+        "class Placeholder:\n    marker = 'demo backend'\n",
+        encoding="utf-8",
+    )
+
+    failures = module._check_production_placeholder_markers(tmp_path)
+
+    assert failures == (
+        "src/codex_supervisor/worker_backends.py: production package contains "
+        "release-blocking placeholder marker",
+    )
+
+
 def test_public_hygiene_ignores_deleted_tracked_files_until_publication_ready(tmp_path):
     module = _load_hygiene_module()
     _git(tmp_path, "init")

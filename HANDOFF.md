@@ -7,16 +7,17 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Current Snapshot
 
-- Current queue state: ready after the release-readiness current-evidence slice ACP.
+- Current queue state: ready after the security/public-hygiene slice verification.
 - Active plan: `plan-v1-live-operational-hardening`.
-- Current AFK task: `task-v1-release-current-live-evidence`.
+- Current AFK task: `task-v1-final-completion-audit-live-smoke`.
 - Latest planning checkpoint: six-lane v1 hardening review digested in
   `progress-v1-six-lane-review-digested-20260525`; live worker implementation completed in
   `worker-run-v1-live-story-loop-inline-20260525`; default-on mutating MCP/plugin parity completed
   in `worker-run-v1-mutating-mcp-inline-20260525`; real spawned-project bootstrap/adapters
   completed in `worker-run-v1-real-bootstrap-inline-20260525`; live review integrity completed in
   `worker-run-v1-live-review-inline-20260525`; release-readiness evidence hardening completed in
-  `worker-run-v1-release-current-inline-20260525`.
+  `worker-run-v1-release-current-inline-20260525`; security/public-hygiene hardening completed in
+  `worker-run-v1-security-hygiene-inline-20260525`.
 - Durable insights: `insights/v1-hardening-clarifications.md` and
   `insights/v1-hardening-review.md`.
 - Codex CLI smoke: npm `codex-cli 0.133.0` resolves in the current shell, and `codex exec --help`
@@ -39,9 +40,6 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Next Action
 
-Implement `task-v1-security-public-hygiene-hardening`: close worker-result raw-payload,
-Codex-state artifact-link, GitHub Actions supply-chain, and public-hygiene gaps. Release readiness
-now targets current `HEAD`, rejects stale CI/Windows rows, requires current live evidence, and
-excludes the factory-loop demo from v1 release evidence; final release readiness is expected to
-remain red until the final audit records current CI/Windows/live-smoke evidence for the post-ACP
-commit.
+Run `task-v1-final-completion-audit-live-smoke`: prove every v1 requirement against current
+evidence, run bounded real Codex/API smoke checks for live worker/review/MCP/bootstrap behavior,
+record current CI/Windows/live evidence for the post-ACP commit, and only then mark v1 operational.

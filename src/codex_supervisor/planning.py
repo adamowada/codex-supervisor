@@ -18,7 +18,9 @@ from urllib.parse import quote, urlparse
 from codex_supervisor.worker_results import (
     WorkerResult,
     WorkerResultError,
+    sanitize_worker_result_payload,
     validate_worker_result_file,
+    worker_result_unknown_payload_keys,
 )
 
 JsonObject = dict[str, Any]
@@ -105,6 +107,7 @@ SAFE_CODEX_SUPERVISOR_CLI_READ_COMMANDS = frozenset(
         "goal-contract-render",
         "plan-list",
         "plan-summary",
+        "release-readiness",
         "story-loop-status",
         "task-current",
         "task-list",
@@ -119,6 +122,7 @@ SAFE_CODEX_SUPERVISOR_CLI_FLAGS: dict[str, frozenset[str]] = {
     "goal-contract-render": frozenset({"--json"}),
     "plan-list": frozenset({"--json"}),
     "plan-summary": frozenset({"--json", "--active-only", "--current-queue"}),
+    "release-readiness": frozenset({"--json"}),
     "story-loop-status": frozenset({"--json", "--all"}),
     "task-current": frozenset({"--json"}),
     "task-list": frozenset({"--json", "--active-plans-only", "--current-queue-plans-only"}),
@@ -132,6 +136,7 @@ SAFE_CODEX_SUPERVISOR_CLI_VALUE_OPTIONS: dict[str, dict[str, frozenset[str] | No
     "goal-contract-render": {"--task-id": None},
     "plan-list": {"--status": PLAN_STATUSES},
     "plan-summary": {"--plan-id": None},
+    "release-readiness": {"--repo-root": None, "--planning-db": None, "--commit": None},
     "story-loop-status": {"--plan-id": None},
     "task-list": {"--status": TASK_STATUSES},
     "task-show": {},
@@ -2339,11 +2344,14 @@ class PlanningSQLiteStore:
         result_id = _worker_result_id(source_path, source_sha256)
         now = _format_datetime(_utc_now())
         completion_notes = _worker_result_completion_notes(result.payload)
+        metadata: JsonObject = {"primary_worker_run_id": worker_run_id}
+        if result.redacted_payload_keys:
+            metadata["redacted_raw_payload_keys"] = list(result.redacted_payload_keys)
         record = WorkerResultRecord(
             result_id=result_id,
             status=result.status,
             summary=str(result.payload["summary"]).strip(),
-            raw_payload=result.payload,
+            raw_payload=sanitize_worker_result_payload(result.payload),
             tests_run=_json_array_field(result.payload, "tests_run"),
             acceptance_results=_json_object_field(result.payload, "acceptance_results"),
             changed_files=_durable_support_paths(result.changed_files, source_path),
@@ -2355,7 +2363,7 @@ class PlanningSQLiteStore:
             source_sha256=source_sha256,
             source_kind=source_kind,
             imported_at=now,
-            metadata={"primary_worker_run_id": worker_run_id},
+            metadata=metadata,
         )
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -4016,6 +4024,10 @@ def _ensure_legacy_direct_worker_result_record(
         if isinstance(parsed_payload, dict):
             payload = parsed_payload
             payload.setdefault("worker_run_id", worker_run_id)
+    redacted_payload_keys = worker_result_unknown_payload_keys(payload)
+    metadata: JsonObject = {"primary_worker_run_id": worker_run_id}
+    if redacted_payload_keys:
+        metadata["redacted_raw_payload_keys"] = list(redacted_payload_keys)
     _insert_worker_result_record(
         connection,
         WorkerResultRecord(
@@ -4026,7 +4038,7 @@ def _ensure_legacy_direct_worker_result_record(
                 if isinstance(payload.get("summary"), str) and payload["summary"].strip()
                 else "Direct worker-run completion recorded in planning SQLite."
             ),
-            raw_payload=payload,
+            raw_payload=sanitize_worker_result_payload(payload),
             tests_run=_json_array_field(payload, "tests_run"),
             acceptance_results=_json_object_field(payload, "acceptance_results"),
             changed_files=_filter_legacy_worker_result_paths(
@@ -4043,7 +4055,7 @@ def _ensure_legacy_direct_worker_result_record(
             source_sha256=source_sha256,
             source_kind="legacy-direct-upsert",
             imported_at=imported_at,
-            metadata={"primary_worker_run_id": worker_run_id},
+            metadata=metadata,
         ),
     )
 

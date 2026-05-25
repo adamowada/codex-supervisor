@@ -27,7 +27,7 @@ from codex_supervisor.planning import (
     initialize_planning_database,
     open_existing_planning_database,
 )
-from codex_supervisor.worker_backends import FakeWorkerBackend, WorkerLaunchRequest
+from codex_supervisor.worker_backends import ContractWorkerBackend, WorkerLaunchRequest
 
 FULL_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567"
 UPDATED_COMMIT_SHA = "fedcba9876543210fedcba9876543210fedcba98"
@@ -2607,6 +2607,14 @@ def test_plan_acceptance_criterion_rejects_unsafe_verification_command(tmp_path)
         )
 
 
+def test_release_readiness_cli_is_safe_verification_command() -> None:
+    reason = planning_module.unsafe_verification_command_reason(
+        "uv run --no-sync python -B -m codex_supervisor.cli release-readiness --json"
+    )
+
+    assert reason is None
+
+
 def test_plan_artifact_links_reject_unsafe_repo_relative_paths(tmp_path):
     store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
     store.upsert_plan(
@@ -3657,7 +3665,7 @@ def test_worker_result_ingestion_completes_after_validation(tmp_path):
         verification_commands=("python -B -m pytest -p no:cacheprovider",),
         acceptance_criteria=("Criterion passes.",),
     )
-    FakeWorkerBackend(changed_files=("src/worker.py",)).run(request)
+    ContractWorkerBackend(changed_files=("src/worker.py",)).run(request)
 
     result = store.ingest_worker_result("run-test", "worker-results/run-test-result.json")
 

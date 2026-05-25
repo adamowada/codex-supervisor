@@ -3,8 +3,8 @@
 - `claim`: The six-lane v1 review found that the tree had strong planning, result, hygiene, and
   source-lock foundations, but v1 was not yet live-operational. The live worker, MCP mutation, and
   real project bootstrap/adapters, live review integrity, and release-evidence readiness slices
-  have now landed; automation apply, current live evidence capture, and security/public-hygiene
-  hardening remain unresolved blockers.
+  have now landed; security/public-hygiene hardening has now landed as well. Automation apply and
+  current live evidence capture remain unresolved blockers.
 - `confidence`: confirmed
 - `evidence`: `plans/planning.sqlite3` plan `plan-v1-live-operational-hardening`, progress
   `progress-v1-six-lane-review-digested-20260525`, six read-only explorer reports, and the local
@@ -13,7 +13,8 @@
   adapters, spawned-project bootstrap, review routing, release readiness, security, and public
   hygiene.
 - `supersedes`: none
-- `next action`: Continue with security/public-hygiene and final completion-audit/live-smoke tasks.
+- `next action`: Continue with final completion-audit/live-smoke work, including current
+  CI/Windows/live evidence capture and any remaining automation apply gap.
 
 ## Normalized Finding Clusters
 
@@ -33,11 +34,11 @@
   tied to explicit `review_enforcement_enabled` markers so legacy planning history remains readable.
 - `release`: release readiness now targets a commit, defaults to current `HEAD`, rejects stale
   CI/Windows evidence, requires current publication-ready verification plus live worker/review,
-  mutating MCP, and real bootstrap smoke evidence, and explicitly excludes the factory-loop demo as
+  mutating MCP, and real bootstrap smoke evidence, and explicitly excludes the factory-loop smoke as
   v1 release evidence.
-- `security-hygiene`: worker result ingestion preserves unknown raw payload fields, Codex-state
-  reconciliation can link phantom artifacts, and CI action pinning needs a deliberate supply-chain
-  posture.
+- `security-hygiene`: Worker Result ingestion now caps raw JSON size and omits non-contract keys
+  from tracked SQLite raw payloads; Codex-state reconciliation no longer creates phantom snapshot
+  artifact links; GitHub Actions are pinned to reviewed full commit SHAs.
 
 ## Confirmed Foundations
 
@@ -120,8 +121,22 @@
   smoke, and real project bootstrap smoke before it can report ready.
 - The spawned-project readiness check now verifies the real `spawned-project-apply` surface, not
   only dry-run classify/propose paths.
-- `factory-loop-demo` remains a deterministic local exercise but is marked `release_evidence=false`
+- `factory-loop-smoke` remains a deterministic local exercise but is marked `release_evidence=false`
   and its progress/evidence strings say it is not v1 release-readiness evidence.
 - Remaining v1 hardening clusters are still real blockers until their tasks land: current live
   evidence capture, automation apply, and security/public-hygiene follow-ups outside the release
   readiness slice.
+
+## Security/Public-Hygiene Slice Update
+
+- `task-v1-security-public-hygiene-hardening` adds a Worker Result file-size cap and stores only
+  contract fields in tracked `worker_result_records.raw_payload_json`; omitted unknown keys are
+  listed in metadata without preserving their values.
+- Codex-state reconciliation dry-runs now propose progress/finding evidence only. Apply no longer
+  links `codex-state-snapshots/<hash>.json` files that do not exist, so publication-ready hygiene
+  does not depend on phantom artifacts.
+- `.github/workflows/verify.yml` now pins external actions to full commit SHAs resolved from
+  reviewed release tags, and `tests/test_github_ci.py` enforces that supply-chain posture.
+- Remaining v1 hardening blockers: final audit must record current post-ACP CI/Windows/live-smoke
+  evidence, confirm release-readiness for the final target commit, and resolve the automation apply
+  gap or record a deliberate product decision.

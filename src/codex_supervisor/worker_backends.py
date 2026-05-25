@@ -1,4 +1,4 @@
-"""Worker backend protocol and fake backend implementation."""
+"""Worker backend protocol and deterministic contract backend implementation."""
 
 from __future__ import annotations
 
@@ -554,12 +554,12 @@ class CodexExecBackend:
 
 
 @dataclass(frozen=True)
-class FakeWorkerBackend:
-    """Non-live backend used to prove the worker result ingestion contract."""
+class ContractWorkerBackend:
+    """Deterministic local backend used to prove the worker result ingestion contract."""
 
     changed_files: tuple[str, ...]
-    summary: str = "Fake worker completed the requested slice."
-    risks: tuple[str, ...] = ("Fake backend does not launch live Codex.",)
+    summary: str = "Contract worker completed the requested slice."
+    risks: tuple[str, ...] = ("Contract backend does not launch live Codex.",)
     follow_up_tasks: tuple[str, ...] = ()
     failure_class: str | None = None
 
@@ -572,12 +572,12 @@ class FakeWorkerBackend:
             _write_text_artifact(
                 request.repo_root,
                 request.stderr_path,
-                f"Fake worker failed: {self.failure_class}\n",
+                f"Contract worker failed: {self.failure_class}\n",
             )
             _write_text_artifact(
                 request.repo_root,
                 request.final_message_path,
-                f"Fake worker failed: {self.failure_class}\n",
+                f"Contract worker failed: {self.failure_class}\n",
             )
             _write_text_artifact(request.repo_root, request.diff_summary_path, "")
             _write_text_artifact(
@@ -585,7 +585,7 @@ class FakeWorkerBackend:
                 request.jsonl_path,
                 json.dumps(
                     {
-                        "event": "fake.failed",
+                        "event": "contract_worker.failed",
                         "failure_class": self.failure_class,
                     },
                     sort_keys=True,
@@ -605,7 +605,7 @@ class FakeWorkerBackend:
                 final_message_path=request.final_message_path,
                 diff_summary_path=request.diff_summary_path,
                 failure_class=self.failure_class,
-                metadata={"backend": "fake", "prompt_length": len(request.prompt)},
+                metadata={"backend": "contract_worker", "prompt_length": len(request.prompt)},
             )
 
         result_file = request.repo_root / request.result_path
@@ -618,7 +618,11 @@ class FakeWorkerBackend:
             request.diff_summary_path,
             "\n".join(self.changed_files) + ("\n" if self.changed_files else ""),
         )
-        _write_text_artifact(request.repo_root, request.jsonl_path, '{"event":"fake.completed"}\n')
+        _write_text_artifact(
+            request.repo_root,
+            request.jsonl_path,
+            '{"event":"contract_worker.completed"}\n',
+        )
         payload = {
             "worker_run_id": request.worker_run_id,
             "status": "completed",
@@ -631,14 +635,14 @@ class FakeWorkerBackend:
             "acceptance_results": {
                 criterion: {
                     "status": "passed",
-                    "evidence": "Fake backend generated contract-compatible evidence.",
+                    "evidence": "Contract backend generated contract-compatible evidence.",
                 }
                 for criterion in request.acceptance_criteria
             },
             "risks": list(self.risks),
             "follow_up_tasks": list(self.follow_up_tasks),
             "artifacts": [request.result_path],
-            "handoff_notes": "Fake backend result is ready for shared ingestion validation.",
+            "handoff_notes": ("Contract backend result is ready for shared ingestion validation."),
         }
         result_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         return WorkerLaunchResult(
@@ -655,7 +659,7 @@ class FakeWorkerBackend:
             stderr_path=request.stderr_path,
             final_message_path=request.final_message_path,
             diff_summary_path=request.diff_summary_path,
-            metadata={"backend": "fake", "prompt_length": len(request.prompt)},
+            metadata={"backend": "contract_worker", "prompt_length": len(request.prompt)},
         )
 
 

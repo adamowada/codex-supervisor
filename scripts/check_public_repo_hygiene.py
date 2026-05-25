@@ -42,6 +42,9 @@ TEXT_SECRET_PATTERNS = (
 ALLOWED_SOURCE_FILES = {"sources/README.md"}
 ALLOWED_DATABASE_FILES = {"plans/planning.sqlite3"}
 TEXT_SKIP_SUFFIXES = {".sqlite", ".sqlite3", ".db", ".png", ".jpg", ".jpeg"}
+PLACEHOLDER_MARKER_PATTERN = re.compile(
+    r"\b(?:fake|dummy|demo)\b|Fake|Dummy|Demo",
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -57,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
     failures.extend(_check_candidate_worker_result_files(REPO_ROOT))
     failures.extend(_check_candidate_database_files(REPO_ROOT))
     failures.extend(_check_candidate_text_files(REPO_ROOT))
+    failures.extend(_check_production_placeholder_markers(REPO_ROOT))
     failures.extend(_check_database_dumps(REPO_ROOT))
     if args.publication_ready:
         failures.extend(_check_publication_ready(REPO_ROOT))
@@ -149,6 +153,28 @@ def _check_candidate_text_files(repo_root: Path) -> tuple[str, ...]:
                 failures.append(
                     f"{relative_path}: matched public hygiene pattern {pattern.pattern}"
                 )
+    return tuple(failures)
+
+
+def _check_production_placeholder_markers(repo_root: Path) -> tuple[str, ...]:
+    package_root = repo_root / "src" / "codex_supervisor"
+    if not package_root.exists():
+        return ()
+    failures: list[str] = []
+    for path in sorted(package_root.glob("*.py")):
+        relative_path = path.relative_to(repo_root).as_posix()
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            failures.append(f"{relative_path}: could not inspect production package: {exc}")
+            continue
+        except UnicodeDecodeError as exc:
+            failures.append(f"{relative_path}: production package is not valid UTF-8: {exc}")
+            continue
+        if PLACEHOLDER_MARKER_PATTERN.search(text):
+            failures.append(
+                f"{relative_path}: production package contains release-blocking placeholder marker"
+            )
     return tuple(failures)
 
 

@@ -129,7 +129,7 @@ push or merge branches, delete worktrees outside the configured workspace root, 
 complete without a Worker Result Contract artifact.
 
 The first implementation slice after this design is intentionally non-live: add the backend request
-and result data model, a fake backend that emits a fixture-compatible worker result, and shared
+and result data model, a contract backend that emits fixture-compatible worker evidence, and shared
 result-ingestion tests. That slice proves the boundary before any real `codex exec` process launch.
 
 ### Project Adapters

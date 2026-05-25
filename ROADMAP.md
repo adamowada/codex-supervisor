@@ -323,8 +323,8 @@ structured output schemas, captured evidence, and safe result ingestion.
 9. Update `worker_runs`, artifact links, progress events, and queue state transactionally.
 10. Preserve raw evidence while keeping ignored run output out of publication commits.
 
-The first implementation slice is `Stage 6A: backend protocol and fake execution`. It must not
-launch live Codex. It defines the backend request/result data model, writes a fake backend that
+The first implementation slice is `Stage 6A: backend protocol and contract execution`. It must not
+launch live Codex. It defines the backend request/result data model, writes a contract backend that
 emits a Worker Result Contract fixture, and proves that the same ingestion path can complete a
 worker run without relying on chat memory or a real Codex process.
 
@@ -362,7 +362,7 @@ unless source-of-truth docs are intentionally edited again.
 
 ### Done When
 
-- A fake backend and Codex Exec backend share the same result-ingestion contract.
+- A contract backend and Codex Exec backend share the same result-ingestion contract.
 - Failed launches record failure class, logs, and retry guidance.
 - Completed worker runs cannot advance without valid JSON result evidence.
 - Worker prompts remain bounded and source-linked.

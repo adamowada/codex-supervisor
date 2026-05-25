@@ -98,7 +98,7 @@ drift.
 
 - Story Loop selection and stop conditions;
 - progress recording;
-- fake worker backend execution;
+- contract worker backend execution;
 - Codex Exec worker-launch preflight;
 - JSONL parsing for worker evidence;
 - worktree setup, diff capture, and cleanup guards;
@@ -115,14 +115,14 @@ drift.
 
 ## Integration Harness
 
-Integration tests use temporary repositories and fake worker backends to exercise the factory loop
-without launching live Codex workers:
+Integration tests use temporary repositories and contract worker backends to exercise the factory
+loop without launching live Codex workers:
 
 1. create a temporary repo;
 2. initialize planning SQLite;
 3. compile a plan into vertical-slice tasks;
 4. create a worktree;
-5. run a fake worker backend;
+5. run a contract worker backend;
 6. parse structured worker evidence;
 7. record supporting artifacts, review results, progress events, DB-backed worker results, and
    compact handoff notes;

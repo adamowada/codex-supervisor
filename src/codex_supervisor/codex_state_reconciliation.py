@@ -12,7 +12,6 @@ from codex_supervisor.codex_state import (
     CodexStateReconciliationProposal,
 )
 from codex_supervisor.planning import (
-    PlanArtifactLinkRecord,
     PlanningSQLiteStore,
     PlanProgressRecord,
 )
@@ -111,10 +110,6 @@ def apply_codex_state_reconciliation_report(
     known_plan_ids = {plan.plan_id for plan in store.list_plans()}
     known_task_ids = {task.task_id for task in store.list_supervisor_tasks()}
     existing_progress_ids = {progress.progress_id for progress in store.list_plan_progress()}
-    existing_artifact_links = {
-        (link.plan_id, link.artifact_id, link.relationship)
-        for link in store.list_plan_artifact_links()
-    }
     findings = list(report.findings)
     applied: list[CodexStateAppliedProposal] = []
     skipped: list[CodexStateSkippedProposal] = []
@@ -145,30 +140,20 @@ def apply_codex_state_reconciliation_report(
             skipped.append(_skipped(proposal, "unsupported_action_type"))
             continue
         progress_id = _progress_id(proposal)
-        artifact_id = _artifact_id(proposal)
-        artifact_key = (proposal.linked_plan_id, artifact_id, CODEX_STATE_SNAPSHOT_RELATIONSHIP)
-        if progress_id in existing_progress_ids or (
-            proposal.action_type == "artifact-link" and artifact_key in existing_artifact_links
-        ):
+        if progress_id in existing_progress_ids:
             skipped.append(_skipped(proposal, "duplicate_already_applied"))
             continue
-        artifact_link = PlanArtifactLinkRecord(
-            plan_id=proposal.linked_plan_id,
-            artifact_id=artifact_id,
-            relationship=CODEX_STATE_SNAPSHOT_RELATIONSHIP,
-        )
         progress = PlanProgressRecord(
             progress_id=progress_id,
             plan_id=proposal.linked_plan_id,
             event_type=_event_type(proposal),
             summary=_progress_summary(proposal),
             details=json.dumps(_progress_details(proposal), sort_keys=True),
-            linked_artifact_id=artifact_id,
+            linked_artifact_id=None,
         )
-        store.add_plan_progress_with_artifact_links(progress, (artifact_link,))
+        store.add_plan_progress(progress)
         existing_progress_ids.add(progress_id)
-        existing_artifact_links.add(artifact_key)
-        applied.append(_applied(proposal, progress_id=progress_id, artifact_id=artifact_id))
+        applied.append(_applied(proposal, progress_id=progress_id, artifact_id=""))
 
     return CodexStateReconciliationApplyReport(
         codex_home=report.codex_home,
@@ -191,7 +176,7 @@ def apply_codex_state_reconciliation_report(
     )
 
 
-_SUPPORTED_ACTION_TYPES = frozenset({"artifact-link", "progress-event", "follow-up-finding"})
+_SUPPORTED_ACTION_TYPES = frozenset({"progress-event", "follow-up-finding"})
 
 
 def _sorted_proposals(
@@ -264,15 +249,10 @@ def _unknown_approved_proposal_finding(
 
 def _progress_id(proposal: CodexStateReconciliationProposal) -> str:
     prefix = {
-        "artifact-link": "codex-state-artifact",
         "progress-event": "codex-state-progress",
         "follow-up-finding": "codex-state-finding",
     }.get(proposal.action_type, "codex-state-unsupported")
     return f"{prefix}-{proposal.proposal_id.removeprefix('codex-state-')}"
-
-
-def _artifact_id(proposal: CodexStateReconciliationProposal) -> str:
-    return f"codex-state-snapshots/{proposal.raw_snapshot_hash}.json"
 
 
 def _event_type(proposal: CodexStateReconciliationProposal) -> str:
@@ -282,8 +262,6 @@ def _event_type(proposal: CodexStateReconciliationProposal) -> str:
 
 
 def _progress_summary(proposal: CodexStateReconciliationProposal) -> str:
-    if proposal.action_type == "artifact-link":
-        return f"Applied Codex state artifact-link proposal {proposal.proposal_id}."
     if proposal.action_type == "progress-event":
         return f"Applied Codex state progress-event proposal {proposal.proposal_id}."
     if proposal.action_type == "follow-up-finding":

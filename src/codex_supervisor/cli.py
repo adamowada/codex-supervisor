@@ -32,9 +32,9 @@ from codex_supervisor.codex_state_reconciliation import (
     apply_codex_state_reconciliation_report,
     codex_state_reconciliation_report_from_payload,
 )
-from codex_supervisor.factory_demo import (
-    FactoryLoopDemoReport,
-    run_factory_loop_demo,
+from codex_supervisor.factory_smoke import (
+    FactoryLoopSmokeReport,
+    run_factory_loop_smoke,
 )
 from codex_supervisor.goal_contracts import (
     render_goal_contract,
@@ -229,13 +229,13 @@ def main(argv: list[str] | None = None) -> int:
     release_readiness_parser.add_argument("--commit", default=None)
     release_readiness_parser.add_argument("--json", action="store_true", default=False)
 
-    factory_demo_parser = subparsers.add_parser(
-        "factory-loop-demo",
-        help="Run a deterministic throwaway factory-loop demo",
+    factory_smoke_parser = subparsers.add_parser(
+        "factory-loop-smoke",
+        help="Run a deterministic throwaway factory-loop smoke",
     )
-    factory_demo_parser.add_argument("--workspace", type=Path, default=None)
-    factory_demo_parser.add_argument("--keep-workspace", action="store_true", default=False)
-    factory_demo_parser.add_argument("--json", action="store_true", default=False)
+    factory_smoke_parser.add_argument("--workspace", type=Path, default=None)
+    factory_smoke_parser.add_argument("--keep-workspace", action="store_true", default=False)
+    factory_smoke_parser.add_argument("--json", action="store_true", default=False)
 
     list_parser = subparsers.add_parser("plan-list", help="List plans")
     list_parser.add_argument("--path", type=Path, default=None)
@@ -949,18 +949,18 @@ def main(argv: list[str] | None = None) -> int:
             _print_release_readiness_report(release_report)
         return 0
 
-    if args.command == "factory-loop-demo":
+    if args.command == "factory-loop-smoke":
         if args.keep_workspace and args.workspace is None:
             print("--keep-workspace requires --workspace", file=sys.stderr)
             return 1
-        factory_demo_report = run_factory_loop_demo(
+        factory_smoke_report = run_factory_loop_smoke(
             workspace_root=args.workspace,
             keep_workspace=args.keep_workspace,
         )
         if args.json:
-            _print_json(factory_demo_report)
+            _print_json(factory_smoke_report)
         else:
-            _print_factory_loop_demo_report(factory_demo_report)
+            _print_factory_loop_smoke_report(factory_smoke_report)
         return 0
 
     if args.command == "codex-state-inventory":
@@ -2717,7 +2717,7 @@ def _print_release_readiness_report(report: ReleaseReadinessReport) -> None:
             print(f"  next_action: {check.next_action}")
 
 
-def _print_factory_loop_demo_report(report: FactoryLoopDemoReport) -> None:
+def _print_factory_loop_smoke_report(report: FactoryLoopSmokeReport) -> None:
     print(f"success: {report.success}")
     print(f"project_name: {report.project_name}")
     print(f"release_evidence: {report.release_evidence}")

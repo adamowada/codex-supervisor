@@ -546,17 +546,16 @@ def _target_findings_for_observation(
 
 
 def _proposal_action_types(observation: CodexStateObservation) -> tuple[str, ...]:
-    action_types = ["artifact-link", "follow-up-finding"]
+    action_types = ["follow-up-finding"]
     if observation.linked_plan_id:
-        action_types.insert(1, "progress-event")
+        action_types.append("progress-event")
     return tuple(action_types)
 
 
 def _proposal_action_order(action_type: str) -> int:
     order = {
-        "artifact-link": 0,
+        "follow-up-finding": 0,
         "progress-event": 1,
-        "follow-up-finding": 2,
     }
     return order[action_type]
 

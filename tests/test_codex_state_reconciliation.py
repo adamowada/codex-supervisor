@@ -46,7 +46,6 @@ def test_apply_codex_state_reconciliation_report_writes_append_only_evidence(
     )
 
     assert [applied.action_type for applied in apply_report.applied] == [
-        "artifact-link",
         "follow-up-finding",
         "progress-event",
     ]
@@ -79,7 +78,9 @@ def test_apply_codex_state_reconciliation_report_writes_append_only_evidence(
     assert details["action_status"] == "applied"
     assert details["raw_snapshot_hash"] == applied_progress.raw_snapshot_hash
     artifact_links = store.list_plan_artifact_links(plan_id=PLAN_ID)
-    assert any(link.relationship == CODEX_STATE_SNAPSHOT_RELATIONSHIP for link in artifact_links)
+    assert not any(
+        link.relationship == CODEX_STATE_SNAPSHOT_RELATIONSHIP for link in artifact_links
+    )
     after_counts = _table_counts(store.path)
     assert after_counts["supervisor_tasks"] == before_counts["supervisor_tasks"]
     assert after_counts["plan_milestones"] == before_counts["plan_milestones"]

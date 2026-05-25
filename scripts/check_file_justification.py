@@ -242,6 +242,10 @@ FILE_PURPOSES = {
         "operator-facing Codex Desktop plugin usage notes",
         "pytest",
     ),
+    "plugins/codex-supervisor/skills/codex-supervisor/SKILL.md": FilePurpose(
+        "Codex Desktop packaged supervisor workflow skill",
+        "pytest",
+    ),
     "pyproject.toml": FilePurpose("Python package and tooling configuration", "uv lock --check"),
     "scripts/check_file_justification.py": FilePurpose("public file purpose gate", "pytest"),
     "scripts/check_planning_integrity.py": FilePurpose("planning SQLite integrity gate", "pytest"),

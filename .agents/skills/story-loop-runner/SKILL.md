@@ -59,6 +59,16 @@ orientation needs dependency setup.
     `runs/`, `artifacts/`, `worktrees/`, or `worker-results/` paths as publication artifacts. Link
     only tracked supporting docs, tracked durable reports, tracked insight/handoff anchors, or
     external URLs through `plan_artifact_links`.
+    - For completed tasks, make `acceptance_results` an object keyed by the exact task acceptance
+      criteria text, with each value carrying `status: passed` and nonblank `evidence`.
+    - Keep `tests_run` to the task's official repo-owned verification commands. Do not use
+      placeholder angle brackets such as `<validator>` in command strings; planning integrity treats
+      them as unsafe shell metacharacters.
+    - In worker-result `artifacts`, list only existing repo-relative paths. Markdown anchors such as
+      `HANDOFF.md#summary` belong in planning artifact links or handoff prose, not worker-result
+      artifact paths.
+    - Remove the ignored `worker-results/` import directory immediately after ingestion, then rerun
+      `uv run --no-sync python -B scripts/check_planning_integrity.py`.
 16. Record progress, artifacts, changed files, and follow-up tasks.
 17. If checks fail, classify with `failure-loop-triage` or `ci-repair-loop`.
 18. Repeat only if another ready task exists and the user or official host automation tooling

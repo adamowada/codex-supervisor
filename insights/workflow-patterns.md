@@ -127,3 +127,22 @@ the assertion to construct the token from pieces preserved coverage and passed t
 
 Next action: whenever public hygiene detects a test fixture string, prefer token construction or a
 redacted fixture over widening the hygiene allow-list.
+
+## Worker Result JSON Must Stay Integrity-Safe
+
+Confidence: confirmed.
+
+`worker-run-status ... --result-path <json>` validates worker result JSON more strictly than review
+artifacts. Completed worker results need `acceptance_results` as an object keyed by the exact task
+acceptance criteria text, `tests_run` commands must be the exact repo-owned verification commands
+without placeholder angle brackets or shell metacharacters, and `artifacts` entries must be existing
+repo-relative paths rather than Markdown anchors.
+
+Evidence: Stage 12B completion initially failed ingestion and planning integrity because the
+transient worker result used a list for `acceptance_results`, included `<plugin-creator>` and
+`<skill-creator>` placeholder commands, and listed `HANDOFF.md#...` anchors as artifacts. Correcting
+the transient JSON and removing `worker-results/` after ingestion restored planning integrity.
+
+Next action: before ingesting completed worker results, prefer only the task's official verification
+commands in `tests_run`, keep external validators in review notes or handoff summaries, and delete
+the ignored `worker-results/` import directory immediately after the DB row is created.

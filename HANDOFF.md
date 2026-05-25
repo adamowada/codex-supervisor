@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 04:01 PDT
+Last updated: 2026-05-25 04:17 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,47 +9,49 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `ready`.
+- Current queue state: `completed`.
 - Active plan: `plan-stage12-codex-plugin-desktop-experience`
   (`Stage 12 Codex Plugin And Desktop Experience`, priority 78).
-- Current AFK task: `task-stage12b-plugin-skill-workflows`.
-- Worker backend: `codex_exec`, with inline supervised fallback expected until the local Codex CLI
-  path and native Goal Mode worker launch are proven usable.
-- Review requirement: fresh-thread-style review before completion because plugin skills and Desktop
-  workflow docs are public operator surfaces.
+- Current AFK task: none. `story-loop-status --json` reports no open work remains on the Stage 12
+  plan after Stage 12B.
+- Worker backend note: local `codex --version` still fails with Access denied for the resolved
+  WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
+  until the CLI path and `CODEX_HOME` are confirmed.
 
-## Stage 12B Contract
+## Stage 12B Summary
 
-Goal: package a Desktop-discoverable Codex Supervisor workflow skill inside the plugin and document
-the operator command map for bootstrap, queue inspection, worker launch, review, ACP, and handoff
-while keeping planning SQLite and the Python core authoritative.
+Completed task: `task-stage12b-plugin-skill-workflows`.
 
-Allowed paths:
+- Worker run: `worker-run-stage12b-plugin-skill-workflows-inline-20260525`.
+- DB result: `worker-result-stage12b-plugin-skill-workflows-result`.
+- Review: `review-stage12b-plugin-skill-workflows-20260525`, 0 findings.
+- Completion progress: `progress-stage12b-plugin-skill-workflows-completed-20260525`.
 
-```text
-plugins/codex-supervisor/**
-tests/test_codex_plugin.py
-scripts/check_file_justification.py
-plans/planning.sqlite3
-HANDOFF.md
-insights/**
-.agents/skills/**
-```
+Implemented:
 
-Acceptance criteria:
+- Added `skills/codex-supervisor/SKILL.md` under the repo-local plugin as a Desktop-discoverable
+  workflow entrypoint.
+- Added `"skills": "./skills/"` to `plugins/codex-supervisor/.codex-plugin/plugin.json`.
+- Documented the Desktop workflow map for project bootstrap, queue inspection, worker launch,
+  review, ACP, and handoff in `plugins/codex-supervisor/README.md`.
+- Extended `tests/test_codex_plugin.py` and `scripts/check_file_justification.py` for the packaged
+  skill surface.
 
-- Plugin manifest references a local skills directory, and the plugin includes a valid Codex
-  Supervisor Desktop workflow skill with frontmatter and guardrails.
-- Plugin docs or skill guidance map Desktop workflows for project bootstrap, queue inspection,
-  worker launch, review, ACP, and handoff to the Python CLI, MCP read surface, planning SQLite, and
-  existing repo-local skills.
-- Focused tests, file-purpose, planning integrity, full verification, and publication-ready hygiene
-  checks pass after the packaged workflow skill is added.
+Out of scope remains unchanged for the next Stage 12 slice:
 
-Verification commands:
+- Clean Codex Desktop profile install verification.
+- Marketplace or personal plugin registry writes.
+- Bulk-copying the repo-local `.agents/skills/` library into the plugin archive.
+- Mutating MCP tools, GitHub/CI integration, release packaging, or live worker launch.
+
+## Verification Evidence
+
+Passed after the Stage 12B implementation:
 
 ```sh
 uv run --no-sync python -B -m pytest tests/test_codex_plugin.py -q -p no:cacheprovider
+uv run --with pyyaml --no-project python -B <plugin-creator>/scripts/validate_plugin.py plugins/codex-supervisor
+uv run --with pyyaml --no-project python -B <skill-creator>/scripts/quick_validate.py plugins/codex-supervisor/skills/codex-supervisor
 uv run --no-sync python -B scripts/check_file_justification.py
 uv run --no-sync python -B scripts/check_planning_integrity.py
 uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
@@ -57,43 +59,22 @@ uv run --no-sync python -B scripts/verify.py
 uv run --no-sync python -B scripts/verify.py --publication-ready
 ```
 
-Stop conditions:
+`scripts/verify.py` and `scripts/verify.py --publication-ready` both passed with 435 tests plus
+style, type, planning, public hygiene, source inventory, skill inventory, protected-file, and
+`uv lock --check` gates.
 
-- A HITL task becomes current in planning SQLite.
-- Plugin skill schema conflicts with local plugin validator examples.
-- The slice requires external credentials, marketplace publishing, or clean Desktop installation.
-- Verification repeatedly fails without a known repo-local fix.
+## Prior Checkpoints
 
-Out of scope:
-
-- Actual clean Codex Desktop installation validation.
-- Marketplace or personal plugin registry writes.
-- Copying every repo-local skill verbatim into the plugin archive.
-- Mutating MCP tools, GitHub/CI integration, release packaging, or live worker launch.
-
-## Recent Evidence
-
-Stage 12B shaping completed:
-
-```sh
-uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
-uv run --no-sync python -B -m codex_supervisor.cli task-current --json
-uv run --no-sync python -B scripts/check_planning_integrity.py
-```
-
-Planning integrity passed, and `story-loop-status` selected
-`task-stage12b-plugin-skill-workflows` as the current ready AFK task.
-
-Prior completed checkpoint:
-
-- Completed task: `task-stage12a-plugin-mcp-scaffold`.
-- Worker run: `worker-run-stage12a-plugin-mcp-scaffold-inline-20260525`, completed with DB result
-  `worker-result-stage12a-plugin-mcp-scaffold-result`.
-- Implementation commit: `02a4ae986f3ed7fed8506787b9f863fe35aac1bd`.
-- Evidence link commit: `332d2e7f5f18775d765c757ea030b754008bff1e`.
+- Stage 12A completed task: `task-stage12a-plugin-mcp-scaffold`.
+- Stage 12A worker run: `worker-run-stage12a-plugin-mcp-scaffold-inline-20260525`, completed with
+  DB result `worker-result-stage12a-plugin-mcp-scaffold-result`.
+- Stage 12A implementation commit: `02a4ae986f3ed7fed8506787b9f863fe35aac1bd`.
+- Stage 12A evidence link commit: `332d2e7f5f18775d765c757ea030b754008bff1e`.
+- Stage 12B shaping commit: `64c5c7924f61e120eadc2259dcca72db719757b1`.
 
 ## Next Action
 
-Execute `task-stage12b-plugin-skill-workflows` through the Story Loop. After implementation, run the
-task verification commands, perform the required review, fix accepted findings, update planning
-SQLite and this handoff, then ACP the step.
+Shape the next Stage 12 AFK slice from planning SQLite. Likely candidates are clean local Codex
+Desktop plugin install verification or a plugin workflow smoke-check slice. Confirm the new Goal
+Contract, allowed paths, verification commands, stop conditions, and review requirement before
+claiming or executing the next task.

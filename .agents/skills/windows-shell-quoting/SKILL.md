@@ -16,6 +16,11 @@ steps instead.
 - Use `-LiteralPath` for exact filesystem paths.
 - Use single quotes for regex strings unless interpolation is needed.
 - Use PowerShell here-strings for inline Python or JSON-heavy snippets.
+- When passing JSON as an argument to a native executable such as `python`, build the JSON with
+  `ConvertTo-Json -Compress` and double embedded quotes before invocation:
+  `$jsonArg = ($json -replace '"','""')`. Validate with a tiny `python -c
+  "import sys; print(repr(sys.argv[1]))" $jsonArg` probe before using it for repo mutations.
+  Prefer stdin, a temp file, or an inline Python script when JSON quoting grows complex.
 - Avoid noisy command separators; run parallel reads as separate tool calls when possible.
 - For recursive delete or move, resolve the target and verify it stays inside the intended workspace.
 - Do not enumerate paths in PowerShell and pipe them to `cmd /c` for destructive actions.

@@ -63,3 +63,20 @@ Fresh threads need to see blocked successor plans as part of the current queue. 
 `story-loop-status --json`, `plan-summary --current-queue`, and
 `task-list --current-queue-plans-only` for orientation; reserve active-only views for deliberately
 narrow audits.
+
+## PowerShell Native JSON Arguments
+
+Confidence: confirmed.
+
+When PowerShell passes JSON strings to native executables, quote characters can be stripped before
+the target process receives `argv`. For JSON-heavy CLI arguments, double embedded quotes after
+`ConvertTo-Json -Compress` and validate with a tiny `python -c` `repr(sys.argv[1])` probe before
+running the mutating command. Prefer stdin, a temp file, or inline Python when the argument becomes
+too complex.
+
+Evidence: Stage 11A planning-shape commands failed until the JSON argument was transformed with
+`$jsonArg = ($json -replace '"','""')`; the pattern is codified in
+`.agents/skills/windows-shell-quoting/SKILL.md`.
+
+Next action: use `windows-shell-quoting` whenever PowerShell commands contain JSON arguments,
+nested quotes, regexes, or inline Python.

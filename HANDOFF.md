@@ -1,51 +1,77 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 02:30 PDT
+Last updated: 2026-05-25 03:20 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Current Snapshot
 
-- Active thread objective: major repo hygiene cleanup for completion-record storage.
-- Planning database is on schema version 5.
-- Legacy JSON completion records have been imported into SQLite: 35 result records and 42 run links.
-- Legacy HANDOFF section content has been imported into SQLite development-log entries.
-- `worker-results/` has been removed from the working tree after import.
-- Source-of-truth docs, protected hashes, code paths, tests, and hygiene checks have been updated
-  for SQLite-only completion storage.
-- Full pytest is passing: `424 passed`.
-- Remaining cleanup work: stage deletions and edits, rerun publication-ready verification, then ACP.
+- Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
+  at a time from planning SQLite.
+- Current queue state: `empty`; no active or blocked current-queue plans remain.
+- Completed plan: `plan-stage11-mcp-server` (`Stage 11 MCP Server`, priority 79).
+- Completed task: `task-stage11b-mcp-stdio-transport`.
+- Execution mode: inline supervised fallback. Native Codex Goal/worker launch preflight found the
+  WindowsApps `codex.exe` path, but `codex --version` failed with access denied, so no live Codex
+  worker was launched.
+- Worker run row for inline evidence:
+  `worker-run-stage11b-mcp-stdio-transport-inline-20260525`, completed with DB result
+  `worker-result-worker-result.raw`.
+- Implementation added `src/codex_supervisor/mcp_stdio.py`, a stdlib-only newline-delimited
+  JSON-RPC stdio transport around the read-only Stage 11A MCP dispatcher.
+- Tests added `tests/test_mcp_stdio.py` for lifecycle, `ping`, `tools/list`, `tools/call`,
+  notification silence, parse/validation/unknown errors, disabled mode, dispatcher failure, stdout
+  cleanliness, module entrypoint injection, and no worktree creation.
+- File-purpose hygiene was updated in `scripts/check_file_justification.py`.
 
-## Queue State
+## Official MCP References
 
-- Current canonical queue state: ready.
-- Active plan: `plan-stage11-mcp-server` (`Stage 11 MCP Server`, priority 79).
-- Current AFK task: `task-stage11b-mcp-stdio-transport`.
-- Stage 11B goal: add a stdlib-only MCP stdio JSON-RPC transport around the Stage 11A read-only
-  dispatcher without mutating planning state or launching workers.
-- Stage 11A is completed and linked to DB-backed result id
-  `worker-result-stage11a-mcp-readonly-tools-worker-result`.
+- `https://modelcontextprotocol.io/specification/2025-11-25/basic`
+- `https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle`
+- `https://modelcontextprotocol.io/specification/2025-11-25/basic/transports`
+- `https://modelcontextprotocol.io/specification/2025-11-25/server/tools`
 
-## Resume Commands
+Relevant source constraints applied: JSON-RPC 2.0 messages, UTF-8 stdio, newline-delimited messages,
+no non-MCP stdout, `initialize` followed by `notifications/initialized`, `tools/list`, `tools/call`,
+text content plus `structuredContent`, and `isError: true` tool execution errors.
+
+## Verification Evidence
+
+Completed:
 
 ```sh
-uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
-uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
-uv run --no-sync python -B -m codex_supervisor.cli worker-result-list --json
+uv run --no-sync python -B -m pytest tests/test_mcp_stdio.py tests/test_mcp_server.py -q -p no:cacheprovider
+uv run --no-sync python -B -m ruff check src/codex_supervisor/mcp_stdio.py tests/test_mcp_stdio.py scripts/check_file_justification.py --no-cache
+uv run --no-sync python -B -m ruff format --check src/codex_supervisor/mcp_stdio.py tests/test_mcp_stdio.py scripts/check_file_justification.py --no-cache
+uv run --no-sync python -B -m mypy --no-incremental src/codex_supervisor/mcp_stdio.py
 uv run --no-sync python -B scripts/check_planning_integrity.py
+uv run --no-sync python -B scripts/check_file_justification.py
+uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
+uv run --no-sync python -B scripts/verify.py
 ```
 
-## Hygiene Verification Targets
+Review evidence:
 
-- No `worker-results/` directory or tracked JSON completion artifacts.
-- No archive, dump, backup, or migration-output artifacts in the repo.
-- `HANDOFF.md` stays below 180 lines and contains only current handoff context.
-- `insights/` remains markdown-only durable learning.
-- Completion records and imported legacy evidence live in `plans/planning.sqlite3`.
-- Protected source-of-truth hashes are refreshed after intentional doc edits.
+- Structured review payload was used as transient ignored evidence; planning publication evidence is
+  linked to `HANDOFF.md#stage11b-review`.
+- Planning progress: `progress-stage11b-mcp-stdio-review-20260525`.
+- Result: 0 accepted findings, 0 waived findings, 0 HITL findings.
+
+## Residual Risk
+
+- The transport implements the Stage 11B stdio subset only; mutating MCP tools, HTTP transport,
+  Codex Desktop plugin metadata, and live worker/reviewer launch remain out of scope.
+- Stage 12-15 work is not yet queued as AFK-ready planning SQLite tasks; do not guess at the next
+  implementation slice without shaping a new plan/task contract first.
 
 ## Next Action
 
-Stage all intended changes with `git add -A`, rerun the publication-ready checks against the staged
-tree, then commit and push `Clean up completion record hygiene`.
+Run after any final staging changes:
+
+```sh
+uv run --no-sync python -B scripts/verify.py --publication-ready
+```
+
+If it passes, ACP the Stage 11B checkpoint. The next development action is to shape Stage 12+
+work into planning SQLite before selecting another AFK slice.

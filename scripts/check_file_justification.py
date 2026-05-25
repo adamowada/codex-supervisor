@@ -344,6 +344,10 @@ FILE_PURPOSES = {
         "structured worker-result evidence for the Stage 3G insights graph adapter slice",
         "check_planning_integrity",
     ),
+    "worker-results/stage11a-mcp-readonly-tools-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 11A MCP read-only tools slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
@@ -409,6 +413,10 @@ FILE_PURPOSES = {
         "skill promotion proposal validation contracts", "pytest"
     ),
     "src/codex_supervisor/locks.py": FilePurpose("protected file lock helpers", "pytest"),
+    "src/codex_supervisor/mcp_server.py": FilePurpose(
+        "read-only MCP tool registry and dispatcher",
+        "pytest",
+    ),
     "src/codex_supervisor/paths.py": FilePurpose("repo/planning path discovery", "pytest"),
     "src/codex_supervisor/planning.py": FilePurpose("SQLite planning store", "pytest"),
     "src/codex_supervisor/projects.py": FilePurpose(
@@ -452,6 +460,7 @@ FILE_PURPOSES = {
     "tests/test_insight_cli.py": FilePurpose("insight validation CLI tests", "pytest"),
     "tests/test_insight_updates.py": FilePurpose("guarded insight markdown update tests", "pytest"),
     "tests/test_locks.py": FilePurpose("protected lock helper tests", "pytest"),
+    "tests/test_mcp_server.py": FilePurpose("read-only MCP tool registry tests", "pytest"),
     "tests/test_planning.py": FilePurpose("planning store and CLI tests", "pytest"),
     "tests/test_planning_integrity.py": FilePurpose("planning integrity gate tests", "pytest"),
     "tests/test_projects.py": FilePurpose(
@@ -528,6 +537,7 @@ REQUIRED_PYTHON_MARKERS = {
     ),
     "src/codex_supervisor/goal_contracts.py": "render_goal_contract",
     "src/codex_supervisor/locks.py": "PROTECTED_FILES",
+    "src/codex_supervisor/mcp_server.py": "dispatch_mcp_tool",
     "src/codex_supervisor/paths.py": "default_planning_database_path",
     "src/codex_supervisor/planning.py": "PlanningSQLiteStore",
     "src/codex_supervisor/story_loop.py": "build_story_loop_status",

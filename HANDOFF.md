@@ -16,15 +16,15 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, Stage 10B Codex local-state observation summary work is shaped in planning
-SQLite. The expected queue state is `ready` for active plan
-`plan-stage10-codex-state-automation-bridge`, with current AFK task
-`task-stage10b-codex-state-observations`. Stage 10A is complete and Stage 9 is marked completed in
-planning SQLite. If the database reports anything else, trust the database and call this handoff
-stale.
+As of this snapshot, Stage 10B Codex local-state observation summary work is complete in planning
+SQLite. The expected queue state is `completed` for active plan
+`plan-stage10-codex-state-automation-bridge`, with no current AFK task until the next Stage 10 slice
+is shaped. Stage 10A is complete and Stage 9 is marked completed in planning SQLite. If the
+database reports anything else, trust the database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
+- `962f83d`: shaped the Stage 10B Codex state observation summary task and handoff.
 - `36907dd`: added the Stage 10A read-only Codex state inventory helper and CLI.
 - `e565921`: shaped the Stage 10 Codex state inventory plan and Stage 10A task.
 - `04931a8`: added Stage 9D skill promotion proposal and golden-eval evidence contracts.
@@ -322,26 +322,25 @@ Stage 10A Codex local-state inventory changed:
   `uv run --no-sync python -B -m pytest tests/test_codex_state.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/verify.py`.
 
-Stage 10B Codex local-state observation summary work is shaped:
+Stage 10B Codex local-state observation summaries changed:
 
-- `plans/planning.sqlite3`: adds ready AFK task
-  `task-stage10b-codex-state-observations`, active milestone
-  `milestone-stage10b-codex-state-observations`, pending criterion
-  `criterion-stage10b-codex-state-observations`, and
-  `progress-stage10b-task-shaped-20260525`.
-- Goal: convert Stage 10A inventory metadata into privacy-safe Codex Local State Import Contract
-  observation summaries and reconciliation findings for future planning reconciliation, without
-  reading row payloads or writing Codex internal databases.
-- Scope: table-level observations with `source_kind`, `source_database`, `source_table`,
-  `source_id`, `observed_at`, `confidence`, `summary`, `linked_plan_id`, `linked_task_id`, and
-  `raw_snapshot_hash`; missing/corrupt/unreadable/empty databases become nonfatal findings.
-- Out of scope: row-level private content, Codex internal DB writes, applying reconciliation
-  mutations into planning rows beyond this task's own records, official automation mutations,
-  protected source-of-truth edits, and live worker launch.
-- Allowed implementation paths:
-  `src/codex_supervisor/codex_state.py`, `src/codex_supervisor/cli.py`,
-  `tests/test_codex_state.py`, `scripts/check_file_justification.py`, `plans/planning.sqlite3`,
-  `HANDOFF.md`, and `insights/stage10b-codex-state-observations-worker-result.json`.
+- `src/codex_supervisor/codex_state.py`: added `CodexStateObservation`,
+  `CodexStateReconciliationFinding`, `CodexStateObservationReport`, and
+  `build_codex_state_observation_report`. The helper converts Stage 10A inventory metadata into
+  table-level observation records with source provenance, linked plan/task IDs, confidence,
+  summaries, and deterministic metadata-only `raw_snapshot_hash` values.
+- `src/codex_supervisor/cli.py`: added `codex-state-observations --codex-home <path> --json` for
+  normalized observation/finding output suitable for a future reconciliation dry run.
+- `tests/test_codex_state.py`: now covers observation contract fields, deterministic hashes,
+  missing/corrupt/empty database findings, no-mutation behavior, and CLI JSON that omits private
+  row payload values.
+- `scripts/check_file_justification.py`: records the new worker-result artifact.
+- `plans/planning.sqlite3`: records Stage 10B completion through
+  `worker-run-stage10b-codex-state-observations-20260525`,
+  `progress-stage10b-review-completed-20260525`, completed task, completed milestone, and completed
+  criterion.
+- `insights/stage10b-codex-state-observations-worker-result.json`: durable Stage 10B
+  worker-result evidence.
 - Verification:
   `uv run --no-sync python -B -m pytest tests/test_codex_state.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/verify.py`.
@@ -369,8 +368,7 @@ Use story-loop-status as the queue state machine. Use task-current only as the e
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
 If queue_state is `ready`, run `task-current --json` and execute the current AFK slice with
-story-loop discipline. The expected current task is
-`task-stage10b-codex-state-observations`.
+story-loop discipline.
 
 If queue_state is `completed`, shape the next AFK vertical slice from `ROADMAP.md`. The likely next
 slice after Stage 10B is a Stage 10C reconciliation dry-run surface or an official automation-bridge

@@ -12,7 +12,12 @@ from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from codex_supervisor.codex_state import CodexStateInventory, inventory_codex_state
+from codex_supervisor.codex_state import (
+    CodexStateInventory,
+    CodexStateObservationReport,
+    build_codex_state_observation_report,
+    inventory_codex_state,
+)
 from codex_supervisor.goal_contracts import (
     render_goal_contract,
     render_goal_contract_markdown,
@@ -465,6 +470,16 @@ def main(argv: list[str] | None = None) -> int:
     codex_state_parser.add_argument("--observed-at", default=None)
     codex_state_parser.add_argument("--json", action="store_true", default=False)
 
+    codex_observation_parser = subparsers.add_parser(
+        "codex-state-observations",
+        help="Build privacy-safe Codex local-state observation summaries",
+    )
+    codex_observation_parser.add_argument("--codex-home", type=Path, required=True)
+    codex_observation_parser.add_argument("--linked-plan-id", default="")
+    codex_observation_parser.add_argument("--linked-task-id", default="")
+    codex_observation_parser.add_argument("--observed-at", default=None)
+    codex_observation_parser.add_argument("--json", action="store_true", default=False)
+
     cleanup_plan_parser = subparsers.add_parser(
         "cleanup-plan",
         help="Build a non-destructive cleanup plan for ignored runtime paths",
@@ -483,6 +498,19 @@ def main(argv: list[str] | None = None) -> int:
             _print_json(inventory)
         else:
             _print_codex_state_inventory(inventory)
+        return 0
+
+    if args.command == "codex-state-observations":
+        inventory = inventory_codex_state(args.codex_home, observed_at=args.observed_at)
+        report = build_codex_state_observation_report(
+            inventory,
+            linked_plan_id=args.linked_plan_id,
+            linked_task_id=args.linked_task_id,
+        )
+        if args.json:
+            _print_json(report)
+        else:
+            _print_codex_state_observation_report(report)
         return 0
 
     if args.command == "cleanup-plan":
@@ -1905,6 +1933,28 @@ def _print_codex_state_inventory(inventory: CodexStateInventory) -> None:
                 print(f"  - {table.source_table}\trows={table.row_count}\t{source_kinds}")
         else:
             print("  tables: none")
+
+
+def _print_codex_state_observation_report(report: CodexStateObservationReport) -> None:
+    print(f"codex_home: {report.codex_home}")
+    print(f"observed_at: {report.observed_at}")
+    print(f"linked_plan_id: {report.linked_plan_id or 'none'}")
+    print(f"linked_task_id: {report.linked_task_id or 'none'}")
+    print("observations:")
+    if not report.observations:
+        print("- none")
+    for observation in report.observations:
+        print(
+            f"- {observation.source_id}\t{observation.source_kind}\t"
+            f"hash={observation.raw_snapshot_hash}"
+        )
+        print(f"  summary: {observation.summary}")
+    print("findings:")
+    if not report.findings:
+        print("- none")
+    for finding in report.findings:
+        print(f"- {finding.source_id}\t{finding.failure_class}")
+        print(f"  summary: {finding.summary}")
 
 
 def _to_jsonable(value: object) -> Any:

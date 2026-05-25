@@ -287,6 +287,10 @@ FILE_PURPOSES = {
         "structured worker-result evidence for the Stage 10A Codex local-state inventory slice",
         "check_planning_integrity",
     ),
+    "insights/stage10b-codex-state-observations-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 10B Codex state observation slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 from typing import cast
 
@@ -50,6 +52,47 @@ class CodexStateInventory:
     codex_home: str
     observed_at: str
     databases: tuple[CodexStateDatabaseInventory, ...]
+
+
+@dataclass(frozen=True)
+class CodexStateObservation:
+    """Privacy-safe table-level observation shaped for future reconciliation."""
+
+    source_kind: str
+    source_database: str
+    source_table: str
+    source_id: str
+    observed_at: str
+    confidence: str
+    summary: str
+    linked_plan_id: str
+    linked_task_id: str
+    raw_snapshot_hash: str
+
+
+@dataclass(frozen=True)
+class CodexStateReconciliationFinding:
+    """Nonfatal finding that future reconciliation should inspect."""
+
+    finding_type: str
+    source_database: str
+    source_table: str
+    source_id: str
+    observed_at: str
+    failure_class: str
+    summary: str
+
+
+@dataclass(frozen=True)
+class CodexStateObservationReport:
+    """Privacy-safe observation report derived from a local Codex state inventory."""
+
+    codex_home: str
+    observed_at: str
+    linked_plan_id: str
+    linked_task_id: str
+    observations: tuple[CodexStateObservation, ...]
+    findings: tuple[CodexStateReconciliationFinding, ...]
 
 
 DOCUMENTED_CODEX_STATE_DATABASES = (
@@ -103,6 +146,54 @@ def inventory_codex_state(
         databases=tuple(
             _inventory_database(resolved_home, spec) for spec in DOCUMENTED_CODEX_STATE_DATABASES
         ),
+    )
+
+
+def build_codex_state_observation_report(
+    inventory: CodexStateInventory,
+    *,
+    linked_plan_id: str = "",
+    linked_task_id: str = "",
+) -> CodexStateObservationReport:
+    """Build privacy-safe import observations and findings from inventory metadata."""
+
+    observations: list[CodexStateObservation] = []
+    findings: list[CodexStateReconciliationFinding] = []
+    for database in inventory.databases:
+        if database.status != "present":
+            findings.append(_database_finding(database, inventory.observed_at))
+            continue
+        if not database.tables:
+            findings.append(
+                CodexStateReconciliationFinding(
+                    finding_type="empty_database",
+                    source_database=database.relative_path,
+                    source_table="",
+                    source_id=f"{database.relative_path}::__database__",
+                    observed_at=inventory.observed_at,
+                    failure_class="empty_database",
+                    summary=f"{database.relative_path} is present but has no user tables.",
+                )
+            )
+            continue
+        for table in database.tables:
+            observations.extend(
+                _table_observation(
+                    table,
+                    source_kind,
+                    observed_at=inventory.observed_at,
+                    linked_plan_id=linked_plan_id,
+                    linked_task_id=linked_task_id,
+                )
+                for source_kind in table.source_kinds
+            )
+    return CodexStateObservationReport(
+        codex_home=inventory.codex_home,
+        observed_at=inventory.observed_at,
+        linked_plan_id=linked_plan_id,
+        linked_task_id=linked_task_id,
+        observations=tuple(observations),
+        findings=tuple(findings),
     )
 
 
@@ -228,3 +319,59 @@ def _failed_database_inventory(
         failure_reason=failure_reason,
         tables=(),
     )
+
+
+def _database_finding(
+    database: CodexStateDatabaseInventory,
+    observed_at: str,
+) -> CodexStateReconciliationFinding:
+    failure_class = database.failure_class or database.status
+    failure_reason = database.failure_reason or "database could not be inventoried"
+    return CodexStateReconciliationFinding(
+        finding_type="database_unavailable",
+        source_database=database.relative_path,
+        source_table="",
+        source_id=f"{database.relative_path}::__database__",
+        observed_at=observed_at,
+        failure_class=failure_class,
+        summary=f"{database.relative_path} status={database.status}: {failure_reason}",
+    )
+
+
+def _table_observation(
+    table: CodexStateTableInventory,
+    source_kind: str,
+    *,
+    observed_at: str,
+    linked_plan_id: str,
+    linked_task_id: str,
+) -> CodexStateObservation:
+    source_id = f"{table.source_database}::{table.source_table}::{source_kind}"
+    return CodexStateObservation(
+        source_kind=source_kind,
+        source_database=table.source_database,
+        source_table=table.source_table,
+        source_id=source_id,
+        observed_at=observed_at,
+        confidence="inferred",
+        summary=(
+            f"{table.source_database}.{table.source_table} has {table.row_count} row(s) "
+            f"and maps to {source_kind} observations."
+        ),
+        linked_plan_id=linked_plan_id,
+        linked_task_id=linked_task_id,
+        raw_snapshot_hash=_metadata_hash(
+            {
+                "row_count": table.row_count,
+                "source_database": table.source_database,
+                "source_id": source_id,
+                "source_kind": source_kind,
+                "source_table": table.source_table,
+            }
+        ),
+    )
+
+
+def _metadata_hash(payload: dict[str, object]) -> str:
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return sha256(serialized).hexdigest()

@@ -4,8 +4,13 @@ import json
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from codex_supervisor.cli import main
-from codex_supervisor.codex_state import inventory_codex_state
+from codex_supervisor.codex_state import (
+    build_codex_state_observation_report,
+    inventory_codex_state,
+)
 
 OBSERVED_AT = "2026-05-25T00:00:00Z"
 
@@ -97,7 +102,7 @@ def test_inventory_codex_state_does_not_mutate_codex_home(tmp_path: Path) -> Non
 
 def test_codex_state_inventory_cli_prints_json_without_row_payloads(
     tmp_path: Path,
-    capsys,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     codex_home = tmp_path / "codex-home"
     _create_database(
@@ -128,6 +133,128 @@ def test_codex_state_inventory_cli_prints_json_without_row_payloads(
     assert payload["observed_at"] == OBSERVED_AT
     assert "threads" in serialized
     assert "row_count" in serialized
+    assert "do-not-print-this-secret" not in serialized
+    assert "Stage work" not in serialized
+
+
+def test_build_codex_state_observation_report_returns_import_contract_fields(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    _create_database(
+        codex_home / "state_5.sqlite",
+        """
+        CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT, transcript TEXT);
+        INSERT INTO threads VALUES ('thread-1', 'Stage work', 'private transcript');
+        CREATE TABLE thread_spawn_edges (parent_thread_id TEXT, child_thread_id TEXT);
+        INSERT INTO thread_spawn_edges VALUES ('thread-1', 'thread-2');
+        """,
+    )
+    inventory = inventory_codex_state(codex_home, observed_at=OBSERVED_AT)
+
+    report = build_codex_state_observation_report(
+        inventory,
+        linked_plan_id="plan-stage10-codex-state-automation-bridge",
+        linked_task_id="task-stage10b-codex-state-observations",
+    )
+
+    observations = {observation.source_id: observation for observation in report.observations}
+    thread_observation = observations["state_5.sqlite::threads::thread"]
+    assert thread_observation.source_kind == "thread"
+    assert thread_observation.source_database == "state_5.sqlite"
+    assert thread_observation.source_table == "threads"
+    assert thread_observation.observed_at == OBSERVED_AT
+    assert thread_observation.confidence == "inferred"
+    assert thread_observation.linked_plan_id == "plan-stage10-codex-state-automation-bridge"
+    assert thread_observation.linked_task_id == "task-stage10b-codex-state-observations"
+    assert len(thread_observation.raw_snapshot_hash) == 64
+    assert "1 row(s)" in thread_observation.summary
+    spawn_observation = observations["state_5.sqlite::thread_spawn_edges::thread_spawn_edge"]
+    assert spawn_observation.source_kind == "thread_spawn_edge"
+    assert "private transcript" not in json.dumps(report, default=str)
+
+
+def test_codex_state_observation_hashes_are_deterministic_metadata_only(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    _create_database(
+        codex_home / "state_5.sqlite",
+        """
+        CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT);
+        INSERT INTO threads VALUES ('thread-1', 'Stage work');
+        """,
+    )
+    first = build_codex_state_observation_report(
+        inventory_codex_state(codex_home, observed_at="2026-05-25T00:00:00Z")
+    )
+    second = build_codex_state_observation_report(
+        inventory_codex_state(codex_home, observed_at="2026-05-25T00:01:00Z")
+    )
+
+    assert first.observations[0].raw_snapshot_hash == second.observations[0].raw_snapshot_hash
+
+
+def test_observation_report_records_nonfatal_findings(tmp_path: Path) -> None:
+    codex_home = tmp_path / "codex-home"
+    _create_database(codex_home / "state_5.sqlite", "")
+    (codex_home / "logs_2.sqlite").write_text("not a sqlite database", encoding="utf-8")
+
+    report = build_codex_state_observation_report(
+        inventory_codex_state(codex_home, observed_at=OBSERVED_AT)
+    )
+
+    findings = {finding.source_database: finding for finding in report.findings}
+    assert findings["state_5.sqlite"].finding_type == "empty_database"
+    assert findings["state_5.sqlite"].failure_class == "empty_database"
+    assert findings["goals_1.sqlite"].finding_type == "database_unavailable"
+    assert findings["goals_1.sqlite"].failure_class == "missing"
+    assert findings["logs_2.sqlite"].failure_class == "sqlite_error"
+    assert findings["sqlite/codex-dev.db"].failure_class == "missing"
+    assert report.observations == ()
+
+
+def test_codex_state_observations_cli_prints_json_without_payloads_or_mutation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    _create_database(
+        codex_home / "state_5.sqlite",
+        """
+        CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT, transcript TEXT);
+        INSERT INTO threads VALUES ('thread-1', 'Stage work', 'do-not-print-this-secret');
+        """,
+    )
+    before = _file_snapshot(codex_home)
+
+    exit_code = main(
+        [
+            "codex-state-observations",
+            "--codex-home",
+            str(codex_home),
+            "--linked-plan-id",
+            "plan-stage10-codex-state-automation-bridge",
+            "--linked-task-id",
+            "task-stage10b-codex-state-observations",
+            "--observed-at",
+            OBSERVED_AT,
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    serialized = json.dumps(payload, sort_keys=True)
+
+    assert exit_code == 0
+    assert captured.err == ""
+    assert _file_snapshot(codex_home) == before
+    assert payload["linked_plan_id"] == "plan-stage10-codex-state-automation-bridge"
+    assert payload["linked_task_id"] == "task-stage10b-codex-state-observations"
+    assert payload["observations"][0]["source_id"] == "state_5.sqlite::threads::thread"
+    assert payload["observations"][0]["raw_snapshot_hash"]
+    assert payload["findings"]
     assert "do-not-print-this-secret" not in serialized
     assert "Stage work" not in serialized
 

@@ -291,6 +291,11 @@ FILE_PURPOSES = {
         "structured worker-result evidence for the Stage 10B Codex state observation slice",
         "check_planning_integrity",
     ),
+    "insights/stage10c-codex-state-reconciliation-dry-run-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 10C Codex state reconciliation dry-run "
+        "slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
@@ -334,7 +339,8 @@ FILE_PURPOSES = {
     "src/codex_supervisor/__init__.py": FilePurpose("Python package marker", "mypy"),
     "src/codex_supervisor/cli.py": FilePurpose("codex-supervisor CLI", "pytest"),
     "src/codex_supervisor/codex_state.py": FilePurpose(
-        "privacy-safe read-only Codex local-state inventory helper", "pytest"
+        "privacy-safe Codex local-state inventory, observation, and reconciliation helpers",
+        "pytest",
     ),
     "src/codex_supervisor/goal_contracts.py": FilePurpose("Goal Contract renderer", "pytest"),
     "src/codex_supervisor/insights.py": FilePurpose(
@@ -399,7 +405,8 @@ FILE_PURPOSES = {
         "skill promotion proposal contract tests", "pytest"
     ),
     "tests/test_codex_state.py": FilePurpose(
-        "privacy-safe Codex local-state inventory tests", "pytest"
+        "privacy-safe Codex local-state inventory, observation, and reconciliation tests",
+        "pytest",
     ),
     "tests/test_story_loop.py": FilePurpose("Story Loop tests", "pytest"),
     "tests/test_worker_backends.py": FilePurpose("worker backend protocol tests", "pytest"),

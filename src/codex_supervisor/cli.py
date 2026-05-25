@@ -15,7 +15,9 @@ from typing import Any, cast
 from codex_supervisor.codex_state import (
     CodexStateInventory,
     CodexStateObservationReport,
+    CodexStateReconciliationDryRunReport,
     build_codex_state_observation_report,
+    build_codex_state_reconciliation_dry_run,
     inventory_codex_state,
 )
 from codex_supervisor.goal_contracts import (
@@ -480,6 +482,18 @@ def main(argv: list[str] | None = None) -> int:
     codex_observation_parser.add_argument("--observed-at", default=None)
     codex_observation_parser.add_argument("--json", action="store_true", default=False)
 
+    codex_reconciliation_parser = subparsers.add_parser(
+        "codex-state-reconcile-dry-run",
+        help="Build a non-mutating Codex local-state reconciliation proposal report",
+    )
+    codex_reconciliation_parser.add_argument("--codex-home", type=Path, required=True)
+    codex_reconciliation_parser.add_argument("--linked-plan-id", default="")
+    codex_reconciliation_parser.add_argument("--linked-task-id", default="")
+    codex_reconciliation_parser.add_argument("--known-plan-id", action="append", default=None)
+    codex_reconciliation_parser.add_argument("--known-task-id", action="append", default=None)
+    codex_reconciliation_parser.add_argument("--observed-at", default=None)
+    codex_reconciliation_parser.add_argument("--json", action="store_true", default=False)
+
     cleanup_plan_parser = subparsers.add_parser(
         "cleanup-plan",
         help="Build a non-destructive cleanup plan for ignored runtime paths",
@@ -511,6 +525,24 @@ def main(argv: list[str] | None = None) -> int:
             _print_json(report)
         else:
             _print_codex_state_observation_report(report)
+        return 0
+
+    if args.command == "codex-state-reconcile-dry-run":
+        inventory = inventory_codex_state(args.codex_home, observed_at=args.observed_at)
+        observation_report = build_codex_state_observation_report(
+            inventory,
+            linked_plan_id=args.linked_plan_id,
+            linked_task_id=args.linked_task_id,
+        )
+        reconciliation_report = build_codex_state_reconciliation_dry_run(
+            observation_report,
+            known_plan_ids=None if args.known_plan_id is None else tuple(args.known_plan_id),
+            known_task_ids=None if args.known_task_id is None else tuple(args.known_task_id),
+        )
+        if args.json:
+            _print_json(reconciliation_report)
+        else:
+            _print_codex_state_reconciliation_dry_run(reconciliation_report)
         return 0
 
     if args.command == "cleanup-plan":
@@ -1954,6 +1986,32 @@ def _print_codex_state_observation_report(report: CodexStateObservationReport) -
         print("- none")
     for finding in report.findings:
         print(f"- {finding.source_id}\t{finding.failure_class}")
+        print(f"  summary: {finding.summary}")
+
+
+def _print_codex_state_reconciliation_dry_run(
+    report: CodexStateReconciliationDryRunReport,
+) -> None:
+    print(f"codex_home: {report.codex_home}")
+    print(f"observed_at: {report.observed_at}")
+    print(f"linked_plan_id: {report.linked_plan_id or 'none'}")
+    print(f"linked_task_id: {report.linked_task_id or 'none'}")
+    print("observations:")
+    if not report.observations:
+        print("- none")
+    for observation in report.observations:
+        print(f"- {observation.source_id}\t{observation.source_kind}")
+    print("proposals:")
+    if not report.proposals:
+        print("- none")
+    for proposal in report.proposals:
+        print(f"- {proposal.action_type}\t{proposal.source_id}\t{proposal.action_status}")
+        print(f"  summary: {proposal.summary}")
+    print("findings:")
+    if not report.findings:
+        print("- none")
+    for finding in report.findings:
+        print(f"- {finding.finding_type}\t{finding.source_id}\t{finding.failure_class}")
         print(f"  summary: {finding.summary}")
 
 

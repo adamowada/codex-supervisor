@@ -9,6 +9,7 @@ import pytest
 from codex_supervisor.cli import main
 from codex_supervisor.codex_state import (
     build_codex_state_observation_report,
+    build_codex_state_reconciliation_dry_run,
     inventory_codex_state,
 )
 
@@ -254,6 +255,184 @@ def test_codex_state_observations_cli_prints_json_without_payloads_or_mutation(
     assert payload["linked_task_id"] == "task-stage10b-codex-state-observations"
     assert payload["observations"][0]["source_id"] == "state_5.sqlite::threads::thread"
     assert payload["observations"][0]["raw_snapshot_hash"]
+    assert payload["findings"]
+    assert "do-not-print-this-secret" not in serialized
+    assert "Stage work" not in serialized
+
+
+def test_codex_state_reconciliation_dry_run_builds_proposed_actions(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    _create_database(
+        codex_home / "state_5.sqlite",
+        """
+        CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT, transcript TEXT);
+        INSERT INTO threads VALUES ('thread-1', 'Stage work', 'private transcript');
+        CREATE TABLE agent_jobs (id TEXT PRIMARY KEY, stderr TEXT);
+        INSERT INTO agent_jobs VALUES ('job-1', 'private stderr payload');
+        """,
+    )
+    report = build_codex_state_observation_report(
+        inventory_codex_state(codex_home, observed_at=OBSERVED_AT),
+        linked_plan_id="plan-stage10-codex-state-automation-bridge",
+        linked_task_id="task-stage10c-codex-state-reconciliation-dry-run",
+    )
+
+    dry_run = build_codex_state_reconciliation_dry_run(
+        report,
+        known_plan_ids=("plan-stage10-codex-state-automation-bridge",),
+        known_task_ids=("task-stage10c-codex-state-reconciliation-dry-run",),
+    )
+
+    thread_proposals = [
+        proposal
+        for proposal in dry_run.proposals
+        if proposal.source_id == "state_5.sqlite::threads::thread"
+    ]
+    assert [proposal.action_type for proposal in thread_proposals] == [
+        "artifact-link",
+        "progress-event",
+        "follow-up-finding",
+    ]
+    progress_proposal = thread_proposals[1]
+    assert progress_proposal.action_status == "proposed"
+    assert progress_proposal.source_kind == "thread"
+    assert progress_proposal.source_database == "state_5.sqlite"
+    assert progress_proposal.source_table == "threads"
+    assert progress_proposal.observed_at == OBSERVED_AT
+    assert progress_proposal.confidence == "inferred"
+    assert progress_proposal.linked_plan_id == "plan-stage10-codex-state-automation-bridge"
+    assert progress_proposal.linked_task_id == "task-stage10c-codex-state-reconciliation-dry-run"
+    assert progress_proposal.raw_snapshot_hash
+    assert "private transcript" not in json.dumps(dry_run, default=str)
+    assert "private stderr payload" not in json.dumps(dry_run, default=str)
+
+
+def test_codex_state_reconciliation_dry_run_is_deterministic(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    _create_database(
+        codex_home / "state_5.sqlite",
+        """
+        CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT);
+        INSERT INTO threads VALUES ('thread-1', 'Stage work');
+        CREATE TABLE agent_jobs (id TEXT PRIMARY KEY);
+        INSERT INTO agent_jobs VALUES ('job-1');
+        """,
+    )
+    report = build_codex_state_observation_report(
+        inventory_codex_state(codex_home, observed_at=OBSERVED_AT),
+        linked_plan_id="plan-stage10-codex-state-automation-bridge",
+        linked_task_id="task-stage10c-codex-state-reconciliation-dry-run",
+    )
+
+    first = build_codex_state_reconciliation_dry_run(report)
+    second = build_codex_state_reconciliation_dry_run(report)
+
+    assert first.proposals == second.proposals
+    assert [(proposal.source_id, proposal.action_type) for proposal in first.proposals] == [
+        ("state_5.sqlite::agent_jobs::agent_job", "artifact-link"),
+        ("state_5.sqlite::agent_jobs::agent_job", "progress-event"),
+        ("state_5.sqlite::agent_jobs::agent_job", "follow-up-finding"),
+        ("state_5.sqlite::threads::thread", "artifact-link"),
+        ("state_5.sqlite::threads::thread", "progress-event"),
+        ("state_5.sqlite::threads::thread", "follow-up-finding"),
+    ]
+
+
+def test_codex_state_reconciliation_dry_run_reports_conflicts_and_empty_reports(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    _create_database(
+        codex_home / "state_5.sqlite",
+        """
+        CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT);
+        INSERT INTO threads VALUES ('thread-1', 'Stage work');
+        """,
+    )
+    report = build_codex_state_observation_report(
+        inventory_codex_state(codex_home, observed_at=OBSERVED_AT),
+        linked_plan_id="missing-plan",
+        linked_task_id="missing-task",
+    )
+
+    dry_run = build_codex_state_reconciliation_dry_run(
+        report,
+        known_plan_ids=("plan-stage10-codex-state-automation-bridge",),
+        known_task_ids=("task-stage10c-codex-state-reconciliation-dry-run",),
+    )
+
+    assert dry_run.proposals == ()
+    finding_types = {finding.finding_type for finding in dry_run.findings}
+    assert "missing_linked_plan" in finding_types
+    assert "missing_linked_task" in finding_types
+    assert "database_unavailable" in finding_types
+
+    empty_report = build_codex_state_observation_report(
+        inventory_codex_state(tmp_path / "empty-codex-home", observed_at=OBSERVED_AT)
+    )
+    empty_dry_run = build_codex_state_reconciliation_dry_run(empty_report)
+
+    empty_finding_types = {finding.finding_type for finding in empty_dry_run.findings}
+    assert empty_dry_run.proposals == ()
+    assert "empty_observation_report" in empty_finding_types
+    assert "database_unavailable" in empty_finding_types
+
+
+def test_codex_state_reconcile_dry_run_cli_prints_json_without_payloads_or_mutation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    planning_path = workspace / "plans" / "planning.sqlite3"
+    planning_path.parent.mkdir(parents=True)
+    planning_path.write_bytes(b"planning sentinel")
+    codex_home = workspace / "codex-home"
+    _create_database(
+        codex_home / "state_5.sqlite",
+        """
+        CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT, transcript TEXT);
+        INSERT INTO threads VALUES ('thread-1', 'Stage work', 'do-not-print-this-secret');
+        """,
+    )
+    before_workspace = _file_snapshot(workspace)
+    monkeypatch.chdir(workspace)
+
+    exit_code = main(
+        [
+            "codex-state-reconcile-dry-run",
+            "--codex-home",
+            str(codex_home),
+            "--linked-plan-id",
+            "plan-stage10-codex-state-automation-bridge",
+            "--linked-task-id",
+            "task-stage10c-codex-state-reconciliation-dry-run",
+            "--known-plan-id",
+            "plan-stage10-codex-state-automation-bridge",
+            "--known-task-id",
+            "task-stage10c-codex-state-reconciliation-dry-run",
+            "--observed-at",
+            OBSERVED_AT,
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    serialized = json.dumps(payload, sort_keys=True)
+
+    assert exit_code == 0
+    assert captured.err == ""
+    assert _file_snapshot(workspace) == before_workspace
+    assert payload["observed_at"] == OBSERVED_AT
+    assert payload["observations"][0]["source_id"] == "state_5.sqlite::threads::thread"
+    assert payload["proposals"][0]["action_type"] == "artifact-link"
+    assert payload["proposals"][0]["action_status"] == "proposed"
+    assert payload["proposals"][0]["raw_snapshot_hash"]
     assert payload["findings"]
     assert "do-not-print-this-secret" not in serialized
     assert "Stage work" not in serialized

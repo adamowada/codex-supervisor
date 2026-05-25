@@ -95,6 +95,37 @@ class CodexStateObservationReport:
     findings: tuple[CodexStateReconciliationFinding, ...]
 
 
+@dataclass(frozen=True)
+class CodexStateReconciliationProposal:
+    """Dry-run action proposal for a future planning reconciliation apply step."""
+
+    action_type: str
+    action_status: str
+    source_kind: str
+    source_database: str
+    source_table: str
+    source_id: str
+    observed_at: str
+    confidence: str
+    linked_plan_id: str
+    linked_task_id: str
+    raw_snapshot_hash: str
+    summary: str
+
+
+@dataclass(frozen=True)
+class CodexStateReconciliationDryRunReport:
+    """Non-mutating reconciliation proposal report for Codex local-state observations."""
+
+    codex_home: str
+    observed_at: str
+    linked_plan_id: str
+    linked_task_id: str
+    observations: tuple[CodexStateObservation, ...]
+    proposals: tuple[CodexStateReconciliationProposal, ...]
+    findings: tuple[CodexStateReconciliationFinding, ...]
+
+
 DOCUMENTED_CODEX_STATE_DATABASES = (
     CodexStateDatabaseSpec(
         name="state",
@@ -194,6 +225,83 @@ def build_codex_state_observation_report(
         linked_task_id=linked_task_id,
         observations=tuple(observations),
         findings=tuple(findings),
+    )
+
+
+def build_codex_state_reconciliation_dry_run(
+    report: CodexStateObservationReport,
+    *,
+    known_plan_ids: tuple[str, ...] | None = None,
+    known_task_ids: tuple[str, ...] | None = None,
+) -> CodexStateReconciliationDryRunReport:
+    """Convert observation metadata into deterministic dry-run planning proposals.
+
+    This helper is intentionally pure: it does not open Codex databases, planning SQLite, or the
+    filesystem. Callers may pass known planning IDs to surface missing-target conflicts as findings.
+    """
+
+    known_plans = None if known_plan_ids is None else frozenset(known_plan_ids)
+    known_tasks = None if known_task_ids is None else frozenset(known_task_ids)
+    findings = list(report.findings)
+    proposals: list[CodexStateReconciliationProposal] = []
+
+    if not report.observations:
+        findings.append(
+            CodexStateReconciliationFinding(
+                finding_type="empty_observation_report",
+                source_database="",
+                source_table="",
+                source_id="codex_state_observations::__report__",
+                observed_at=report.observed_at,
+                failure_class="empty_observation_report",
+                summary="Observation report contains no table-level observations to reconcile.",
+            )
+        )
+
+    for observation in _sorted_observations(report.observations):
+        target_findings = _target_findings_for_observation(
+            observation,
+            known_plan_ids=known_plans,
+            known_task_ids=known_tasks,
+        )
+        if target_findings:
+            findings.extend(target_findings)
+            continue
+        proposals.extend(
+            _proposal_for_observation(observation, action_type)
+            for action_type in _proposal_action_types(observation)
+        )
+
+    return CodexStateReconciliationDryRunReport(
+        codex_home=report.codex_home,
+        observed_at=report.observed_at,
+        linked_plan_id=report.linked_plan_id,
+        linked_task_id=report.linked_task_id,
+        observations=tuple(_sorted_observations(report.observations)),
+        proposals=tuple(
+            sorted(
+                proposals,
+                key=lambda proposal: (
+                    proposal.source_database,
+                    proposal.source_table,
+                    proposal.source_kind,
+                    proposal.source_id,
+                    _proposal_action_order(proposal.action_type),
+                ),
+            )
+        ),
+        findings=tuple(
+            sorted(
+                findings,
+                key=lambda finding: (
+                    finding.source_database,
+                    finding.source_table,
+                    finding.source_id,
+                    finding.finding_type,
+                    finding.failure_class,
+                ),
+            )
+        ),
     )
 
 
@@ -370,6 +478,123 @@ def _table_observation(
             }
         ),
     )
+
+
+def _sorted_observations(
+    observations: tuple[CodexStateObservation, ...],
+) -> tuple[CodexStateObservation, ...]:
+    return tuple(
+        sorted(
+            observations,
+            key=lambda observation: (
+                observation.source_database,
+                observation.source_table,
+                observation.source_kind,
+                observation.source_id,
+            ),
+        )
+    )
+
+
+def _target_findings_for_observation(
+    observation: CodexStateObservation,
+    *,
+    known_plan_ids: frozenset[str] | None,
+    known_task_ids: frozenset[str] | None,
+) -> tuple[CodexStateReconciliationFinding, ...]:
+    findings: list[CodexStateReconciliationFinding] = []
+    if (
+        observation.linked_plan_id
+        and known_plan_ids is not None
+        and observation.linked_plan_id not in known_plan_ids
+    ):
+        findings.append(
+            CodexStateReconciliationFinding(
+                finding_type="missing_linked_plan",
+                source_database=observation.source_database,
+                source_table=observation.source_table,
+                source_id=observation.source_id,
+                observed_at=observation.observed_at,
+                failure_class="missing_linked_plan",
+                summary=(
+                    f"{observation.source_id} references missing plan "
+                    f"{observation.linked_plan_id!r}; no dry-run actions were proposed."
+                ),
+            )
+        )
+    if (
+        observation.linked_task_id
+        and known_task_ids is not None
+        and observation.linked_task_id not in known_task_ids
+    ):
+        findings.append(
+            CodexStateReconciliationFinding(
+                finding_type="missing_linked_task",
+                source_database=observation.source_database,
+                source_table=observation.source_table,
+                source_id=observation.source_id,
+                observed_at=observation.observed_at,
+                failure_class="missing_linked_task",
+                summary=(
+                    f"{observation.source_id} references missing task "
+                    f"{observation.linked_task_id!r}; no dry-run actions were proposed."
+                ),
+            )
+        )
+    return tuple(findings)
+
+
+def _proposal_action_types(observation: CodexStateObservation) -> tuple[str, ...]:
+    action_types = ["artifact-link", "follow-up-finding"]
+    if observation.linked_plan_id:
+        action_types.insert(1, "progress-event")
+    return tuple(action_types)
+
+
+def _proposal_action_order(action_type: str) -> int:
+    order = {
+        "artifact-link": 0,
+        "progress-event": 1,
+        "follow-up-finding": 2,
+    }
+    return order[action_type]
+
+
+def _proposal_for_observation(
+    observation: CodexStateObservation,
+    action_type: str,
+) -> CodexStateReconciliationProposal:
+    return CodexStateReconciliationProposal(
+        action_type=action_type,
+        action_status="proposed",
+        source_kind=observation.source_kind,
+        source_database=observation.source_database,
+        source_table=observation.source_table,
+        source_id=observation.source_id,
+        observed_at=observation.observed_at,
+        confidence=observation.confidence,
+        linked_plan_id=observation.linked_plan_id,
+        linked_task_id=observation.linked_task_id,
+        raw_snapshot_hash=observation.raw_snapshot_hash,
+        summary=_proposal_summary(observation, action_type),
+    )
+
+
+def _proposal_summary(observation: CodexStateObservation, action_type: str) -> str:
+    if action_type == "artifact-link":
+        return (
+            f"Propose linking metadata snapshot {observation.raw_snapshot_hash} for "
+            f"{observation.source_id} as planning evidence."
+        )
+    if action_type == "progress-event":
+        target = observation.linked_task_id or observation.linked_plan_id
+        return f"Propose recording a planning progress event for {target}: {observation.summary}"
+    if action_type == "follow-up-finding":
+        return (
+            f"Propose creating a follow-up reconciliation finding for "
+            f"{observation.source_kind} observation {observation.source_id}."
+        )
+    raise ValueError(f"unknown reconciliation proposal action type: {action_type}")
 
 
 def _metadata_hash(payload: dict[str, object]) -> str:

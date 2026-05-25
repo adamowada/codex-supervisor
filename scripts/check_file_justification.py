@@ -233,6 +233,9 @@ FILE_PURPOSES = {
     "insights/v1-hardening-clarifications.md": FilePurpose(
         "resolved v1 hardening policy insight", "check_file_justification"
     ),
+    "insights/v1-hardening-review.md": FilePurpose(
+        "six-lane v1 hardening review synthesis", "check_file_justification"
+    ),
     "insights/workflow-patterns.md": FilePurpose(
         "workflow pattern synthesis", "check_file_justification"
     ),

@@ -30,6 +30,7 @@ Use it for synthesized, provenance-backed knowledge about:
 - `skill-learning-loop.md`: how skills should be updated and tested over time.
 - `v1-hardening-clarifications.md`: resolved v1 hardening policy for live Codex work, ACP cadence,
   MCP mutation defaults, adapters, project scaffolding, and skill promotion.
+- `v1-hardening-review.md`: six-lane review synthesis and normalized v1 hardening finding clusters.
 - `graph.md`: lightweight markdown knowledge graph.
 
 Historical audit and worker-result files are evidence, not mandatory orientation. Fresh threads

@@ -7,12 +7,13 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Current Snapshot
 
-- Current queue state: empty by `story-loop-status --json`.
-- Latest planning checkpoint: `plan-v1-hardening-clarifications`, completed.
-- Durable clarification insight: `insights/v1-hardening-clarifications.md`.
-- Source-of-truth doctrine updated intentionally in `DECISIONS.md` D-0013 through D-0018.
-- Resolved stale question file: `insights/open-questions.md` was removed after the answers were
-  recorded in planning SQLite, decisions, and the new insight.
+- Current queue state: ready by `story-loop-status --json`.
+- Active plan: `plan-v1-live-operational-hardening`.
+- Current AFK task: `task-v1-live-story-loop-worker`.
+- Latest planning checkpoint: six-lane v1 hardening review digested in
+  `progress-v1-six-lane-review-digested-20260525`.
+- Durable insights: `insights/v1-hardening-clarifications.md` and
+  `insights/v1-hardening-review.md`.
 - Codex CLI smoke: npm `codex-cli 0.133.0` resolves in the current shell, and `codex exec --help`
   is available. Previous Windows executable resolution drift is not a current blocker for this
   process.
@@ -33,7 +34,8 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Next Action
 
-Begin the v1 operational hardening implementation from the recorded policy. Start with a fresh
-whole-project review or task decomposition, then execute fixes as verified vertical slices with
-planning progress, durable insights only when they capture reusable learning, focused verification,
-and ACP.
+Implement `task-v1-live-story-loop-worker`: production live Story Loop worker execution with an
+isolated git worktree, enforced Codex launch options, Goal Contract/result prompt composition,
+bounded subprocesses, minimal environment, JSONL/stdout/stderr/diff evidence, Worker Result
+validation, and authoritative changed-path gating. Record progress, update durable insights only for
+reusable learning, verify the slice, then ACP before moving to dependent MCP/review/release tasks.

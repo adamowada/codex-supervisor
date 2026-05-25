@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 06:03 PDT
+Last updated: 2026-05-25 06:07 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,9 +9,9 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `ready`.
+- Current queue state: `running`.
 - Current AFK task: `task-stage13e-pr-issue-evidence-links`.
-- Current worker run: none yet; claim the ready Stage 13E task to create the next worker run.
+- Current worker run: `worker-run-stage13e-pr-issue-evidence-links-inline-20260525`.
 - Current plan: `plan-stage13-github-ci-integration` (`Stage 13 GitHub And CI/CD Integration`).
 - Latest completed task: `task-stage13d-ci-run-evidence-links`.
 - Recent pushed implementation/evidence commits before this handoff update:
@@ -22,6 +22,7 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   - `eeee711de1e2a275c01f105d8e6a3ab946027a01` - Stage 13C completion evidence.
   - `c5fe64a85b1a76100487eab79b8a4e9e7e2fd881` - Stage 13D claim.
   - `263354c5c3867be9baa370562225c737e0e63768` - Stage 13D CI evidence implementation.
+  - `622c52f685c399e12c347d64ab5a0c4aafed17d9` - Stage 13D completion and Stage 13E shaping.
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.
@@ -99,7 +100,8 @@ uv run --no-sync python -B scripts/verify.py --publication-ready
 ## Stage 13E Contract
 
 Task: `task-stage13e-pr-issue-evidence-links`.
-Status: `ready`.
+Status: `running`.
+Worker run: `worker-run-stage13e-pr-issue-evidence-links-inline-20260525`.
 Review required: yes, because the slice changes planning persistence and CLI public surface for
 GitHub evidence.
 
@@ -153,5 +155,6 @@ Stop conditions:
 
 ## Next Action
 
-ACP the Stage 13D completion and Stage 13E shaping state, then claim
-`task-stage13e-pr-issue-evidence-links` and implement only that slice.
+Continue the claimed `task-stage13e-pr-issue-evidence-links` run. Implement only the typed PR and
+issue-comment evidence recording slice, run the task verification commands and review, then ACP the
+step.

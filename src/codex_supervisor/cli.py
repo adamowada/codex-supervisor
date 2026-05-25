@@ -117,7 +117,9 @@ from codex_supervisor.spawned_projects import (
     TRUST_POLICIES,
     SpawnedProjectBrief,
     SpawnedProjectRecommendation,
+    SpawnedProjectScaffoldApplyResult,
     SpawnedProjectScaffoldProposal,
+    apply_spawned_project_scaffold,
     build_spawned_project_scaffold_proposal,
     recommend_spawned_project_scaffold,
 )
@@ -207,6 +209,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Dry-run spawned project scaffold file and task proposal",
     )
     _add_spawned_project_brief_arguments(spawned_propose_parser)
+
+    spawned_apply_parser = subparsers.add_parser(
+        "spawned-project-apply",
+        help="Write the selected spawned project scaffold into a target root",
+    )
+    _add_spawned_project_brief_arguments(spawned_apply_parser)
+    spawned_apply_parser.add_argument("--target-root", type=Path, required=True)
 
     release_readiness_parser = subparsers.add_parser(
         "release-readiness",
@@ -877,6 +886,17 @@ def main(argv: list[str] | None = None) -> int:
             _print_spawned_project_proposal(proposal)
         return 0
 
+    if args.command == "spawned-project-apply":
+        apply_result = apply_spawned_project_scaffold(
+            _spawned_project_brief_from_args(args),
+            target_root=args.target_root,
+        )
+        if args.json:
+            _print_json(apply_result)
+        else:
+            _print_spawned_project_apply_result(apply_result)
+        return 0
+
     if args.command == "release-readiness":
         release_report = build_release_readiness_report(
             args.repo_root,
@@ -1199,8 +1219,12 @@ def main(argv: list[str] | None = None) -> int:
         if not results:
             print("No worker result records found.")
             return 0
-        for result in results:
-            print(f"{result.result_id}\t{result.status}\t{result.summary}")
+        for worker_result_record in results:
+            print(
+                f"{worker_result_record.result_id}\t"
+                f"{worker_result_record.status}\t"
+                f"{worker_result_record.summary}"
+            )
         return 0
 
     if args.command == "worker-result-show":
@@ -2577,6 +2601,17 @@ def _print_spawned_project_proposal(proposal: SpawnedProjectScaffoldProposal) ->
     _print_json_list("skill_actions", proposal.skill_actions)
     _print_json_list("source_study_actions", proposal.source_study_actions)
     print(f"first_task: {proposal.first_task.title}")
+
+
+def _print_spawned_project_apply_result(result: SpawnedProjectScaffoldApplyResult) -> None:
+    print(f"project: {result.project_name}")
+    print(f"root: {result.project_root}")
+    print(f"writes_files: {result.writes_files}")
+    _print_json_list("created_files", result.created_files)
+    _print_json_list("existing_files", result.existing_files)
+    if result.planning_db_path:
+        print(f"planning_db: {result.planning_db_path}")
+    _print_json_list("verification_commands", result.verification_commands)
 
 
 def _print_release_readiness_report(report: ReleaseReadinessReport) -> None:

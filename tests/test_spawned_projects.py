@@ -1,10 +1,15 @@
 import json
+import sqlite3
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
 from codex_supervisor.cli import main
 from codex_supervisor.spawned_projects import (
     SpawnedProjectBrief,
+    apply_spawned_project_scaffold,
     build_spawned_project_scaffold_proposal,
     recommend_spawned_project_scaffold,
 )
@@ -163,6 +168,151 @@ def test_spawned_project_proposal_for_full_scaffold_includes_guidance() -> None:
     assert proposal.first_task.allowed_paths == tuple(
         action.path for action in proposal.file_actions
     )
+
+
+def test_spawned_project_apply_writes_full_supervisor_scaffold(tmp_path: Path) -> None:
+    target = tmp_path / "ops-platform"
+
+    result = apply_spawned_project_scaffold(
+        SpawnedProjectBrief(
+            name="ops platform",
+            complexity="production",
+            production_intended=True,
+            public_or_shared=True,
+            unattended_workers=True,
+            durable_learning=True,
+            trust_policy="controlled_runner",
+        ),
+        target_root=target,
+    )
+
+    assert result.writes_files is True
+    assert result.project_root == str(target)
+    assert result.created_files
+    for relative_path in (
+        "README.md",
+        "AGENTS.md",
+        "PLANS.md",
+        "ARCHITECTURE.md",
+        "CONTRACTS.md",
+        "ROADMAP.md",
+        "SOP.md",
+        "TESTING.md",
+        "DECISIONS.md",
+        "HANDOFF.md",
+        "LICENSE",
+        "ATTRIBUTIONS.md",
+        ".gitignore",
+        ".gitattributes",
+        "scripts/verify.py",
+        "scripts/check_protected_files.py",
+        "scripts/check_planning_integrity.py",
+        "scripts/check_file_justification.py",
+        "scripts/check_public_repo_hygiene.py",
+        "insights/README.md",
+        "insights/graph.md",
+        "plans/planning.sqlite3",
+    ):
+        assert (target / relative_path).exists(), relative_path
+
+    readme = (target / "README.md").read_text(encoding="utf-8")
+    assert "ops platform" in readme
+    assert "spawned project" in readme
+    assert "TODO" not in readme
+    license_text = (target / "LICENSE").read_text(encoding="utf-8")
+    assert "Permission is hereby granted, free of charge" in license_text
+    assert "THE SOFTWARE IS PROVIDED" in license_text
+    public_result = {
+        "created_files": result.created_files,
+        "existing_files": result.existing_files,
+    }
+    assert "C:\\Users" not in json.dumps(public_result, sort_keys=True)
+
+    with sqlite3.connect(target / "plans" / "planning.sqlite3") as connection:
+        plan_count = connection.execute("SELECT COUNT(*) FROM plans").fetchone()[0]
+        task_count = connection.execute("SELECT COUNT(*) FROM supervisor_tasks").fetchone()[0]
+        database_text = "\n".join(connection.iterdump())
+    assert plan_count == 1
+    assert task_count == 1
+    assert "C:\\Users" not in database_text
+    assert str(target) not in database_text
+
+    protected = subprocess.run(
+        (sys.executable, "scripts/check_protected_files.py"),
+        cwd=target,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert protected.returncode == 0, protected.stderr + protected.stdout
+    integrity = subprocess.run(
+        (sys.executable, "scripts/check_planning_integrity.py"),
+        cwd=target,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert integrity.returncode == 0, integrity.stderr + integrity.stdout
+    verify = subprocess.run(
+        (sys.executable, "scripts/verify.py"),
+        cwd=target,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert verify.returncode == 0, verify.stderr + verify.stdout
+
+
+def test_spawned_project_apply_writes_usable_prototype_verify_script(tmp_path: Path) -> None:
+    target = tmp_path / "prototype"
+
+    result = apply_spawned_project_scaffold(
+        SpawnedProjectBrief(name="rough draft", complexity="prototype"),
+        target_root=target,
+    )
+
+    assert "scripts/check_planning_integrity.py" not in result.created_files
+    verify = subprocess.run(
+        (sys.executable, "scripts/verify.py"),
+        cwd=target,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert verify.returncode == 0, verify.stderr + verify.stdout
+
+
+def test_cli_spawned_project_apply_emits_json_and_writes_files(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    target = tmp_path / "ops-platform"
+
+    assert (
+        main(
+            [
+                "spawned-project-apply",
+                "--name",
+                "ops platform",
+                "--complexity",
+                "production",
+                "--production-intended",
+                "--public-or-shared",
+                "--unattended-workers",
+                "--durable-learning",
+                "--target-root",
+                str(target),
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["writes_files"] is True
+    assert payload["project_root"] == str(target)
+    assert "plans/planning.sqlite3" in payload["created_files"]
+    assert (target / "plans" / "planning.sqlite3").exists()
 
 
 def test_spawned_project_classifier_rejects_invalid_complexity() -> None:

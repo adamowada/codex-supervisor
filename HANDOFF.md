@@ -7,13 +7,14 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Current Snapshot
 
-- Current queue state: ready after the mutating MCP/plugin slice ACP.
+- Current queue state: ready after the real spawned-project bootstrap/adapters slice ACP.
 - Active plan: `plan-v1-live-operational-hardening`.
-- Current AFK task: `task-v1-real-project-bootstrap-adapters`.
+- Current AFK task: `task-v1-live-review-integrity`.
 - Latest planning checkpoint: six-lane v1 hardening review digested in
   `progress-v1-six-lane-review-digested-20260525`; live worker implementation completed in
   `worker-run-v1-live-story-loop-inline-20260525`; default-on mutating MCP/plugin parity completed
-  in `worker-run-v1-mutating-mcp-inline-20260525`.
+  in `worker-run-v1-mutating-mcp-inline-20260525`; real spawned-project bootstrap/adapters
+  completed in `worker-run-v1-real-bootstrap-inline-20260525`.
 - Durable insights: `insights/v1-hardening-clarifications.md` and
   `insights/v1-hardening-review.md`.
 - Codex CLI smoke: npm `codex-cli 0.133.0` resolves in the current shell, and `codex exec --help`
@@ -36,8 +37,6 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Next Action
 
-Implement `task-v1-real-project-bootstrap-adapters`: make spawned-project bootstrap actually write
-project files and initialize planning SQLite, verification, source locks, and first task contracts;
-keep adapter-seeded planning state free of local absolute roots. Keep using one verified vertical
-slice at a time and ACP before moving to live review, release evidence, security/public hygiene, and
-final audit tasks.
+Implement `task-v1-live-review-integrity`: add live Codex reviewer execution and enforce durable
+review evidence for `review_required` work before completion. Keep using one verified vertical slice
+at a time and ACP before moving to release evidence, security/public hygiene, and final audit tasks.

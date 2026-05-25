@@ -532,7 +532,6 @@ def _project_task_seed_from_candidate(
         scope={
             "source_project": {
                 "project_id": entry.project_id,
-                "root_path": entry.root_path,
                 "adapter_type": entry.adapter_type,
                 "trust_policy": entry.trust_policy,
             },
@@ -633,9 +632,12 @@ def _read_planning_sqlite_candidates(
         with sqlite3.connect(_sqlite_read_only_uri(database_path), uri=True) as connection:
             connection.row_factory = sqlite3.Row
             tables = _sqlite_tables(connection)
-            if "tasks" not in tables:
-                return (), ("planning SQLite database does not contain a tasks table.",)
-            columns = _sqlite_columns(connection, "tasks")
+            source_table = "supervisor_tasks" if "supervisor_tasks" in tables else "tasks"
+            if source_table not in tables:
+                return (), (
+                    "planning SQLite database does not contain a supervisor_tasks or tasks table.",
+                )
+            columns = _sqlite_columns(connection, source_table)
             required_columns = {
                 "task_id",
                 "title",
@@ -650,7 +652,7 @@ def _read_planning_sqlite_candidates(
             missing_columns = sorted(required_columns - columns)
             if missing_columns:
                 return (), (
-                    "planning SQLite tasks table is missing required columns: "
+                    f"planning SQLite {source_table} table is missing required columns: "
                     + ", ".join(missing_columns)
                     + ".",
                 )
@@ -661,7 +663,7 @@ def _read_planning_sqlite_candidates(
                 SELECT task_id, title, goal, status, task_type,
                        acceptance_criteria_json, verification_commands_json,
                        allowed_paths_json, blocked_by_json
-                FROM tasks
+                FROM {source_table}
                 WHERE lower(status) IN ({status_placeholders})
                 ORDER BY task_id
                 LIMIT ?
@@ -675,6 +677,7 @@ def _read_planning_sqlite_candidates(
     for row in rows:
         candidate = _planning_sqlite_candidate_from_row(
             row,
+            source_table=source_table,
             default_verification_commands=default_verification_commands,
             findings=findings,
         )
@@ -700,6 +703,7 @@ def _sqlite_columns(connection: sqlite3.Connection, table_name: str) -> set[str]
 def _planning_sqlite_candidate_from_row(
     row: sqlite3.Row,
     *,
+    source_table: str,
     default_verification_commands: tuple[str, ...],
     findings: list[str],
 ) -> ProjectTaskCandidate | None:
@@ -722,7 +726,7 @@ def _planning_sqlite_candidate_from_row(
     blocked_by = _json_string_sequence(row["blocked_by_json"])
     return ProjectTaskCandidate(
         source_id=f"planning-sqlite-{_slugify(task_id)}",
-        source_path=f"{PLANNING_SQLITE_PATH}:tasks/{task_id}",
+        source_path=f"{PLANNING_SQLITE_PATH}:{source_table}/{task_id}",
         title=title,
         goal=goal,
         task_type=task_type,
@@ -730,7 +734,7 @@ def _planning_sqlite_candidate_from_row(
         verification_commands=verification_commands or default_verification_commands,
         allowed_paths=allowed_paths,
         blocked_by=blocked_by,
-        source_authority=(PLANNING_SQLITE_PATH, "tasks"),
+        source_authority=(PLANNING_SQLITE_PATH, source_table),
     )
 
 

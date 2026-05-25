@@ -333,7 +333,7 @@ FILE_PURPOSES = {
         "release-readiness audit contracts and evidence checks", "pytest"
     ),
     "src/codex_supervisor/spawned_projects.py": FilePurpose(
-        "spawned-project scaffold recommendation contracts", "pytest"
+        "spawned-project scaffold recommendation and apply contracts", "pytest"
     ),
     "src/codex_supervisor/story_loop.py": FilePurpose("Story Loop queue state machine", "pytest"),
     "src/codex_supervisor/worker_backends.py": FilePurpose(

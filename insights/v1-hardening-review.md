@@ -1,9 +1,9 @@
 # V1 Hardening Review
 
 - `claim`: The six-lane v1 review found that the tree had strong planning, result, hygiene, and
-  source-lock foundations, but v1 was not yet live-operational. The live worker and MCP mutation
-  slices have now landed; real project bootstrap, live review, release evidence, automation apply,
-  and security/public-hygiene hardening remain unresolved blockers.
+  source-lock foundations, but v1 was not yet live-operational. The live worker, MCP mutation, and
+  real project bootstrap/adapters slices have now landed; live review, release evidence, automation
+  apply, and security/public-hygiene hardening remain unresolved blockers.
 - `confidence`: confirmed
 - `evidence`: `plans/planning.sqlite3` plan `plan-v1-live-operational-hardening`, progress
   `progress-v1-six-lane-review-digested-20260525`, six read-only explorer reports, and the local
@@ -12,8 +12,8 @@
   adapters, spawned-project bootstrap, review routing, release readiness, security, and public
   hygiene.
 - `supersedes`: none
-- `next action`: Continue with real spawned-project bootstrap/adapters, live review, current
-  release evidence, security/public-hygiene, and final completion-audit tasks.
+- `next action`: Continue with live review, current release evidence, security/public-hygiene, and
+  final completion-audit tasks.
 
 ## Normalized Finding Clusters
 
@@ -25,9 +25,9 @@
   path redaction. The MCP hardening slice now implements that production surface; keep it covered by
   plugin and stdio verifier tests.
 - `automation`: the Codex automation bridge is proposal-only; a production apply path remains.
-- `bootstrap-adapters`: spawned-project bootstrap is proposal-only, adapter task seeding can persist
-  local roots, supervisor planning DBs are not the first planning adapter shape, and generated
-  source-lock behavior is not project-specific yet.
+- `bootstrap-adapters`: spawned-project bootstrap now has a real apply path and adapter task
+  seeding no longer persists local roots; keep future adapters DB-first, repo-relative, and
+  project-specific instead of proposal-only.
 - `review`: review-required tasks can be marked complete without review evidence, live reviewer
   launch is missing, review ingestion is not atomic with repair routing, and repair task id reuse
   needs equivalence checks.
@@ -57,9 +57,9 @@
   captures JSONL/stdout/stderr/final-message evidence, enforces CODEX_HOME conflicts and unsupported
   launch options fail-closed, uses bounded timeouts, and launches with a minimal environment
   allowlist.
-- Remaining v1 hardening clusters are still real blockers until their tasks land: real
-  spawned-project bootstrap/adapters, live review integrity, current release evidence, and
-  security/public-hygiene follow-ups outside the live worker slice.
+- Remaining v1 hardening clusters are still real blockers until their tasks land: live review
+  integrity, current release evidence, automation apply, and security/public-hygiene follow-ups
+  outside the live worker slice.
 
 ## MCP Mutation Slice Update
 
@@ -74,6 +74,22 @@
 - Verification evidence for this slice includes the focused MCP stdio/plugin tests and the clean
   plugin install verifier, which now requires the production mutation, launch, and review-ingest
   MCP tools.
-- Remaining v1 hardening clusters are still real blockers until their tasks land: real
-  spawned-project bootstrap/adapters, live review integrity, current release evidence, and
-  security/public-hygiene follow-ups outside the MCP slice.
+- Remaining v1 hardening clusters are still real blockers until their tasks land: live review
+  integrity, current release evidence, automation apply, and security/public-hygiene follow-ups
+  outside the MCP slice.
+
+## Real Bootstrap/Adapter Slice Update
+
+- `task-v1-real-project-bootstrap-adapters` adds `spawned-project-apply`, which writes the selected
+  scaffold into a target root with project-specific docs, generated verification scripts, generated
+  protected-file hashes, initialized planning SQLite, and a first AFK task contract.
+- Generated verification is tier-aware: full production scaffolds run file-purpose, source-lock,
+  planning-integrity, and public-hygiene checks, while prototype-light scaffolds still verify their
+  required files without calling missing supervisor-managed scripts.
+- Project adapter seeding keeps `source_project` scope to safe project IDs, adapter type, and trust
+  policy; local absolute roots stay in operator-facing discovery output and are not written into
+  supervisor task scope. The planning SQLite adapter now prefers `supervisor_tasks` before the
+  legacy `tasks` table.
+- Remaining v1 hardening clusters are still real blockers until their tasks land: live review
+  integrity, current release evidence, automation apply, and security/public-hygiene follow-ups
+  outside the bootstrap/adapters slice.

@@ -5,7 +5,11 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 import pytest
 
 from codex_supervisor.cli import main
-from codex_supervisor.planning import PlanRecord, initialize_planning_database
+from codex_supervisor.planning import (
+    PlanRecord,
+    SupervisorTaskRecord,
+    initialize_planning_database,
+)
 from codex_supervisor.projects import (
     MAX_HARNESS_CONFIG_BYTES,
     MAX_HARNESS_PROMPT_BYTES,
@@ -146,6 +150,49 @@ def test_planning_sqlite_adapter_extracts_candidates_without_mutating_target(
     assert (repo / "plans" / "planning.sqlite3").read_bytes() == before_bytes
 
 
+def test_planning_sqlite_adapter_reads_supervisor_planning_schema_first(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "supervisor-planning-style"
+    store = initialize_planning_database(repo / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-supervised",
+            slug="supervised",
+            title="Supervised",
+            goal="Manage spawned project work.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-real-bootstrap",
+            plan_id="plan-supervised",
+            title="Real bootstrap",
+            goal="Write project files.",
+            task_type="AFK",
+            status="ready",
+            acceptance_criteria=["Scaffold exists."],
+            verification_commands=["uv run --no-sync python -B scripts/verify.py"],
+            allowed_paths=["README.md"],
+        )
+    )
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "verify.py").write_text("print('verify')\n", encoding="utf-8")
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "nlp_stock_prediction_planning_sqlite"
+    assert entry.status == "ready"
+    assert entry.facts is not None
+    candidate = entry.facts.candidate_tasks[0]
+    assert candidate.source_id == "planning-sqlite-task-real-bootstrap"
+    assert candidate.source_path == "plans/planning.sqlite3:supervisor_tasks/task-real-bootstrap"
+    assert candidate.source_authority == ("plans/planning.sqlite3", "supervisor_tasks")
+    assert candidate.title == "Real bootstrap"
+    assert candidate.allowed_paths == ("README.md",)
+
+
 def test_project_seed_tasks_cli_applies_planning_sqlite_candidates_only_to_supervisor_db(
     tmp_path: Path,
     capsys,
@@ -188,6 +235,7 @@ def test_project_seed_tasks_cli_applies_planning_sqlite_candidates_only_to_super
     assert tasks[0].scope["source_project"]["adapter_type"] == (
         "nlp_stock_prediction_planning_sqlite"
     )
+    assert "root_path" not in tasks[0].scope["source_project"]
     assert tasks[0].scope["source_candidate"]["source_authority"] == [
         "plans/planning.sqlite3",
         "tasks",
@@ -333,6 +381,7 @@ def test_project_seed_tasks_cli_applies_markdown_plan_candidates_only_to_supervi
     assert payload["project"]["adapter_type"] == "observe_safety_markdown_plan"
     assert payload["task_ids"] == [tasks[0].task_id]
     assert tasks[0].scope["source_project"]["adapter_type"] == "observe_safety_markdown_plan"
+    assert "root_path" not in tasks[0].scope["source_project"]
     assert tasks[0].scope["source_candidate"]["source_authority"] == [
         "plans/active/safety-plan.md",
         "Task: Add guardrails",
@@ -470,6 +519,7 @@ def test_project_seed_tasks_cli_applies_harness_config_candidates_only_to_superv
     assert tasks[0].scope["source_project"]["adapter_type"] == (
         "codex_subagent_testing_harness_config"
     )
+    assert "root_path" not in tasks[0].scope["source_project"]
     assert tasks[0].scope["source_candidate"]["source_authority"] == [
         "harness/config.json",
         "prompts/browser-smoke.md",
@@ -703,6 +753,7 @@ def test_project_seed_tasks_cli_applies_insights_graph_candidates_only_to_superv
     assert payload["project"]["adapter_type"] == "tech_resume_insights_graph"
     assert payload["task_ids"] == [tasks[0].task_id]
     assert tasks[0].scope["source_project"]["adapter_type"] == "tech_resume_insights_graph"
+    assert "root_path" not in tasks[0].scope["source_project"]
     assert tasks[0].scope["source_candidate"]["source_authority"] == [
         "insights/graph.md",
         "insights/career.md",
@@ -880,6 +931,7 @@ def test_project_task_seeds_map_candidate_fields(tmp_path: Path) -> None:
     assert seed.worker_backend == "codex_exec"
     assert seed.review_required is True
     assert seed.scope["source_project"]["project_id"] == entry.project_id
+    assert "root_path" not in seed.scope["source_project"]
     assert seed.scope["source_candidate"]["source_id"] == "tasks-json-ship-search"
 
 
@@ -1018,6 +1070,7 @@ def test_project_seed_tasks_cli_apply_is_idempotent_and_mutates_only_planning_db
     assert seeded.title == "Task one"
     assert seeded.allowed_paths == ["src/one.py"]
     assert seeded.scope["source_project"]["adapter_type"] == "generic_repo"
+    assert "root_path" not in seeded.scope["source_project"]
     assert (repo / "TASKS.json").read_text(encoding="utf-8") == original_tasks_json
 
 

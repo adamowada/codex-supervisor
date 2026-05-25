@@ -7,6 +7,7 @@ import pytest
 from codex_supervisor.cli import main
 from codex_supervisor.planning import PlanRecord, initialize_planning_database
 from codex_supervisor.projects import (
+    MAX_MARKDOWN_PLAN_BYTES,
     MAX_TASKS_JSON_BYTES,
     build_project_task_seeds,
     discover_projects,
@@ -250,6 +251,143 @@ def test_planning_sqlite_adapter_filters_open_tasks_before_candidate_limit(
     assert [candidate.source_id for candidate in entry.facts.candidate_tasks] == [
         "planning-sqlite-task-99-ready"
     ]
+
+
+def test_markdown_plan_adapter_extracts_candidates_without_mutating_target(
+    tmp_path: Path,
+) -> None:
+    repo = _write_markdown_plan_project(tmp_path / "observe-style")
+    plan_path = repo / "plans" / "active" / "safety-plan.md"
+    before_text = plan_path.read_text(encoding="utf-8")
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "observe_safety_markdown_plan"
+    assert entry.status == "ready"
+    assert entry.facts is not None
+    facts = entry.facts
+    assert facts.authority_markers == ("plans/active/safety-plan.md",)
+    assert facts.adapter_findings == ()
+    assert facts.verification_commands == ("uv run --no-sync python -B scripts/validate_plan.py",)
+    assert len(facts.candidate_tasks) == 1
+    candidate = facts.candidate_tasks[0]
+    assert candidate.source_id == "markdown-plan-plans-active-safety-plan-md-add-guardrails"
+    assert candidate.source_path == "plans/active/safety-plan.md#task-add-guardrails"
+    assert candidate.title == "Add guardrails"
+    assert candidate.goal == "Add bounded guardrails."
+    assert candidate.task_type == "AFK"
+    assert candidate.acceptance_criteria == ("Guardrails are implemented.",)
+    assert candidate.verification_commands == (
+        "uv run --no-sync python -B scripts/validate_plan.py",
+    )
+    assert candidate.allowed_paths == ("src/guardrails.py",)
+    assert candidate.blocked_by == ("task-data-contract",)
+    assert candidate.source_authority == (
+        "plans/active/safety-plan.md",
+        "Task: Add guardrails",
+    )
+    assert plan_path.read_text(encoding="utf-8") == before_text
+
+
+def test_project_seed_tasks_cli_applies_markdown_plan_candidates_only_to_supervisor_db(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    supervisor_db = tmp_path / "supervisor" / "planning.sqlite3"
+    store = initialize_planning_database(supervisor_db)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-markdown-seeded-project",
+            slug="markdown-seeded-project",
+            title="Markdown Seeded Project",
+            goal="Receive markdown seeded tasks.",
+            status="active",
+        )
+    )
+    repo = _write_markdown_plan_project(tmp_path / "target-markdown")
+    plan_path = repo / "plans" / "active" / "safety-plan.md"
+    target_before = plan_path.read_text(encoding="utf-8")
+
+    assert (
+        main(
+            [
+                "project-seed-tasks",
+                "--path",
+                str(supervisor_db),
+                "--root",
+                str(repo),
+                "--plan-id",
+                "plan-markdown-seeded-project",
+                "--apply",
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    tasks = store.list_supervisor_tasks()
+    assert payload["project"]["adapter_type"] == "observe_safety_markdown_plan"
+    assert payload["task_ids"] == [tasks[0].task_id]
+    assert tasks[0].scope["source_project"]["adapter_type"] == "observe_safety_markdown_plan"
+    assert tasks[0].scope["source_candidate"]["source_authority"] == [
+        "plans/active/safety-plan.md",
+        "Task: Add guardrails",
+    ]
+    assert plan_path.read_text(encoding="utf-8") == target_before
+
+
+def test_markdown_plan_adapter_reports_malformed_plan_without_generic_fallback(
+    tmp_path: Path,
+) -> None:
+    repo = _write_markdown_plan_project(
+        tmp_path / "malformed-markdown",
+        plan_text="""<!-- observe-safety-plan -->
+Plan Status: active
+
+## Task: Missing goal
+Status: ready
+""",
+    )
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "observe_safety_markdown_plan"
+    assert entry.status == "unsupported"
+    assert entry.failure_class == "unsupported_markdown_plan"
+    assert entry.facts is not None
+    assert "must include nonblank title and Goal" in entry.facts.adapter_findings[0]
+
+
+def test_markdown_plan_adapter_reports_oversized_plan_without_generic_fallback(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "oversized-markdown"
+    (repo / "plans" / "active").mkdir(parents=True)
+    plan_path = repo / "plans" / "active" / "huge-plan.md"
+    plan_path.write_text("x" * (MAX_MARKDOWN_PLAN_BYTES + 1), encoding="utf-8")
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "observe_safety_markdown_plan"
+    assert entry.status == "unsupported"
+    assert entry.failure_class == "unsupported_markdown_plan"
+    assert entry.facts is not None
+    assert "is larger than" in entry.facts.adapter_findings[0]
+
+
+def test_markdown_plan_without_marker_falls_back_to_generic_repo(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "generic-with-plan-notes"
+    (repo / "plans" / "active").mkdir(parents=True)
+    (repo / "AGENTS.md").write_text("# Agent notes\n", encoding="utf-8")
+    (repo / "plans" / "active" / "notes.md").write_text("# Notes\n", encoding="utf-8")
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "generic_repo"
+    assert entry.status == "ready"
 
 
 def test_project_task_seeds_map_candidate_fields(tmp_path: Path) -> None:
@@ -653,4 +791,38 @@ def _write_planning_sqlite_project(
                 ),
             ],
         )
+    return root
+
+
+def _write_markdown_plan_project(root: Path, *, plan_text: str | None = None) -> Path:
+    (root / "plans" / "active").mkdir(parents=True)
+    (root / "scripts").mkdir()
+    (root / "scripts" / "validate_plan.py").write_text("print('validate')\n", encoding="utf-8")
+    (root / "plans" / "active" / "safety-plan.md").write_text(
+        plan_text
+        or """<!-- observe-safety-plan -->
+Plan Status: active
+
+# Safety Plan
+
+## Task: Add guardrails
+ID: add-guardrails
+Status: ready
+Type: AFK
+Goal: Add bounded guardrails.
+
+### Acceptance Criteria
+- Guardrails are implemented.
+
+### Verification Commands
+- uv run --no-sync python -B scripts/validate_plan.py
+
+### Allowed Paths
+- src/guardrails.py
+
+### Blocked By
+- task-data-contract
+""",
+        encoding="utf-8",
+    )
     return root

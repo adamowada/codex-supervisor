@@ -22,15 +22,30 @@ SOURCE_DOCUMENT_CANDIDATES = (
 GENERIC_REPO_MARKERS = ("AGENTS.md", "PLANS.md", "plans/planning.sqlite3", "TASKS.json")
 MAX_TASKS_JSON_BYTES = 64 * 1024
 MAX_PLANNING_SQLITE_TASK_CANDIDATES = 20
+MAX_MARKDOWN_PLAN_BYTES = 64 * 1024
+MAX_MARKDOWN_PLAN_FILES = 8
 PLANNING_SQLITE_PATH = "plans/planning.sqlite3"
 PLANNING_SQLITE_OPEN_TASK_STATUSES = frozenset(("pending", "ready", "blocked"))
+MARKDOWN_PLAN_DIRECTORIES = ("plans/active", "plans")
+MARKDOWN_PLAN_MARKER = "observe-safety-plan"
+MARKDOWN_PLAN_MARKER_NOT_FOUND_FINDING = "structured markdown plan marker was not found."
+MARKDOWN_PLAN_ACTIVE_STATUSES = frozenset(("active", "ready"))
 VERIFY_SCRIPT_COMMANDS = {
     "scripts/verify.py": "uv run --no-sync python -B scripts/verify.py",
     "scripts/check_protected_files.py": (
         "uv run --no-sync python -B scripts/check_protected_files.py"
     ),
 }
+MARKDOWN_PLAN_VERIFY_SCRIPT_COMMANDS = {
+    "scripts/validate_plan.py": "uv run --no-sync python -B scripts/validate_plan.py",
+    "scripts/validate_plans.py": "uv run --no-sync python -B scripts/validate_plans.py",
+    **VERIFY_SCRIPT_COMMANDS,
+}
 TASK_TYPES = frozenset(("AFK", "HITL"))
+MARKDOWN_TASK_HEADING_RE = re.compile(
+    r"^##\s+Task:\s*(?P<title>.+?)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 @dataclass(frozen=True)
@@ -157,6 +172,47 @@ class PlanningSQLiteAdapter:
         )
 
 
+class MarkdownPlanAdapter:
+    """Bounded read-only adapter for structured markdown plan projects."""
+
+    adapter_type = "observe_safety_markdown_plan"
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def plan_paths(self) -> tuple[Path, ...]:
+        paths, _total_count = _markdown_plan_paths(self.root)
+        return paths
+
+    def facts(self) -> ProjectFacts:
+        verification_commands = tuple(
+            command
+            for relative_path, command in MARKDOWN_PLAN_VERIFY_SCRIPT_COMMANDS.items()
+            if _exists(self.root, relative_path)
+        )
+        candidate_tasks, adapter_findings = _read_markdown_plan_candidates(
+            self.root,
+            default_verification_commands=verification_commands,
+        )
+        plan_documents = tuple(_relative_path(self.root, path) for path in self.plan_paths())
+        return ProjectFacts(
+            source_documents=(
+                *plan_documents,
+                *tuple(
+                    candidate
+                    for candidate in SOURCE_DOCUMENT_CANDIDATES
+                    if _exists(self.root, candidate)
+                ),
+            ),
+            authority_markers=plan_documents,
+            verification_commands=verification_commands,
+            candidate_tasks=candidate_tasks,
+            adapter_findings=adapter_findings,
+            has_planning_database=_exists(self.root, PLANNING_SQLITE_PATH),
+            has_tasks_json=_exists(self.root, "TASKS.json"),
+        )
+
+
 def discover_projects(
     roots: tuple[Path, ...] | list[Path],
     *,
@@ -231,6 +287,32 @@ def _discover_project(root: Path, *, trust_policy: str) -> ProjectRegistryEntry:
                 facts=planning_facts,
                 failure_class="unsupported_planning_sqlite",
                 failure_reason=planning_facts.adapter_findings[0],
+            )
+    markdown_adapter = MarkdownPlanAdapter(resolved_root)
+    if markdown_adapter.plan_paths():
+        markdown_facts = markdown_adapter.facts()
+        if not markdown_facts.adapter_findings:
+            return ProjectRegistryEntry(
+                project_id=stable_project_id_from_path(resolved_root),
+                root_path=str(resolved_root),
+                adapter_type=markdown_adapter.adapter_type,
+                trust_policy=trust_policy,
+                status="ready",
+                facts=markdown_facts,
+            )
+        if not (
+            _only_markdown_plan_marker_missing(markdown_facts)
+            and _generic_authority_markers(resolved_root)
+        ):
+            return ProjectRegistryEntry(
+                project_id=stable_project_id_from_path(resolved_root),
+                root_path=str(resolved_root),
+                adapter_type=markdown_adapter.adapter_type,
+                trust_policy=trust_policy,
+                status="unsupported",
+                facts=markdown_facts,
+                failure_class="unsupported_markdown_plan",
+                failure_reason=markdown_facts.adapter_findings[0],
             )
     adapter = GenericRepoAdapter(resolved_root)
     facts = adapter.facts()
@@ -315,6 +397,10 @@ def _generic_non_planning_authority_markers(root: Path) -> tuple[str, ...]:
     return tuple(
         marker for marker in _generic_authority_markers(root) if marker != PLANNING_SQLITE_PATH
     )
+
+
+def _only_markdown_plan_marker_missing(facts: ProjectFacts) -> bool:
+    return facts.adapter_findings == (MARKDOWN_PLAN_MARKER_NOT_FOUND_FINDING,)
 
 
 def _read_tasks_json_candidates(
@@ -464,6 +550,130 @@ def _planning_sqlite_candidate_from_row(
     )
 
 
+def _read_markdown_plan_candidates(
+    root: Path,
+    *,
+    default_verification_commands: tuple[str, ...],
+) -> tuple[tuple[ProjectTaskCandidate, ...], tuple[str, ...]]:
+    plan_paths, total_plan_count = _markdown_plan_paths(root)
+    if not plan_paths:
+        return (), ("structured markdown plan files were not found.",)
+    findings: list[str] = []
+    if total_plan_count > len(plan_paths):
+        findings.append(
+            "structured markdown plan file limit exceeded; "
+            f"inspecting first {MAX_MARKDOWN_PLAN_FILES} of {total_plan_count} files."
+        )
+
+    marker_found = False
+    candidates: list[ProjectTaskCandidate] = []
+    for plan_path in plan_paths:
+        relative_path = _relative_path(root, plan_path)
+        try:
+            size = plan_path.stat().st_size
+        except OSError as exc:
+            findings.append(f"{relative_path} could not be inspected: {exc}")
+            continue
+        if size > MAX_MARKDOWN_PLAN_BYTES:
+            findings.append(f"{relative_path} is larger than {MAX_MARKDOWN_PLAN_BYTES} bytes.")
+            continue
+        try:
+            text = plan_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            findings.append(f"{relative_path} could not be read: {exc}")
+            continue
+        if MARKDOWN_PLAN_MARKER not in text.casefold():
+            continue
+        marker_found = True
+        plan_status = _markdown_plan_status(text)
+        if plan_status is None:
+            findings.append(f"{relative_path} must include nonblank Plan Status metadata.")
+            continue
+        if plan_status.casefold() not in MARKDOWN_PLAN_ACTIVE_STATUSES:
+            continue
+        candidates.extend(
+            _markdown_plan_candidates_from_text(
+                relative_path=relative_path,
+                text=text,
+                default_verification_commands=default_verification_commands,
+                findings=findings,
+            )
+        )
+    if not marker_found and not findings:
+        findings.append(MARKDOWN_PLAN_MARKER_NOT_FOUND_FINDING)
+    return tuple(candidates), tuple(findings)
+
+
+def _markdown_plan_candidates_from_text(
+    *,
+    relative_path: str,
+    text: str,
+    default_verification_commands: tuple[str, ...],
+    findings: list[str],
+) -> tuple[ProjectTaskCandidate, ...]:
+    matches = tuple(MARKDOWN_TASK_HEADING_RE.finditer(text))
+    if not matches:
+        findings.append(f"{relative_path} contains no structured task headings.")
+        return ()
+
+    candidates: list[ProjectTaskCandidate] = []
+    for index, match in enumerate(matches):
+        next_start = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        section = text[match.end() : next_start]
+        candidate = _markdown_plan_candidate_from_section(
+            relative_path=relative_path,
+            title=match.group("title"),
+            section=section,
+            default_verification_commands=default_verification_commands,
+            findings=findings,
+        )
+        if candidate is not None:
+            candidates.append(candidate)
+    return tuple(candidates)
+
+
+def _markdown_plan_candidate_from_section(
+    *,
+    relative_path: str,
+    title: str,
+    section: str,
+    default_verification_commands: tuple[str, ...],
+    findings: list[str],
+) -> ProjectTaskCandidate | None:
+    normalized_title = _optional_nonblank_string(title)
+    goal = _markdown_field(section, "Goal")
+    if normalized_title is None or goal is None:
+        findings.append(f"{relative_path} task must include nonblank title and Goal metadata.")
+        return None
+    status = (_markdown_field(section, "Status") or "ready").casefold()
+    if status not in PLANNING_SQLITE_OPEN_TASK_STATUSES:
+        return None
+    task_type = (_markdown_field(section, "Type") or "AFK").upper()
+    if task_type not in TASK_TYPES:
+        findings.append(
+            f"{relative_path} task {normalized_title} has unsupported Type: {task_type}."
+        )
+        return None
+    raw_source_id = _markdown_field(section, "ID") or normalized_title
+    acceptance_criteria = _markdown_bullet_section(section, "Acceptance Criteria")
+    verification_commands = _markdown_bullet_section(section, "Verification Commands")
+    allowed_paths = _markdown_bullet_section(section, "Allowed Paths")
+    blocked_by = _markdown_bullet_section(section, "Blocked By")
+    heading_anchor = f"task-{_slugify(normalized_title)}"
+    return ProjectTaskCandidate(
+        source_id=f"markdown-plan-{_slugify(relative_path)}-{_slugify(raw_source_id)}",
+        source_path=f"{relative_path}#{heading_anchor}",
+        title=normalized_title,
+        goal=goal,
+        task_type=task_type,
+        acceptance_criteria=acceptance_criteria,
+        verification_commands=verification_commands or default_verification_commands,
+        allowed_paths=allowed_paths,
+        blocked_by=blocked_by,
+        source_authority=(relative_path, f"Task: {normalized_title}"),
+    )
+
+
 def _project_task_candidate_from_payload(
     item: object,
     *,
@@ -552,6 +762,65 @@ def _json_string_sequence(value: object) -> tuple[str, ...]:
     except json.JSONDecodeError:
         return ()
     return _string_sequence(payload)
+
+
+def _markdown_plan_paths(root: Path) -> tuple[tuple[Path, ...], int]:
+    paths: list[Path] = []
+    seen: set[str] = set()
+    for relative_directory in MARKDOWN_PLAN_DIRECTORIES:
+        directory = root / relative_directory
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob("*.md"), key=lambda candidate: candidate.name.casefold()):
+            relative_path = _relative_path(root, path)
+            if relative_path in seen:
+                continue
+            seen.add(relative_path)
+            paths.append(path)
+    return tuple(paths[:MAX_MARKDOWN_PLAN_FILES]), len(paths)
+
+
+def _relative_path(root: Path, path: Path) -> str:
+    return path.relative_to(root).as_posix()
+
+
+def _markdown_plan_status(text: str) -> str | None:
+    preamble = _markdown_plan_preamble(text)
+    return _markdown_field(preamble, "Plan Status")
+
+
+def _markdown_plan_preamble(text: str) -> str:
+    match = MARKDOWN_TASK_HEADING_RE.search(text)
+    return text if match is None else text[: match.start()]
+
+
+def _markdown_field(text: str, label: str) -> str | None:
+    match = re.search(rf"^\s*{re.escape(label)}:\s*(.+?)\s*$", text, re.IGNORECASE | re.MULTILINE)
+    if match is None:
+        return None
+    return _optional_nonblank_string(match.group(1))
+
+
+def _markdown_bullet_section(text: str, heading: str) -> tuple[str, ...]:
+    heading_match = re.search(
+        rf"^###\s+{re.escape(heading)}\s*$",
+        text,
+        re.IGNORECASE | re.MULTILINE,
+    )
+    if heading_match is None:
+        return ()
+    body_start = heading_match.end()
+    next_heading = re.search(r"^#{2,3}\s+", text[body_start:], re.MULTILINE)
+    body_end = len(text) if next_heading is None else body_start + next_heading.start()
+    values: list[str] = []
+    for line in text[body_start:body_end].splitlines():
+        stripped = line.strip()
+        if not stripped.startswith(("- ", "* ")):
+            continue
+        value = stripped[2:].strip()
+        if value:
+            values.append(value)
+    return tuple(values)
 
 
 def _normalized_path_key(path: PurePath) -> str:

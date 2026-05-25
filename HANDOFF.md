@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 05:22 PDT
+Last updated: 2026-05-25 05:24 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,15 +9,16 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `ready`.
+- Current queue state: `running`.
 - Current AFK task: `task-stage13c-ci-full-history-planning-integrity`.
-- Current worker run: none yet for Stage 13C.
+- Current worker run: `worker-run-stage13c-ci-full-history-planning-integrity-inline-20260525`.
 - Current plan: `plan-stage13-github-ci-integration` (`Stage 13 GitHub And CI/CD Integration`).
 - Latest completed task: `task-stage13b-linux-path-normalization-ci-repair`.
 - Recent pushed implementation/evidence commits before this handoff update:
   - `0ba7afbd2f65d90b5a290971012045864a7d1a43` - Stage 13A implementation.
   - `90b74e613d5de7e606bf2afb4f547b7176a9a46f` - Stage 13A evidence link.
   - `fbc0f0c99d61d0f0b9bb1bbcf2edc69d8a675ac9` - Stage 13B path-normalization repair.
+  - `7e5b266f47fd505fbe23033cff1af7d8fb7bc8e5` - Stage 13B completion evidence.
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.
@@ -61,7 +62,8 @@ Stage 13C.
 ## Stage 13C Contract
 
 Task: `task-stage13c-ci-full-history-planning-integrity`.
-Status: `ready`.
+Status: `running`.
+Worker run: `worker-run-stage13c-ci-full-history-planning-integrity-inline-20260525`.
 Review required: yes, because the workflow checkout behavior defines public CI evidence and
 planning-integrity trust.
 
@@ -112,6 +114,6 @@ Stop conditions:
 
 ## Next Action
 
-Claim `task-stage13c-ci-full-history-planning-integrity`, confirm its Goal Contract, repair the
-workflow checkout history depth with focused tests, run the task verification commands and review,
-then push and inspect the next GitHub Actions result.
+Continue the claimed `task-stage13c-ci-full-history-planning-integrity` run. Repair the workflow
+checkout history depth with focused tests, run the task verification commands and review, then push
+and inspect the next GitHub Actions result.

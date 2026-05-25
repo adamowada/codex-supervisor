@@ -296,6 +296,7 @@ def test_codex_state_reconciliation_dry_run_builds_proposed_actions(
         "follow-up-finding",
     ]
     progress_proposal = thread_proposals[1]
+    assert progress_proposal.proposal_id.startswith("codex-state-")
     assert progress_proposal.action_status == "proposed"
     assert progress_proposal.source_kind == "thread"
     assert progress_proposal.source_database == "state_5.sqlite"
@@ -432,6 +433,7 @@ def test_codex_state_reconcile_dry_run_cli_prints_json_without_payloads_or_mutat
     assert payload["observations"][0]["source_id"] == "state_5.sqlite::threads::thread"
     assert payload["proposals"][0]["action_type"] == "artifact-link"
     assert payload["proposals"][0]["action_status"] == "proposed"
+    assert payload["proposals"][0]["proposal_id"].startswith("codex-state-")
     assert payload["proposals"][0]["raw_snapshot_hash"]
     assert payload["findings"]
     assert "do-not-print-this-secret" not in serialized

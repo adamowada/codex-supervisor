@@ -20,6 +20,12 @@ from codex_supervisor.codex_state import (
     build_codex_state_reconciliation_dry_run,
     inventory_codex_state,
 )
+from codex_supervisor.codex_state_reconciliation import (
+    CodexStateReconciliationApplyError,
+    CodexStateReconciliationApplyReport,
+    apply_codex_state_reconciliation_report,
+    codex_state_reconciliation_report_from_payload,
+)
 from codex_supervisor.goal_contracts import (
     render_goal_contract,
     render_goal_contract_markdown,
@@ -494,6 +500,20 @@ def main(argv: list[str] | None = None) -> int:
     codex_reconciliation_parser.add_argument("--observed-at", default=None)
     codex_reconciliation_parser.add_argument("--json", action="store_true", default=False)
 
+    codex_reconciliation_apply_parser = subparsers.add_parser(
+        "codex-state-reconcile-apply",
+        help="Apply reviewed Codex local-state reconciliation proposals to planning evidence",
+    )
+    codex_reconciliation_apply_parser.add_argument("--path", type=Path, default=None)
+    codex_reconciliation_apply_parser.add_argument("--report-path", type=Path, required=True)
+    codex_reconciliation_apply_parser.add_argument(
+        "--approve-proposal-id",
+        action="append",
+        default=[],
+        help="Proposal ID from a reviewed dry-run report to apply. Repeat for multiple IDs.",
+    )
+    codex_reconciliation_apply_parser.add_argument("--json", action="store_true", default=False)
+
     cleanup_plan_parser = subparsers.add_parser(
         "cleanup-plan",
         help="Build a non-destructive cleanup plan for ignored runtime paths",
@@ -543,6 +563,32 @@ def main(argv: list[str] | None = None) -> int:
             _print_json(reconciliation_report)
         else:
             _print_codex_state_reconciliation_dry_run(reconciliation_report)
+        return 0
+
+    if args.command == "codex-state-reconcile-apply":
+        store = _open_write_store(args.path)
+        if store is None:
+            return 1
+        apply_store = store
+        try:
+            payload = json.loads(args.report_path.read_text(encoding="utf-8"))
+            dry_run_report = codex_state_reconciliation_report_from_payload(payload)
+        except (OSError, json.JSONDecodeError, CodexStateReconciliationApplyError) as exc:
+            print(f"Could not read Codex state reconciliation report: {exc}", file=sys.stderr)
+            return 1
+        apply_report = _write_value_or_report(
+            lambda: apply_codex_state_reconciliation_report(
+                apply_store,
+                dry_run_report,
+                approved_proposal_ids=tuple(args.approve_proposal_id),
+            )
+        )
+        if apply_report is None:
+            return 1
+        if args.json:
+            _print_json(apply_report)
+        else:
+            _print_codex_state_reconciliation_apply_report(apply_report)
         return 0
 
     if args.command == "cleanup-plan":
@@ -2005,8 +2051,41 @@ def _print_codex_state_reconciliation_dry_run(
     if not report.proposals:
         print("- none")
     for proposal in report.proposals:
-        print(f"- {proposal.action_type}\t{proposal.source_id}\t{proposal.action_status}")
+        print(
+            f"- {proposal.proposal_id}\t{proposal.action_type}\t"
+            f"{proposal.source_id}\t{proposal.action_status}"
+        )
         print(f"  summary: {proposal.summary}")
+    print("findings:")
+    if not report.findings:
+        print("- none")
+    for finding in report.findings:
+        print(f"- {finding.finding_type}\t{finding.source_id}\t{finding.failure_class}")
+        print(f"  summary: {finding.summary}")
+
+
+def _print_codex_state_reconciliation_apply_report(
+    report: CodexStateReconciliationApplyReport,
+) -> None:
+    print(f"codex_home: {report.codex_home}")
+    print(f"observed_at: {report.observed_at}")
+    print("approved_proposal_ids:")
+    if not report.approved_proposal_ids:
+        print("- none")
+    for proposal_id in report.approved_proposal_ids:
+        print(f"- {proposal_id}")
+    print("applied:")
+    if not report.applied:
+        print("- none")
+    for applied in report.applied:
+        print(f"- {applied.proposal_id}\t{applied.action_type}\t{applied.action_status}")
+        print(f"  progress_id: {applied.progress_id}")
+        print(f"  artifact_id: {applied.artifact_id}")
+    print("skipped:")
+    if not report.skipped:
+        print("- none")
+    for skipped in report.skipped:
+        print(f"- {skipped.proposal_id}\t{skipped.action_type}\t{skipped.skip_reason}")
     print("findings:")
     if not report.findings:
         print("- none")

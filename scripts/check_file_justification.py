@@ -296,6 +296,11 @@ FILE_PURPOSES = {
         "slice",
         "check_planning_integrity",
     ),
+    "insights/stage10d-codex-state-reconciliation-apply-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 10D Codex state reconciliation apply "
+        "slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
@@ -340,6 +345,10 @@ FILE_PURPOSES = {
     "src/codex_supervisor/cli.py": FilePurpose("codex-supervisor CLI", "pytest"),
     "src/codex_supervisor/codex_state.py": FilePurpose(
         "privacy-safe Codex local-state inventory, observation, and reconciliation helpers",
+        "pytest",
+    ),
+    "src/codex_supervisor/codex_state_reconciliation.py": FilePurpose(
+        "reviewed Codex local-state reconciliation apply helpers",
         "pytest",
     ),
     "src/codex_supervisor/goal_contracts.py": FilePurpose("Goal Contract renderer", "pytest"),
@@ -408,6 +417,10 @@ FILE_PURPOSES = {
         "privacy-safe Codex local-state inventory, observation, and reconciliation tests",
         "pytest",
     ),
+    "tests/test_codex_state_reconciliation.py": FilePurpose(
+        "reviewed Codex local-state reconciliation apply tests",
+        "pytest",
+    ),
     "tests/test_story_loop.py": FilePurpose("Story Loop tests", "pytest"),
     "tests/test_worker_backends.py": FilePurpose("worker backend protocol tests", "pytest"),
     "tests/test_worker_launches.py": FilePurpose(
@@ -450,6 +463,9 @@ REQUIRED_PYTHON_MARKERS = {
     "scripts/verify.py": "BASE_COMMANDS",
     "src/codex_supervisor/cli.py": "def main",
     "src/codex_supervisor/codex_state.py": "inventory_codex_state",
+    "src/codex_supervisor/codex_state_reconciliation.py": (
+        "apply_codex_state_reconciliation_report"
+    ),
     "src/codex_supervisor/goal_contracts.py": "render_goal_contract",
     "src/codex_supervisor/locks.py": "PROTECTED_FILES",
     "src/codex_supervisor/paths.py": "default_planning_database_path",

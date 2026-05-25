@@ -99,6 +99,7 @@ class CodexStateObservationReport:
 class CodexStateReconciliationProposal:
     """Dry-run action proposal for a future planning reconciliation apply step."""
 
+    proposal_id: str
     action_type: str
     action_status: str
     source_kind: str
@@ -565,6 +566,7 @@ def _proposal_for_observation(
     action_type: str,
 ) -> CodexStateReconciliationProposal:
     return CodexStateReconciliationProposal(
+        proposal_id=_proposal_id(observation, action_type),
         action_type=action_type,
         action_status="proposed",
         source_kind=observation.source_kind,
@@ -578,6 +580,22 @@ def _proposal_for_observation(
         raw_snapshot_hash=observation.raw_snapshot_hash,
         summary=_proposal_summary(observation, action_type),
     )
+
+
+def _proposal_id(observation: CodexStateObservation, action_type: str) -> str:
+    digest = _metadata_hash(
+        {
+            "action_type": action_type,
+            "linked_plan_id": observation.linked_plan_id,
+            "linked_task_id": observation.linked_task_id,
+            "raw_snapshot_hash": observation.raw_snapshot_hash,
+            "source_database": observation.source_database,
+            "source_id": observation.source_id,
+            "source_kind": observation.source_kind,
+            "source_table": observation.source_table,
+        }
+    )
+    return f"codex-state-{digest[:24]}"
 
 
 def _proposal_summary(observation: CodexStateObservation, action_type: str) -> str:

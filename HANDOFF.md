@@ -16,18 +16,20 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, Stage 9B insight validation CLI is complete in planning SQLite. The expected
-queue state is `completed` for active plan `plan-stage9-insights-skill-learning`, with no current
-AFK, HITL, or running task. If the database reports anything else, trust the database and call this
-handoff stale.
+As of this snapshot, Stage 9C guarded insight update workflow is shaped in planning SQLite. The
+expected queue state is `ready` for active plan `plan-stage9-insights-skill-learning`, with current
+AFK task `task-stage9c-insight-update-workflow`. If the database reports anything else, trust the
+database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
+- `0d7570d`: added the Stage 9B insight validation CLI and completed the Stage 9B worker-result
+  checkpoint.
 - `3e6d1d3`: aligned fresh-thread planning bootstrap commands and handoff guidance.
 - `200d027`: hardened exact task claiming, Story Loop queue snapshots, completed-plan criteria, and
   worker-result/attribution skill contracts.
 
-The latest full local gate passed after the Stage 9B insight validation CLI update with:
+The latest full local gate passed after the Stage 9C task-shaping update with:
 
 ```sh
 uv run --no-sync python -B scripts/verify.py
@@ -247,6 +249,25 @@ Stage 9B insight validation CLI changed:
   `uv run --no-sync python -B -m pytest tests/test_insight_cli.py tests/test_insights.py -q -p no:cacheprovider`.
   `uv run --no-sync python -B scripts/verify.py`.
 
+Stage 9C guarded insight update workflow has been shaped:
+
+- `plans/planning.sqlite3`: adds `task-stage9c-insight-update-workflow` as a ready AFK slice,
+  `milestone-stage9c-insight-update-workflow`, `criterion-stage9c-insight-update-workflow`, and
+  `progress-stage9c-task-shaped-20260524`.
+- Goal: add a guarded local workflow that consumes a validated `InsightRecord` payload and renders
+  or applies a provenance-backed insight markdown update so durable lessons can move from validated
+  JSON into repo-owned insight files without touching Codex internal state or live queue status.
+- Acceptance focus: deterministic markdown output, idempotent temp-file apply behavior, invalid
+  payload rollback/no-write behavior, and helper or CLI output suitable for future
+  `knowledge-graph-updater` use.
+- Allowed paths: `src/codex_supervisor/insight_updates.py`,
+  `src/codex_supervisor/insights.py`, `src/codex_supervisor/cli.py`,
+  `tests/test_insight_updates.py`, `tests/test_insight_cli.py`, `tests/test_insights.py`,
+  `scripts/check_file_justification.py`, `plans/planning.sqlite3`, `HANDOFF.md`, and
+  `insights/stage9c-insight-update-workflow-worker-result.json`.
+- Expected focused check:
+  `uv run --no-sync python -B -m pytest tests/test_insight_updates.py tests/test_insight_cli.py tests/test_insights.py -q -p no:cacheprovider`.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -269,9 +290,13 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 Use story-loop-status as the queue state machine. Use task-current only as the executable AFK
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
-If queue_state is `completed`, shape the next AFK vertical slice from `ROADMAP.md`. The likely next
-Stage 9 slice is a guarded knowledge-graph update workflow that consumes validated `InsightRecord`
-payloads, or a skill-promotion/golden-eval slice if the knowledge-write contract is shaped first.
+If queue_state is `ready`, run `task-current --json` and execute the current AFK slice with
+story-loop discipline. As of this handoff, the expected current task is
+`task-stage9c-insight-update-workflow`.
+
+If queue_state is `completed`, shape the next AFK vertical slice from `ROADMAP.md`. After Stage 9C,
+the likely next Stage 9 slice is skill-promotion/golden-eval wiring, or Stage 10 Codex local-state
+adapter work if the Stage 9 learning loop is intentionally closed.
 Keep live Codex Exec launch disabled while the local Codex CLI still fails preflight with
 `Access is denied`; do not launch live `codex exec` until an accessible executable path and intended
 `CODEX_HOME` are confirmed.

@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 04:47 PDT
+Last updated: 2026-05-25 04:55 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,46 +9,46 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `running`.
-- Current AFK task: `task-stage13a-github-actions-verify` on
-  `plan-stage13-github-ci-integration`.
-- Current worker run: `worker-run-stage13a-github-actions-verify-inline-20260525`.
-- Current slice: ROADMAP Stage 13A, add the first GitHub Actions verification workflow and local
-  workflow contract tests so pushes and pull requests to `main` can produce public CI evidence.
+- Current queue state: `completed`.
+- Current AFK task: none. `story-loop-status --json` reports no open work remains on the active
+  Stage 13 plan after Stage 13A completed.
+- Current plan: `plan-stage13-github-ci-integration` remains active for follow-up Stage 13 slices.
+- Latest completed task: `task-stage13a-github-actions-verify`.
 - Latest completed plan: `plan-stage12-codex-plugin-desktop-experience`
   (`Stage 12 Codex Plugin And Desktop Experience`).
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.
 
-## Stage 13A Ready Contract
+## Stage 13A Summary
 
 Plan: `plan-stage13-github-ci-integration`.
 Task: `task-stage13a-github-actions-verify`.
-Status: `running`.
+Status: `completed`.
 Worker run: `worker-run-stage13a-github-actions-verify-inline-20260525`.
-Review required: yes, because GitHub Actions workflow files define public CI behavior.
+DB result: `worker-result-stage13a-github-actions-verify-result`.
+Review: `review-stage13a-github-actions-verify-20260525`, 0 findings.
+Completion progress: `progress-stage13a-github-actions-verify-completed-20260525`.
 
-Allowed paths:
+Implemented:
 
-- `.github/workflows/verify.yml`
-- `tests/test_github_ci.py`
-- `scripts/check_file_justification.py`
-- `plans/planning.sqlite3`
-- `HANDOFF.md`
-- `insights/**`
-- `.agents/skills/**`
+- Added `.github/workflows/verify.yml`, the first GitHub Actions workflow for the repository.
+- The workflow runs on pushes and pull requests to `main`, uses read-only `contents` permissions,
+  installs uv, sets up Python 3.14, runs `uv sync --dev --locked`, and runs
+  `uv run python -B scripts/verify.py --publication-ready`.
+- Added `tests/test_github_ci.py` to contract-test triggers, read-only/no-secrets posture, action
+  setup, Python version, and verification commands.
+- Added `.github` workflow purpose coverage to `scripts/check_file_justification.py`.
+- Captured the CI publication-gate lesson in `insights/workflow-patterns.md`.
 
-Acceptance criteria:
+### Stage 13A Review
 
-- Repository includes a GitHub Actions verification workflow that runs on pull requests and pushes
-  to `main` without requiring secrets.
-- The workflow runs the repo-owned setup and verification commands needed for public CI evidence,
-  including `uv sync` and publication-ready verification.
-- Focused workflow contract tests, file-purpose hygiene, planning integrity, full verification, and
-  publication-ready hygiene checks pass with the workflow included.
+Fresh-thread-style review was completed against the staged diff because workflow files define public
+CI behavior. Result: 0 accepted, 0 waived, 0 needs-HITL findings.
 
-Verification commands:
+### Stage 13A Verification
+
+Passed with Stage 13A included:
 
 ```sh
 uv run --no-sync python -B -m pytest tests/test_github_ci.py -q -p no:cacheprovider
@@ -73,6 +73,13 @@ Remote preflight:
 - Default branch: `main`.
 - Pre-slice head: `2ea64701e714afeba15df526b07e93cf749ae29f`.
 - GitHub connector observed 0 workflow runs and 0 commit statuses for that head.
+
+Residual Stage 13A risk:
+
+- Remote GitHub Actions execution is not observed until the workflow commit is pushed and GitHub
+  schedules a run.
+- Later Stage 13 slices still need PR metadata, CI status ingestion, repair-loop routing, merge
+  policy, release notes, and post-merge cleanup.
 
 ## Stage 12C Summary
 
@@ -140,7 +147,7 @@ style, type, planning, public hygiene, source inventory, skill inventory, protec
 
 ## Next Action
 
-Continue the claimed `task-stage13a-github-actions-verify` worker run. Keep the slice scoped to the
-workflow, focused workflow contract tests, file-purpose hygiene, planning SQLite, and this handoff.
-After implementation, run the task verification commands, complete a fresh-thread-style review,
-ingest the worker result, update the Stage 13A completion evidence, and ACP.
+Shape the next ROADMAP Stage 13 slice in planning SQLite. The practical next AFK slice is to inspect
+the first remote workflow/check result after the Stage 13A commit is pushed and record CI evidence,
+a repair task, or a HITL blocker in planning SQLite. Do not create or merge PRs, configure secrets,
+or change branch protection unless a later task contract explicitly scopes that work.

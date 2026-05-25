@@ -67,7 +67,8 @@ orientation needs dependency setup.
     - In worker-result `artifacts`, list only existing repo-relative paths. Markdown anchors such as
       `HANDOFF.md#summary` belong in planning artifact links or handoff prose, not worker-result
       artifact paths.
-    - Remove the ignored `worker-results/` import directory immediately after ingestion, then rerun
+    - Remove the ignored `worker-results/` import directory itself immediately after ingestion, not
+      just the imported JSON file, then rerun
       `uv run --no-sync python -B scripts/check_planning_integrity.py`.
 16. Record progress, artifacts, changed files, and follow-up tasks.
 17. If checks fail, classify with `failure-loop-triage` or `ci-repair-loop`.

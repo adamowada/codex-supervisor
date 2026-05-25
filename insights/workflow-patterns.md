@@ -140,12 +140,15 @@ repo-relative paths rather than Markdown anchors.
 
 Evidence: Stage 12B completion initially failed ingestion and planning integrity because the
 transient worker result used a list for `acceptance_results`, included `<plugin-creator>` and
-`<skill-creator>` placeholder commands, and listed `HANDOFF.md#...` anchors as artifacts. Correcting
-the transient JSON and removing `worker-results/` after ingestion restored planning integrity.
+`<skill-creator>` placeholder commands, and listed `HANDOFF.md#...` anchors as artifacts. Stage 13A
+then failed planning integrity after the raw JSON file was removed but the empty `worker-results/`
+directory remained. Correcting the transient JSON and removing the `worker-results/` directory
+itself after ingestion restored planning integrity.
 
 Next action: before ingesting completed worker results, prefer only the task's official verification
 commands in `tests_run`, keep external validators in review notes or handoff summaries, and delete
-the ignored `worker-results/` import directory immediately after the DB row is created.
+the ignored `worker-results/` import directory itself, not just the JSON file, immediately after the
+DB row is created.
 
 ## New Verification Scripts Need Command-Safety Promotion
 
@@ -166,3 +169,20 @@ verifier still ran directly as extra evidence.
 Next action: when shaping tasks that introduce new verifier scripts, either include command-safety
 promotion and tests in scope or keep the canonical task commands on already-approved verification
 surfaces.
+
+## CI Publication Gates Should Verify Staged Blobs
+
+Confidence: confirmed.
+
+GitHub Actions workflows that run the repository's publication-ready gate should keep dependency
+setup deterministic and avoid tracked-file mutation before the hygiene check. Use `uv sync --dev
+--locked` in CI, then run `uv run python -B scripts/verify.py --publication-ready` so lock drift or
+unexpected public files fail visibly instead of being normalized by the workflow.
+
+Evidence: Stage 13A added the first GitHub Actions workflow and validated it locally by staging the
+workflow, file-purpose map, and workflow contract tests before running
+`uv run --no-sync python -B scripts/verify.py --publication-ready`. The gate passed against the
+indexed blobs, matching the CI posture the workflow will use after publication.
+
+Next action: for future CI or release workflow slices, run publication-ready verification only after
+the intended public files are staged, and prefer locked dependency setup inside CI workflows.

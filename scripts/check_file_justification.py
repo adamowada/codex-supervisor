@@ -68,6 +68,11 @@ PURPOSE_RULES = (
         patterns=(".agents/skills/**",),
     ),
     PurposeRule(
+        name="github-actions-ci",
+        purpose="GitHub Actions workflows for public CI verification",
+        patterns=(".github/workflows/*.yaml", ".github/workflows/*.yml"),
+    ),
+    PurposeRule(
         name="insights-memory",
         purpose="durable synthesized learning and knowledge graph memory",
         patterns=("insights/**",),
@@ -178,6 +183,10 @@ FILE_PURPOSES = {
     ),
     ".agents/skills/triage/OUT-OF-SCOPE.md": FilePurpose(
         "triage out-of-scope template", "check_skill_inventory"
+    ),
+    ".github/workflows/verify.yml": FilePurpose(
+        "GitHub Actions publication-ready verification workflow",
+        "pytest",
     ),
     "AGENTS.md": FilePurpose("agent operating rules and authority matrix", "check_protected_files"),
     "ARCHITECTURE.md": FilePurpose(
@@ -336,6 +345,7 @@ FILE_PURPOSES = {
         "read-only worktree state snapshots", "pytest"
     ),
     "tests/test_file_justification.py": FilePurpose("file purpose gate tests", "pytest"),
+    "tests/test_github_ci.py": FilePurpose("GitHub Actions workflow contract tests", "pytest"),
     "tests/test_goal_contracts.py": FilePurpose("Goal Contract renderer tests", "pytest"),
     "tests/test_insights.py": FilePurpose("reusable insight contract tests", "pytest"),
     "tests/test_insight_cli.py": FilePurpose("insight validation CLI tests", "pytest"),
@@ -434,6 +444,11 @@ FOLDER_PURPOSE_RULES = (
         name="repo-local-skills",
         purpose="Codex bootstrap workflows and small reusable operating procedures",
         patterns=(".agents", ".agents/skills", ".agents/skills/**"),
+    ),
+    FolderPurposeRule(
+        name="github-actions-ci",
+        purpose="GitHub Actions workflows for public CI verification",
+        patterns=(".github", ".github/workflows"),
     ),
     FolderPurposeRule(
         name="insights-memory",

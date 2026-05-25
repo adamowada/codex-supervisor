@@ -1,0 +1,76 @@
+{
+  "worker_run_ids": [
+    "worker-run-history-goal-contract-renderer",
+    "worker-run-history-stage1-planning-crud-helpers",
+    "worker-run-history-story-loop-progress-cli"
+  ],
+  "acceptance_results": {
+    "CLI can record decisions, progress, artifact links, commit links, supervisor tasks, and worker runs.": {
+      "evidence": "Stage 1 planning mutation helpers and write-side CLI coverage landed in src/codex_supervisor/planning.py, src/codex_supervisor/cli.py, and tests/test_planning.py.",
+      "status": "passed"
+    },
+    "CLI can record iteration progress and artifact links without ad hoc SQL.": {
+      "evidence": "story-loop-record and progress/artifact-link helper tests are present in tests/test_story_loop.py and tests/test_planning.py.",
+      "status": "passed"
+    },
+    "CLI can report story-loop status for active plans and ready tasks.": {
+      "evidence": "Story Loop status reporting is implemented in src/codex_supervisor/story_loop.py and covered by tests/test_story_loop.py.",
+      "status": "passed"
+    },
+    "Focused tests cover a representative AFK task contract.": {
+      "evidence": "tests/test_goal_contracts.py covers a representative AFK task contract and rendered output.",
+      "status": "passed"
+    },
+    "Focused tests cover empty, blocked, and completed story-loop states.": {
+      "evidence": "tests/test_story_loop.py covers empty, blocked, completed, ready, HITL, and running queue states.",
+      "status": "passed"
+    },
+    "Goal Contract renderer produces objective, context, constraints, acceptance criteria, verification, stop condition, and blocked condition.": {
+      "evidence": "src/codex_supervisor/goal_contracts.py renders the contract fields and tests/test_goal_contracts.py asserts the required sections.",
+      "status": "passed"
+    },
+    "Renderer reads supervisor task fields without ad hoc SQL.": {
+      "evidence": "The renderer consumes SupervisorTaskSummaryRecord values from typed planning helpers rather than opening SQLite directly.",
+      "status": "passed"
+    },
+    "Repo-wide verification passes with uv run python -B scripts/verify.py.": {
+      "evidence": "The historical completion was verified with the repo-wide gate; current command posture is recorded as uv run --no-sync python -B scripts/verify.py for worker evidence.",
+      "status": "passed"
+    },
+    "Tests cover create/list/update behavior, lifecycle transitions, and existing read commands.": {
+      "evidence": "tests/test_planning.py covers planning create/list/update helpers, lifecycle transitions, and CLI read commands.",
+      "status": "passed"
+    },
+    "Typed helpers can record lifecycle/status transitions without ad hoc SQL.": {
+      "evidence": "Lifecycle/status transition helpers are implemented in src/codex_supervisor/planning.py and exercised through tests/test_planning.py.",
+      "status": "passed"
+    }
+  },
+  "artifacts": [
+    "worker-results/bootstrap-historical-afk-worker-result.json"
+  ],
+  "changed_files": [
+    "src/codex_supervisor/cli.py",
+    "src/codex_supervisor/goal_contracts.py",
+    "src/codex_supervisor/planning.py",
+    "src/codex_supervisor/story_loop.py",
+    "tests/test_goal_contracts.py",
+    "tests/test_planning.py",
+    "tests/test_story_loop.py",
+    "plans/planning.sqlite3"
+  ],
+  "follow_up_tasks": [],
+  "handoff_notes": "Retrospective worker-result artifact added so historical completed AFK tasks have durable structured evidence.",
+  "risks": [
+    "This is retrospective bootstrap evidence for tasks completed before the worker-result contract existed; it records durable file/test evidence but not original raw worker transcripts."
+  ],
+  "status": "completed",
+  "summary": "Historical Goal Contract, Story Loop, and Stage 1 planning AFK tasks have durable structured result evidence.",
+  "tests_run": [
+    {
+      "command": "uv run --no-sync python -B scripts/verify.py",
+      "exit_code": 0,
+      "summary": "Passed as the repo-wide verification gate for the historical implementation surface."
+    }
+  ]
+}

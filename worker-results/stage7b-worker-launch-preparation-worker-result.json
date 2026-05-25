@@ -1,0 +1,55 @@
+{
+  "worker_run_id": "worker-run-stage7b-worker-launch-preparation-20260524",
+  "status": "completed",
+  "summary": "Implemented the Stage 7B non-live worker launch preparation bridge from planning tasks to WorkerLaunchRequest and worker-run metadata.",
+  "changed_files": [
+    "src/codex_supervisor/worker_launches.py",
+    "tests/test_worker_launches.py",
+    "scripts/check_file_justification.py",
+    "plans/planning.sqlite3",
+    "HANDOFF.md",
+    "worker-results/stage7b-worker-launch-preparation-worker-result.json"
+  ],
+  "tests_run": [
+    {
+      "command": "uv run --no-sync python -B -m pytest tests/test_worker_launches.py -q -p no:cacheprovider",
+      "exit_code": 0,
+      "summary": "3 passed"
+    },
+    {
+      "command": "uv run --no-sync python -B scripts/verify.py",
+      "exit_code": 0,
+      "summary": "276 passed plus Ruff, format, mypy, CLI smoke checks, file justification, public hygiene, planning integrity, skill inventory, source inventory, protected locks, and uv lock --check."
+    }
+  ],
+  "acceptance_results": {
+    "Worker launch preparation builds WorkerLaunchRequest from a task record and WorktreeRunLayout, including worktree, prompt, JSONL, stdout, stderr, final-message, diff-summary, durable result path, allowed paths, verification commands, and acceptance criteria.": {
+      "status": "passed",
+      "evidence": "prepare_worker_launch_request builds WorkerLaunchRequest using Stage 7A layout paths for worktree, prompt, JSONL, stdout, stderr, final-message, diff-summary, and durable result output while carrying task contract fields."
+    },
+    "Worker-run metadata exposes the same raw evidence path map and launch preparation fields needed by planning SQLite without duplicating ad hoc path logic.": {
+      "status": "passed",
+      "evidence": "WorkerLaunchPreparation.worker_run_metadata includes launch_preparation settings, durable_result_path, worktree_path, and raw_evidence_paths from WorktreeRunLayout."
+    },
+    "Preparation is non-live: tests prove it does not create directories, mutate files, run git worktree, or invoke Codex.": {
+      "status": "passed",
+      "evidence": "Focused tests build launch preparations against tmp_path and assert worktrees/, runs/, and artifacts/ are not created."
+    },
+    "Focused tests cover successful preparation and unsafe worker_run_id rejection through the Stage 7A layout guard.": {
+      "status": "passed",
+      "evidence": "tests/test_worker_launches.py covers successful request preparation, worker-run metadata exposure, and unsafe worker_run_id rejection via WorktreeArtifactError."
+    }
+  },
+  "risks": [
+    "Stage 7B is still non-live: it prepares requests and metadata but does not create worktrees, run git commands, or invoke Codex.",
+    "The next Stage 7 slice should wire preparation into backend execution orchestration with injected runners and diff-summary capture before enabling any real cleanup or live launch path."
+  ],
+  "follow_up_tasks": [
+    "Shape Stage 7C to connect WorkerLaunchPreparation to CodexExecBackend.run through a non-live orchestrator/fake runner test.",
+    "Add diff-summary capture and changed-file validation integration before a completed launch can be accepted."
+  ],
+  "artifacts": [
+    "worker-results/stage7b-worker-launch-preparation-worker-result.json"
+  ],
+  "handoff_notes": "Stage 7B adds worker_launches.py as the bridge from planning tasks to WorkerLaunchRequest. Future backend orchestration should call prepare_worker_launch_request instead of reconstructing paths or metadata manually."
+}

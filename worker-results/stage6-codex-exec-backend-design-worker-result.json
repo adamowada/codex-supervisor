@@ -1,0 +1,50 @@
+{
+  "worker_run_id": "worker-run-stage6-design-inline-20260524",
+  "status": "completed",
+  "summary": "Stage 6 Codex Exec backend design contract completed before implementation.",
+  "changed_files": [
+    "ARCHITECTURE.md",
+    "CONTRACTS.md",
+    "PLANS.md",
+    "ROADMAP.md",
+    "scripts/check_file_justification.py",
+    "scripts/check_protected_files.py",
+    "plans/planning.sqlite3",
+    "HANDOFF.md"
+  ],
+  "tests_run": [
+    {
+      "command": "uv run --no-sync python -B -m pytest -q -p no:cacheprovider",
+      "exit_code": 0,
+      "summary": "235 tests passed with the cache provider disabled."
+    },
+    {
+      "command": "uv run --no-sync python -B scripts/verify.py",
+      "exit_code": 0,
+      "summary": "Full verification passed after adding the file-purpose entry, including ruff, format check, mypy, CLI smoke checks, file justification, public hygiene, planning integrity, skill inventory, source inventory, protected locks, and uv lock check."
+    }
+  ],
+  "acceptance_results": {
+    "Backend boundary and command contract are documented before implementation.": {
+      "status": "passed",
+      "evidence": "ARCHITECTURE.md now defines WorkerBackend and CodexExecBackend responsibilities. CONTRACTS.md now defines the Codex Exec Backend Contract, preflight metadata, argv command shape, and failure classes. No backend implementation files were changed."
+    },
+    "First vertical slice has clear allowed paths, tests, and rollback behavior.": {
+      "status": "passed",
+      "evidence": "ROADMAP.md now names Stage 6A, its allowed implementation paths, verification commands, and rollback behavior. plans/planning.sqlite3 contains task-stage6a-backend-protocol-fake-execution blocked by this completed design task, and the durable result artifact has a file-purpose manifest entry."
+    }
+  },
+  "risks": [
+    "The local WindowsApps Codex executable could not run codex --version in this shell, so the future backend must preserve codex_cli_unavailable as a first-class preflight failure.",
+    "Stage 6A is intentionally non-live and does not prove real codex exec process launch."
+  ],
+  "follow_up_tasks": [
+    "task-stage6a-backend-protocol-fake-execution"
+  ],
+  "artifacts": [
+    "worker-results/stage6-codex-exec-backend-design-worker-result.json",
+    "HANDOFF.md",
+    "plans/planning.sqlite3"
+  ],
+  "handoff_notes": "Next ready work should be Stage 6A: implement the backend protocol, fake backend, and shared result-ingestion path without launching live Codex."
+}

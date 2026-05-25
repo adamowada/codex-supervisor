@@ -9,6 +9,7 @@ from codex_supervisor.planning import PlanRecord, initialize_planning_database
 from codex_supervisor.projects import (
     MAX_HARNESS_CONFIG_BYTES,
     MAX_HARNESS_PROMPT_BYTES,
+    MAX_INSIGHTS_GRAPH_BYTES,
     MAX_MARKDOWN_PLAN_BYTES,
     MAX_TASKS_JSON_BYTES,
     build_project_task_seeds,
@@ -613,6 +614,196 @@ def test_harness_config_adapter_preserves_tasks_collection_in_source_path(
     assert entry.facts.candidate_tasks[0].source_path == ("harness/config.json:tasks/prompt-task")
 
 
+def test_insights_graph_adapter_extracts_candidates_without_mutating_target(
+    tmp_path: Path,
+) -> None:
+    repo = _write_insights_graph_project(tmp_path / "tech-resume")
+    graph_path = repo / "insights" / "graph.md"
+    wiki_path = repo / "insights" / "career.md"
+    before_graph = graph_path.read_text(encoding="utf-8")
+    before_wiki = wiki_path.read_text(encoding="utf-8")
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "tech_resume_insights_graph"
+    assert entry.status == "ready"
+    assert entry.facts is not None
+    facts = entry.facts
+    assert facts.authority_markers == ("insights/graph.md",)
+    assert facts.adapter_findings == ()
+    assert facts.verification_commands == ("uv run --no-sync python -B scripts/check_insights.py",)
+    assert facts.source_documents[:2] == ("insights/career.md", "insights/graph.md")
+    assert len(facts.candidate_tasks) == 1
+    candidate = facts.candidate_tasks[0]
+    assert candidate.source_id == "insights-graph-resume-needs-portfolio-proof"
+    assert candidate.source_path == "insights/graph.md:row/1"
+    assert candidate.title == "Follow insight: Resume needs Portfolio proof"
+    assert candidate.goal == "Add portfolio evidence."
+    assert candidate.task_type == "AFK"
+    assert candidate.acceptance_criteria == ("Portfolio evidence is linked.",)
+    assert candidate.verification_commands == (
+        "uv run --no-sync python -B scripts/check_insights.py",
+    )
+    assert candidate.allowed_paths == ("insights/career.md",)
+    assert candidate.blocked_by == ("task-portfolio",)
+    assert candidate.source_authority == (
+        "insights/graph.md",
+        "insights/career.md",
+        "confidence:confirmed",
+    )
+    assert graph_path.read_text(encoding="utf-8") == before_graph
+    assert wiki_path.read_text(encoding="utf-8") == before_wiki
+
+
+def test_project_seed_tasks_cli_applies_insights_graph_candidates_only_to_supervisor_db(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    supervisor_db = tmp_path / "supervisor" / "planning.sqlite3"
+    store = initialize_planning_database(supervisor_db)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-insights-seeded-project",
+            slug="insights-seeded-project",
+            title="Insights Seeded Project",
+            goal="Receive insights graph seeded tasks.",
+            status="active",
+        )
+    )
+    repo = _write_insights_graph_project(tmp_path / "target-insights")
+    graph_path = repo / "insights" / "graph.md"
+    target_before = graph_path.read_text(encoding="utf-8")
+
+    assert (
+        main(
+            [
+                "project-seed-tasks",
+                "--path",
+                str(supervisor_db),
+                "--root",
+                str(repo),
+                "--plan-id",
+                "plan-insights-seeded-project",
+                "--apply",
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    tasks = store.list_supervisor_tasks()
+    assert payload["project"]["adapter_type"] == "tech_resume_insights_graph"
+    assert payload["task_ids"] == [tasks[0].task_id]
+    assert tasks[0].scope["source_project"]["adapter_type"] == "tech_resume_insights_graph"
+    assert tasks[0].scope["source_candidate"]["source_authority"] == [
+        "insights/graph.md",
+        "insights/career.md",
+        "confidence:confirmed",
+    ]
+    assert graph_path.read_text(encoding="utf-8") == target_before
+
+
+def test_insights_graph_adapter_reports_invalid_confidence_without_generic_fallback(
+    tmp_path: Path,
+) -> None:
+    repo = _write_insights_graph_project(tmp_path / "invalid-confidence", confidence="certain")
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "tech_resume_insights_graph"
+    assert entry.status == "unsupported"
+    assert entry.failure_class == "unsupported_insights_graph"
+    assert entry.facts is not None
+    assert "unsupported confidence" in entry.facts.adapter_findings[0]
+
+
+def test_insights_graph_adapter_reports_malformed_table_without_generic_fallback(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "malformed-insights"
+    (repo / "insights").mkdir(parents=True)
+    (repo / "insights" / "graph.md").write_text(
+        "<!-- tech-resume -->\n| From | Confidence |\n| --- | --- |\n| Resume | confirmed |\n",
+        encoding="utf-8",
+    )
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "tech_resume_insights_graph"
+    assert entry.status == "unsupported"
+    assert entry.failure_class == "unsupported_insights_graph"
+    assert entry.facts is not None
+    assert "confidence/next action table" in entry.facts.adapter_findings[0]
+
+
+def test_insights_graph_adapter_reports_oversized_graph_without_generic_fallback(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "oversized-insights"
+    (repo / "insights").mkdir(parents=True)
+    (repo / "insights" / "graph.md").write_text(
+        "<!-- tech-resume -->\n" + ("x" * (MAX_INSIGHTS_GRAPH_BYTES + 1)),
+        encoding="utf-8",
+    )
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "tech_resume_insights_graph"
+    assert entry.status == "unsupported"
+    assert entry.failure_class == "unsupported_insights_graph"
+    assert entry.facts is not None
+    assert "is larger than" in entry.facts.adapter_findings[0]
+
+
+def test_insights_graph_adapter_reports_wiki_file_limit_without_generic_fallback(
+    tmp_path: Path,
+) -> None:
+    repo = _write_insights_graph_project(tmp_path / "too-many-insights")
+    for index in range(10):
+        (repo / "insights" / f"extra-{index}.md").write_text(
+            f"# Extra {index}\n",
+            encoding="utf-8",
+        )
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "tech_resume_insights_graph"
+    assert entry.status == "unsupported"
+    assert entry.failure_class == "unsupported_insights_graph"
+    assert entry.facts is not None
+    assert "insights wiki file limit exceeded" in entry.facts.adapter_findings[0]
+
+
+def test_insights_graph_adapter_rejects_unsafe_allowed_paths(
+    tmp_path: Path,
+) -> None:
+    repo = _write_insights_graph_project(
+        tmp_path / "unsafe-insights",
+        allowed_paths="C:secret.md",
+    )
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "tech_resume_insights_graph"
+    assert entry.status == "unsupported"
+    assert entry.failure_class == "unsupported_insights_graph"
+    assert entry.facts is not None
+    assert "unsafe insights graph allowed path" in entry.facts.adapter_findings[0]
+
+
+def test_insights_graph_without_marker_falls_back_to_generic_repo(
+    tmp_path: Path,
+) -> None:
+    repo = _write_insights_graph_project(tmp_path / "generic-with-insights", marker=False)
+    (repo / "AGENTS.md").write_text("# Agent notes\n", encoding="utf-8")
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "generic_repo"
+    assert entry.status == "ready"
+
+
 def test_harness_config_without_marker_falls_back_to_generic_repo(
     tmp_path: Path,
 ) -> None:
@@ -1119,6 +1310,44 @@ def _write_harness_config_project(
                 ],
             }
         ),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _write_insights_graph_project(
+    root: Path,
+    *,
+    marker: bool = True,
+    confidence: str = "confirmed",
+    allowed_paths: str = "insights\\career.md",
+) -> Path:
+    (root / "insights").mkdir(parents=True)
+    (root / "scripts").mkdir()
+    (root / "scripts" / "check_insights.py").write_text(
+        "print('check insights')\n",
+        encoding="utf-8",
+    )
+    (root / "insights" / "career.md").write_text(
+        "# Career Insight\n",
+        encoding="utf-8",
+    )
+    marker_text = "<!-- tech-resume -->\n" if marker else ""
+    (root / "insights" / "graph.md").write_text(
+        marker_text
+        + (
+            "# Resume Insight Graph\n"
+            "\n"
+            "| From | Relation | To | Source | Confidence | Next action | "
+            "Allowed paths | Acceptance criteria | Verification commands | Blocked by |\n"
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+            "| Resume | needs | Portfolio proof | insights/career.md | "
+        )
+        + confidence
+        + " | Add portfolio evidence. | "
+        + allowed_paths
+        + " | Portfolio evidence is linked. | "
+        + "uv run --no-sync python -B scripts/check_insights.py | task-portfolio |\n",
         encoding="utf-8",
     )
     return root

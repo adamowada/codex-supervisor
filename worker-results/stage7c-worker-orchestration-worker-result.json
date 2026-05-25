@@ -1,0 +1,56 @@
+{
+  "worker_run_id": "worker-run-stage7c-worker-orchestration-20260524",
+  "status": "completed",
+  "summary": "Implemented the Stage 7C non-live worker orchestration guard that prepares launches, invokes an injected backend, parses diff-summary evidence, and rejects completed results with out-of-scope changes.",
+  "changed_files": [
+    "src/codex_supervisor/worker_orchestration.py",
+    "tests/test_worker_orchestration.py",
+    "scripts/check_file_justification.py",
+    "plans/planning.sqlite3",
+    "HANDOFF.md",
+    "worker-results/stage7c-worker-orchestration-worker-result.json"
+  ],
+  "tests_run": [
+    {
+      "command": "uv run --no-sync python -B -m pytest tests/test_worker_orchestration.py -q -p no:cacheprovider",
+      "exit_code": 0,
+      "summary": "4 passed"
+    },
+    {
+      "command": "uv run --no-sync python -B scripts/verify.py",
+      "exit_code": 0,
+      "summary": "280 passed plus Ruff, format, mypy, CLI smoke checks, file justification, public hygiene, planning integrity, skill inventory, source inventory, protected locks, and uv lock --check."
+    }
+  ],
+  "acceptance_results": {
+    "Orchestration uses prepare_worker_launch_request and calls the injected backend with the prepared WorkerLaunchRequest without reconstructing paths manually.": {
+      "status": "passed",
+      "evidence": "orchestrate_worker_launch delegates path and request construction to prepare_worker_launch_request, then calls the supplied backend once with the exact prepared WorkerLaunchRequest."
+    },
+    "Diff-summary changed files are parsed and validated against task allowed_paths; a completed backend result with out-of-scope changes is converted to failed with changed_paths_out_of_scope before planning ingestion.": {
+      "status": "passed",
+      "evidence": "load_diff_summary_changed_files reads newline-delimited changed paths from the prepared diff summary, validate_changed_files checks them against task allowed_paths, and completed results with violations are rewritten to failed with failure_class changed_paths_out_of_scope."
+    },
+    "Backend failures preserve their original failure_class while still reporting any changed-path violations as metadata.": {
+      "status": "passed",
+      "evidence": "Non-completed backend results are not rewritten to changed_paths_out_of_scope; the orchestrator preserves the backend failure_class and adds changed_path_violations metadata when the diff summary is out of scope."
+    },
+    "Focused tests cover successful injected CodexExecBackend execution, out-of-scope diff failure, backend failure preservation, and unsafe worker_run_id rejection.": {
+      "status": "passed",
+      "evidence": "tests/test_worker_orchestration.py covers successful injected CodexExecBackend execution through a spy backend, completed out-of-scope diff rejection, codex_exec_failed preservation with violations, and WorktreeArtifactError for unsafe worker_run_id."
+    }
+  },
+  "risks": [
+    "Stage 7C remains explicitly non-live: it invokes only supplied backend objects and uses injected command runners in tests.",
+    "No real git worktree lifecycle or cleanup has been enabled yet; future slices should keep cleanup behind path containment guards.",
+    "Local live Codex Exec remains unavailable until the resolved WindowsApps codex.exe access-denied issue and intended CODEX_HOME are confirmed."
+  ],
+  "follow_up_tasks": [
+    "Shape the next Stage 7 slice to persist orchestration outputs into planning worker-run metadata and result ingestion through typed helpers.",
+    "Add non-live worktree lifecycle command planning before enabling real git worktree add/remove or cleanup."
+  ],
+  "artifacts": [
+    "worker-results/stage7c-worker-orchestration-worker-result.json"
+  ],
+  "handoff_notes": "Stage 7C adds worker_orchestration.py as the guard between WorkerLaunchPreparation, backend execution, and planning ingestion. Future orchestration should call orchestrate_worker_launch and honor its changed_path_violations before accepting a completed worker result."
+}

@@ -1,0 +1,61 @@
+{
+  "worker_run_id": "worker-run-stage9c-insight-update-workflow-20260525",
+  "status": "completed",
+  "summary": "Implemented Stage 9C guarded insight update workflow with deterministic markdown rendering, stable-anchor idempotent apply behavior, validation-before-write CLI handling, promotion criteria/provenance output, and focused tests.",
+  "changed_files": [
+    "src/codex_supervisor/insight_updates.py",
+    "src/codex_supervisor/cli.py",
+    "tests/test_insight_updates.py",
+    "scripts/check_file_justification.py",
+    "plans/planning.sqlite3",
+    "HANDOFF.md"
+  ],
+  "tests_run": [
+    {
+      "command": "uv run --no-sync python -B -m pytest tests/test_insight_updates.py tests/test_insight_cli.py tests/test_insights.py -q -p no:cacheprovider",
+      "exit_code": 0,
+      "summary": "22 passed"
+    },
+    {
+      "command": "uv run --no-sync python -B scripts/verify.py",
+      "exit_code": 0,
+      "summary": "342 passed plus Ruff, format, mypy, CLI smoke checks, file justification, public hygiene, planning integrity, skill inventory, source inventory, protected locks, and uv lock --check."
+    }
+  ],
+  "acceptance_results": {
+    "A local helper or CLI consumes Stage 9A/9B validated InsightRecord JSON and produces a deterministic markdown insight update with claim, confidence, evidence, scope, supersedes, next action, and promotion criteria/provenance fields.": {
+      "status": "passed",
+      "evidence": "src/codex_supervisor/insight_updates.py renders validated InsightRecord values into a deterministic markdown block with stable markers, confidence, scope, evidence, supersedes, next action, promotion criteria, and provenance sections; tests/test_insight_updates.py covers these fields."
+    },
+    "The update workflow can run against temp insight files and is idempotent for an existing insight claim or stable anchor without duplicating entries.": {
+      "status": "passed",
+      "evidence": "apply_insight_update replaces an existing block identified by a hash-backed stable anchor and tests/test_insight_updates.py asserts repeated application leaves one block and returns changed=False on the second run."
+    },
+    "Invalid insight payloads fail before any target insight file is modified, and the workflow never reads or writes planning SQLite or Codex internal state.": {
+      "status": "passed",
+      "evidence": "The insight-update CLI loads and validates the JSON payload before calling apply_insight_update; tests/test_insight_updates.py creates planning and insight sentinels and asserts invalid payload failure leaves both unchanged and creates no new files."
+    },
+    "Focused tests cover valid render/apply behavior, idempotence, invalid-payload rollback/no-write behavior, and CLI or helper output suitable for future knowledge-graph-updater use.": {
+      "status": "passed",
+      "evidence": "uv run --no-sync python -B -m pytest tests/test_insight_updates.py tests/test_insight_cli.py tests/test_insights.py -q -p no:cacheprovider passed with render, apply, idempotence, invalid rollback, and CLI JSON-output coverage."
+    }
+  },
+  "review": {
+    "status": "passed",
+    "summary": "Fresh-thread-style local review found no actionable findings for the Stage 9C guarded insight update workflow diff."
+  },
+  "risks": [
+    "The workflow applies to explicit operator-selected markdown files; automatic insight-file selection remains future knowledge-graph-updater work.",
+    "Skill promotion and golden-eval wiring remain future Stage 9 slices.",
+    "Live Codex Exec remains disabled for this worker run because local Codex CLI preflight is still unavailable in this environment."
+  ],
+  "follow_up_tasks": [
+    "Shape the next Stage 9 slice for skill promotion or golden-eval wiring now that durable insight writes exist.",
+    "Use insight-update from knowledge-graph-updater once the updater is wired to validated InsightRecord payloads.",
+    "Continue to Stage 10 Codex local-state adapter work after the Stage 9 learning loop is intentionally closed."
+  ],
+  "artifacts": [
+    "worker-results/stage9c-insight-update-workflow-worker-result.json"
+  ],
+  "handoff_notes": "Stage 9C adds insight_updates.py and the insight-update CLI. The workflow validates an InsightRecord JSON payload before rendering or applying a stable-anchor markdown block with provenance and promotion criteria, and tests prove idempotence plus invalid-payload no-write behavior."
+}

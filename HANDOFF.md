@@ -16,19 +16,16 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, Stage 3A project registry and generic repo adapter work, Stage 3B adapter
-task-candidate output work, Stage 3C project task seeding work, Stage 3D planning SQLite adapter
-work, Stage 3E structured markdown plan adapter work, and Stage 3F harness config adapter work are
-complete in planning SQLite. The expected queue state is `ready` for active plan
-`plan-stage3-project-registry-adapters`, with current AFK task
-`task-stage3g-insights-graph-adapter`. Stage 3A, Stage 3B, Stage 3C, Stage 3D, Stage 3E, Stage 3F,
-Stage 10A, Stage 10B, Stage 10C, Stage 10D, Stage 10E, Stage 10F, Stage 9, and the Stage 10 plan are
-marked completed in planning SQLite. Stage 3 overall still needs the Stage 3G tech-resume insights
-graph adapter before the ROADMAP Stage 3 done gate is satisfied. If the database reports anything
-else, trust the database and call this handoff stale.
+As of this snapshot, the Stage 3 project registry and adapter plan is complete in planning SQLite.
+Stage 3A through Stage 3G cover the generic repository adapter, adapter task-candidate output,
+project task seeding, planning SQLite adapter, structured markdown plan adapter, harness config
+adapter, and tech-resume insights graph adapter. The expected queue state is `empty`: no active
+current-queue AFK task remains. If the database reports anything else, trust the database and call
+this handoff stale.
 
 Recent completed ACP checkpoints:
 
+- `3e9a3d0`: shaped the Stage 3G insights graph adapter task and handoff.
 - `8b270ca`: added Stage 3F harness config adapter, review repairs, planning completion, handoff,
   and worker result.
 - `5c6c93c`: added Stage 3E structured markdown plan adapter, planning completion, handoff, and
@@ -73,13 +70,13 @@ Recent completed ACP checkpoints:
 - `200d027`: hardened exact task claiming, Story Loop queue snapshots, completed-plan criteria, and
   worker-result/attribution skill contracts.
 
-The latest full local gate passed after Stage 3F harness config adapter completion with:
+The latest full local gate passed after Stage 3G insights graph adapter completion with:
 
 ```sh
 uv run --no-sync python -B scripts/verify.py
 ```
 
-That run covered 410 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
+That run covered 419 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
 hygiene, planning integrity, skill inventory, source inventory, protected locks, and
 `uv lock --check`.
 
@@ -107,7 +104,7 @@ Stage 6A backend protocol changed:
 - `tests/test_worker_backends.py`, `tests/test_worker_results.py`, and `tests/test_planning.py`:
   cover fake backend evidence, result validation, CLI completion, failure/blocked/needs_review
   preservation, and shared worker-run membership.
-- `insights/stage6a-backend-protocol-worker-result.json`: durable Stage 6A worker-result evidence.
+- `worker-results/stage6a-backend-protocol-worker-result.json`: durable Stage 6A worker-result evidence.
 
 Stage 6B Codex Exec preflight changed:
 
@@ -116,7 +113,7 @@ Stage 6B Codex Exec preflight changed:
   shell-free `codex exec` argv construction.
 - `tests/test_worker_backends.py`: covers successful preflight metadata, argv construction,
   launch-disabled no-live behavior, and inaccessible executable failure evidence.
-- `insights/stage6b-codex-exec-preflight-worker-result.json`: durable Stage 6B worker-result
+- `worker-results/stage6b-codex-exec-preflight-worker-result.json`: durable Stage 6B worker-result
   evidence.
 
 Stage 6C Codex Exec launch path changed:
@@ -129,7 +126,7 @@ Stage 6C Codex Exec launch path changed:
 - `tests/test_worker_backends.py`: covers launch success, nonzero exec failure, missing result
   artifact, preflight failure, launch-disabled behavior, and preservation of runner-produced JSONL
   and diff-summary files.
-- `insights/stage6c-codex-exec-launch-worker-result.json`: durable Stage 6C worker-result evidence.
+- `worker-results/stage6c-codex-exec-launch-worker-result.json`: durable Stage 6C worker-result evidence.
 
 Stage 7A worktree and artifact layout changed:
 
@@ -138,7 +135,7 @@ Stage 7A worktree and artifact layout changed:
   allowed-path validation that does not require files to exist.
 - `tests/test_worktree_artifacts.py`: covers safe layout generation, unsafe traversal/drive/slash
   identifiers, cleanup containment, relative cleanup targets, and changed-file scope validation.
-- `insights/stage7a-worktree-layout-worker-result.json`: durable Stage 7A worker-result evidence.
+- `worker-results/stage7a-worktree-layout-worker-result.json`: durable Stage 7A worker-result evidence.
 
 Stage 7B worker launch preparation changed:
 
@@ -147,7 +144,7 @@ Stage 7B worker launch preparation changed:
   without creating worktrees or launching Codex.
 - `tests/test_worker_launches.py`: covers successful request preparation, metadata field exposure,
   no filesystem side effects, and unsafe worker-run ID rejection.
-- `insights/stage7b-worker-launch-preparation-worker-result.json`: durable Stage 7B worker-result
+- `worker-results/stage7b-worker-launch-preparation-worker-result.json`: durable Stage 7B worker-result
   evidence.
 
 Stage 7C worker orchestration changed:
@@ -159,7 +156,7 @@ Stage 7C worker orchestration changed:
 - `tests/test_worker_orchestration.py`: covers successful injected `CodexExecBackend` execution,
   out-of-scope diff rejection, backend failure preservation with changed-path violation metadata,
   and unsafe worker-run ID rejection.
-- `insights/stage7c-worker-orchestration-worker-result.json`: durable Stage 7C worker-result
+- `worker-results/stage7c-worker-orchestration-worker-result.json`: durable Stage 7C worker-result
   evidence.
 
 Stage 7D worktree state snapshots changed:
@@ -170,7 +167,7 @@ Stage 7D worktree state snapshots changed:
 - `tests/test_worktree_state.py`: covers clean snapshots, dirty out-of-scope path reporting,
   `worktree_state_failed` command failure classification, and outside-workspace rejection before any
   runner invocation.
-- `insights/stage7d-worktree-state-worker-result.json`: durable Stage 7D worker-result evidence.
+- `worker-results/stage7d-worktree-state-worker-result.json`: durable Stage 7D worker-result evidence.
 
 Stage 7E cleanup and orphan planning changed:
 
@@ -179,7 +176,7 @@ Stage 7E cleanup and orphan planning changed:
   preserves active worker-run IDs, and returns structured selected/skipped cleanup entries.
 - `tests/test_worktree_cleanup.py`: covers safe orphan candidates, root/outside rejection,
   active-run preservation, unsupported runtime path skipping, and missing worker-run ID skipping.
-- `insights/stage7e-cleanup-orphan-planning-worker-result.json`: durable Stage 7E worker-result
+- `worker-results/stage7e-cleanup-orphan-planning-worker-result.json`: durable Stage 7E worker-result
   evidence.
 
 Stage 7F cleanup-plan dry-run CLI changed:
@@ -190,7 +187,7 @@ Stage 7F cleanup-plan dry-run CLI changed:
   used by the CLI.
 - `tests/test_worktree_cleanup.py`: now covers CLI JSON output, human output, active-run skipping,
   invalid path failure, and proof that candidate directories remain on disk.
-- `insights/stage7f-cleanup-plan-cli-worker-result.json`: durable Stage 7F worker-result evidence.
+- `worker-results/stage7f-cleanup-plan-cli-worker-result.json`: durable Stage 7F worker-result evidence.
 
 Stage 8A review contracts changed:
 
@@ -200,7 +197,7 @@ Stage 8A review contracts changed:
 - `tests/test_review_loop.py`: covers valid findings, invalid mode/severity/status, missing
   location, waived finding rationale enforcement, accepted repair draft generation, and non-accepted
   finding rejection.
-- `insights/stage8a-review-contracts-worker-result.json`: durable Stage 8A worker-result evidence.
+- `worker-results/stage8a-review-contracts-worker-result.json`: durable Stage 8A worker-result evidence.
 
 Stage 8B review result payload validation changed:
 
@@ -208,7 +205,7 @@ Stage 8B review result payload validation changed:
   `validate_review_result_payload`, plus accepted/waived finding views and repair draft extraction.
 - `tests/test_review_loop.py`: covers valid review result payloads, invalid payload shapes,
   verification evidence validation, invalid finding payloads, and repair draft extraction.
-- `insights/stage8b-review-result-payloads-worker-result.json`: durable Stage 8B worker-result
+- `worker-results/stage8b-review-result-payloads-worker-result.json`: durable Stage 8B worker-result
   evidence.
 
 Stage 8C review result persistence has been shaped:
@@ -229,7 +226,7 @@ Stage 8C review result persistence changed:
 - `tests/test_review_persistence.py`: covers successful persistence, artifact relationships,
   invalid artifact rollback, and proof that no repair tasks are created.
 - `scripts/check_file_justification.py`: records the new module, tests, and worker-result artifact.
-- `insights/stage8c-review-result-persistence-worker-result.json`: durable Stage 8C worker-result
+- `worker-results/stage8c-review-result-persistence-worker-result.json`: durable Stage 8C worker-result
   evidence.
 
 Stage 8D accepted finding repair routing has been shaped:
@@ -249,7 +246,7 @@ Stage 8D accepted finding repair routing changed:
 - `tests/test_review_repairs.py`: covers accepted task creation, waived/HITL skipping, idempotent
   reruns, deterministic task IDs, and path/contract preservation.
 - `scripts/check_file_justification.py`: records the new module, tests, and worker-result artifact.
-- `insights/stage8d-review-repair-routing-worker-result.json`: durable Stage 8D worker-result
+- `worker-results/stage8d-review-repair-routing-worker-result.json`: durable Stage 8D worker-result
   evidence.
 
 Stage 8E review result CLI ingestion changed:
@@ -260,7 +257,7 @@ Stage 8E review result CLI ingestion changed:
 - `tests/test_review_cli.py`: covers persistence-only ingestion, repair routing, invalid payload
   failure, idempotent repair-task reruns, and proof that no live worker runs are launched.
 - `scripts/check_file_justification.py`: records the new test and worker-result artifact.
-- `insights/stage8e-review-result-cli-ingestion-worker-result.json`: durable Stage 8E
+- `worker-results/stage8e-review-result-cli-ingestion-worker-result.json`: durable Stage 8E
   worker-result evidence.
 - Verification passed:
   `uv run --no-sync python -B -m pytest tests/test_review_cli.py tests/test_review_persistence.py tests/test_review_repairs.py -q -p no:cacheprovider`;
@@ -274,7 +271,7 @@ Stage 9A reusable insight contract validation changed:
 - `tests/test_insights.py`: covers valid records, markdown `next action` compatibility, invalid
   confidence labels, missing required fields, and blank string/list values.
 - `scripts/check_file_justification.py`: records the new module, tests, and worker-result artifact.
-- `insights/stage9a-insight-contracts-worker-result.json`: durable Stage 9A worker-result evidence.
+- `worker-results/stage9a-insight-contracts-worker-result.json`: durable Stage 9A worker-result evidence.
 - Verification passed:
   `uv run --no-sync python -B -m pytest tests/test_insights.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/verify.py`.
@@ -287,7 +284,7 @@ Stage 9B insight validation CLI changed:
 - `tests/test_insight_cli.py`: covers normalized JSON output, markdown `next action` compatibility,
   invalid payload failure, no planning/insight file mutation, and human output.
 - `scripts/check_file_justification.py`: records the new test and worker-result artifact.
-- `insights/stage9b-insight-cli-validation-worker-result.json`: durable Stage 9B worker-result
+- `worker-results/stage9b-insight-cli-validation-worker-result.json`: durable Stage 9B worker-result
   evidence.
 - Verification passed:
   `uv run --no-sync python -B -m pytest tests/test_insight_cli.py tests/test_insights.py -q -p no:cacheprovider`.
@@ -308,7 +305,7 @@ Stage 9C guarded insight update workflow changed:
   `worker-run-stage9c-insight-update-workflow-20260525`,
   `progress-stage9c-review-completed-20260525`, completed task, completed milestone, and completed
   criterion.
-- `insights/stage9c-insight-update-workflow-worker-result.json`: durable Stage 9C worker-result
+- `worker-results/stage9c-insight-update-workflow-worker-result.json`: durable Stage 9C worker-result
   evidence.
 - Verification passed:
   `uv run --no-sync python -B -m pytest tests/test_insight_updates.py tests/test_insight_cli.py tests/test_insights.py -q -p no:cacheprovider`;
@@ -331,7 +328,7 @@ Stage 9D skill promotion golden-eval contract work changed:
   `worker-run-stage9d-skill-promotion-eval-contracts-20260525`,
   `progress-stage9d-review-completed-20260525`, completed task, completed milestone, and completed
   criterion.
-- `insights/stage9d-skill-promotion-eval-contracts-worker-result.json`: durable Stage 9D
+- `worker-results/stage9d-skill-promotion-eval-contracts-worker-result.json`: durable Stage 9D
   worker-result evidence.
 - Verification:
   `uv run --no-sync python -B -m pytest tests/test_skill_promotion.py -q -p no:cacheprovider`;
@@ -352,7 +349,7 @@ Stage 10A Codex local-state inventory changed:
   `worker-run-stage10a-codex-state-inventory-20260525`,
   `progress-stage10a-review-completed-20260525`, completed task, completed milestone, and completed
   criterion.
-- `insights/stage10a-codex-state-inventory-worker-result.json`: durable Stage 10A worker-result
+- `worker-results/stage10a-codex-state-inventory-worker-result.json`: durable Stage 10A worker-result
   evidence.
 - Verification:
   `uv run --no-sync python -B -m pytest tests/test_codex_state.py -q -p no:cacheprovider`;
@@ -375,7 +372,7 @@ Stage 10B Codex local-state observation summaries changed:
   `worker-run-stage10b-codex-state-observations-20260525`,
   `progress-stage10b-review-completed-20260525`, completed task, completed milestone, and completed
   criterion.
-- `insights/stage10b-codex-state-observations-worker-result.json`: durable Stage 10B
+- `worker-results/stage10b-codex-state-observations-worker-result.json`: durable Stage 10B
   worker-result evidence.
 - Verification:
   `uv run --no-sync python -B -m pytest tests/test_codex_state.py -q -p no:cacheprovider`;
@@ -399,7 +396,7 @@ Stage 10C Codex local-state reconciliation dry-run changed:
   `worker-run-stage10c-codex-state-reconciliation-dry-run-20260525`,
   `progress-stage10c-review-completed-20260525`, completed task, completed milestone, completed
   criterion, and linked worker-result artifact.
-- `insights/stage10c-codex-state-reconciliation-dry-run-worker-result.json`: durable Stage 10C
+- `worker-results/stage10c-codex-state-reconciliation-dry-run-worker-result.json`: durable Stage 10C
   worker-result evidence.
 - Verification:
   `uv run --no-sync python -B -m pytest tests/test_codex_state.py -q -p no:cacheprovider`;
@@ -425,7 +422,7 @@ Stage 10D reviewed Codex local-state reconciliation apply changed:
   `worker-run-stage10d-codex-state-reconciliation-apply-20260525`,
   `progress-stage10d-review-completed-20260525`, completed task, completed milestone, completed
   criterion, and linked worker-result artifact.
-- `insights/stage10d-codex-state-reconciliation-apply-worker-result.json`: durable Stage 10D
+- `worker-results/stage10d-codex-state-reconciliation-apply-worker-result.json`: durable Stage 10D
   worker-result evidence.
 - Verification:
   `uv run --no-sync python -B -m pytest tests/test_codex_state.py tests/test_codex_state_reconciliation.py -q -p no:cacheprovider`;
@@ -449,7 +446,7 @@ Stage 10E official Codex automation bridge dry-run changed:
   `worker-run-stage10e-codex-automation-bridge-dry-run-20260525`,
   `progress-stage10e-review-completed-20260525`, completed task, completed milestone, completed
   criterion, and linked worker-result artifact.
-- `insights/stage10e-codex-automation-bridge-dry-run-worker-result.json`: durable Stage 10E
+- `worker-results/stage10e-codex-automation-bridge-dry-run-worker-result.json`: durable Stage 10E
   worker-result evidence.
 - Verification:
   `uv run --no-sync python -B -m pytest tests/test_codex_automation.py -q -p no:cacheprovider`;
@@ -468,7 +465,7 @@ Stage 10F official Codex automation bridge apply has been shaped:
   and any push, merge, publish, delete, or release action.
 - Allowed durable paths:
   `plans/planning.sqlite3`, `HANDOFF.md`, and
-  `insights/stage10f-official-automation-bridge-apply-worker-result.json`.
+  `worker-results/stage10f-official-automation-bridge-apply-worker-result.json`.
 - Expected checks:
   `uv run --no-sync python -B scripts/check_planning_integrity.py`;
   `uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json`;
@@ -486,7 +483,7 @@ Stage 10F official Codex automation bridge apply changed:
   `progress-stage10f-review-completed-20260525`, completed task, completed milestone, completed
   criterion, and linked worker-result artifact.
 - `scripts/check_file_justification.py`: records the new Stage 10F worker-result artifact purpose.
-- `insights/stage10f-official-automation-bridge-apply-worker-result.json`: durable Stage 10F
+- `worker-results/stage10f-official-automation-bridge-apply-worker-result.json`: durable Stage 10F
   worker-result evidence.
 - Verification:
   `uv run --no-sync python -B scripts/check_planning_integrity.py`;
@@ -506,7 +503,7 @@ Stage 3A project registry and generic repo adapter has been shaped:
 - The Stage 3A task is intentionally scoped to the smallest shippable project registry foundation:
   `src/codex_supervisor/projects.py`, `src/codex_supervisor/cli.py`, `tests/test_projects.py`,
   `scripts/check_file_justification.py`, `plans/planning.sqlite3`, `HANDOFF.md`, and
-  `insights/stage3a-project-registry-generic-adapter-worker-result.json`.
+  `worker-results/stage3a-project-registry-generic-adapter-worker-result.json`.
 - In scope: normalized project registry entries, a generic repo adapter with bounded source-of-truth
   and verification facts, `project-list` CLI JSON/human output, missing-root errors, and
   Windows/POSIX path tests.
@@ -535,7 +532,7 @@ Stage 3A project registry and generic repo adapter changed:
   worker-result artifact purpose.
 - `plans/planning.sqlite3`: records the Stage 3A claim and completion evidence through
   `worker-run-stage3a-project-registry-generic-adapter-20260525`.
-- `insights/stage3a-project-registry-generic-adapter-worker-result.json`: durable Stage 3A
+- `worker-results/stage3a-project-registry-generic-adapter-worker-result.json`: durable Stage 3A
   worker-result evidence.
 - Verification:
   `uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider`;
@@ -565,7 +562,7 @@ Stage 3B adapter task-candidate output has been shaped:
 - Allowed durable paths:
   `src/codex_supervisor/projects.py`, `src/codex_supervisor/cli.py`, `tests/test_projects.py`,
   `scripts/check_file_justification.py`, `plans/planning.sqlite3`, `HANDOFF.md`, and
-  `insights/stage3b-adapter-task-candidates-worker-result.json`.
+  `worker-results/stage3b-adapter-task-candidates-worker-result.json`.
 - Expected checks:
   `uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/check_planning_integrity.py`;
@@ -588,7 +585,7 @@ Stage 3B adapter task-candidate output changed:
   `worker-run-stage3b-adapter-task-candidates-20260525`,
   `progress-stage3b-review-completed-20260525`, completed task, completed milestone, completed
   criterion, and linked worker-result artifact.
-- `insights/stage3b-adapter-task-candidates-worker-result.json`: durable Stage 3B worker-result
+- `worker-results/stage3b-adapter-task-candidates-worker-result.json`: durable Stage 3B worker-result
   evidence.
 - Verification:
   `uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider`;
@@ -616,7 +613,7 @@ Stage 3C project task seeding has been shaped:
 - Allowed durable paths:
   `src/codex_supervisor/projects.py`, `src/codex_supervisor/cli.py`, `tests/test_projects.py`,
   `scripts/check_file_justification.py`, `plans/planning.sqlite3`, `HANDOFF.md`, and
-  `insights/stage3c-project-task-seeding-worker-result.json`.
+  `worker-results/stage3c-project-task-seeding-worker-result.json`.
 - Expected checks:
   `uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/check_planning_integrity.py`;
@@ -641,7 +638,7 @@ Stage 3C project task seeding changed:
   `worker-run-stage3c-project-task-seeding-20260525`,
   `progress-stage3c-review-completed-20260525`, completed task, completed milestone, completed
   criterion, and linked worker-result artifact.
-- `insights/stage3c-project-task-seeding-worker-result.json`: durable Stage 3C worker-result
+- `worker-results/stage3c-project-task-seeding-worker-result.json`: durable Stage 3C worker-result
   evidence.
 - Verification:
   `uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider`;
@@ -672,7 +669,7 @@ Stage 3D planning SQLite project adapter has been shaped:
 - Allowed durable paths:
   `src/codex_supervisor/projects.py`, `src/codex_supervisor/cli.py`, `tests/test_projects.py`,
   `scripts/check_file_justification.py`, `plans/planning.sqlite3`, `HANDOFF.md`, and
-  `insights/stage3d-planning-sqlite-adapter-worker-result.json`.
+  `worker-results/stage3d-planning-sqlite-adapter-worker-result.json`.
 - Expected checks:
   `uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/check_planning_integrity.py`;
@@ -698,7 +695,7 @@ Stage 3D planning SQLite project adapter changed:
   `worker-run-stage3d-planning-sqlite-adapter-20260525`,
   `progress-stage3d-review-completed-20260525`, completed task, completed milestone, completed
   criterion, and linked worker-result artifact.
-- `insights/stage3d-planning-sqlite-adapter-worker-result.json`: durable Stage 3D worker-result
+- `worker-results/stage3d-planning-sqlite-adapter-worker-result.json`: durable Stage 3D worker-result
   evidence.
 - Verification:
   `uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider`;
@@ -730,7 +727,7 @@ Stage 3E structured markdown plan adapter has been shaped:
 - Allowed durable paths:
   `src/codex_supervisor/projects.py`, `src/codex_supervisor/cli.py`, `tests/test_projects.py`,
   `scripts/check_file_justification.py`, `plans/planning.sqlite3`, `HANDOFF.md`, and
-  `insights/stage3e-markdown-plan-adapter-worker-result.json`.
+  `worker-results/stage3e-markdown-plan-adapter-worker-result.json`.
 - Expected checks:
   `uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/check_planning_integrity.py`;
@@ -756,7 +753,7 @@ Stage 3E structured markdown plan adapter changed:
   `worker-run-stage3e-markdown-plan-adapter-20260525`,
   `progress-stage3e-review-completed-20260525`, completed task, completed milestone, completed
   criterion, and linked worker-result artifact.
-- `insights/stage3e-markdown-plan-adapter-worker-result.json`: durable Stage 3E worker-result
+- `worker-results/stage3e-markdown-plan-adapter-worker-result.json`: durable Stage 3E worker-result
   evidence.
 - Verification:
   `uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider`;
@@ -787,7 +784,7 @@ Stage 3F harness config project adapter has been shaped:
 - Allowed durable paths:
   `src/codex_supervisor/projects.py`, `src/codex_supervisor/cli.py`, `tests/test_projects.py`,
   `scripts/check_file_justification.py`, `plans/planning.sqlite3`, `HANDOFF.md`, and
-  `insights/stage3f-harness-config-adapter-worker-result.json`.
+  `worker-results/stage3f-harness-config-adapter-worker-result.json`.
 - Expected checks:
   `uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/check_planning_integrity.py`;
@@ -814,7 +811,7 @@ Stage 3F harness config project adapter changed:
   `worker-run-stage3f-harness-config-adapter-20260525`,
   `progress-stage3f-review-completed-20260525`, completed task, completed milestone, completed
   criterion, and linked worker-result artifact.
-- `insights/stage3f-harness-config-adapter-worker-result.json`: durable Stage 3F worker-result
+- `worker-results/stage3f-harness-config-adapter-worker-result.json`: durable Stage 3F worker-result
   evidence.
 - Verification:
   `uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider`;
@@ -849,7 +846,7 @@ Stage 3G insights graph project adapter has been shaped:
 - Allowed durable paths:
   `src/codex_supervisor/projects.py`, `src/codex_supervisor/cli.py`, `tests/test_projects.py`,
   `scripts/check_file_justification.py`, `plans/planning.sqlite3`, `HANDOFF.md`, and
-  `insights/stage3g-insights-graph-adapter-worker-result.json`.
+  `worker-results/stage3g-insights-graph-adapter-worker-result.json`.
 - Expected checks:
   `uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/check_planning_integrity.py`;
@@ -857,6 +854,50 @@ Stage 3G insights graph project adapter has been shaped:
   `uv run --no-sync python -B scripts/verify.py`.
 - Fixture note: `sources/tech-resume` is not present in this checkout, so Stage 3G should use
   fixture insights graph/wiki files rather than depending on ignored source clones.
+
+Stage 3G insights graph project adapter changed:
+
+- `src/codex_supervisor/projects.py`: adds `InsightsGraphAdapter` for `tech-resume` style
+  `insights/graph.md` roots, selected before generic fallback only when the marker and bounded
+  confidence/next-action table are present. It validates confidence labels against the reusable
+  insight contract vocabulary, caps graph size, table rows, wiki file count, and candidate count,
+  rejects unsafe Windows/POSIX allowed paths, preserves generic fallback for this supervisor repo,
+  and maps actionable rows into deterministic `ProjectTaskCandidate` records with source authority.
+- `tests/test_projects.py`: covers adapter selection, read-only target graph/wiki extraction,
+  `project-seed-tasks` apply behavior into a separate supervisor planning DB, malformed tables,
+  oversized graphs, invalid confidence labels, unsafe allowed paths, markerless generic fallback,
+  Windows separator normalization, and existing project registry behavior.
+- `src/codex_supervisor/worktree_artifacts.py`: now writes durable worker-result artifacts under
+  `worker-results/` instead of `insights/`.
+- `scripts/check_file_justification.py`: records `worker-results/*.json` as structured
+  worker-result evidence and rejects non-markdown files under `insights/`.
+- `tests/test_file_justification.py`, `tests/test_planning.py`,
+  `tests/test_worker_backends.py`, `tests/test_worker_launches.py`,
+  `tests/test_worker_orchestration.py`, `tests/test_worker_results.py`, and
+  `tests/test_worktree_artifacts.py`: cover the `worker-results/` routing and markdown-only
+  `insights/` rule.
+- `worker-results/*.json`: moved existing structured worker-result JSON evidence out of
+  `insights/`, preserving durable result contents while aligning with the markdown-only insights
+  contract.
+- `plans/planning.sqlite3`: records Stage 3G completion through
+  `worker-run-stage3g-insights-graph-adapter-20260525`,
+  `progress-stage3g-review-completed-20260525`, `progress-stage3-plan-completed-20260525`,
+  completed task, completed milestone, completed criterion, completed Stage 3 plan status, and
+  worker-result artifact links under `worker-results/`.
+- `worker-results/stage3g-insights-graph-adapter-worker-result.json`: durable Stage 3G
+  worker-result evidence.
+- Verification:
+  `uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider`;
+  `uv run --no-sync python -B scripts/check_planning_integrity.py`;
+  `uv run --no-sync python -B scripts/check_file_justification.py`;
+  `uv run --no-sync python -B scripts/check_public_repo_hygiene.py`;
+  `uv run --no-sync python -B -m codex_supervisor.cli project-list --json`;
+  `uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json`;
+  `uv run --no-sync python -B scripts/verify.py`.
+- Review: fresh-thread-style local review found no actionable findings after full verification.
+- Residual risks: real `tech-resume` schema variants may need follow-up support when fixture
+  evidence is available; live Codex Exec launch remains unavailable in this Windows shell because
+  the resolved WindowsApps `codex.exe` path returns `Access is denied`.
 
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
@@ -883,11 +924,10 @@ selector. If queue_state is hitl or running, inspect current_task_id with task-s
 If queue_state is `ready`, run `task-current --json` and execute the current AFK slice with
 story-loop discipline.
 
-As of this handoff, the expected queue_state is `ready` for
-`plan-stage3-project-registry-adapters`, with current AFK task
-`task-stage3g-insights-graph-adapter`. Confirm the Goal Contract, then execute exactly this Stage 3G
-insights graph project adapter slice. Do not jump to Stage 11 MCP until the Stage 3 registry and
-adapter done gate is satisfied or explicitly waived.
+As of this handoff, the expected queue_state is `empty`: the Stage 3 project registry and adapter
+plan is complete and no active current-queue task remains. The next development action is to inspect
+ROADMAP.md, PLANS.md, and current planning state, then shape the next missing v1 ROADMAP slice
+through typed planning helpers before implementation.
 Keep live Codex Exec launch disabled while the local Codex CLI still fails preflight with
 `Access is denied`; do not launch live `codex exec` until an accessible executable path and intended
 `CODEX_HOME` are confirmed.

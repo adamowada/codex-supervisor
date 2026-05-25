@@ -80,7 +80,7 @@ def build_worktree_run_layout(task_id: str, worker_run_id: str) -> WorktreeRunLa
         final_message_path=f"{run_directory}/final-message.txt",
         diff_summary_path=f"{run_directory}/diff-summary.txt",
         raw_result_path=f"{artifact_directory}/worker-result.raw.json",
-        durable_result_path=f"insights/{safe_worker_run_id}-worker-result.json",
+        durable_result_path=f"worker-results/{safe_worker_run_id}-worker-result.json",
     )
 
 

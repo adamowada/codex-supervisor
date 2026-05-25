@@ -1,0 +1,74 @@
+{
+  "worker_run_id": "worker-run-stage9b-insight-cli-validation-20260524",
+  "status": "completed",
+  "summary": "Implemented Stage 9B insight validation CLI through insight-validate, validating reusable insight JSON payloads with Stage 9A InsightRecord contracts and printing normalized output without touching planning SQLite, insight markdown, Codex local state, or skills.",
+  "changed_files": [
+    "src/codex_supervisor/cli.py",
+    "tests/test_insight_cli.py",
+    "scripts/check_file_justification.py",
+    "plans/planning.sqlite3",
+    "HANDOFF.md",
+    "worker-results/stage9b-insight-cli-validation-worker-result.json"
+  ],
+  "tests_run": [
+    {
+      "command": "uv run --no-sync python -B -m pytest tests/test_insight_cli.py tests/test_insights.py -q -p no:cacheprovider",
+      "exit_code": 0,
+      "summary": "18 passed"
+    },
+    {
+      "command": "uv run --no-sync ruff check src\\codex_supervisor\\cli.py tests\\test_insight_cli.py scripts\\check_file_justification.py --no-cache",
+      "exit_code": 0,
+      "summary": "passed"
+    },
+    {
+      "command": "uv run --no-sync ruff format --check src\\codex_supervisor\\cli.py tests\\test_insight_cli.py scripts\\check_file_justification.py --no-cache",
+      "exit_code": 0,
+      "summary": "passed"
+    },
+    {
+      "command": "uv run --no-sync mypy --no-incremental src scripts",
+      "exit_code": 0,
+      "summary": "passed"
+    },
+    {
+      "command": "uv run --no-sync python -B scripts/verify.py",
+      "exit_code": 0,
+      "summary": "338 passed plus Ruff, format, mypy, CLI smoke checks, file justification, public hygiene, planning integrity, skill inventory, source inventory, protected locks, and uv lock --check."
+    }
+  ],
+  "acceptance_results": {
+    "CLI loads an insight JSON file, validates it through Stage 9A InsightRecord contracts, and prints normalized JSON output.": {
+      "status": "passed",
+      "evidence": "insight-validate loads --insight-path JSON, validates through validate_insight_record_payload, and --json prints the normalized InsightRecord dataclass with next_action and list fields."
+    },
+    "CLI rejects invalid insight payloads with a nonzero exit code and without writing planning SQLite or insight files.": {
+      "status": "passed",
+      "evidence": "tests/test_insight_cli.py asserts invalid payloads return exit code 1, no stdout, an explanatory stderr message, unchanged planning/insight sentinel files, and no new files."
+    },
+    "CLI supports both next_action and markdown-style next action payload labels.": {
+      "status": "passed",
+      "evidence": "tests/test_insight_cli.py covers markdown-style next action input and asserts the CLI normalizes output to next_action."
+    },
+    "Focused tests cover valid CLI output, invalid payload failure, label compatibility, and no file/state mutation beyond reading the input JSON.": {
+      "status": "passed",
+      "evidence": "uv run --no-sync python -B -m pytest tests/test_insight_cli.py tests/test_insights.py -q -p no:cacheprovider passed with valid output, invalid failure, label compatibility, human output, and no-mutation coverage."
+    }
+  },
+  "review": {
+    "status": "passed",
+    "summary": "Fresh-thread-style local review found no actionable findings for the Stage 9B insight validation CLI diff."
+  },
+  "risks": [
+    "The CLI intentionally validates only a standalone JSON payload; writing or updating insight markdown remains a later Stage 9 slice.",
+    "Live Codex Exec remains disabled for this worker run because local Codex CLI preflight is still unavailable in this environment."
+  ],
+  "follow_up_tasks": [
+    "Shape the next Stage 9 slice for a guarded knowledge graph update workflow that consumes validated InsightRecord payloads.",
+    "Add skill promotion or golden-eval wiring once durable insight writes exist."
+  ],
+  "artifacts": [
+    "worker-results/stage9b-insight-cli-validation-worker-result.json"
+  ],
+  "handoff_notes": "Stage 9B adds insight-validate in cli.py. It validates Stage 9A reusable insight JSON, supports both next_action and markdown next action labels, prints normalized JSON or human-readable output, and does not open planning SQLite or write insight files."
+}

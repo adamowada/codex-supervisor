@@ -1,0 +1,54 @@
+{
+  "worker_run_id": "worker-run-stage6c-codex-exec-launch-20260524",
+  "status": "completed",
+  "summary": "Implemented the Stage 6C Codex Exec launch-enabled path behind an injected runner, including process evidence preservation and Worker Result artifact gating.",
+  "changed_files": [
+    "src/codex_supervisor/worker_backends.py",
+    "tests/test_worker_backends.py",
+    "scripts/check_file_justification.py",
+    "plans/planning.sqlite3",
+    "worker-results/stage6c-codex-exec-launch-worker-result.json"
+  ],
+  "tests_run": [
+    {
+      "command": "uv run --no-sync python -B -m pytest tests/test_worker_backends.py -q -p no:cacheprovider",
+      "exit_code": 0,
+      "summary": "8 passed"
+    },
+    {
+      "command": "uv run --no-sync python -B scripts/verify.py",
+      "exit_code": 0,
+      "summary": "261 passed plus Ruff, format, mypy, CLI smoke checks, file justification, public hygiene, planning integrity, skill inventory, source inventory, protected locks, and uv lock --check."
+    }
+  ],
+  "acceptance_results": {
+    "CodexExecBackend.run invokes codex --version before codex exec and does not call exec when preflight fails.": {
+      "status": "passed",
+      "evidence": "The run path always calls preflight first. Access-denied preflight tests assert only the version command is invoked and result_path remains unset."
+    },
+    "With launch_enabled true and successful fake exec, the backend captures stdout stderr JSONL final-message and diff-summary evidence and returns completed with result_path only when the Worker Result JSON exists.": {
+      "status": "passed",
+      "evidence": "The launch-success test uses an injected runner that writes a Worker Result JSON, final message, JSONL, and diff summary; the backend preserves those files, captures stdout/stderr, and returns completed with result_path."
+    },
+    "Exec nonzero exit and missing Worker Result JSON return failed results with codex_exec_failed or worker_result_missing failure_class while preserving raw evidence.": {
+      "status": "passed",
+      "evidence": "Focused tests cover nonzero exec returning codex_exec_failed and zero-exit missing result returning worker_result_missing while keeping stdout, stderr, JSONL, final-message, and diff-summary evidence paths."
+    },
+    "Focused tests cover successful fake exec, exec failure, missing result artifact, and preflight no-launch behavior.": {
+      "status": "passed",
+      "evidence": "tests/test_worker_backends.py includes launch success, launch failure, missing result, preflight failure, and launch-disabled no-live behavior."
+    }
+  },
+  "risks": [
+    "The live local Codex executable remains unavailable in this WindowsApps install because codex --version fails with Access is denied, so real launches must remain gated until a usable executable path and CODEX_HOME are confirmed.",
+    "Stage 6C proves launch process handling with injected runners only; worktree lifecycle setup and live diff capture remain future slices."
+  ],
+  "follow_up_tasks": [
+    "Shape the next Stage 6/7 slice for trusted worktree launch orchestration, including executable/CODEX_HOME preflight evidence and artifact path ownership.",
+    "Add live-run gating or a HITL setup task for installing or resolving an accessible Codex CLI executable."
+  ],
+  "artifacts": [
+    "worker-results/stage6c-codex-exec-launch-worker-result.json"
+  ],
+  "handoff_notes": "Stage 6C is ready to close after full verification and planning ingestion. Live Codex launch remains disabled until the local CLI access-denied issue is resolved or an accessible executable is configured."
+}

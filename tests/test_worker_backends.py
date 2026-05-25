@@ -18,7 +18,7 @@ def test_fake_worker_backend_emits_contract_compatible_result(tmp_path):
         task_id="task-worker",
         repo_root=tmp_path,
         worktree_path=tmp_path,
-        result_path="insights/run-worker-result.json",
+        result_path="worker-results/run-worker-result.json",
         prompt_path="runs/run-worker/prompt.md",
         jsonl_path="runs/run-worker/events.jsonl",
         stdout_path="runs/run-worker/stdout.txt",
@@ -38,13 +38,13 @@ def test_fake_worker_backend_emits_contract_compatible_result(tmp_path):
     result = FakeWorkerBackend(changed_files=("src/worker.py",)).run(request)
 
     assert result.status == "completed"
-    assert result.result_path == "insights/run-worker-result.json"
+    assert result.result_path == "worker-results/run-worker-result.json"
     assert result.prompt_path == "runs/run-worker/prompt.md"
     assert result.stdout_path == "runs/run-worker/stdout.txt"
     assert result.stderr_path == "runs/run-worker/stderr.txt"
     assert result.final_message_path == "runs/run-worker/final-message.txt"
     assert result.diff_summary_path == "runs/run-worker/diff-summary.txt"
-    payload = json.loads((tmp_path / "insights" / "run-worker-result.json").read_text())
+    payload = json.loads((tmp_path / "worker-results" / "run-worker-result.json").read_text())
     assert payload["worker_run_id"] == "run-worker"
     assert payload["changed_files"] == ["src/worker.py"]
     assert payload["acceptance_results"]["Criterion passes."]["status"] == "passed"
@@ -65,7 +65,7 @@ def test_fake_worker_backend_can_return_failure_without_result_file(tmp_path):
         task_id="task-worker",
         repo_root=tmp_path,
         worktree_path=tmp_path,
-        result_path="insights/run-worker-result.json",
+        result_path="worker-results/run-worker-result.json",
         prompt_path="runs/run-worker/prompt.md",
         jsonl_path="runs/run-worker/events.jsonl",
         stdout_path="runs/run-worker/stdout.txt",
@@ -161,7 +161,7 @@ def test_codex_exec_backend_preflight_builds_list_argv_without_launching(tmp_pat
         "stderr": "runs/run-worker/stderr.txt",
         "final_message": "runs/run-worker/final-message.txt",
         "diff_summary": "runs/run-worker/diff-summary.txt",
-        "result": "insights/run-worker-result.json",
+        "result": "worker-results/run-worker-result.json",
     }
     assert preflight.metadata["version_gated_options"] == [
         "model",
@@ -255,7 +255,7 @@ def test_codex_exec_backend_launch_success_returns_result_path_and_preserves_fin
         calls.append(argv)
         if argv == ("C:/Tools/codex.exe", "--version"):
             return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
-        result_file = tmp_path / "insights" / "run-worker-result.json"
+        result_file = tmp_path / "worker-results" / "run-worker-result.json"
         result_file.parent.mkdir(parents=True)
         result_file.write_text('{"status":"completed"}\n', encoding="utf-8")
         final_file = tmp_path / "runs" / "run-worker" / "final-message.txt"
@@ -282,10 +282,12 @@ def test_codex_exec_backend_launch_success_returns_result_path_and_preserves_fin
     assert calls[0] == ("C:/Tools/codex.exe", "--version")
     assert calls[1][1:4] == ("exec", "--json", "--output-schema")
     assert result.status == "completed"
-    assert result.result_path == "insights/run-worker-result.json"
+    assert result.result_path == "worker-results/run-worker-result.json"
     assert result.failure_class is None
     assert result.metadata["launch_decision"] == "executed"
-    assert result.metadata["raw_evidence_paths"]["result"] == "insights/run-worker-result.json"
+    assert (
+        result.metadata["raw_evidence_paths"]["result"] == "worker-results/run-worker-result.json"
+    )
     assert (tmp_path / "runs" / "run-worker" / "stdout.txt").read_text() == ('{"event":"done"}\n')
     assert (tmp_path / "runs" / "run-worker" / "final-message.txt").read_text() == (
         "assistant final\n"
@@ -377,7 +379,7 @@ def _codex_exec_request(tmp_path, **overrides) -> WorkerLaunchRequest:
         "task_id": "task-worker",
         "repo_root": tmp_path,
         "worktree_path": tmp_path,
-        "result_path": "insights/run-worker-result.json",
+        "result_path": "worker-results/run-worker-result.json",
         "prompt_path": "runs/run-worker/prompt.md",
         "jsonl_path": "runs/run-worker/events.jsonl",
         "stdout_path": "runs/run-worker/stdout.txt",

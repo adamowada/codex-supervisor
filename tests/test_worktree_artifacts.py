@@ -26,7 +26,7 @@ def test_build_worktree_run_layout_separates_ignored_and_durable_paths():
         "artifacts/worker-run-stage7a-worktree-layout-20260524/worker-result.raw.json"
     )
     assert layout.durable_result_path == (
-        "insights/worker-run-stage7a-worktree-layout-20260524-worker-result.json"
+        "worker-results/worker-run-stage7a-worktree-layout-20260524-worker-result.json"
     )
     assert all(is_ignored_runtime_path(path) for path in layout.raw_evidence_paths().values())
     assert not is_ignored_runtime_path(layout.durable_result_path)
@@ -77,12 +77,12 @@ def test_validate_changed_files_accepts_globs_and_directory_patterns():
         (
             "src/codex_supervisor/worktree_artifacts.py",
             "tests/test_worktree_artifacts.py",
-            "insights/stage7a-worktree-layout-worker-result.json",
+            "worker-results/stage7a-worktree-layout-worker-result.json",
         ),
         (
             "src/**",
             "tests/test_*.py",
-            "insights/stage7a-worktree-layout-worker-result.json",
+            "worker-results/stage7a-worktree-layout-worker-result.json",
         ),
     )
 

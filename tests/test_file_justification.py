@@ -172,16 +172,30 @@ def test_file_justification_rejects_invalid_utf8_public_text_files(tmp_path):
 def test_file_justification_rejects_empty_json_and_suffixless_text_files(tmp_path):
     module = _load_file_justification_module()
     _git(tmp_path, "init")
-    _write(tmp_path / "insights" / "bootstrap-landmine-worker-result.json", "")
+    _write(tmp_path / "worker-results" / "bootstrap-landmine-worker-result.json", "")
     _write(tmp_path / "LICENSE", "")
 
     failures = module.check_file_justification(tmp_path)
     failures_by_path = {failure.relative_path: failure.reason for failure in failures}
 
-    assert failures_by_path["insights/bootstrap-landmine-worker-result.json"] == (
+    assert failures_by_path["worker-results/bootstrap-landmine-worker-result.json"] == (
         "public text file is empty"
     )
     assert failures_by_path["LICENSE"] == "public text file is empty"
+
+
+def test_file_justification_rejects_non_markdown_insights_files(tmp_path):
+    module = _load_file_justification_module()
+    _git(tmp_path, "init")
+    _write(tmp_path / "insights" / "worker-result.json", "{}")
+
+    failures = module.check_file_justification(tmp_path)
+
+    assert any(
+        failure.relative_path == "insights/worker-result.json"
+        and failure.reason == "insights/ is reserved for synthesized durable learning markdown"
+        for failure in failures
+    )
 
 
 def _load_file_justification_module() -> ModuleType:

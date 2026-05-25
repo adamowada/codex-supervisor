@@ -1,0 +1,60 @@
+{
+  "worker_run_id": "worker-run-stage8c-review-result-persistence-20260524",
+  "status": "completed",
+  "summary": "Implemented Stage 8C review result persistence, recording validated ReviewResult evidence as planning progress plus review-result and review-artifact links without creating repair tasks.",
+  "changed_files": [
+    "src/codex_supervisor/review_persistence.py",
+    "tests/test_review_persistence.py",
+    "scripts/check_file_justification.py",
+    "plans/planning.sqlite3",
+    "HANDOFF.md",
+    "worker-results/stage8c-review-result-persistence-worker-result.json"
+  ],
+  "tests_run": [
+    {
+      "command": "uv run --no-sync python -B -m pytest tests/test_review_persistence.py tests/test_review_loop.py -q -p no:cacheprovider",
+      "exit_code": 0,
+      "summary": "20 passed"
+    },
+    {
+      "command": "uv run --no-sync python -B scripts/verify.py",
+      "exit_code": 0,
+      "summary": "312 passed plus Ruff, format, mypy, CLI smoke checks, file justification, public hygiene, planning integrity, skill inventory, source inventory, protected locks, and uv lock --check."
+    }
+  ],
+  "acceptance_results": {
+    "A validated ReviewResult can be recorded to planning SQLite as a review_result_recorded progress event with review id, mode, target, finding counts, and verification summaries.": {
+      "status": "passed",
+      "evidence": "record_review_result creates a review_result_recorded PlanProgressRecord with structured JSON details and tests assert review id, finding counts, and verification evidence."
+    },
+    "Review result artifacts and supporting review artifacts are linked to the plan with explicit relationships in the same operation as the progress event.": {
+      "status": "passed",
+      "evidence": "record_review_result uses add_plan_progress_with_artifact_links with review-result and review-artifact relationships; rollback tests cover invalid artifact links."
+    },
+    "Accepted, waived, and needs-HITL finding IDs and waiver rationales are preserved in progress details without creating supervisor repair tasks.": {
+      "status": "passed",
+      "evidence": "Progress details include accepted_findings, waived_findings with waiver_rationale, and needs_hitl_findings; focused tests assert no SupervisorTask rows are created."
+    },
+    "Focused tests cover successful persistence, artifact link relationships, invalid artifact rollback, and proof that no repair tasks are created.": {
+      "status": "passed",
+      "evidence": "tests/test_review_persistence.py covers successful persistence, artifact relationships, rollback, and no repair task creation."
+    }
+  },
+  "review": {
+    "status": "passed",
+    "summary": "Fresh-thread-style local review found no actionable findings for the Stage 8C diff."
+  },
+  "risks": [
+    "Stage 8C records review evidence but intentionally does not expose a CLI command yet.",
+    "Accepted finding repair task creation remains a later Stage 8 slice.",
+    "Live review worker launch remains disabled until Codex Exec preflight is resolved."
+  ],
+  "follow_up_tasks": [
+    "Shape a later Stage 8 slice to create supervisor repair tasks from accepted ReviewResult findings.",
+    "Add a CLI or orchestration entry point for review result ingestion after the persistence contract has one more caller."
+  ],
+  "artifacts": [
+    "worker-results/stage8c-review-result-persistence-worker-result.json"
+  ],
+  "handoff_notes": "Stage 8C adds record_review_result in review_persistence.py. It persists validated ReviewResult summaries and artifact links atomically while leaving repair task creation out of scope."
+}

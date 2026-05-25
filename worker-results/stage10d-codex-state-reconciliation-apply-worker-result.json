@@ -1,0 +1,68 @@
+{
+  "worker_run_id": "worker-run-stage10d-codex-state-reconciliation-apply-20260525",
+  "status": "completed",
+  "summary": "Implemented Stage 10D reviewed Codex state reconciliation apply with stable proposal IDs, append-only planning progress and artifact writes, conflict/skipped apply reporting including unknown approved IDs, a codex-state-reconcile-apply CLI, and focused no-mutation tests.",
+  "changed_files": [
+    "src/codex_supervisor/codex_state.py",
+    "src/codex_supervisor/codex_state_reconciliation.py",
+    "src/codex_supervisor/cli.py",
+    "tests/test_codex_state.py",
+    "tests/test_codex_state_reconciliation.py",
+    "scripts/check_file_justification.py",
+    "plans/planning.sqlite3",
+    "HANDOFF.md",
+    "worker-results/stage10d-codex-state-reconciliation-apply-worker-result.json"
+  ],
+  "tests_run": [
+    {
+      "command": "uv run --no-sync python -B -m pytest tests/test_codex_state.py tests/test_codex_state_reconciliation.py -q -p no:cacheprovider",
+      "exit_code": 0,
+      "summary": "16 passed"
+    },
+    {
+      "command": "uv run --no-sync python -B scripts/verify.py",
+      "exit_code": 0,
+      "summary": "370 passed plus Ruff, format, mypy, CLI smoke checks, file justification, public hygiene, planning integrity, skill inventory, source inventory, protected locks, and uv lock --check."
+    }
+  ],
+  "acceptance_results": {
+    "A helper accepts a CodexStateReconciliationDryRunReport plus explicit reviewed proposal approvals and writes only append-only planning progress events and artifact links for supported actions.": {
+      "status": "passed",
+      "evidence": "src/codex_supervisor/codex_state_reconciliation.py defines apply_codex_state_reconciliation_report, which consumes a dry-run report and approved proposal IDs, then writes planning progress events plus codex-state-snapshot artifact links through PlanningSQLiteStore append APIs."
+    },
+    "Applied records carry deterministic IDs and source provenance including source_kind, source_database, source_table, source_id, observed_at, confidence, linked_plan_id, linked_task_id, raw_snapshot_hash, action_type, action_status, and proposal_id.": {
+      "status": "passed",
+      "evidence": "src/codex_supervisor/codex_state.py now adds deterministic proposal_id values, and CodexStateAppliedProposal plus planning progress details carry every required source and action provenance field."
+    },
+    "Missing plan/task targets, unapproved proposals, duplicate already-applied records, unsupported action types, and carried dry-run findings become nonfatal apply findings or skipped actions instead of exceptions or silent overwrites.": {
+      "status": "passed",
+      "evidence": "Focused tests cover missing linked plan/task findings, unsupported action type findings, unapproved proposal skips, unknown approved proposal findings, duplicate_already_applied skips, and carried database_unavailable findings without exceptions."
+    },
+    "CLI apply mode consumes a reviewed dry-run JSON report file with explicit approved proposal IDs, prints normalized JSON, does not read Codex home, and does not emit raw chats, logs, auth/token values, or row payloads.": {
+      "status": "passed",
+      "evidence": "src/codex_supervisor/cli.py exposes codex-state-reconcile-apply with --report-path and repeated --approve-proposal-id arguments. tests/test_codex_state_reconciliation.py asserts CLI JSON output, Codex-home sentinel no-mutation, and absence of private row payload values."
+    },
+    "Focused tests cover append-only progress/artifact writes, idempotent duplicate handling, conflict findings, CLI JSON output, and no mutation of Codex-home sentinels or non-target planning tables.": {
+      "status": "passed",
+      "evidence": "uv run --no-sync python -B -m pytest tests/test_codex_state.py tests/test_codex_state_reconciliation.py -q -p no:cacheprovider passed with append-only apply, idempotence, conflicts, CLI JSON, Codex-home no-mutation, and non-target planning-table count coverage."
+    }
+  },
+  "review": {
+    "status": "passed",
+    "summary": "Fresh-thread-style local review found one low-risk auditability improvement, now fixed: unknown approved proposal IDs become nonfatal findings and dry-run text output prints proposal IDs."
+  },
+  "risks": [
+    "The apply workflow records synthetic codex-state-snapshot artifact IDs as planning evidence references; it does not yet materialize separate snapshot files.",
+    "Only explicitly approved proposals are applied; future UI or automation surfaces still need to provide the human or policy review step that chooses proposal IDs.",
+    "Official Codex automation bridge work remains a later Stage 10 slice."
+  ],
+  "follow_up_tasks": [
+    "Shape a Stage 10E official automation bridge dry-run surface for recurring queue reconciliation and health checks.",
+    "Add repeated failure summarization once safe log-summary observations exist.",
+    "Decide whether reviewed Codex state snapshot references should become tracked JSON artifacts or remain synthetic planning artifact IDs."
+  ],
+  "artifacts": [
+    "worker-results/stage10d-codex-state-reconciliation-apply-worker-result.json"
+  ],
+  "handoff_notes": "Stage 10D adds stable proposal IDs, apply_codex_state_reconciliation_report, and the codex-state-reconcile-apply CLI. It applies reviewed dry-run proposals only as append-only planning progress and artifact evidence, while skipped/conflict cases remain nonfatal findings and Codex home remains untouched."
+}

@@ -1,0 +1,59 @@
+{
+  "worker_run_id": "worker-run-stage6a-backend-protocol-20260524",
+  "status": "completed",
+  "summary": "Implemented the Stage 6A non-live worker backend protocol, fake backend evidence emission, and shared Worker Result ingestion path.",
+  "changed_files": [
+    "src/codex_supervisor/worker_backends.py",
+    "src/codex_supervisor/worker_results.py",
+    "src/codex_supervisor/planning.py",
+    "src/codex_supervisor/cli.py",
+    "tests/test_worker_backends.py",
+    "tests/test_worker_results.py",
+    "tests/test_planning.py",
+    "scripts/check_file_justification.py",
+    "ROADMAP.md",
+    "scripts/check_protected_files.py",
+    "plans/planning.sqlite3",
+    "worker-results/stage6a-backend-protocol-worker-result.json"
+  ],
+  "tests_run": [
+    {
+      "command": "uv run --no-sync python -B -m pytest tests/test_worker_backends.py tests/test_worker_results.py tests/test_planning.py tests/test_story_loop.py -q -p no:cacheprovider",
+      "exit_code": 0,
+      "summary": "123 passed"
+    },
+    {
+      "command": "uv run --no-sync python -B scripts/verify.py",
+      "exit_code": 0,
+      "summary": "Full verifier passes after durable Stage 6A worker-result evidence is present."
+    }
+  ],
+  "acceptance_results": {
+    "Worker backend request/result models are implemented without launching Codex.": {
+      "status": "passed",
+      "evidence": "WorkerLaunchRequest and WorkerLaunchResult model launch inputs, policy/configuration, raw evidence paths, timing, status, changed files, and metadata without invoking Codex."
+    },
+    "A fake backend emits Worker Result Contract-compatible evidence through the shared ingestion path.": {
+      "status": "passed",
+      "evidence": "FakeWorkerBackend writes prompt, JSONL, stdout, stderr, final message, diff summary, and durable Worker Result JSON evidence; tests validate success and failure evidence."
+    },
+    "Result ingestion updates worker_runs, artifact links, and task state only after validation succeeds.": {
+      "status": "passed",
+      "evidence": "PlanningSQLiteStore.ingest_worker_result validates the Worker Result Contract before completion, links durable worker-result artifacts, and routes CLI completion through the same path."
+    },
+    "Failure paths preserve raw evidence and failure_class without marking the task completed.": {
+      "status": "passed",
+      "evidence": "Invalid, failed, blocked, and needs_review worker results preserve result_path/failure_class semantics and avoid completed task state; tests cover CLI and planning behavior."
+    }
+  },
+  "risks": [
+    "Direct PlanningSQLiteStore.upsert_worker_run remains a low-level typed row mutation used by tests and historical fixtures; CLI completion now validates through Worker Result ingestion."
+  ],
+  "follow_up_tasks": [
+    "Implement the real Codex Exec backend launch path using the Stage 6A protocol and preserving the same validated result ingestion contract."
+  ],
+  "artifacts": [
+    "worker-results/stage6a-backend-protocol-worker-result.json"
+  ],
+  "handoff_notes": "Stage 6A is ready to close after planning ingestion and review-required task completion. The next Stage 6 slice should implement the real Codex Exec launch adapter against the protocol without weakening Worker Result validation."
+}

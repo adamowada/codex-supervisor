@@ -2630,7 +2630,7 @@ def test_worker_run_status_can_complete_with_result_path_without_full_upsert(tmp
     (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
     _write_worker_result(
         tmp_path,
-        result_path="insights/run-test-result.json",
+        result_path="worker-results/run-test-result.json",
         worker_run_id="run-test",
         changed_files=("src/worker.py",),
         verification_commands=("python -B -m pytest -p no:cacheprovider",),
@@ -2658,7 +2658,7 @@ def test_worker_run_status_can_complete_with_result_path_without_full_upsert(tmp
                 "--status",
                 "completed",
                 "--result-path",
-                "insights/run-test-result.json",
+                "worker-results/run-test-result.json",
                 "--completed-at",
                 "2026-01-01T00:00:00Z",
             ]
@@ -2669,14 +2669,15 @@ def test_worker_run_status_can_complete_with_result_path_without_full_upsert(tmp
 
     run = open_existing_planning_database(db_path).list_worker_runs(task_id="task-test")[0]
     assert run.status == "completed"
-    assert run.result_path == "insights/run-test-result.json"
+    assert run.result_path == "worker-results/run-test-result.json"
     assert run.prompt_path == "runs/run-test/prompt.md"
     assert run.metadata == {"kept": True}
     task = open_existing_planning_database(db_path).list_supervisor_tasks()[0]
     assert task.status == "reviewing"
     links = open_existing_planning_database(db_path).list_plan_artifact_links(plan_id="plan-test")
     assert any(
-        link.artifact_id == "insights/run-test-result.json" and link.relationship == "worker-result"
+        link.artifact_id == "worker-results/run-test-result.json"
+        and link.relationship == "worker-result"
         for link in links
     )
 
@@ -2886,12 +2887,12 @@ def test_worker_run_status_clears_failure_class_on_completion(tmp_path):
     store.update_worker_run_status(
         "run-test",
         "completed",
-        result_path="insights/run-test-result.json",
+        result_path="worker-results/run-test-result.json",
     )
 
     run = open_existing_planning_database(db_path).list_worker_runs(task_id="task-test")[0]
     assert run.status == "completed"
-    assert run.result_path == "insights/run-test-result.json"
+    assert run.result_path == "worker-results/run-test-result.json"
     assert run.failure_class is None
 
 
@@ -2996,7 +2997,7 @@ def test_worker_run_completion_can_complete_non_review_task(tmp_path):
     store.update_worker_run_status(
         "run-test",
         "completed",
-        result_path="insights/run-test-result.json",
+        result_path="worker-results/run-test-result.json",
     )
 
     read_store = open_existing_planning_database(db_path)
@@ -3041,7 +3042,7 @@ def test_worker_result_ingestion_completes_after_validation(tmp_path):
         task_id="task-test",
         repo_root=tmp_path,
         worktree_path=tmp_path,
-        result_path="insights/run-test-result.json",
+        result_path="worker-results/run-test-result.json",
         prompt_path="runs/run-test/prompt.md",
         jsonl_path="runs/run-test/events.jsonl",
         stdout_path="runs/run-test/stdout.txt",
@@ -3059,7 +3060,7 @@ def test_worker_result_ingestion_completes_after_validation(tmp_path):
     )
     FakeWorkerBackend(changed_files=("src/worker.py",)).run(request)
 
-    result = store.ingest_worker_result("run-test", "insights/run-test-result.json")
+    result = store.ingest_worker_result("run-test", "worker-results/run-test-result.json")
 
     read_store = open_existing_planning_database(db_path)
     task = read_store.list_supervisor_tasks()[0]
@@ -3068,9 +3069,10 @@ def test_worker_result_ingestion_completes_after_validation(tmp_path):
     assert result.changed_files == ("src/worker.py",)
     assert task.status == "completed"
     assert run.status == "completed"
-    assert run.result_path == "insights/run-test-result.json"
+    assert run.result_path == "worker-results/run-test-result.json"
     assert any(
-        link.artifact_id == "insights/run-test-result.json" and link.relationship == "worker-result"
+        link.artifact_id == "worker-results/run-test-result.json"
+        and link.relationship == "worker-result"
         for link in links
     )
 

@@ -41,7 +41,7 @@ def test_prepare_worker_launch_request_uses_layout_paths_without_touching_files(
     assert request.repo_root == tmp_path
     assert request.worktree_path == tmp_path / layout.worktree_path
     assert request.result_path == (
-        "insights/worker-run-stage7b-worker-launch-preparation-20260524-worker-result.json"
+        "worker-results/worker-run-stage7b-worker-launch-preparation-20260524-worker-result.json"
     )
     assert request.prompt_path == layout.prompt_path
     assert request.jsonl_path == layout.jsonl_path

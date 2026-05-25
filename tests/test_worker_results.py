@@ -14,7 +14,7 @@ from codex_supervisor.worker_results import (
 def test_worker_result_validation_accepts_completed_contract(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
-    result_path = "insights/run-worker-result.json"
+    result_path = "worker-results/run-worker-result.json"
     result_file = tmp_path / result_path
     result_file.parent.mkdir(parents=True)
     result_file.write_text(json.dumps(_worker_result()), encoding="utf-8")
@@ -31,7 +31,7 @@ def test_worker_result_validation_accepts_completed_contract(tmp_path):
 
     assert result.worker_run_ids == ("run-worker",)
     assert result.changed_files == ("src/worker.py",)
-    assert result.artifacts == ("insights/run-worker-result.json",)
+    assert result.artifacts == ("worker-results/run-worker-result.json",)
 
 
 @pytest.mark.parametrize("status", ["blocked", "failed", "needs_review"])
@@ -92,7 +92,7 @@ def test_worker_result_validation_requires_task_verification_command(tmp_path):
         validate_worker_result_payload(
             payload,
             repo_root=tmp_path,
-            result_path="insights/run-worker-result.json",
+            result_path="worker-results/run-worker-result.json",
             worker_run_id="run-worker",
             allowed_paths=("src/**",),
             verification_commands=("python -B scripts/verify.py",),
@@ -103,7 +103,7 @@ def test_worker_result_validation_requires_task_verification_command(tmp_path):
 def test_worker_result_validation_requires_changed_files_within_allowed_paths(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
-    result_file = tmp_path / "insights" / "run-worker-result.json"
+    result_file = tmp_path / "worker-results" / "run-worker-result.json"
     result_file.parent.mkdir(parents=True)
     result_file.write_text("{}", encoding="utf-8")
     payload = _worker_result()
@@ -112,7 +112,7 @@ def test_worker_result_validation_requires_changed_files_within_allowed_paths(tm
         validate_worker_result_payload(
             payload,
             repo_root=tmp_path,
-            result_path="insights/run-worker-result.json",
+            result_path="worker-results/run-worker-result.json",
             worker_run_id="run-worker",
             allowed_paths=("tests/**",),
             verification_commands=("python -B -m pytest -p no:cacheprovider",),
@@ -130,7 +130,7 @@ def test_worker_result_validation_requires_acceptance_evidence(tmp_path):
         validate_worker_result_payload(
             payload,
             repo_root=tmp_path,
-            result_path="insights/run-worker-result.json",
+            result_path="worker-results/run-worker-result.json",
             worker_run_id="run-worker",
             allowed_paths=("src/**",),
             verification_commands=("python -B -m pytest -p no:cacheprovider",),
@@ -159,6 +159,6 @@ def _worker_result() -> dict[str, object]:
         },
         "risks": ["No live backend was launched."],
         "follow_up_tasks": [],
-        "artifacts": ["insights/run-worker-result.json"],
+        "artifacts": ["worker-results/run-worker-result.json"],
         "handoff_notes": "Ready.",
     }

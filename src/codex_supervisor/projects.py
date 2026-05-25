@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePath, PureWindowsPath
 from urllib.parse import quote
 
+from codex_supervisor.insights import INSIGHT_CONFIDENCE_LABELS
+
 SOURCE_DOCUMENT_CANDIDATES = (
     "AGENTS.md",
     "PLANS.md",
@@ -28,6 +30,10 @@ MAX_HARNESS_CONFIG_BYTES = 64 * 1024
 MAX_HARNESS_PROMPT_BYTES = 64 * 1024
 MAX_HARNESS_TASK_CANDIDATES = 20
 MAX_HARNESS_TASK_ENTRIES = 64
+MAX_INSIGHTS_GRAPH_BYTES = 64 * 1024
+MAX_INSIGHTS_WIKI_FILES = 8
+MAX_INSIGHTS_TASK_CANDIDATES = 20
+MAX_INSIGHTS_TABLE_ROWS = 64
 PLANNING_SQLITE_PATH = "plans/planning.sqlite3"
 PLANNING_SQLITE_OPEN_TASK_STATUSES = frozenset(("pending", "ready", "blocked"))
 MARKDOWN_PLAN_DIRECTORIES = ("plans/active", "plans")
@@ -41,6 +47,9 @@ HARNESS_CONFIG_CANDIDATES = (
 )
 HARNESS_CONFIG_MARKER = "codex-subagent-testing"
 HARNESS_CONFIG_MARKER_NOT_FOUND_FINDING = "codex-subagent-testing harness marker was not found."
+INSIGHTS_GRAPH_PATH = "insights/graph.md"
+INSIGHTS_GRAPH_MARKER = "tech-resume"
+INSIGHTS_GRAPH_MARKER_NOT_FOUND_FINDING = "tech-resume insights graph marker was not found."
 VERIFY_SCRIPT_COMMANDS = {
     "scripts/verify.py": "uv run --no-sync python -B scripts/verify.py",
     "scripts/check_protected_files.py": (
@@ -55,6 +64,11 @@ MARKDOWN_PLAN_VERIFY_SCRIPT_COMMANDS = {
 HARNESS_VERIFY_SCRIPT_COMMANDS = {
     "scripts/run_harness.py": "uv run --no-sync python -B scripts/run_harness.py",
     "scripts/verify_harness.py": "uv run --no-sync python -B scripts/verify_harness.py",
+    **VERIFY_SCRIPT_COMMANDS,
+}
+INSIGHTS_VERIFY_SCRIPT_COMMANDS = {
+    "scripts/check_insights.py": "uv run --no-sync python -B scripts/check_insights.py",
+    "scripts/validate_insights.py": "uv run --no-sync python -B scripts/validate_insights.py",
     **VERIFY_SCRIPT_COMMANDS,
 }
 TASK_TYPES = frozenset(("AFK", "HITL"))
@@ -275,6 +289,54 @@ class HarnessConfigAdapter:
         )
 
 
+class InsightsGraphAdapter:
+    """Bounded read-only adapter for insights graph/wiki projects."""
+
+    adapter_type = "tech_resume_insights_graph"
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.graph_path = root / INSIGHTS_GRAPH_PATH
+
+    def facts(self) -> ProjectFacts:
+        verification_commands = tuple(
+            command
+            for relative_path, command in INSIGHTS_VERIFY_SCRIPT_COMMANDS.items()
+            if _exists(self.root, relative_path)
+        )
+        candidate_tasks, graph_findings = _read_insights_graph_candidates(
+            self.root,
+            graph_path=self.graph_path,
+            default_verification_commands=verification_commands,
+        )
+        graph_documents: tuple[str, ...] = (
+            () if not self.graph_path.exists() else (INSIGHTS_GRAPH_PATH,)
+        )
+        wiki_documents: tuple[str, ...]
+        if graph_findings:
+            wiki_documents = graph_documents
+            adapter_findings = graph_findings
+        else:
+            wiki_documents, wiki_findings = _insights_wiki_documents(self.root)
+            adapter_findings = (*graph_findings, *wiki_findings)
+        return ProjectFacts(
+            source_documents=(
+                *wiki_documents,
+                *tuple(
+                    candidate
+                    for candidate in SOURCE_DOCUMENT_CANDIDATES
+                    if _exists(self.root, candidate)
+                ),
+            ),
+            authority_markers=graph_documents,
+            verification_commands=verification_commands,
+            candidate_tasks=candidate_tasks,
+            adapter_findings=adapter_findings,
+            has_planning_database=_exists(self.root, PLANNING_SQLITE_PATH),
+            has_tasks_json=_exists(self.root, "TASKS.json"),
+        )
+
+
 def discover_projects(
     roots: tuple[Path, ...] | list[Path],
     *,
@@ -402,6 +464,32 @@ def _discover_project(root: Path, *, trust_policy: str) -> ProjectRegistryEntry:
                 failure_class="unsupported_harness_config",
                 failure_reason=harness_facts.adapter_findings[0],
             )
+    insights_adapter = InsightsGraphAdapter(resolved_root)
+    if insights_adapter.graph_path.exists():
+        insights_facts = insights_adapter.facts()
+        if not insights_facts.adapter_findings:
+            return ProjectRegistryEntry(
+                project_id=stable_project_id_from_path(resolved_root),
+                root_path=str(resolved_root),
+                adapter_type=insights_adapter.adapter_type,
+                trust_policy=trust_policy,
+                status="ready",
+                facts=insights_facts,
+            )
+        if not (
+            _only_insights_graph_marker_missing(insights_facts)
+            and _generic_authority_markers(resolved_root)
+        ):
+            return ProjectRegistryEntry(
+                project_id=stable_project_id_from_path(resolved_root),
+                root_path=str(resolved_root),
+                adapter_type=insights_adapter.adapter_type,
+                trust_policy=trust_policy,
+                status="unsupported",
+                facts=insights_facts,
+                failure_class="unsupported_insights_graph",
+                failure_reason=insights_facts.adapter_findings[0],
+            )
     adapter = GenericRepoAdapter(resolved_root)
     facts = adapter.facts()
     if not facts.authority_markers:
@@ -493,6 +581,10 @@ def _only_markdown_plan_marker_missing(facts: ProjectFacts) -> bool:
 
 def _only_harness_config_marker_missing(facts: ProjectFacts) -> bool:
     return facts.adapter_findings == (HARNESS_CONFIG_MARKER_NOT_FOUND_FINDING,)
+
+
+def _only_insights_graph_marker_missing(facts: ProjectFacts) -> bool:
+    return facts.adapter_findings == (INSIGHTS_GRAPH_MARKER_NOT_FOUND_FINDING,)
 
 
 def _read_tasks_json_candidates(
@@ -882,6 +974,206 @@ def _harness_config_candidate_from_payload(
         blocked_by=blocked_by,
         source_authority=(relative_config_path, prompt_path),
     )
+
+
+def _read_insights_graph_candidates(
+    root: Path,
+    *,
+    graph_path: Path,
+    default_verification_commands: tuple[str, ...],
+) -> tuple[tuple[ProjectTaskCandidate, ...], tuple[str, ...]]:
+    relative_graph_path = _relative_path(root, graph_path)
+    try:
+        size = graph_path.stat().st_size
+    except OSError as exc:
+        return (), (f"{relative_graph_path} could not be inspected: {exc}",)
+    if size > MAX_INSIGHTS_GRAPH_BYTES:
+        return (), (f"{relative_graph_path} is larger than {MAX_INSIGHTS_GRAPH_BYTES} bytes.",)
+    try:
+        text = graph_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return (), (f"{relative_graph_path} could not be read: {exc}",)
+    if INSIGHTS_GRAPH_MARKER not in text.casefold():
+        return (), (INSIGHTS_GRAPH_MARKER_NOT_FOUND_FINDING,)
+
+    table = _insights_graph_table(text)
+    if table is None:
+        return (), (f"{relative_graph_path} must contain a confidence/next action table.",)
+    headers, rows = table
+    findings: list[str] = []
+    if len(rows) > MAX_INSIGHTS_TABLE_ROWS:
+        findings.append(
+            "insights graph row limit exceeded; "
+            f"inspecting first {MAX_INSIGHTS_TABLE_ROWS} of {len(rows)} rows."
+        )
+    candidates: list[ProjectTaskCandidate] = []
+    for index, cells in enumerate(rows[:MAX_INSIGHTS_TABLE_ROWS]):
+        if len(candidates) >= MAX_INSIGHTS_TASK_CANDIDATES:
+            break
+        row = _insights_graph_row(headers, cells)
+        candidate = _insights_graph_candidate_from_row(
+            row,
+            index=index,
+            root=root,
+            relative_graph_path=relative_graph_path,
+            default_verification_commands=default_verification_commands,
+            findings=findings,
+        )
+        if candidate is not None:
+            candidates.append(candidate)
+    return tuple(candidates), tuple(findings)
+
+
+def _insights_wiki_documents(root: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    insights_root = root / "insights"
+    if not insights_root.exists():
+        return (INSIGHTS_GRAPH_PATH,), ()
+    all_paths = sorted(path for path in insights_root.glob("*.md") if path.is_file())
+    findings: tuple[str, ...] = ()
+    if len(all_paths) > MAX_INSIGHTS_WIKI_FILES:
+        findings = (
+            "insights wiki file limit exceeded; "
+            f"inspecting first {MAX_INSIGHTS_WIKI_FILES} of {len(all_paths)} files.",
+        )
+    paths = all_paths[:MAX_INSIGHTS_WIKI_FILES]
+    documents = tuple(_relative_path(root, path) for path in paths)
+    return documents or (INSIGHTS_GRAPH_PATH,), findings
+
+
+def _insights_graph_table(text: str) -> tuple[tuple[str, ...], tuple[tuple[str, ...], ...]] | None:
+    lines = text.splitlines()
+    for index, line in enumerate(lines[:-1]):
+        if not _is_markdown_table_line(line):
+            continue
+        headers = tuple(_normalize_markdown_table_header(cell) for cell in _split_table_row(line))
+        if "confidence" not in headers or "next action" not in headers:
+            continue
+        separator = lines[index + 1]
+        if not _is_markdown_table_separator(separator):
+            return None
+        rows: list[tuple[str, ...]] = []
+        for row_line in lines[index + 2 :]:
+            if not _is_markdown_table_line(row_line):
+                break
+            rows.append(tuple(cell.strip() for cell in _split_table_row(row_line)))
+        return headers, tuple(rows)
+    return None
+
+
+def _insights_graph_row(headers: tuple[str, ...], cells: tuple[str, ...]) -> dict[str, str]:
+    return {
+        header: cells[index].strip() if index < len(cells) else ""
+        for index, header in enumerate(headers)
+    }
+
+
+def _insights_graph_candidate_from_row(
+    row: dict[str, str],
+    *,
+    index: int,
+    root: Path,
+    relative_graph_path: str,
+    default_verification_commands: tuple[str, ...],
+    findings: list[str],
+) -> ProjectTaskCandidate | None:
+    confidence = _optional_nonblank_string(row.get("confidence"))
+    if confidence is None:
+        findings.append(f"{relative_graph_path} row {index} must include a confidence label.")
+        return None
+    normalized_confidence = confidence.casefold()
+    if normalized_confidence not in INSIGHT_CONFIDENCE_LABELS:
+        findings.append(
+            f"{relative_graph_path} row {index} has unsupported confidence: {confidence}."
+        )
+        return None
+    next_action = _optional_nonblank_string(row.get("next action"))
+    if next_action is None or not _insight_next_action_is_actionable(next_action):
+        return None
+
+    task_type = (_optional_nonblank_string(row.get("task type")) or "AFK").upper()
+    if task_type not in TASK_TYPES:
+        findings.append(
+            f"{relative_graph_path} row {index} has unsupported task_type: {task_type}."
+        )
+        return None
+    allowed_paths = _insight_allowed_paths(root, row.get("allowed paths"), findings)
+    if allowed_paths is None:
+        findings.append(f"{relative_graph_path} row {index} must include safe allowed paths.")
+        return None
+    source = _optional_nonblank_string(row.get("source")) or relative_graph_path
+    relation = _optional_nonblank_string(row.get("relation")) or "relates to"
+    insight_from = _optional_nonblank_string(row.get("from")) or "Insight"
+    insight_to = _optional_nonblank_string(row.get("to")) or next_action
+    raw_source_id = f"{insight_from}-{relation}-{insight_to}"
+    acceptance_criteria = _insight_table_sequence(row.get("acceptance criteria")) or (
+        "Insight next action is completed or converted into a scoped follow-up with provenance.",
+    )
+    verification_commands = _insight_table_sequence(row.get("verification commands"))
+    blocked_by = _insight_table_sequence(row.get("blocked by"))
+    return ProjectTaskCandidate(
+        source_id=f"insights-graph-{_slugify(raw_source_id)}",
+        source_path=f"{relative_graph_path}:row/{index + 1}",
+        title=f"Follow insight: {insight_from} {relation} {insight_to}",
+        goal=next_action,
+        task_type=task_type,
+        acceptance_criteria=acceptance_criteria,
+        verification_commands=verification_commands or default_verification_commands,
+        allowed_paths=allowed_paths,
+        blocked_by=blocked_by,
+        source_authority=(relative_graph_path, source, f"confidence:{normalized_confidence}"),
+    )
+
+
+def _insight_allowed_paths(
+    root: Path,
+    raw_value: object,
+    findings: list[str],
+) -> tuple[str, ...] | None:
+    raw_paths = _insight_table_sequence(raw_value) or ("insights/**",)
+    paths: list[str] = []
+    for raw_path in raw_paths:
+        safe_path = _safe_relative_project_path(root, raw_path)
+        if safe_path is None:
+            findings.append(f"unsafe insights graph allowed path: {raw_path}.")
+            return None
+        paths.append(safe_path)
+    return tuple(paths)
+
+
+def _insight_table_sequence(value: object) -> tuple[str, ...]:
+    raw_value = _optional_nonblank_string(value)
+    if raw_value is None:
+        return ()
+    normalized = re.sub(r"<br\s*/?>", "\n", raw_value, flags=re.IGNORECASE)
+    values: list[str] = []
+    for part in re.split(r"\n|;", normalized):
+        stripped = part.strip()
+        if stripped and stripped != "-":
+            values.append(stripped)
+    return tuple(values)
+
+
+def _insight_next_action_is_actionable(value: str) -> bool:
+    normalized = value.strip().casefold()
+    return normalized not in {"-", "none", "n/a", "no action", "done", "complete"}
+
+
+def _is_markdown_table_line(line: str) -> bool:
+    stripped = line.strip()
+    return stripped.startswith("|") and stripped.endswith("|")
+
+
+def _is_markdown_table_separator(line: str) -> bool:
+    cells = _split_table_row(line)
+    return bool(cells) and all(re.fullmatch(r":?-{3,}:?", cell.strip()) for cell in cells)
+
+
+def _split_table_row(line: str) -> tuple[str, ...]:
+    return tuple(cell.strip() for cell in line.strip().strip("|").split("|"))
+
+
+def _normalize_markdown_table_header(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip().casefold()).replace("_", " ")
 
 
 def _project_task_candidate_from_payload(

@@ -73,6 +73,7 @@ SUCCESSFUL_WORKER_RUN_STATUSES = frozenset({"completed"})
 DRIVE_PATH_PATTERN = re.compile(r"^[A-Za-z]:")
 FULL_COMMIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 CLI_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]+$")
+GITHUB_REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SHELL_METACHARACTERS = (
     "|",
     "&",
@@ -489,6 +490,64 @@ class CiRunEvidenceRecorded:
     progress: PlanProgressRecord
     artifact_link: PlanArtifactLinkRecord | None
     commit_link: PlanCommitLinkRecord
+
+
+@dataclass(frozen=True)
+class PullRequestEvidenceRecord:
+    progress_id: str
+    plan_id: str
+    provider: str
+    repository: str
+    pr_number: int
+    pr_url: str
+    state: str
+    title: str | None = None
+    summary: str | None = None
+    head_ref: str | None = None
+    base_ref: str | None = None
+    head_sha: str | None = None
+    base_sha: str | None = None
+    draft: bool = False
+    merged: bool = False
+    issue_number: int | None = None
+    artifact_id: str | None = None
+    artifact_relationship: str = "pr-evidence"
+    commit_relationship: str = "pr-head"
+    occurred_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class PullRequestEvidenceRecorded:
+    progress: PlanProgressRecord
+    artifact_link: PlanArtifactLinkRecord | None
+    commit_link: PlanCommitLinkRecord | None
+
+
+@dataclass(frozen=True)
+class IssueCommentEvidenceRecord:
+    progress_id: str
+    plan_id: str
+    provider: str
+    repository: str
+    issue_number: int
+    comment_id: str
+    comment_url: str
+    summary: str | None = None
+    details: str | None = None
+    pr_number: int | None = None
+    author: str | None = None
+    commit_sha: str | None = None
+    artifact_id: str | None = None
+    artifact_relationship: str = "issue-comment"
+    commit_relationship: str = "issue-comment-commit"
+    occurred_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class IssueCommentEvidenceRecorded:
+    progress: PlanProgressRecord
+    artifact_link: PlanArtifactLinkRecord | None
+    commit_link: PlanCommitLinkRecord | None
 
 
 @dataclass(frozen=True)
@@ -1490,7 +1549,7 @@ class PlanningSQLiteStore:
         with self.connect() as connection:
             previous_progress = connection.execute(
                 """
-                SELECT plan_id, event_type, linked_artifact_id
+                SELECT progress_id, plan_id, event_type, linked_artifact_id, details
                 FROM plan_progress_events
                 WHERE progress_id = ?
                 """,
@@ -1539,7 +1598,7 @@ class PlanningSQLiteStore:
                         artifact_link.relationship,
                     ),
                 )
-            _delete_replaced_ci_artifact_link(
+            _delete_replaced_progress_artifact_link(
                 connection,
                 previous_progress,
                 replacement_artifact_id=record.artifact_id,
@@ -1558,6 +1617,242 @@ class PlanningSQLiteStore:
             )
             _touch_plan(connection, record.plan_id, occurred_at)
         return CiRunEvidenceRecorded(
+            progress=progress,
+            artifact_link=artifact_link,
+            commit_link=commit_link,
+        )
+
+    def record_pull_request_evidence(
+        self, record: PullRequestEvidenceRecord
+    ) -> PullRequestEvidenceRecorded:
+        _validate_pull_request_evidence(record)
+        occurred_at = _format_datetime(record.occurred_at or _utc_now())
+        summary = record.summary or _pull_request_summary(record)
+        details = _dump_json(_pull_request_details(record))
+        progress = PlanProgressRecord(
+            progress_id=record.progress_id,
+            plan_id=record.plan_id,
+            event_type="pull_request_recorded",
+            summary=summary,
+            details=details,
+            linked_artifact_id=record.artifact_id,
+            occurred_at=record.occurred_at,
+        )
+        artifact_link = (
+            PlanArtifactLinkRecord(
+                plan_id=record.plan_id,
+                artifact_id=record.artifact_id,
+                relationship=record.artifact_relationship,
+            )
+            if record.artifact_id is not None
+            else None
+        )
+        commit_link = (
+            PlanCommitLinkRecord(
+                plan_id=record.plan_id,
+                commit_sha=record.head_sha,
+                relationship=record.commit_relationship,
+            )
+            if record.head_sha is not None
+            else None
+        )
+        with self.connect() as connection:
+            previous_progress = connection.execute(
+                """
+                SELECT progress_id, plan_id, event_type, linked_artifact_id, details
+                FROM plan_progress_events
+                WHERE progress_id = ?
+                """,
+                (progress.progress_id,),
+            ).fetchone()
+            if (
+                previous_progress is not None
+                and previous_progress["event_type"] != "pull_request_recorded"
+            ):
+                msg = "progress_id already exists for non-PR progress event"
+                raise ValueError(msg)
+            connection.execute(
+                """
+                INSERT INTO plan_progress_events (
+                    progress_id, plan_id, event_type, summary, details,
+                    linked_artifact_id, occurred_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(progress_id) DO UPDATE SET
+                    plan_id = excluded.plan_id,
+                    event_type = excluded.event_type,
+                    summary = excluded.summary,
+                    details = excluded.details,
+                    linked_artifact_id = excluded.linked_artifact_id,
+                    occurred_at = excluded.occurred_at
+                """,
+                (
+                    progress.progress_id,
+                    progress.plan_id,
+                    progress.event_type,
+                    progress.summary,
+                    progress.details,
+                    progress.linked_artifact_id,
+                    occurred_at,
+                ),
+            )
+            if artifact_link is not None:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO plan_artifact_links(plan_id, artifact_id, relationship)
+                    VALUES (?, ?, ?)
+                    """,
+                    (
+                        artifact_link.plan_id,
+                        artifact_link.artifact_id,
+                        artifact_link.relationship,
+                    ),
+                )
+            _delete_replaced_progress_artifact_link(
+                connection,
+                previous_progress,
+                replacement_artifact_id=record.artifact_id,
+                relationship=record.artifact_relationship,
+            )
+            _delete_replaced_evidence_commit_link(
+                connection,
+                previous_progress,
+                replacement_commit_sha=record.head_sha,
+                relationship=record.commit_relationship,
+                details_commit_key="head_sha",
+            )
+            if commit_link is not None:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO plan_commit_links(plan_id, commit_sha, relationship)
+                    VALUES (?, ?, ?)
+                    """,
+                    (
+                        commit_link.plan_id,
+                        commit_link.commit_sha,
+                        commit_link.relationship,
+                    ),
+                )
+            _touch_plan(connection, record.plan_id, occurred_at)
+        return PullRequestEvidenceRecorded(
+            progress=progress,
+            artifact_link=artifact_link,
+            commit_link=commit_link,
+        )
+
+    def record_issue_comment_evidence(
+        self, record: IssueCommentEvidenceRecord
+    ) -> IssueCommentEvidenceRecorded:
+        _validate_issue_comment_evidence(record)
+        occurred_at = _format_datetime(record.occurred_at or _utc_now())
+        summary = record.summary or _issue_comment_summary(record)
+        details = _dump_json(_issue_comment_details(record))
+        progress = PlanProgressRecord(
+            progress_id=record.progress_id,
+            plan_id=record.plan_id,
+            event_type="issue_comment_recorded",
+            summary=summary,
+            details=details,
+            linked_artifact_id=record.artifact_id,
+            occurred_at=record.occurred_at,
+        )
+        artifact_link = (
+            PlanArtifactLinkRecord(
+                plan_id=record.plan_id,
+                artifact_id=record.artifact_id,
+                relationship=record.artifact_relationship,
+            )
+            if record.artifact_id is not None
+            else None
+        )
+        commit_link = (
+            PlanCommitLinkRecord(
+                plan_id=record.plan_id,
+                commit_sha=record.commit_sha,
+                relationship=record.commit_relationship,
+            )
+            if record.commit_sha is not None
+            else None
+        )
+        with self.connect() as connection:
+            previous_progress = connection.execute(
+                """
+                SELECT progress_id, plan_id, event_type, linked_artifact_id, details
+                FROM plan_progress_events
+                WHERE progress_id = ?
+                """,
+                (progress.progress_id,),
+            ).fetchone()
+            if (
+                previous_progress is not None
+                and previous_progress["event_type"] != "issue_comment_recorded"
+            ):
+                msg = "progress_id already exists for non-issue-comment progress event"
+                raise ValueError(msg)
+            connection.execute(
+                """
+                INSERT INTO plan_progress_events (
+                    progress_id, plan_id, event_type, summary, details,
+                    linked_artifact_id, occurred_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(progress_id) DO UPDATE SET
+                    plan_id = excluded.plan_id,
+                    event_type = excluded.event_type,
+                    summary = excluded.summary,
+                    details = excluded.details,
+                    linked_artifact_id = excluded.linked_artifact_id,
+                    occurred_at = excluded.occurred_at
+                """,
+                (
+                    progress.progress_id,
+                    progress.plan_id,
+                    progress.event_type,
+                    progress.summary,
+                    progress.details,
+                    progress.linked_artifact_id,
+                    occurred_at,
+                ),
+            )
+            if artifact_link is not None:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO plan_artifact_links(plan_id, artifact_id, relationship)
+                    VALUES (?, ?, ?)
+                    """,
+                    (
+                        artifact_link.plan_id,
+                        artifact_link.artifact_id,
+                        artifact_link.relationship,
+                    ),
+                )
+            _delete_replaced_progress_artifact_link(
+                connection,
+                previous_progress,
+                replacement_artifact_id=record.artifact_id,
+                relationship=record.artifact_relationship,
+            )
+            _delete_replaced_evidence_commit_link(
+                connection,
+                previous_progress,
+                replacement_commit_sha=record.commit_sha,
+                relationship=record.commit_relationship,
+                details_commit_key="commit_sha",
+            )
+            if commit_link is not None:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO plan_commit_links(plan_id, commit_sha, relationship)
+                    VALUES (?, ?, ?)
+                    """,
+                    (
+                        commit_link.plan_id,
+                        commit_link.commit_sha,
+                        commit_link.relationship,
+                    ),
+                )
+            _touch_plan(connection, record.plan_id, occurred_at)
+        return IssueCommentEvidenceRecorded(
             progress=progress,
             artifact_link=artifact_link,
             commit_link=commit_link,
@@ -2778,7 +3073,98 @@ def _validate_ci_run_evidence(record: CiRunEvidenceRecord) -> None:
         _validate_optional_ci_text(optional_value, field_name)
 
 
-def _delete_replaced_ci_artifact_link(
+def _validate_pull_request_evidence(record: PullRequestEvidenceRecord) -> None:
+    _validate_required(record.progress_id, "progress_id")
+    _validate_required(record.plan_id, "plan_id")
+    _validate_required(record.provider, "provider")
+    _validate_required(record.repository, "repository")
+    _validate_github_repository(record.repository, "repository")
+    _validate_positive_int(record.pr_number, "pr_number")
+    _validate_required(record.pr_url, "pr_url")
+    _validate_web_url(record.pr_url, "pr_url")
+    _validate_required(record.state, "state")
+    _validate_required(record.artifact_relationship, "artifact_relationship")
+    _validate_required(record.commit_relationship, "commit_relationship")
+    for field_name, value in (
+        ("provider", record.provider),
+        ("state", record.state),
+        ("artifact_relationship", record.artifact_relationship),
+        ("commit_relationship", record.commit_relationship),
+    ):
+        reason = _plain_cli_identifier_reason(value, field_name)
+        if reason:
+            raise ValueError(reason)
+    for field_name, optional_value in (
+        ("title", record.title),
+        ("summary", record.summary),
+        ("head_ref", record.head_ref),
+        ("base_ref", record.base_ref),
+    ):
+        _validate_optional_ci_text(optional_value, field_name)
+    if record.head_sha is not None:
+        _validate_commit_sha(record.head_sha)
+    if record.base_sha is not None:
+        _validate_commit_sha(record.base_sha)
+    if record.issue_number is not None:
+        _validate_positive_int(record.issue_number, "issue_number")
+    if record.artifact_id is not None:
+        _validate_artifact_id(record.artifact_id, "artifact_id")
+
+
+def _validate_issue_comment_evidence(record: IssueCommentEvidenceRecord) -> None:
+    _validate_required(record.progress_id, "progress_id")
+    _validate_required(record.plan_id, "plan_id")
+    _validate_required(record.provider, "provider")
+    _validate_required(record.repository, "repository")
+    _validate_github_repository(record.repository, "repository")
+    _validate_positive_int(record.issue_number, "issue_number")
+    _validate_required(record.comment_id, "comment_id")
+    _validate_required(record.comment_url, "comment_url")
+    _validate_web_url(record.comment_url, "comment_url")
+    _validate_required(record.artifact_relationship, "artifact_relationship")
+    _validate_required(record.commit_relationship, "commit_relationship")
+    for field_name, value in (
+        ("provider", record.provider),
+        ("comment_id", record.comment_id),
+        ("artifact_relationship", record.artifact_relationship),
+        ("commit_relationship", record.commit_relationship),
+    ):
+        reason = _plain_cli_identifier_reason(value, field_name)
+        if reason:
+            raise ValueError(reason)
+    for field_name, optional_value in (
+        ("summary", record.summary),
+        ("details", record.details),
+        ("author", record.author),
+    ):
+        _validate_optional_ci_text(optional_value, field_name)
+    if record.pr_number is not None:
+        _validate_positive_int(record.pr_number, "pr_number")
+    if record.commit_sha is not None:
+        _validate_commit_sha(record.commit_sha)
+    if record.artifact_id is not None:
+        _validate_artifact_id(record.artifact_id, "artifact_id")
+
+
+def _validate_positive_int(value: object, field_name: str) -> None:
+    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+        msg = f"{field_name} must be a positive integer"
+        raise ValueError(msg)
+
+
+def _validate_github_repository(value: object, field_name: str) -> None:
+    if not isinstance(value, str) or not value.strip():
+        msg = f"{field_name} must be a nonblank owner/repo value"
+        raise ValueError(msg)
+    if _contains_control_character(value):
+        msg = f"{field_name} contains control characters"
+        raise ValueError(msg)
+    if not GITHUB_REPOSITORY_PATTERN.fullmatch(value.strip()):
+        msg = f"{field_name} must be an owner/repo value"
+        raise ValueError(msg)
+
+
+def _delete_replaced_progress_artifact_link(
     connection: sqlite3.Connection,
     previous_progress: sqlite3.Row | None,
     *,
@@ -2809,6 +3195,67 @@ def _delete_replaced_ci_artifact_link(
         """,
         (previous_plan_id, previous_artifact_id, relationship),
     )
+
+
+def _delete_replaced_evidence_commit_link(
+    connection: sqlite3.Connection,
+    previous_progress: sqlite3.Row | None,
+    *,
+    replacement_commit_sha: str | None,
+    relationship: str,
+    details_commit_key: str,
+) -> None:
+    if previous_progress is None:
+        return
+    previous_commit_sha = _commit_sha_from_progress_details(
+        previous_progress,
+        details_commit_key,
+    )
+    if previous_commit_sha is None or previous_commit_sha == replacement_commit_sha:
+        return
+    previous_plan_id = str(previous_progress["plan_id"])
+    previous_progress_id = str(previous_progress["progress_id"])
+    previous_event_type = str(previous_progress["event_type"])
+    remaining_progress = connection.execute(
+        """
+        SELECT details
+        FROM plan_progress_events
+        WHERE plan_id = ? AND event_type = ? AND progress_id != ?
+        """,
+        (previous_plan_id, previous_event_type, previous_progress_id),
+    ).fetchall()
+    if any(
+        _commit_sha_from_progress_details(row, details_commit_key) == previous_commit_sha
+        for row in remaining_progress
+    ):
+        return
+    connection.execute(
+        """
+        DELETE FROM plan_commit_links
+        WHERE plan_id = ? AND commit_sha = ? AND relationship = ?
+        """,
+        (previous_plan_id, previous_commit_sha, relationship),
+    )
+
+
+def _commit_sha_from_progress_details(row: sqlite3.Row, field_name: str) -> str | None:
+    value = _progress_details_value(row, field_name)
+    if isinstance(value, str) and FULL_COMMIT_SHA_PATTERN.fullmatch(value):
+        return value
+    return None
+
+
+def _progress_details_value(row: sqlite3.Row, field_name: str) -> object:
+    details = row["details"]
+    if not isinstance(details, str) or not details.strip():
+        return None
+    try:
+        payload = json.loads(details)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload.get(field_name)
 
 
 def _validate_web_url(value: object, field_name: str) -> None:
@@ -2856,6 +3303,52 @@ def _ci_run_details(record: CiRunEvidenceRecord) -> JsonObject:
         "job_id": record.job_id,
         "job_name": record.job_name,
         "event": record.event,
+    }
+
+
+def _pull_request_summary(record: PullRequestEvidenceRecord) -> str:
+    return f"Recorded {record.provider} PR {record.repository}#{record.pr_number}: {record.state}."
+
+
+def _pull_request_details(record: PullRequestEvidenceRecord) -> JsonObject:
+    return {
+        "artifact_id": record.artifact_id,
+        "provider": record.provider,
+        "repository": record.repository,
+        "pr_number": record.pr_number,
+        "pr_url": record.pr_url,
+        "title": record.title,
+        "state": record.state,
+        "head_ref": record.head_ref,
+        "base_ref": record.base_ref,
+        "head_sha": record.head_sha,
+        "base_sha": record.base_sha,
+        "draft": record.draft,
+        "merged": record.merged,
+        "issue_number": record.issue_number,
+    }
+
+
+def _issue_comment_summary(record: IssueCommentEvidenceRecord) -> str:
+    return (
+        f"Recorded {record.provider} issue comment {record.comment_id} on "
+        f"{record.repository}#{record.issue_number}."
+    )
+
+
+def _issue_comment_details(record: IssueCommentEvidenceRecord) -> JsonObject:
+    return {
+        "artifact_id": record.artifact_id,
+        "provider": record.provider,
+        "repository": record.repository,
+        "issue_number": record.issue_number,
+        "pr_number": record.pr_number,
+        "comment_id": record.comment_id,
+        "comment_url": record.comment_url,
+        "summary": record.summary,
+        "details": record.details,
+        "author": record.author,
+        "commit_sha": record.commit_sha,
     }
 
 

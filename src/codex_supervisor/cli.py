@@ -59,6 +59,7 @@ from codex_supervisor.planning import (
     TASK_TYPES,
     WORKER_RUN_STATUSES,
     CiRunEvidenceRecord,
+    IssueCommentEvidenceRecord,
     PlanAcceptanceCriterionRecord,
     PlanArtifactLinkRecord,
     PlanCommitLinkRecord,
@@ -68,6 +69,7 @@ from codex_supervisor.planning import (
     PlanningSummarySnapshot,
     PlanProgressRecord,
     PlanRecord,
+    PullRequestEvidenceRecord,
     SupervisorTaskRecord,
     SupervisorTaskSummaryRecord,
     WorkerRunRecord,
@@ -373,6 +375,54 @@ def main(argv: list[str] | None = None) -> int:
     ci_run_parser.add_argument("--artifact-relationship", default="ci-run")
     ci_run_parser.add_argument("--commit-relationship", default="ci-head")
     ci_run_parser.add_argument("--json", action="store_true", default=False)
+
+    pr_parser = subparsers.add_parser(
+        "pr-evidence-record",
+        help="Record pull request evidence as planning progress and optional links",
+    )
+    pr_parser.add_argument("--path", type=Path, default=None)
+    pr_parser.add_argument("--progress-id", required=True)
+    pr_parser.add_argument("--plan-id", required=True)
+    pr_parser.add_argument("--provider", default="github")
+    pr_parser.add_argument("--repository", required=True)
+    pr_parser.add_argument("--pr-number", type=int, required=True)
+    pr_parser.add_argument("--pr-url", required=True)
+    pr_parser.add_argument("--state", required=True)
+    pr_parser.add_argument("--title", default=None)
+    pr_parser.add_argument("--summary", default=None)
+    pr_parser.add_argument("--head-ref", default=None)
+    pr_parser.add_argument("--base-ref", default=None)
+    pr_parser.add_argument("--head-sha", default=None)
+    pr_parser.add_argument("--base-sha", default=None)
+    pr_parser.add_argument("--draft", action="store_true", default=False)
+    pr_parser.add_argument("--merged", action="store_true", default=False)
+    pr_parser.add_argument("--issue-number", type=int, default=None)
+    pr_parser.add_argument("--artifact-id", default=None)
+    pr_parser.add_argument("--artifact-relationship", default="pr-evidence")
+    pr_parser.add_argument("--commit-relationship", default="pr-head")
+    pr_parser.add_argument("--json", action="store_true", default=False)
+
+    issue_comment_parser = subparsers.add_parser(
+        "issue-comment-record",
+        help="Record issue comment evidence as planning progress and optional links",
+    )
+    issue_comment_parser.add_argument("--path", type=Path, default=None)
+    issue_comment_parser.add_argument("--progress-id", required=True)
+    issue_comment_parser.add_argument("--plan-id", required=True)
+    issue_comment_parser.add_argument("--provider", default="github")
+    issue_comment_parser.add_argument("--repository", required=True)
+    issue_comment_parser.add_argument("--issue-number", type=int, required=True)
+    issue_comment_parser.add_argument("--comment-id", required=True)
+    issue_comment_parser.add_argument("--comment-url", required=True)
+    issue_comment_parser.add_argument("--summary", default=None)
+    issue_comment_parser.add_argument("--details", default=None)
+    issue_comment_parser.add_argument("--pr-number", type=int, default=None)
+    issue_comment_parser.add_argument("--author", default=None)
+    issue_comment_parser.add_argument("--commit-sha", default=None)
+    issue_comment_parser.add_argument("--artifact-id", default=None)
+    issue_comment_parser.add_argument("--artifact-relationship", default="issue-comment")
+    issue_comment_parser.add_argument("--commit-relationship", default="issue-comment-commit")
+    issue_comment_parser.add_argument("--json", action="store_true", default=False)
 
     commit_delete_parser = subparsers.add_parser("commit-link-delete", help="Unlink a plan commit")
     commit_delete_parser.add_argument("--path", type=Path, default=None)
@@ -1339,15 +1389,85 @@ def main(argv: list[str] | None = None) -> int:
             artifact_relationship=args.artifact_relationship,
             commit_relationship=args.commit_relationship,
         )
-        recorded = _write_value_or_report(
+        ci_recorded = _write_value_or_report(
             lambda: ci_run_store.record_ci_run_evidence(ci_run_record)
         )
-        if recorded is None:
+        if ci_recorded is None:
             return 1
         if args.json:
-            _print_json(recorded)
+            _print_json(ci_recorded)
         else:
             print(f"Recorded ci_run: {args.provider}/{args.run_id}")
+        return 0
+
+    if args.command == "pr-evidence-record":
+        write_store = _open_write_store(args.path)
+        if write_store is None:
+            return 1
+        pr_store = write_store
+        pr_record = PullRequestEvidenceRecord(
+            progress_id=args.progress_id,
+            plan_id=args.plan_id,
+            provider=args.provider,
+            repository=args.repository,
+            pr_number=args.pr_number,
+            pr_url=args.pr_url,
+            state=args.state,
+            title=args.title,
+            summary=args.summary,
+            head_ref=args.head_ref,
+            base_ref=args.base_ref,
+            head_sha=args.head_sha,
+            base_sha=args.base_sha,
+            draft=args.draft,
+            merged=args.merged,
+            issue_number=args.issue_number,
+            artifact_id=args.artifact_id,
+            artifact_relationship=args.artifact_relationship,
+            commit_relationship=args.commit_relationship,
+        )
+        pr_recorded = _write_value_or_report(
+            lambda: pr_store.record_pull_request_evidence(pr_record)
+        )
+        if pr_recorded is None:
+            return 1
+        if args.json:
+            _print_json(pr_recorded)
+        else:
+            print(f"Recorded pr: {args.repository}#{args.pr_number}")
+        return 0
+
+    if args.command == "issue-comment-record":
+        write_store = _open_write_store(args.path)
+        if write_store is None:
+            return 1
+        issue_comment_store = write_store
+        issue_comment_record = IssueCommentEvidenceRecord(
+            progress_id=args.progress_id,
+            plan_id=args.plan_id,
+            provider=args.provider,
+            repository=args.repository,
+            issue_number=args.issue_number,
+            comment_id=args.comment_id,
+            comment_url=args.comment_url,
+            summary=args.summary,
+            details=args.details,
+            pr_number=args.pr_number,
+            author=args.author,
+            commit_sha=args.commit_sha,
+            artifact_id=args.artifact_id,
+            artifact_relationship=args.artifact_relationship,
+            commit_relationship=args.commit_relationship,
+        )
+        issue_comment_recorded = _write_value_or_report(
+            lambda: issue_comment_store.record_issue_comment_evidence(issue_comment_record)
+        )
+        if issue_comment_recorded is None:
+            return 1
+        if args.json:
+            _print_json(issue_comment_recorded)
+        else:
+            print(f"Recorded issue_comment: {args.repository}#{args.issue_number}")
         return 0
 
     if args.command == "commit-link-delete":

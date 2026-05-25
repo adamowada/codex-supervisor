@@ -224,6 +224,24 @@ plus a `ci-head` commit link, with `--artifact-id` remaining optional for real r
 Next action: when adding new planning evidence helpers for external systems, keep URLs and remote IDs
 in structured progress details unless the helper also creates or references a real tracked artifact.
 
+## Evidence Upserts Must Remove Stale Derived Links
+
+Confidence: confirmed.
+
+Typed planning evidence helpers often create derived links in addition to the primary progress row:
+commit links, artifact links, or review links. When the progress row is intentionally re-recorded
+with changed external evidence, the helper must remove obsolete derived links that are no longer
+referenced by current evidence. Otherwise planning SQLite keeps plausible-looking stale links that
+can mislead later queue inspection and review.
+
+Evidence: Stage 13E's review found that PR and issue-comment evidence upserts inserted new
+`plan_commit_links` rows but did not remove the previous `pr-head` or `issue-comment-commit` link
+when a PR head SHA changed or a comment was re-recorded without a commit SHA. Regression tests now
+cover both replacement and removal.
+
+Next action: when adding or reviewing evidence helpers, test both first-record and re-record paths,
+including removal of optional artifact or commit evidence.
+
 ## Cross-Platform Adapters Normalize Before Resolving
 
 Confidence: confirmed.

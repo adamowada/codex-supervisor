@@ -12,6 +12,7 @@ from codex_supervisor.paths import default_planning_database_path, find_repo_roo
 from codex_supervisor.planning import (
     CURRENT_PLANNING_SCHEMA_VERSION,
     CiRunEvidenceRecord,
+    IssueCommentEvidenceRecord,
     PlanAcceptanceCriterionRecord,
     PlanArtifactLinkRecord,
     PlanCommitLinkRecord,
@@ -19,6 +20,7 @@ from codex_supervisor.planning import (
     PlanMilestoneRecord,
     PlanProgressRecord,
     PlanRecord,
+    PullRequestEvidenceRecord,
     SupervisorTaskRecord,
     WorkerResultRecord,
     WorkerRunRecord,
@@ -28,6 +30,7 @@ from codex_supervisor.planning import (
 from codex_supervisor.worker_backends import FakeWorkerBackend, WorkerLaunchRequest
 
 FULL_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567"
+UPDATED_COMMIT_SHA = "fedcba9876543210fedcba9876543210fedcba98"
 
 
 def test_initialize_planning_database_is_idempotent(tmp_path):
@@ -2199,6 +2202,310 @@ def test_ci_run_evidence_rejects_non_web_urls(tmp_path):
                 head_sha=FULL_COMMIT_SHA,
                 status="completed",
                 conclusion="success",
+            )
+        )
+
+
+def test_pull_request_evidence_records_progress_and_commit_link(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-github",
+            slug="github",
+            title="GitHub Plan",
+            goal="Record PR evidence.",
+            status="active",
+        )
+    )
+
+    recorded = store.record_pull_request_evidence(
+        PullRequestEvidenceRecord(
+            progress_id="progress-pr",
+            plan_id="plan-github",
+            provider="github",
+            repository="example/repo",
+            pr_number=42,
+            pr_url="https://github.com/example/repo/pull/42",
+            title="Add evidence",
+            state="open",
+            head_ref="feature/evidence",
+            base_ref="main",
+            head_sha=FULL_COMMIT_SHA,
+            draft=True,
+            issue_number=42,
+        )
+    )
+
+    progress = store.list_plan_progress(plan_id="plan-github")[0]
+    details = json.loads(progress.details or "{}")
+    commit_links = store.list_plan_commit_links(plan_id="plan-github")
+
+    assert recorded.artifact_link is None
+    assert recorded.commit_link is not None
+    assert progress.event_type == "pull_request_recorded"
+    assert progress.linked_artifact_id is None
+    assert details["repository"] == "example/repo"
+    assert details["pr_number"] == 42
+    assert details["pr_url"] == "https://github.com/example/repo/pull/42"
+    assert details["head_ref"] == "feature/evidence"
+    assert details["head_sha"] == FULL_COMMIT_SHA
+    assert details["draft"] is True
+    assert {(link.commit_sha, link.relationship) for link in commit_links} == {
+        (FULL_COMMIT_SHA, "pr-head")
+    }
+
+
+def test_pull_request_evidence_replaces_stale_commit_link(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-github",
+            slug="github",
+            title="GitHub Plan",
+            goal="Record PR evidence.",
+            status="active",
+        )
+    )
+    store.record_pull_request_evidence(
+        PullRequestEvidenceRecord(
+            progress_id="progress-pr",
+            plan_id="plan-github",
+            provider="github",
+            repository="example/repo",
+            pr_number=42,
+            pr_url="https://github.com/example/repo/pull/42",
+            state="open",
+            head_sha=FULL_COMMIT_SHA,
+        )
+    )
+
+    recorded = store.record_pull_request_evidence(
+        PullRequestEvidenceRecord(
+            progress_id="progress-pr",
+            plan_id="plan-github",
+            provider="github",
+            repository="example/repo",
+            pr_number=42,
+            pr_url="https://github.com/example/repo/pull/42",
+            state="open",
+            head_sha=UPDATED_COMMIT_SHA,
+        )
+    )
+
+    commit_links = store.list_plan_commit_links(plan_id="plan-github")
+
+    assert recorded.commit_link is not None
+    assert recorded.commit_link.commit_sha == UPDATED_COMMIT_SHA
+    assert {(link.commit_sha, link.relationship) for link in commit_links} == {
+        (UPDATED_COMMIT_SHA, "pr-head")
+    }
+
+
+def test_issue_comment_evidence_records_optional_artifact_and_commit_links(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-github",
+            slug="github",
+            title="GitHub Plan",
+            goal="Record issue evidence.",
+            status="active",
+        )
+    )
+
+    recorded = store.record_issue_comment_evidence(
+        IssueCommentEvidenceRecord(
+            progress_id="progress-comment",
+            plan_id="plan-github",
+            provider="github",
+            repository="example/repo",
+            issue_number=42,
+            pr_number=42,
+            comment_id="123456",
+            comment_url="https://github.com/example/repo/issues/42#issuecomment-123456",
+            summary="Recorded review evidence comment.",
+            details="Comment links task contract and verification evidence.",
+            author="octocat",
+            commit_sha=FULL_COMMIT_SHA,
+            artifact_id="HANDOFF.md#github-comment",
+        )
+    )
+
+    progress = store.list_plan_progress(plan_id="plan-github")[0]
+    details = json.loads(progress.details or "{}")
+    artifact_links = store.list_plan_artifact_links(plan_id="plan-github")
+    commit_links = store.list_plan_commit_links(plan_id="plan-github")
+
+    assert recorded.artifact_link is not None
+    assert recorded.commit_link is not None
+    assert progress.event_type == "issue_comment_recorded"
+    assert progress.linked_artifact_id == "HANDOFF.md#github-comment"
+    assert details["comment_id"] == "123456"
+    assert details["comment_url"] == (
+        "https://github.com/example/repo/issues/42#issuecomment-123456"
+    )
+    assert details["author"] == "octocat"
+    assert {(link.artifact_id, link.relationship) for link in artifact_links} == {
+        ("HANDOFF.md#github-comment", "issue-comment")
+    }
+    assert {(link.commit_sha, link.relationship) for link in commit_links} == {
+        (FULL_COMMIT_SHA, "issue-comment-commit")
+    }
+
+
+def test_issue_comment_evidence_removes_stale_commit_link(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-github",
+            slug="github",
+            title="GitHub Plan",
+            goal="Record issue evidence.",
+            status="active",
+        )
+    )
+    store.record_issue_comment_evidence(
+        IssueCommentEvidenceRecord(
+            progress_id="progress-comment",
+            plan_id="plan-github",
+            provider="github",
+            repository="example/repo",
+            issue_number=42,
+            comment_id="123456",
+            comment_url="https://github.com/example/repo/issues/42#issuecomment-123456",
+            commit_sha=FULL_COMMIT_SHA,
+        )
+    )
+
+    recorded = store.record_issue_comment_evidence(
+        IssueCommentEvidenceRecord(
+            progress_id="progress-comment",
+            plan_id="plan-github",
+            provider="github",
+            repository="example/repo",
+            issue_number=42,
+            comment_id="123456",
+            comment_url="https://github.com/example/repo/issues/42#issuecomment-123456",
+        )
+    )
+
+    assert recorded.commit_link is None
+    assert store.list_plan_commit_links(plan_id="plan-github") == ()
+
+
+def test_cli_pr_evidence_record_persists_progress_and_commit_link(tmp_path, capsys):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-github",
+            slug="github",
+            title="GitHub Plan",
+            goal="Record PR evidence.",
+            status="active",
+        )
+    )
+
+    assert (
+        main(
+            [
+                "pr-evidence-record",
+                "--path",
+                str(db_path),
+                "--progress-id",
+                "progress-pr",
+                "--plan-id",
+                "plan-github",
+                "--repository",
+                "example/repo",
+                "--pr-number",
+                "42",
+                "--pr-url",
+                "https://github.com/example/repo/pull/42",
+                "--state",
+                "open",
+                "--head-sha",
+                FULL_COMMIT_SHA,
+                "--json",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    read_store = open_existing_planning_database(db_path)
+
+    assert payload["commit_link"]["commit_sha"] == FULL_COMMIT_SHA
+    assert read_store.list_plan_progress(plan_id="plan-github")[0].event_type == (
+        "pull_request_recorded"
+    )
+    assert read_store.list_plan_artifact_links(plan_id="plan-github") == ()
+    assert read_store.list_plan_commit_links(plan_id="plan-github")[0].relationship == "pr-head"
+
+
+def test_cli_issue_comment_record_persists_progress(tmp_path, capsys):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-github",
+            slug="github",
+            title="GitHub Plan",
+            goal="Record issue evidence.",
+            status="active",
+        )
+    )
+
+    assert (
+        main(
+            [
+                "issue-comment-record",
+                "--path",
+                str(db_path),
+                "--progress-id",
+                "progress-comment",
+                "--plan-id",
+                "plan-github",
+                "--repository",
+                "example/repo",
+                "--issue-number",
+                "42",
+                "--comment-id",
+                "123456",
+                "--comment-url",
+                "https://github.com/example/repo/issues/42#issuecomment-123456",
+                "--summary",
+                "Recorded evidence comment.",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    read_store = open_existing_planning_database(db_path)
+    progress = read_store.list_plan_progress(plan_id="plan-github")[0]
+    details = json.loads(progress.details or "{}")
+
+    assert payload["artifact_link"] is None
+    assert payload["commit_link"] is None
+    assert progress.event_type == "issue_comment_recorded"
+    assert details["comment_url"] == (
+        "https://github.com/example/repo/issues/42#issuecomment-123456"
+    )
+
+
+def test_pull_request_evidence_rejects_invalid_repository(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+
+    with pytest.raises(ValueError, match="repository must be an owner/repo value"):
+        store.record_pull_request_evidence(
+            PullRequestEvidenceRecord(
+                progress_id="progress-pr",
+                plan_id="plan-github",
+                provider="github",
+                repository="not-a-repo",
+                pr_number=42,
+                pr_url="https://github.com/example/repo/pull/42",
+                state="open",
             )
         )
 

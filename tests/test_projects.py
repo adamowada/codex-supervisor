@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
@@ -108,6 +109,147 @@ def test_generic_repo_adapter_extracts_bounded_task_candidates(tmp_path: Path) -
         "uv run --no-sync python -B scripts/verify.py",
         "uv run --no-sync python -B scripts/check_protected_files.py",
     )
+
+
+def test_planning_sqlite_adapter_extracts_candidates_without_mutating_target(
+    tmp_path: Path,
+) -> None:
+    repo = _write_planning_sqlite_project(tmp_path / "planning-style")
+    before_bytes = (repo / "plans" / "planning.sqlite3").read_bytes()
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "nlp_stock_prediction_planning_sqlite"
+    assert entry.status == "ready"
+    assert entry.facts is not None
+    facts = entry.facts
+    assert facts.authority_markers == ("plans/planning.sqlite3",)
+    assert facts.has_planning_database is True
+    assert facts.adapter_findings == ()
+    assert facts.verification_commands == ("uv run --no-sync python -B scripts/verify.py",)
+    assert len(facts.candidate_tasks) == 1
+    candidate = facts.candidate_tasks[0]
+    assert candidate.source_id == "planning-sqlite-task-add-signals"
+    assert candidate.source_path == "plans/planning.sqlite3:tasks/task-add-signals"
+    assert candidate.title == "Add signal feature"
+    assert candidate.goal == "Add a bounded signal feature."
+    assert candidate.task_type == "AFK"
+    assert candidate.acceptance_criteria == ("Signal feature is implemented.",)
+    assert candidate.verification_commands == ("uv run --no-sync python -B scripts/verify.py",)
+    assert candidate.allowed_paths == ("src/signals.py",)
+    assert candidate.blocked_by == ("task-data-contract",)
+    assert candidate.source_authority == ("plans/planning.sqlite3", "tasks")
+    assert (repo / "plans" / "planning.sqlite3").read_bytes() == before_bytes
+
+
+def test_project_seed_tasks_cli_applies_planning_sqlite_candidates_only_to_supervisor_db(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    supervisor_db = tmp_path / "supervisor" / "planning.sqlite3"
+    store = initialize_planning_database(supervisor_db)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-seeded-project",
+            slug="seeded-project",
+            title="Seeded Project",
+            goal="Receive seeded tasks.",
+            status="active",
+        )
+    )
+    repo = _write_planning_sqlite_project(tmp_path / "target-planning")
+    target_before = (repo / "plans" / "planning.sqlite3").read_bytes()
+
+    assert (
+        main(
+            [
+                "project-seed-tasks",
+                "--path",
+                str(supervisor_db),
+                "--root",
+                str(repo),
+                "--plan-id",
+                "plan-seeded-project",
+                "--apply",
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    tasks = store.list_supervisor_tasks()
+    assert payload["project"]["adapter_type"] == "nlp_stock_prediction_planning_sqlite"
+    assert payload["task_ids"] == [tasks[0].task_id]
+    assert tasks[0].scope["source_project"]["adapter_type"] == (
+        "nlp_stock_prediction_planning_sqlite"
+    )
+    assert tasks[0].scope["source_candidate"]["source_authority"] == [
+        "plans/planning.sqlite3",
+        "tasks",
+    ]
+    assert (repo / "plans" / "planning.sqlite3").read_bytes() == target_before
+
+
+def test_planning_sqlite_adapter_reports_corrupt_database_without_generic_fallback(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "corrupt-planning"
+    (repo / "plans").mkdir(parents=True)
+    (repo / "plans" / "planning.sqlite3").write_bytes(b"not sqlite")
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "nlp_stock_prediction_planning_sqlite"
+    assert entry.status == "unsupported"
+    assert entry.failure_class == "unsupported_planning_sqlite"
+    assert entry.facts is not None
+    assert entry.facts.adapter_findings
+    assert "planning SQLite database could not be read" in entry.facts.adapter_findings[0]
+
+
+def test_planning_sqlite_adapter_filters_open_tasks_before_candidate_limit(
+    tmp_path: Path,
+) -> None:
+    terminal_rows = [
+        (
+            f"task-{index:02d}-completed",
+            f"Completed {index}",
+            "Already completed.",
+            "completed",
+            "AFK",
+            json.dumps(["Done."]),
+            json.dumps([]),
+            json.dumps([]),
+            json.dumps([]),
+        )
+        for index in range(25)
+    ]
+    repo = _write_planning_sqlite_project(
+        tmp_path / "terminal-heavy-planning",
+        task_rows=[
+            *terminal_rows,
+            (
+                "task-99-ready",
+                "Ready work",
+                "Surface the ready work after terminal rows.",
+                "ready",
+                "AFK",
+                json.dumps(["Ready task is surfaced."]),
+                json.dumps([]),
+                json.dumps(["src/ready.py"]),
+                json.dumps([]),
+            ),
+        ],
+    )
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.status == "ready"
+    assert entry.facts is not None
+    assert [candidate.source_id for candidate in entry.facts.candidate_tasks] == [
+        "planning-sqlite-task-99-ready"
+    ]
 
 
 def test_project_task_seeds_map_candidate_fields(tmp_path: Path) -> None:
@@ -449,4 +591,66 @@ def _write_generic_repo(root: Path, *, tasks: list[dict[str, object]] | None = N
         "print('locks')\n",
         encoding="utf-8",
     )
+    return root
+
+
+def _write_planning_sqlite_project(
+    root: Path,
+    *,
+    task_rows: list[tuple[str, str, str, str, str, str, str, str, str]] | None = None,
+) -> Path:
+    (root / "plans").mkdir(parents=True)
+    (root / "scripts").mkdir()
+    (root / "scripts" / "verify.py").write_text("print('verify')\n", encoding="utf-8")
+    database_path = root / "plans" / "planning.sqlite3"
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE tasks (
+                task_id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                goal TEXT NOT NULL,
+                status TEXT NOT NULL,
+                task_type TEXT NOT NULL,
+                acceptance_criteria_json TEXT NOT NULL,
+                verification_commands_json TEXT NOT NULL,
+                allowed_paths_json TEXT NOT NULL,
+                blocked_by_json TEXT NOT NULL
+            )
+            """
+        )
+        connection.executemany(
+            """
+            INSERT INTO tasks (
+                task_id, title, goal, status, task_type, acceptance_criteria_json,
+                verification_commands_json, allowed_paths_json, blocked_by_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            task_rows
+            or [
+                (
+                    "task-add-signals",
+                    "Add signal feature",
+                    "Add a bounded signal feature.",
+                    "ready",
+                    "AFK",
+                    json.dumps(["Signal feature is implemented."]),
+                    json.dumps(["uv run --no-sync python -B scripts/verify.py"]),
+                    json.dumps(["src/signals.py"]),
+                    json.dumps(["task-data-contract"]),
+                ),
+                (
+                    "task-already-done",
+                    "Already done",
+                    "This terminal task should not become a candidate.",
+                    "completed",
+                    "AFK",
+                    json.dumps(["Done."]),
+                    json.dumps(["uv run --no-sync python -B scripts/verify.py"]),
+                    json.dumps(["src/done.py"]),
+                    json.dumps([]),
+                ),
+            ],
+        )
     return root

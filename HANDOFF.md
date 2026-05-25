@@ -17,16 +17,18 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
 As of this snapshot, Stage 3A project registry and generic repo adapter work, Stage 3B adapter
-task-candidate output work, and Stage 3C project task seeding work are complete in planning SQLite.
-The expected queue state is `ready` for active plan `plan-stage3-project-registry-adapters`, with
-current AFK task `task-stage3d-planning-sqlite-adapter`. Stage 3A, Stage 3B, Stage 3C, Stage 10A,
-Stage 10B, Stage 10C, Stage 10D, Stage 10E, Stage 10F, Stage 9, and the Stage 10 plan are marked
-completed in planning SQLite. Stage 3 overall still needs additional named adapter slices before the
-ROADMAP Stage 3 done gate is satisfied. If the database reports anything else, trust the database
-and call this handoff stale.
+task-candidate output work, Stage 3C project task seeding work, and Stage 3D planning SQLite
+adapter work are complete in planning SQLite. The expected queue state is `completed` for active
+plan `plan-stage3-project-registry-adapters`, with no current AFK task unless a successor Stage 3
+adapter slice has since been shaped. Stage 3A, Stage 3B, Stage 3C, Stage 3D, Stage 10A, Stage 10B,
+Stage 10C, Stage 10D, Stage 10E, Stage 10F, Stage 9, and the Stage 10 plan are marked completed in
+planning SQLite. Stage 3 overall still needs additional named adapter slices before the ROADMAP
+Stage 3 done gate is satisfied. If the database reports anything else, trust the database and call
+this handoff stale.
 
 Recent completed ACP checkpoints:
 
+- `1979a85`: shaped the Stage 3D planning SQLite adapter task and handoff.
 - `bbf974a`: added Stage 3C project task seeding, review repair, planning completion, handoff, and
   worker result.
 - `82a3450`: shaped the Stage 3C project task seeding task and handoff.
@@ -63,13 +65,13 @@ Recent completed ACP checkpoints:
 - `200d027`: hardened exact task claiming, Story Loop queue snapshots, completed-plan criteria, and
   worker-result/attribution skill contracts.
 
-The latest full local gate passed after Stage 3C project task seeding completion with:
+The latest full local gate passed after Stage 3D planning SQLite adapter completion with:
 
 ```sh
 uv run --no-sync python -B scripts/verify.py
 ```
 
-That run covered 388 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
+That run covered 392 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
 hygiene, planning integrity, skill inventory, source inventory, protected locks, and
 `uv lock --check`.
 
@@ -671,6 +673,41 @@ Stage 3D planning SQLite project adapter has been shaped:
 - Fixture note: `sources/nlp-stock-prediction` is not present in this checkout, so Stage 3D should
   use public fixture planning databases rather than depending on ignored source clones.
 
+Stage 3D planning SQLite project adapter changed:
+
+- `src/codex_supervisor/projects.py`: adds `PlanningSQLiteAdapter` for `nlp-stock-prediction`
+  planning-style roots, detects a recognizable `plans/planning.sqlite3` tasks table before generic
+  fallback, opens target databases with a SQLite `mode=ro` URI, filters to open task statuses before
+  applying the bounded candidate limit, maps open tasks to `ProjectTaskCandidate` records with
+  `plans/planning.sqlite3` source authority, and reports corrupt or unsupported databases as adapter
+  findings.
+- `tests/test_projects.py`: covers planning adapter selection, read-only target DB extraction,
+  `project-seed-tasks` apply behavior into a separate supervisor planning DB, corrupt database
+  reporting, terminal-row filtering before the candidate bound, and existing project registry
+  behavior.
+- `scripts/check_file_justification.py`: records the Stage 3D worker-result artifact purpose.
+- `plans/planning.sqlite3`: records Stage 3D completion through
+  `worker-run-stage3d-planning-sqlite-adapter-20260525`,
+  `progress-stage3d-review-completed-20260525`, completed task, completed milestone, completed
+  criterion, and linked worker-result artifact.
+- `insights/stage3d-planning-sqlite-adapter-worker-result.json`: durable Stage 3D worker-result
+  evidence.
+- Verification:
+  `uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider`;
+  `uv run --no-sync python -B -m ruff check src/codex_supervisor/projects.py tests/test_projects.py scripts/check_file_justification.py --no-cache`;
+  `uv run --no-sync python -B -m mypy --no-incremental src scripts`;
+  `uv run --no-sync python -B scripts/check_file_justification.py`;
+  `uv run --no-sync python -B scripts/check_public_repo_hygiene.py`;
+  `uv run --no-sync python -B scripts/check_planning_integrity.py`;
+  `uv run --no-sync python -B -m codex_supervisor.cli project-list --json`;
+  `uv run --no-sync python -B scripts/verify.py`.
+- Review: fresh-thread-style local review found one actionable finding: terminal target tasks could
+  consume the planning adapter candidate row limit before open tasks were considered. The finding
+  was fixed by filtering to open statuses before applying the limit, with a regression test.
+- Residual risks: Stage 3 still needs markdown plan, harness/config, and insights graph named
+  adapters before the full ROADMAP Stage 3 done gate is satisfied; real `nlp-stock-prediction`
+  schema variants may need follow-up support when fixture evidence is available.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -696,10 +733,10 @@ selector. If queue_state is hitl or running, inspect current_task_id with task-s
 If queue_state is `ready`, run `task-current --json` and execute the current AFK slice with
 story-loop discipline.
 
-As of this handoff, the expected queue_state is `ready` with current AFK task
-`task-stage3d-planning-sqlite-adapter`. Confirm the Goal Contract, then execute exactly this Stage
-3D planning SQLite adapter slice. Do not jump to Stage 11 MCP until the Stage 3 registry and adapter
-done gate is satisfied or explicitly waived.
+As of this handoff, the expected queue_state is `completed` with no current AFK task unless a
+successor Stage 3 adapter slice has since been shaped. Continue by shaping the next narrow Stage 3
+adapter slice, likely the observe-safety-monorepo structured markdown plan adapter. Do not jump to
+Stage 11 MCP until the Stage 3 registry and adapter done gate is satisfied or explicitly waived.
 Keep live Codex Exec launch disabled while the local Codex CLI still fails preflight with
 `Access is denied`; do not launch live `codex exec` until an accessible executable path and intended
 `CODEX_HOME` are confirmed.

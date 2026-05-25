@@ -17,15 +17,18 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
 As of this snapshot, Stage 3A project registry and generic repo adapter work and Stage 3B adapter
-task-candidate output work are complete in planning SQLite. The expected queue state is `completed`
-for active plan `plan-stage3-project-registry-adapters`, with no current AFK task. Stage 3A,
-Stage 3B, Stage 10A, Stage 10B, Stage 10C, Stage 10D, Stage 10E, Stage 10F, Stage 9, and the
-Stage 10 plan are marked completed in planning SQLite. Stage 3 overall still needs additional
-adapter/task-seeding slices before the ROADMAP Stage 3 done gate is satisfied. If the database
-reports anything else, trust the database and call this handoff stale.
+task-candidate output work are complete in planning SQLite, and Stage 3C project task seeding is
+shaped as the current ready AFK slice. The expected queue state is `ready` for active plan
+`plan-stage3-project-registry-adapters`, with current task `task-stage3c-project-task-seeding`.
+Stage 3A, Stage 3B, Stage 10A, Stage 10B, Stage 10C, Stage 10D, Stage 10E, Stage 10F, Stage 9, and
+the Stage 10 plan are marked completed in planning SQLite. Stage 3 overall still needs additional
+adapter slices before the ROADMAP Stage 3 done gate is satisfied. If the database reports anything
+else, trust the database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
+- `1a47225`: added Stage 3B bounded adapter task candidates, project-list candidate output, tests,
+  planning completion, handoff, and worker result.
 - `0e31053`: shaped the Stage 3B adapter task-candidate output task and handoff.
 - `d454f70`: repaired the Stage 3A task status row after explorer review found stale failed status
   despite completed worker evidence.
@@ -585,6 +588,28 @@ Stage 3B adapter task-candidate output changed:
 - Residual risks: Stage 3 still needs actual planning-task seeding and named specialized adapters
   before the full ROADMAP Stage 3 done gate is satisfied.
 
+Stage 3C project task seeding has been shaped:
+
+- `plans/planning.sqlite3`: adds `task-stage3c-project-task-seeding` as the ready AFK slice,
+  `milestone-stage3c-project-task-seeding`, `criterion-stage3c-project-task-seeding`, and
+  `progress-stage3c-task-shaped-20260525`.
+- Scope: convert `ProjectTaskCandidate` output into deterministic supervisor task seed records and
+  expose a bounded `project-seed-tasks` CLI with dry-run output plus explicit apply mode that writes
+  only to supervisor planning SQLite through typed helpers.
+- Out of scope: named project-specific adapters, target project mutation, Codex internal database or
+  config writes, MCP, plugin, GitHub/CI, release, spawned-project factory surfaces, live Codex Exec
+  launch, worktree creation, protected-doc edits unless unavoidable, and
+  push/merge/publish/delete/release actions.
+- Allowed durable paths:
+  `src/codex_supervisor/projects.py`, `src/codex_supervisor/cli.py`, `tests/test_projects.py`,
+  `scripts/check_file_justification.py`, `plans/planning.sqlite3`, `HANDOFF.md`, and
+  `insights/stage3c-project-task-seeding-worker-result.json`.
+- Expected checks:
+  `uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider`;
+  `uv run --no-sync python -B scripts/check_planning_integrity.py`;
+  `uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json`;
+  `uv run --no-sync python -B scripts/verify.py`.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -610,11 +635,10 @@ selector. If queue_state is hitl or running, inspect current_task_id with task-s
 If queue_state is `ready`, run `task-current --json` and execute the current AFK slice with
 story-loop discipline.
 
-As of this handoff, the expected queue_state is `completed` with no current AFK task. Shape the next
-Stage 3 slice through typed helpers before implementation. The likely next slice is planning-task
-seed conversion from `ProjectTaskCandidate` output, followed by named specialized project adapters.
-Do not jump to Stage 11 MCP until the Stage 3 registry and adapter done gate is satisfied or
-explicitly waived.
+As of this handoff, the expected queue_state is `ready` with current AFK task
+`task-stage3c-project-task-seeding`. Confirm the Goal Contract, then execute exactly this Stage 3C
+project task seeding slice. Do not jump to Stage 11 MCP until the Stage 3 registry and adapter done
+gate is satisfied or explicitly waived.
 Keep live Codex Exec launch disabled while the local Codex CLI still fails preflight with
 `Access is denied`; do not launch live `codex exec` until an accessible executable path and intended
 `CODEX_HOME` are confirmed.

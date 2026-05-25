@@ -99,13 +99,16 @@ from codex_supervisor.review_loop import (
     validate_review_result_payload,
 )
 from codex_supervisor.review_persistence import (
+    LiveReviewRunResult,
     ReviewResultPersistenceRecord,
     record_review_result,
+    run_live_review_for_task,
 )
 from codex_supervisor.review_repairs import (
     DEFAULT_REPAIR_VERIFICATION_COMMANDS,
     ReviewRepairRoutingResult,
-    create_repair_tasks_from_review_result,
+    apply_repair_task_plan,
+    plan_repair_tasks_from_review_result,
 )
 from codex_supervisor.skill_promotion import (
     SkillPromotionContractError,
@@ -683,6 +686,42 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
     )
     review_ingest_parser.add_argument("--json", action="store_true", default=False)
+
+    review_live_parser = subparsers.add_parser(
+        "review-run-live",
+        help="Launch Codex Exec as a structured live reviewer for one task",
+    )
+    review_live_parser.add_argument("--path", type=Path, default=None)
+    review_live_parser.add_argument("--task-id", required=True)
+    review_live_parser.add_argument("--review-id", required=True)
+    review_live_parser.add_argument("--repo-root", type=Path, default=Path("."))
+    review_live_parser.add_argument(
+        "--mode",
+        choices=("everything", "code_quality", "architecture", "source_of_truth_drift"),
+        default="everything",
+    )
+    review_live_parser.add_argument("--target", default=None)
+    review_live_parser.add_argument("--progress-id", default=None)
+    review_live_parser.add_argument("--review-result-artifact-id", required=True)
+    review_live_parser.add_argument("--review-artifact-id", action="append", default=[])
+    review_live_parser.add_argument(
+        "--no-create-repair-tasks",
+        action="store_false",
+        dest="create_repair_tasks",
+        default=True,
+    )
+    review_live_parser.add_argument("--repair-task-id-prefix", default="task-review-repair")
+    review_live_parser.add_argument(
+        "--repair-verification-command",
+        action="append",
+        default=None,
+    )
+    review_live_parser.add_argument("--codex-bin", dest="codex_executable", default=None)
+    review_live_parser.add_argument("--codex-home", default=None)
+    review_live_parser.add_argument("--model", default=None)
+    review_live_parser.add_argument("--sandbox-mode", default="workspace-write")
+    review_live_parser.add_argument("--approval-policy", default="never")
+    review_live_parser.add_argument("--json", action="store_true", default=False)
 
     insight_validate_parser = subparsers.add_parser(
         "insight-validate",
@@ -1775,6 +1814,22 @@ def main(argv: list[str] | None = None) -> int:
                 args.review_result_path,
                 args.review_result_artifact_id,
             )
+            repair_result: ReviewRepairRoutingResult | None = None
+            repair_plan: ReviewRepairRoutingResult | None = None
+            if args.create_repair_tasks:
+                repair_verification_commands = (
+                    tuple(args.repair_verification_command)
+                    if args.repair_verification_command is not None
+                    else DEFAULT_REPAIR_VERIFICATION_COMMANDS
+                )
+                repair_plan = plan_repair_tasks_from_review_result(
+                    write_store,
+                    plan_id=args.plan_id,
+                    review_result=review_result,
+                    source_task_id=args.source_task_id,
+                    task_id_prefix=args.repair_task_id_prefix,
+                    verification_commands=repair_verification_commands,
+                )
             persistence_record = record_review_result(
                 write_store,
                 plan_id=args.plan_id,
@@ -1783,21 +1838,8 @@ def main(argv: list[str] | None = None) -> int:
                 review_result_artifact_id=review_result_artifact_id,
                 review_artifact_ids=tuple(args.review_artifact_id),
             )
-            repair_result: ReviewRepairRoutingResult | None = None
-            if args.create_repair_tasks:
-                repair_verification_commands = (
-                    tuple(args.repair_verification_command)
-                    if args.repair_verification_command is not None
-                    else DEFAULT_REPAIR_VERIFICATION_COMMANDS
-                )
-                repair_result = create_repair_tasks_from_review_result(
-                    write_store,
-                    plan_id=args.plan_id,
-                    review_result=review_result,
-                    source_task_id=args.source_task_id,
-                    task_id_prefix=args.repair_task_id_prefix,
-                    verification_commands=repair_verification_commands,
-                )
+            if repair_plan is not None:
+                repair_result = apply_repair_task_plan(write_store, repair_plan)
         except (
             OSError,
             json.JSONDecodeError,
@@ -1818,6 +1860,50 @@ def main(argv: list[str] | None = None) -> int:
         else:
             _print_review_result_ingestion(output)
         return 0
+
+    if args.command == "review-run-live":
+        write_store = _open_write_store(args.path)
+        if write_store is None:
+            return 1
+        repair_verification_commands = (
+            tuple(args.repair_verification_command)
+            if args.repair_verification_command is not None
+            else DEFAULT_REPAIR_VERIFICATION_COMMANDS
+        )
+        try:
+            live_review_result = run_live_review_for_task(
+                write_store,
+                task_id=args.task_id,
+                review_id=args.review_id,
+                repo_root=args.repo_root,
+                review_result_artifact_id=args.review_result_artifact_id,
+                mode=args.mode,
+                target=args.target,
+                progress_id=args.progress_id,
+                review_artifact_ids=tuple(args.review_artifact_id),
+                create_repair_tasks=args.create_repair_tasks,
+                repair_task_id_prefix=args.repair_task_id_prefix,
+                repair_verification_commands=repair_verification_commands,
+                codex_executable=args.codex_executable,
+                codex_home=args.codex_home,
+                model=args.model,
+                sandbox_mode=args.sandbox_mode,
+                approval_policy=args.approval_policy,
+            )
+        except (
+            OSError,
+            json.JSONDecodeError,
+            ReviewContractError,
+            ValueError,
+            sqlite3.Error,
+        ) as exc:
+            print(f"Could not run live review: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            _print_json(live_review_result)
+        else:
+            _print_live_review_run_result(live_review_result)
+        return 0 if live_review_result.status in {"completed", "needs_hitl"} else 1
 
     if args.command == "insight-validate":
         try:
@@ -2745,6 +2831,36 @@ def _print_review_result_ingestion(output: dict[str, object]) -> None:
                     f"- {skipped_json['finding_id']}\t{skipped_json['status']}\t"
                     f"{skipped_json['reason']}"
                 )
+    else:
+        print("- none")
+
+
+def _print_live_review_run_result(result: LiveReviewRunResult) -> None:
+    print(f"review_run: {result.review_id}")
+    print(f"task_id: {result.task_id}")
+    print(f"status: {result.status}")
+    if result.progress_id is not None:
+        print(f"progress: {result.progress_id}")
+    if result.result_path is not None:
+        print(f"result_path: {result.result_path}")
+    if result.failure_class is not None:
+        print(f"failure_class: {result.failure_class}")
+    print("created_repair_tasks:")
+    if result.created_repair_task_ids:
+        for task_id in result.created_repair_task_ids:
+            print(f"- {task_id}")
+    else:
+        print("- none")
+    print("existing_repair_tasks:")
+    if result.existing_repair_task_ids:
+        for task_id in result.existing_repair_task_ids:
+            print(f"- {task_id}")
+    else:
+        print("- none")
+    print("skipped_findings:")
+    if result.skipped_finding_ids:
+        for finding_id in result.skipped_finding_ids:
+            print(f"- {finding_id}")
     else:
         print("- none")
 

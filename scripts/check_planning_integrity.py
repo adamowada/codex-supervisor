@@ -150,6 +150,7 @@ def check_planning_integrity(db_path: Path) -> tuple[PlanningIntegrityFailure, .
             failures.extend(_check_open_afk_task_contract_values(connection))
             failures.extend(_check_completed_worker_runs_have_result_records(connection))
             failures.extend(_check_completed_afk_tasks_have_worker_evidence(connection))
+            failures.extend(_check_completed_review_required_tasks_have_review_evidence(connection))
             failures.extend(_check_worker_result_records_have_run_links(connection))
             failures.extend(_check_worker_result_records_have_valid_payloads(connection))
             failures.extend(_check_worker_result_records_align_with_runs(connection))
@@ -617,6 +618,134 @@ def _check_completed_afk_tasks_have_worker_evidence(
         )
         for task_id, plan_id in rows
     )
+
+
+def _check_completed_review_required_tasks_have_review_evidence(
+    connection: sqlite3.Connection,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    rows = connection.execute(
+        """
+        SELECT st.task_id, st.plan_id
+        FROM supervisor_tasks st
+        JOIN (
+            SELECT plan_id, MIN(occurred_at) AS enabled_at
+            FROM plan_progress_events
+            WHERE event_type = 'review_enforcement_enabled'
+            GROUP BY plan_id
+        ) marker ON marker.plan_id = st.plan_id
+        WHERE st.status = 'completed'
+          AND st.review_required = 1
+          AND st.updated_at >= marker.enabled_at
+        ORDER BY st.task_id
+        """
+    ).fetchall()
+    failures: list[PlanningIntegrityFailure] = []
+    for task_id, plan_id in rows:
+        review_progress = _review_progress_for_task(connection, str(plan_id), str(task_id))
+        if review_progress is None:
+            failures.append(
+                PlanningIntegrityFailure(
+                    "completed_review_required_task_without_review_result",
+                    f"{task_id} completed without review_result_recorded progress",
+                )
+            )
+            continue
+        progress_id, details = review_progress
+        accepted_findings = details.get("accepted_findings", [])
+        if not isinstance(accepted_findings, list):
+            failures.append(
+                PlanningIntegrityFailure(
+                    "completed_review_required_task_invalid_review_result",
+                    f"{progress_id} accepted_findings must be a list",
+                )
+            )
+            continue
+        review_id = details.get("review_id")
+        if not isinstance(review_id, str) or not review_id.strip():
+            failures.append(
+                PlanningIntegrityFailure(
+                    "completed_review_required_task_invalid_review_result",
+                    f"{progress_id} review_id must be nonblank",
+                )
+            )
+            continue
+        for finding in accepted_findings:
+            finding_id = finding.get("finding_id") if isinstance(finding, dict) else None
+            if not isinstance(finding_id, str) or not finding_id.strip():
+                failures.append(
+                    PlanningIntegrityFailure(
+                        "completed_review_required_task_invalid_review_result",
+                        f"{progress_id} accepted finding is missing finding_id",
+                    )
+                )
+                continue
+            if not _accepted_finding_has_repair_task(
+                connection,
+                str(plan_id),
+                review_id,
+                finding_id,
+            ):
+                failures.append(
+                    PlanningIntegrityFailure(
+                        "completed_review_required_task_without_routed_finding",
+                        f"{task_id} review {review_id} finding {finding_id}",
+                    )
+                )
+    return tuple(failures)
+
+
+def _review_progress_for_task(
+    connection: sqlite3.Connection,
+    plan_id: str,
+    task_id: str,
+) -> tuple[str, dict[str, object]] | None:
+    rows = connection.execute(
+        """
+        SELECT progress_id, details
+        FROM plan_progress_events
+        WHERE plan_id = ?
+          AND event_type = 'review_result_recorded'
+        ORDER BY occurred_at DESC, progress_id DESC
+        """,
+        (plan_id,),
+    ).fetchall()
+    for progress_id, details_json in rows:
+        try:
+            details = json.loads(str(details_json or "{}"))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(details, dict) and details.get("target") == task_id:
+            return str(progress_id), details
+    return None
+
+
+def _accepted_finding_has_repair_task(
+    connection: sqlite3.Connection,
+    plan_id: str,
+    review_id: str,
+    finding_id: str,
+) -> bool:
+    rows = connection.execute(
+        """
+        SELECT scope_json
+        FROM supervisor_tasks
+        WHERE plan_id = ?
+        """,
+        (plan_id,),
+    ).fetchall()
+    for (scope_json,) in rows:
+        try:
+            scope = json.loads(str(scope_json))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(scope, dict):
+            continue
+        if (
+            scope.get("source_review_id") == review_id
+            and scope.get("source_finding_id") == finding_id
+        ):
+            return True
+    return False
 
 
 def _check_worker_result_records_have_run_links(

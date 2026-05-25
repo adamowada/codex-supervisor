@@ -434,6 +434,115 @@ def test_planning_integrity_rejects_completed_afk_task_without_worker_evidence(t
     )
 
 
+def test_planning_integrity_rejects_completed_review_required_task_without_review_result(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-review-required",
+            slug="review-required",
+            title="Review Required Plan",
+            goal="Do not hide completed review-required work without review evidence.",
+            status="active",
+        )
+    )
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id="progress-review-enforcement",
+            plan_id="plan-review-required",
+            event_type="review_enforcement_enabled",
+            summary="Review enforcement is active.",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-review-required",
+            title="Completed task",
+            goal="Should have durable review evidence.",
+            task_type="AFK",
+            status="completed",
+            acceptance_criteria=["criterion"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["runs/**"],
+            review_required=True,
+        )
+    )
+    result_id = _upsert_db_worker_result(store)
+    _complete_worker_run_with_result(store, task_id="task-worker", result_id=result_id)
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "completed_review_required_task_without_review_result"
+        for failure in failures
+    )
+
+
+def test_planning_integrity_rejects_unrouted_accepted_review_findings(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-review-required",
+            slug="review-required",
+            title="Review Required Plan",
+            goal="Require accepted review findings to route into repair tasks.",
+            status="active",
+        )
+    )
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id="progress-review-enforcement",
+            plan_id="plan-review-required",
+            event_type="review_enforcement_enabled",
+            summary="Review enforcement is active.",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-review-required",
+            title="Completed task",
+            goal="Should have routed review findings.",
+            task_type="AFK",
+            status="completed",
+            acceptance_criteria=["criterion"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["runs/**"],
+            review_required=True,
+        )
+    )
+    result_id = _upsert_db_worker_result(store)
+    _complete_worker_run_with_result(store, task_id="task-worker", result_id=result_id)
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id="progress-review",
+            plan_id="plan-review-required",
+            event_type="review_result_recorded",
+            summary="Recorded review.",
+            details=json.dumps(
+                {
+                    "review_id": "review-worker",
+                    "target": "task-worker",
+                    "accepted_findings": [{"finding_id": "finding-accepted"}],
+                    "waived_findings": [],
+                    "needs_hitl_findings": [],
+                }
+            ),
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "completed_review_required_task_without_routed_finding"
+        for failure in failures
+    )
+
+
 def test_planning_integrity_requires_worker_result_run_link(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"

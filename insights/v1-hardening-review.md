@@ -2,8 +2,8 @@
 
 - `claim`: The six-lane v1 review found that the tree had strong planning, result, hygiene, and
   source-lock foundations, but v1 was not yet live-operational. The live worker, MCP mutation, and
-  real project bootstrap/adapters slices have now landed; live review, release evidence, automation
-  apply, and security/public-hygiene hardening remain unresolved blockers.
+  real project bootstrap/adapters, and live review integrity slices have now landed; release
+  evidence, automation apply, and security/public-hygiene hardening remain unresolved blockers.
 - `confidence`: confirmed
 - `evidence`: `plans/planning.sqlite3` plan `plan-v1-live-operational-hardening`, progress
   `progress-v1-six-lane-review-digested-20260525`, six read-only explorer reports, and the local
@@ -12,8 +12,8 @@
   adapters, spawned-project bootstrap, review routing, release readiness, security, and public
   hygiene.
 - `supersedes`: none
-- `next action`: Continue with live review, current release evidence, security/public-hygiene, and
-  final completion-audit tasks.
+- `next action`: Continue with current release evidence, security/public-hygiene, and final
+  completion-audit tasks.
 
 ## Normalized Finding Clusters
 
@@ -28,9 +28,9 @@
 - `bootstrap-adapters`: spawned-project bootstrap now has a real apply path and adapter task
   seeding no longer persists local roots; keep future adapters DB-first, repo-relative, and
   project-specific instead of proposal-only.
-- `review`: review-required tasks can be marked complete without review evidence, live reviewer
-  launch is missing, review ingestion is not atomic with repair routing, and repair task id reuse
-  needs equivalence checks.
+- `review`: live reviewer launch, review-required completion enforcement, prevalidated repair
+  routing, and repair-task collision equivalence checks are now implemented. Keep review evidence
+  tied to explicit `review_enforcement_enabled` markers so legacy planning history remains readable.
 - `release`: release readiness can pass stale CI/Windows evidence and shallow dry-run/demo surfaces
   instead of current live worker, review, MCP, and real bootstrap smoke evidence.
 - `security-hygiene`: worker result ingestion preserves unknown raw payload fields, Codex-state
@@ -57,9 +57,8 @@
   captures JSONL/stdout/stderr/final-message evidence, enforces CODEX_HOME conflicts and unsupported
   launch options fail-closed, uses bounded timeouts, and launches with a minimal environment
   allowlist.
-- Remaining v1 hardening clusters are still real blockers until their tasks land: live review
-  integrity, current release evidence, automation apply, and security/public-hygiene follow-ups
-  outside the live worker slice.
+- Remaining v1 hardening clusters are still real blockers until their tasks land: current release
+  evidence, automation apply, and security/public-hygiene follow-ups outside the live worker slice.
 
 ## MCP Mutation Slice Update
 
@@ -74,9 +73,8 @@
 - Verification evidence for this slice includes the focused MCP stdio/plugin tests and the clean
   plugin install verifier, which now requires the production mutation, launch, and review-ingest
   MCP tools.
-- Remaining v1 hardening clusters are still real blockers until their tasks land: live review
-  integrity, current release evidence, automation apply, and security/public-hygiene follow-ups
-  outside the MCP slice.
+- Remaining v1 hardening clusters are still real blockers until their tasks land: current release
+  evidence, automation apply, and security/public-hygiene follow-ups outside the MCP slice.
 
 ## Real Bootstrap/Adapter Slice Update
 
@@ -90,6 +88,21 @@
   policy; local absolute roots stay in operator-facing discovery output and are not written into
   supervisor task scope. The planning SQLite adapter now prefers `supervisor_tasks` before the
   legacy `tasks` table.
-- Remaining v1 hardening clusters are still real blockers until their tasks land: live review
-  integrity, current release evidence, automation apply, and security/public-hygiene follow-ups
-  outside the bootstrap/adapters slice.
+- Remaining v1 hardening clusters are still real blockers until their tasks land: current release
+  evidence, automation apply, and security/public-hygiene follow-ups outside the bootstrap/adapters
+  slice.
+
+## Live Review Integrity Slice Update
+
+- `task-v1-live-review-integrity` adds a live Codex review runner that builds a structured review
+  prompt/schema, runs `codex exec`, validates the emitted `ReviewResult`, persists review evidence,
+  routes accepted findings into repair tasks, and keeps needs-HITL reviews in `reviewing`.
+- `review-result-ingest` and the MCP review-ingest handler now prevalidate repair task routing
+  before recording review progress, then apply the prevalidated plan. Existing deterministic repair
+  task IDs are treated as idempotent only when the existing task contract matches the expected
+  review finding.
+- Planning integrity now enforces review evidence for completed `review_required` tasks after a
+  plan records `review_enforcement_enabled`; this avoids rewriting legacy history while guarding
+  future completions.
+- Remaining v1 hardening clusters are still real blockers until their tasks land: current release
+  evidence, automation apply, and security/public-hygiene follow-ups outside the review slice.

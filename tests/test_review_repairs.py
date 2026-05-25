@@ -78,6 +78,37 @@ def test_review_repair_task_routing_is_idempotent(tmp_path) -> None:
     assert len(store.list_supervisor_tasks()) == 2
 
 
+def test_review_repair_routing_rejects_existing_id_with_different_contract(tmp_path) -> None:
+    store = _store(tmp_path)
+    review_result = _review_result()
+    finding = review_result.accepted_findings[0]
+    collision_id = repair_task_id_for_finding(review_result, finding)
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id=collision_id,
+            plan_id="plan-review",
+            title="Different repair",
+            goal="This is not the deterministic review repair task.",
+            task_type="AFK",
+            status="ready",
+            acceptance_criteria=("Different.",),
+            verification_commands=("uv run --no-sync python -B scripts/verify.py",),
+            allowed_paths=("README.md",),
+            review_required=True,
+        )
+    )
+
+    with pytest.raises(ReviewRepairRoutingError, match="does not match review finding"):
+        create_repair_tasks_from_review_result(
+            store,
+            plan_id="plan-review",
+            review_result=review_result,
+            source_task_id="task-source-review",
+        )
+
+    assert len(store.list_supervisor_tasks()) == 2
+
+
 def test_review_repair_routing_rejects_accepted_findings_without_allowed_paths(tmp_path) -> None:
     store = _store(tmp_path)
     review_result = ReviewResult(

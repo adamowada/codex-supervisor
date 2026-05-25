@@ -35,7 +35,8 @@ from codex_supervisor.review_loop import validate_review_result_payload
 from codex_supervisor.review_persistence import record_review_result
 from codex_supervisor.review_repairs import (
     DEFAULT_REPAIR_VERIFICATION_COMMANDS,
-    create_repair_tasks_from_review_result,
+    apply_repair_task_plan,
+    plan_repair_tasks_from_review_result,
 )
 from codex_supervisor.story_loop import (
     build_story_loop_status,
@@ -546,19 +547,12 @@ def _handle_review_result_ingest(arguments: JsonObject, context: McpServerContex
         raise McpDispatchError("review_result_read_failed", str(exc)) from exc
     review_result = validate_review_result_payload(payload)
     artifact_id = _optional_string(arguments.get("review_result_artifact_id")) or result_path
-    persistence_record = record_review_result(
-        store,
-        plan_id=_required_string(arguments, "plan_id"),
-        progress_id=_required_string(arguments, "progress_id"),
-        review_result=review_result,
-        review_result_artifact_id=artifact_id,
-        review_artifact_ids=tuple(_optional_string_array(arguments.get("review_artifact_ids"))),
-    )
-    repair_result = None
+    plan_id = _required_string(arguments, "plan_id")
+    repair_plan = None
     if bool(arguments.get("create_repair_tasks", False)):
-        repair_result = create_repair_tasks_from_review_result(
+        repair_plan = plan_repair_tasks_from_review_result(
             store,
-            plan_id=_required_string(arguments, "plan_id"),
+            plan_id=plan_id,
             review_result=review_result,
             source_task_id=_optional_string(arguments.get("source_task_id")),
             task_id_prefix=(
@@ -566,6 +560,15 @@ def _handle_review_result_ingest(arguments: JsonObject, context: McpServerContex
             ),
             verification_commands=DEFAULT_REPAIR_VERIFICATION_COMMANDS,
         )
+    persistence_record = record_review_result(
+        store,
+        plan_id=plan_id,
+        progress_id=_required_string(arguments, "progress_id"),
+        review_result=review_result,
+        review_result_artifact_id=artifact_id,
+        review_artifact_ids=tuple(_optional_string_array(arguments.get("review_artifact_ids"))),
+    )
+    repair_result = apply_repair_task_plan(store, repair_plan) if repair_plan is not None else None
     return {
         "review_result": review_result,
         "persistence": persistence_record,

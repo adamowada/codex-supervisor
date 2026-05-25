@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 07:22 PDT
+Last updated: 2026-05-25 07:27 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -21,8 +21,9 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   - `3461945e57450e81d60b19053630214b005c3fd9` - Stage 13E implementation and completion.
   - `abde5c60a46d9caeea0302c8de606f6f1feaa61c` - Stage 13E CI evidence and Stage 14A shaping.
   - `4133cbf765f190fa3c93bf8d1d57e43314310045` - Stage 14A implementation and Stage 14B shaping.
+  - `f482c410fb350718177921d8c28d0a05d46011bc` - Stage 14B completion and Stage 15A shaping.
 - Latest successful remote CI: GitHub Actions `Verify` run
-  `https://github.com/adamowada/codex-supervisor/actions/runs/26403981792`.
+  `https://github.com/adamowada/codex-supervisor/actions/runs/26405006727`.
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.

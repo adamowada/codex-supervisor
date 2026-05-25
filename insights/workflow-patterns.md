@@ -186,3 +186,21 @@ indexed blobs, matching the CI posture the workflow will use after publication.
 
 Next action: for future CI or release workflow slices, run publication-ready verification only after
 the intended public files are staged, and prefer locked dependency setup inside CI workflows.
+
+## Cross-Platform Adapters Normalize Before Resolving
+
+Confidence: confirmed.
+
+Project adapters that ingest repo-relative paths from JSON, markdown tables, or imported planning
+records should normalize Windows-style separators before resolving against a `Path` root. On POSIX,
+`root / "prompts\\browser-smoke.md"` treats the backslash as a literal filename character; normalizing
+through `PureWindowsPath(value).as_posix()` first preserves intended relative paths while still
+allowing explicit drive, absolute, and parent-traversal rejection.
+
+Evidence: The first Stage 13 GitHub Actions `Verify` run passed setup but failed two
+`tests/test_projects.py` cases on Linux: harness `prompt_path` normalization and insights graph
+`allowed_paths` normalization. The same tests passed locally on Windows, so CI surfaced a real
+cross-platform adapter contract gap.
+
+Next action: when adapters accept human-authored paths, test both POSIX-style and Windows-style
+relative separators, plus `..\\` traversal rejection, before relying on local Windows-only results.

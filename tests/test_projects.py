@@ -531,7 +531,14 @@ def test_harness_config_adapter_reports_oversized_prompt_without_generic_fallbac
 
 @pytest.mark.parametrize(
     "prompt_path",
-    ("../secret.md", "C:\\secret.md", "C:secret.md", "/secret.md", "\\secret.md"),
+    (
+        "../secret.md",
+        "..\\secret.md",
+        "C:\\secret.md",
+        "C:secret.md",
+        "/secret.md",
+        "\\secret.md",
+    ),
 )
 def test_harness_config_adapter_rejects_unsafe_prompt_paths(
     tmp_path: Path,
@@ -781,6 +788,23 @@ def test_insights_graph_adapter_rejects_unsafe_allowed_paths(
     repo = _write_insights_graph_project(
         tmp_path / "unsafe-insights",
         allowed_paths="C:secret.md",
+    )
+
+    entry = discover_projects((repo,))[0]
+
+    assert entry.adapter_type == "tech_resume_insights_graph"
+    assert entry.status == "unsupported"
+    assert entry.failure_class == "unsupported_insights_graph"
+    assert entry.facts is not None
+    assert "unsafe insights graph allowed path" in entry.facts.adapter_findings[0]
+
+
+def test_insights_graph_adapter_rejects_windows_parent_allowed_paths(
+    tmp_path: Path,
+) -> None:
+    repo = _write_insights_graph_project(
+        tmp_path / "unsafe-windows-parent-insights",
+        allowed_paths="..\\secret.md",
     )
 
     entry = discover_projects((repo,))[0]

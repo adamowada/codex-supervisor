@@ -1332,9 +1332,12 @@ def _safe_relative_project_path(root: Path, value: object) -> str | None:
     windows_path = PureWindowsPath(raw_path)
     if windows_path.drive or raw_path.startswith(("/", "\\")):
         return None
+    normalized_raw_path = windows_path.as_posix()
+    if any(part == ".." for part in normalized_raw_path.split("/")):
+        return None
     try:
         resolved_root = root.resolve()
-        resolved_path = (root / raw_path).resolve()
+        resolved_path = (root / normalized_raw_path).resolve()
         relative_path = resolved_path.relative_to(resolved_root)
     except OSError, ValueError:
         return None

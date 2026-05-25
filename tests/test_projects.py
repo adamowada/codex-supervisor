@@ -1,9 +1,13 @@
 import json
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
+import pytest
+
 from codex_supervisor.cli import main
+from codex_supervisor.planning import PlanRecord, initialize_planning_database
 from codex_supervisor.projects import (
     MAX_TASKS_JSON_BYTES,
+    build_project_task_seeds,
     discover_projects,
     stable_project_id_from_path,
 )
@@ -106,6 +110,44 @@ def test_generic_repo_adapter_extracts_bounded_task_candidates(tmp_path: Path) -
     )
 
 
+def test_project_task_seeds_map_candidate_fields(tmp_path: Path) -> None:
+    repo = _write_generic_repo(
+        tmp_path / "seed-source",
+        tasks=[
+            {
+                "id": "ship-search",
+                "title": "Ship search",
+                "goal": "Add search to the product list.",
+                "acceptance_criteria": ["Search results filter by query."],
+                "verification_commands": ["uv run --no-sync python -B scripts/verify.py"],
+                "allowed_paths": ["src/search.py"],
+                "blocked_by": ["task-design-review"],
+            }
+        ],
+    )
+    entry = discover_projects((repo,))[0]
+
+    seeds = build_project_task_seeds(entry, plan_id="plan-seeded-project")
+
+    assert len(seeds) == 1
+    seed = seeds[0]
+    assert seed.task_id.startswith("task-seed-source-")
+    assert seed.task_id.endswith("-tasks-json-ship-search")
+    assert seed.plan_id == "plan-seeded-project"
+    assert seed.title == "Ship search"
+    assert seed.goal == "Add search to the product list."
+    assert seed.task_type == "AFK"
+    assert seed.status == "pending"
+    assert seed.acceptance_criteria == ("Search results filter by query.",)
+    assert seed.verification_commands == ("uv run --no-sync python -B scripts/verify.py",)
+    assert seed.allowed_paths == ("src/search.py",)
+    assert seed.blocked_by == ("task-design-review",)
+    assert seed.worker_backend == "codex_exec"
+    assert seed.review_required is True
+    assert seed.scope["source_project"]["project_id"] == entry.project_id
+    assert seed.scope["source_candidate"]["source_id"] == "tasks-json-ship-search"
+
+
 def test_generic_repo_adapter_reports_invalid_and_oversized_tasks_json(
     tmp_path: Path,
 ) -> None:
@@ -147,6 +189,170 @@ def test_project_list_cli_prints_json_for_current_repo(
     assert payload[0]["status"] == "ready"
     assert payload[0]["facts"]["has_planning_database"] is True
     assert payload[0]["facts"]["candidate_tasks"] == []
+
+
+def test_project_seed_tasks_cli_prints_dry_run_json_without_planning_db(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    repo = _write_generic_repo(
+        tmp_path / "dry-run-seed",
+        tasks=[
+            {
+                "title": "Add queue docs",
+                "goal": "Document queue operations.",
+                "acceptance_criteria": ["Queue docs exist."],
+                "allowed_paths": ["docs/queue.md"],
+            }
+        ],
+    )
+
+    assert (
+        main(
+            [
+                "project-seed-tasks",
+                "--root",
+                str(repo),
+                "--plan-id",
+                "plan-seeded-project",
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["applied"] is False
+    assert payload["project"]["adapter_type"] == "generic_repo"
+    assert len(payload["task_seeds"]) == 1
+    assert payload["task_seeds"][0]["status"] == "pending"
+    assert payload["task_seeds"][0]["allowed_paths"] == ["docs/queue.md"]
+
+
+def test_project_seed_tasks_cli_apply_is_idempotent_and_mutates_only_planning_db(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-seeded-project",
+            slug="seeded-project",
+            title="Seeded Project",
+            goal="Receive seeded tasks.",
+            status="active",
+        )
+    )
+    repo = _write_generic_repo(
+        tmp_path / "apply-seed",
+        tasks=[
+            {
+                "id": "task-one",
+                "title": "Task one",
+                "goal": "Do one bounded thing.",
+                "acceptance_criteria": ["One thing is done."],
+                "verification_commands": ["uv run --no-sync python -B scripts/verify.py"],
+                "allowed_paths": ["src/one.py"],
+            }
+        ],
+    )
+    original_tasks_json = (repo / "TASKS.json").read_text(encoding="utf-8")
+    command = [
+        "project-seed-tasks",
+        "--path",
+        str(db_path),
+        "--root",
+        str(repo),
+        "--plan-id",
+        "plan-seeded-project",
+        "--apply",
+        "--json",
+    ]
+
+    assert main(command) == 0
+    first_payload = json.loads(capsys.readouterr().out)
+    assert main(command) == 0
+    second_payload = json.loads(capsys.readouterr().out)
+
+    tasks = store.list_supervisor_tasks()
+    assert len(tasks) == 1
+    seeded = tasks[0]
+    assert seeded.task_id == first_payload["task_ids"][0] == second_payload["task_ids"][0]
+    assert seeded.status == "pending"
+    assert seeded.title == "Task one"
+    assert seeded.allowed_paths == ["src/one.py"]
+    assert seeded.scope["source_project"]["adapter_type"] == "generic_repo"
+    assert (repo / "TASKS.json").read_text(encoding="utf-8") == original_tasks_json
+
+
+def test_project_seed_tasks_cli_reports_missing_and_candidate_free_roots(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    missing = tmp_path / "missing-seed"
+    empty_repo = _write_generic_repo(tmp_path / "empty-seed")
+
+    assert (
+        main(
+            [
+                "project-seed-tasks",
+                "--root",
+                str(missing),
+                "--plan-id",
+                "plan-seeded-project",
+            ]
+        )
+        == 1
+    )
+    assert "Project root does not exist" in capsys.readouterr().err
+
+    assert (
+        main(
+            [
+                "project-seed-tasks",
+                "--root",
+                str(empty_repo),
+                "--plan-id",
+                "plan-seeded-project",
+            ]
+        )
+        == 1
+    )
+    assert "No project task candidates were found" in capsys.readouterr().out
+
+
+def test_project_seed_tasks_cli_rejects_worker_lifecycle_statuses(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    repo = _write_generic_repo(
+        tmp_path / "unsafe-status-seed",
+        tasks=[
+            {
+                "title": "Unsafe status task",
+                "goal": "Demonstrate status validation.",
+                "acceptance_criteria": ["Validation rejects worker lifecycle statuses."],
+                "allowed_paths": ["src/status.py"],
+            }
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(
+            [
+                "project-seed-tasks",
+                "--root",
+                str(repo),
+                "--plan-id",
+                "plan-seeded-project",
+                "--status",
+                "running",
+            ]
+        )
+    assert exc_info.value.code == 2
+
+    assert "invalid choice" in capsys.readouterr().err
 
 
 def test_project_list_cli_prints_human_summary_with_candidate_count(

@@ -319,6 +319,10 @@ FILE_PURPOSES = {
         "structured worker-result evidence for the Stage 3B adapter task-candidate output slice",
         "check_planning_integrity",
     ),
+    "insights/stage3c-project-task-seeding-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 3C project task seeding slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),

@@ -9,6 +9,7 @@ import sys
 from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import fields, is_dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any, cast
 
@@ -75,7 +76,12 @@ from codex_supervisor.planning import (
     open_existing_planning_database,
     unresolved_task_blockers,
 )
-from codex_supervisor.projects import ProjectRegistryEntry, discover_projects
+from codex_supervisor.projects import (
+    ProjectRegistryEntry,
+    ProjectTaskSeed,
+    build_project_task_seeds,
+    discover_projects,
+)
 from codex_supervisor.review_loop import (
     ReviewContractError,
     ReviewResult,
@@ -125,6 +131,44 @@ def main(argv: list[str] | None = None) -> int:
     )
     project_list_parser.add_argument("--trust-policy", default="local_trusted")
     project_list_parser.add_argument("--json", action="store_true", default=False)
+
+    project_seed_parser = subparsers.add_parser(
+        "project-seed-tasks",
+        help="Seed supervisor tasks from project adapter candidate tasks",
+    )
+    project_seed_parser.add_argument("--path", type=Path, default=None)
+    project_seed_parser.add_argument(
+        "--root",
+        type=Path,
+        default=None,
+        help="Project root to inspect. Defaults to the current working directory.",
+    )
+    project_seed_parser.add_argument("--plan-id", required=True)
+    project_seed_parser.add_argument("--trust-policy", default="local_trusted")
+    project_seed_parser.add_argument(
+        "--status",
+        choices=("blocked", "pending", "ready"),
+        default="pending",
+    )
+    project_seed_parser.add_argument("--worker-backend", default="codex_exec")
+    project_seed_parser.add_argument(
+        "--review-required",
+        dest="review_required",
+        action="store_true",
+        default=True,
+    )
+    project_seed_parser.add_argument(
+        "--no-review-required",
+        dest="review_required",
+        action="store_false",
+    )
+    project_seed_parser.add_argument(
+        "--apply",
+        action="store_true",
+        default=False,
+        help="Write the generated task seeds to planning SQLite. Omit for dry-run output.",
+    )
+    project_seed_parser.add_argument("--json", action="store_true", default=False)
 
     list_parser = subparsers.add_parser("plan-list", help="List plans")
     list_parser.add_argument("--path", type=Path, default=None)
@@ -583,6 +627,48 @@ def main(argv: list[str] | None = None) -> int:
             _print_json(entries)
             return 0
         _print_project_registry_entries(entries)
+        return 0
+
+    if args.command == "project-seed-tasks":
+        entry = discover_projects(
+            (args.root or Path.cwd(),),
+            trust_policy=args.trust_policy,
+        )[0]
+        if entry.status != "ready":
+            message = entry.failure_reason or f"Project is not seedable: {entry.root_path}"
+            print(message, file=sys.stderr)
+            return 1
+        task_seeds = build_project_task_seeds(
+            entry,
+            plan_id=args.plan_id,
+            status=args.status,
+            worker_backend=args.worker_backend,
+            review_required=args.review_required,
+        )
+        seed_result = {
+            "project": entry,
+            "task_seeds": task_seeds,
+            "applied": args.apply,
+            "task_ids": [seed.task_id for seed in task_seeds],
+        }
+        if not task_seeds:
+            if args.json:
+                _print_json(seed_result | {"message": "No project task candidates were found."})
+            else:
+                print(f"No project task candidates were found for {entry.root_path}.")
+            return 1
+        if args.apply:
+            write_store = _open_write_store(args.path)
+            if write_store is None:
+                return 1
+            for seed in task_seeds:
+                record = _supervisor_task_record_from_project_task_seed(seed)
+                if not _write_or_report(partial(_upsert_seeded_task, write_store, record)):
+                    return 1
+        if args.json:
+            _print_json(seed_result)
+        else:
+            _print_project_task_seed_result(entry, task_seeds, applied=args.apply)
         return 0
 
     if args.command == "codex-state-inventory":
@@ -1195,10 +1281,10 @@ def main(argv: list[str] | None = None) -> int:
         if worker_record is None:
             return 1
         if worker_record.status == "completed":
-            result = _write_value_or_report(
+            worker_result = _write_value_or_report(
                 lambda: worker_store.ingest_worker_result_for_record(worker_record)
             )
-            if result is None:
+            if worker_result is None:
                 return 1
             updated_worker_record = _read_or_report(
                 lambda: _find_worker_run(worker_store, worker_record.worker_run_id)
@@ -1979,6 +2065,41 @@ def _print_project_registry_entries(entries: Sequence[ProjectRegistryEntry]) -> 
                 print(f"  adapter_finding: {finding}")
         if entry.failure_reason:
             print(f"  failure: {entry.failure_reason}")
+
+
+def _supervisor_task_record_from_project_task_seed(seed: ProjectTaskSeed) -> SupervisorTaskRecord:
+    return SupervisorTaskRecord(
+        task_id=seed.task_id,
+        plan_id=seed.plan_id,
+        title=seed.title,
+        goal=seed.goal,
+        task_type=seed.task_type,
+        status=seed.status,
+        scope=dict(seed.scope),
+        out_of_scope=dict(seed.out_of_scope),
+        acceptance_criteria=list(seed.acceptance_criteria),
+        verification_commands=list(seed.verification_commands),
+        allowed_paths=list(seed.allowed_paths),
+        blocked_by=list(seed.blocked_by),
+        worker_backend=seed.worker_backend,
+        review_required=seed.review_required,
+    )
+
+
+def _upsert_seeded_task(store: PlanningSQLiteStore, record: SupervisorTaskRecord) -> None:
+    store.upsert_supervisor_task(record, validate_current_queue_contract=True)
+
+
+def _print_project_task_seed_result(
+    entry: ProjectRegistryEntry,
+    task_seeds: Sequence[ProjectTaskSeed],
+    *,
+    applied: bool,
+) -> None:
+    action = "Applied" if applied else "Dry-run"
+    print(f"{action} project task seeds for {entry.project_id}:")
+    for seed in task_seeds:
+        print(f"- {seed.task_id}\t{seed.status}\t{seed.task_type}\t{seed.title}")
 
 
 def _print_json(value: object) -> None:

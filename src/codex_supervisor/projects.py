@@ -43,6 +43,24 @@ class ProjectTaskCandidate:
 
 
 @dataclass(frozen=True)
+class ProjectTaskSeed:
+    task_id: str
+    plan_id: str
+    title: str
+    goal: str
+    task_type: str
+    status: str
+    scope: dict[str, object]
+    out_of_scope: dict[str, object]
+    acceptance_criteria: tuple[str, ...]
+    verification_commands: tuple[str, ...]
+    allowed_paths: tuple[str, ...]
+    blocked_by: tuple[str, ...]
+    worker_backend: str
+    review_required: bool
+
+
+@dataclass(frozen=True)
 class ProjectFacts:
     source_documents: tuple[str, ...]
     authority_markers: tuple[str, ...]
@@ -117,6 +135,29 @@ def stable_project_id_from_path(path: PurePath) -> str:
     return f"{slug}-{digest}"
 
 
+def build_project_task_seeds(
+    entry: ProjectRegistryEntry,
+    *,
+    plan_id: str,
+    status: str = "pending",
+    worker_backend: str = "codex_exec",
+    review_required: bool = True,
+) -> tuple[ProjectTaskSeed, ...]:
+    if entry.facts is None:
+        return ()
+    return tuple(
+        _project_task_seed_from_candidate(
+            candidate,
+            entry=entry,
+            plan_id=plan_id,
+            status=status,
+            worker_backend=worker_backend,
+            review_required=review_required,
+        )
+        for candidate in entry.facts.candidate_tasks
+    )
+
+
 def _discover_project(root: Path, *, trust_policy: str) -> ProjectRegistryEntry:
     if not root.exists():
         return ProjectRegistryEntry(
@@ -150,6 +191,54 @@ def _discover_project(root: Path, *, trust_policy: str) -> ProjectRegistryEntry:
         status="ready",
         facts=facts,
     )
+
+
+def _project_task_seed_from_candidate(
+    candidate: ProjectTaskCandidate,
+    *,
+    entry: ProjectRegistryEntry,
+    plan_id: str,
+    status: str,
+    worker_backend: str,
+    review_required: bool,
+) -> ProjectTaskSeed:
+    return ProjectTaskSeed(
+        task_id=_task_seed_id(entry.project_id, candidate.source_id),
+        plan_id=plan_id,
+        title=candidate.title,
+        goal=candidate.goal,
+        task_type=candidate.task_type,
+        status=status,
+        scope={
+            "source_project": {
+                "project_id": entry.project_id,
+                "root_path": entry.root_path,
+                "adapter_type": entry.adapter_type,
+                "trust_policy": entry.trust_policy,
+            },
+            "source_candidate": {
+                "source_id": candidate.source_id,
+                "source_path": candidate.source_path,
+                "source_authority": list(candidate.source_authority),
+            },
+        },
+        out_of_scope={
+            "source_adapter_non_goals": [
+                "Seeded tasks preserve adapter output only; downstream task refinement belongs "
+                "to the task compiler."
+            ]
+        },
+        acceptance_criteria=candidate.acceptance_criteria,
+        verification_commands=candidate.verification_commands,
+        allowed_paths=candidate.allowed_paths,
+        blocked_by=candidate.blocked_by,
+        worker_backend=worker_backend,
+        review_required=review_required,
+    )
+
+
+def _task_seed_id(project_id: str, source_id: str) -> str:
+    return f"task-{_slugify(project_id)}-{_slugify(source_id)}"
 
 
 def _exists(root: Path, relative_path: str) -> bool:

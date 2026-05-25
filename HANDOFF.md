@@ -16,17 +16,18 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, Stage 3A project registry and generic repo adapter work and Stage 3B adapter
-task-candidate output work are complete in planning SQLite, and Stage 3C project task seeding is
-shaped as the current ready AFK slice. The expected queue state is `ready` for active plan
-`plan-stage3-project-registry-adapters`, with current task `task-stage3c-project-task-seeding`.
-Stage 3A, Stage 3B, Stage 10A, Stage 10B, Stage 10C, Stage 10D, Stage 10E, Stage 10F, Stage 9, and
-the Stage 10 plan are marked completed in planning SQLite. Stage 3 overall still needs additional
-adapter slices before the ROADMAP Stage 3 done gate is satisfied. If the database reports anything
-else, trust the database and call this handoff stale.
+As of this snapshot, Stage 3A project registry and generic repo adapter work, Stage 3B adapter
+task-candidate output work, and Stage 3C project task seeding work are complete in planning SQLite.
+The expected queue state is `completed` for active plan `plan-stage3-project-registry-adapters`,
+with no current AFK, HITL, or running task. Stage 3A, Stage 3B, Stage 3C, Stage 10A, Stage 10B,
+Stage 10C, Stage 10D, Stage 10E, Stage 10F, Stage 9, and the Stage 10 plan are marked completed in
+planning SQLite. Stage 3 overall still needs additional named adapter slices before the ROADMAP
+Stage 3 done gate is satisfied. If the database reports anything else, trust the database and call
+this handoff stale.
 
 Recent completed ACP checkpoints:
 
+- `82a3450`: shaped the Stage 3C project task seeding task and handoff.
 - `1a47225`: added Stage 3B bounded adapter task candidates, project-list candidate output, tests,
   planning completion, handoff, and worker result.
 - `0e31053`: shaped the Stage 3B adapter task-candidate output task and handoff.
@@ -60,13 +61,13 @@ Recent completed ACP checkpoints:
 - `200d027`: hardened exact task claiming, Story Loop queue snapshots, completed-plan criteria, and
   worker-result/attribution skill contracts.
 
-The latest full local gate passed after Stage 3B adapter task-candidate output completion with:
+The latest full local gate passed after Stage 3C project task seeding completion with:
 
 ```sh
 uv run --no-sync python -B scripts/verify.py
 ```
 
-That run covered 383 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
+That run covered 388 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
 hygiene, planning integrity, skill inventory, source inventory, protected locks, and
 `uv lock --check`.
 
@@ -585,8 +586,8 @@ Stage 3B adapter task-candidate output changed:
   `uv run --no-sync python -B scripts/check_public_repo_hygiene.py`;
   `uv run --no-sync python -B scripts/verify.py`.
 - Review: fresh-thread-style local review found no actionable findings.
-- Residual risks: Stage 3 still needs actual planning-task seeding and named specialized adapters
-  before the full ROADMAP Stage 3 done gate is satisfied.
+- Residual risks: Stage 3 still needs named specialized adapters before the full ROADMAP Stage 3
+  done gate is satisfied.
 
 Stage 3C project task seeding has been shaped:
 
@@ -609,6 +610,41 @@ Stage 3C project task seeding has been shaped:
   `uv run --no-sync python -B scripts/check_planning_integrity.py`;
   `uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json`;
   `uv run --no-sync python -B scripts/verify.py`.
+
+Stage 3C project task seeding changed:
+
+- `src/codex_supervisor/projects.py`: adds `ProjectTaskSeed`, deterministic task seed IDs, and
+  `build_project_task_seeds` to map `ProjectTaskCandidate` output into supervisor-task-compatible
+  fields with source project and source candidate metadata.
+- `src/codex_supervisor/cli.py`: adds `project-seed-tasks`, with dry-run JSON/human output and
+  explicit `--apply` mode that writes only to supervisor planning SQLite through
+  `SupervisorTaskRecord` and typed `upsert_supervisor_task` helpers. Seed status is intentionally
+  limited to `pending`, `ready`, or `blocked` so the command cannot create running/reviewing or
+  terminal tasks without worker-run evidence.
+- `tests/test_projects.py`: now covers seed conversion, dry-run output, apply/idempotency,
+  missing-root and candidate-free output, worker-lifecycle status rejection, and existing
+  project-list behavior.
+- `scripts/check_file_justification.py`: records the Stage 3C worker-result artifact purpose.
+- `plans/planning.sqlite3`: records Stage 3C completion through
+  `worker-run-stage3c-project-task-seeding-20260525`,
+  `progress-stage3c-review-completed-20260525`, completed task, completed milestone, completed
+  criterion, and linked worker-result artifact.
+- `insights/stage3c-project-task-seeding-worker-result.json`: durable Stage 3C worker-result
+  evidence.
+- Verification:
+  `uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider`;
+  `uv run --no-sync python -B -m ruff check src/codex_supervisor/projects.py src/codex_supervisor/cli.py tests/test_projects.py scripts/check_file_justification.py --no-cache`;
+  `uv run --no-sync python -B -m mypy --no-incremental src scripts`;
+  `uv run --no-sync python -B scripts/check_file_justification.py`;
+  `uv run --no-sync python -B scripts/check_public_repo_hygiene.py`;
+  `uv run --no-sync python -B scripts/check_planning_integrity.py`;
+  `uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json`;
+  `uv run --no-sync python -B scripts/verify.py`.
+- Review: fresh-thread-style local review found one actionable finding: `project-seed-tasks`
+  accepted worker lifecycle and terminal statuses for seeded rows. The finding was fixed by
+  limiting seed status choices to `pending`, `ready`, or `blocked`, with a regression test.
+- Residual risks: Stage 3 still needs named specialized adapters before the full ROADMAP Stage 3
+  done gate is satisfied.
 
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
@@ -635,9 +671,10 @@ selector. If queue_state is hitl or running, inspect current_task_id with task-s
 If queue_state is `ready`, run `task-current --json` and execute the current AFK slice with
 story-loop discipline.
 
-As of this handoff, the expected queue_state is `ready` with current AFK task
-`task-stage3c-project-task-seeding`. Confirm the Goal Contract, then execute exactly this Stage 3C
-project task seeding slice. Do not jump to Stage 11 MCP until the Stage 3 registry and adapter done
+As of this handoff, the expected queue_state is `completed` for
+`plan-stage3-project-registry-adapters`, with no current AFK task. Continue by shaping the next
+Stage 3 named adapter slice, likely the `nlp-stock-prediction` planning SQLite adapter, before
+jumping to Stage 11 MCP. Do not jump to Stage 11 MCP until the Stage 3 registry and adapter done
 gate is satisfied or explicitly waived.
 Keep live Codex Exec launch disabled while the local Codex CLI still fails preflight with
 `Access is denied`; do not launch live `codex exec` until an accessible executable path and intended

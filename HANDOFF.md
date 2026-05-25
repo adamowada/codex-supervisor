@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 04:39 PDT
+Last updated: 2026-05-25 04:40 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -26,6 +26,7 @@ Completed task: `task-stage12c-plugin-clean-discovery`.
 - DB result: `worker-result-stage12c-plugin-clean-discovery-result`.
 - Review: `review-stage12c-plugin-clean-discovery-20260525`, 0 findings.
 - Completion progress: `progress-stage12c-plugin-clean-discovery-completed-20260525`.
+- Implementation commit: `66e122ca591af35840788a21ca9a281215b7377a`.
 - Stage 12 plan status: `completed`.
 
 Implemented:

@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 04:20 PDT
+Last updated: 2026-05-25 04:27 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,14 +9,68 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `completed`.
+- Current queue state: `ready`.
 - Active plan: `plan-stage12-codex-plugin-desktop-experience`
   (`Stage 12 Codex Plugin And Desktop Experience`, priority 78).
-- Current AFK task: none. `story-loop-status --json` reports no open work remains on the Stage 12
-  plan after Stage 12B.
+- Current AFK task: `task-stage12c-plugin-clean-discovery`.
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.
+
+## Stage 12C Contract
+
+Goal: add a repo-owned clean Codex Desktop plugin discovery smoke verifier that validates the plugin
+source from an isolated temporary profile/project, proves manifest, skills, MCP cwd, and MCP stdio
+lifecycle behavior, and keeps real Desktop install state, marketplace writes, and live worker launch
+out of scope.
+
+Allowed paths:
+
+```text
+plugins/codex-supervisor/**
+scripts/verify_codex_plugin_install.py
+tests/test_codex_plugin.py
+scripts/check_file_justification.py
+plans/planning.sqlite3
+HANDOFF.md
+insights/**
+.agents/skills/**
+```
+
+Acceptance criteria:
+
+- A repo-owned clean plugin install smoke verifier uses an isolated temporary Codex profile/project
+  and validates plugin discovery without writing real Codex Desktop state.
+- The verifier proves plugin manifest relative paths, packaged skills, MCP config cwd resolution,
+  and the configured MCP stdio lifecycle from the plugin source.
+- Focused plugin tests, file-purpose hygiene, planning integrity, full verification, and
+  publication-ready hygiene checks pass with the clean-discovery verifier included.
+
+Verification commands:
+
+```sh
+uv run --no-sync python -B -m pytest tests/test_codex_plugin.py -q -p no:cacheprovider
+uv run --no-sync python -B scripts/check_file_justification.py
+uv run --no-sync python -B scripts/check_planning_integrity.py
+uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
+uv run --no-sync python -B scripts/verify.py
+uv run --no-sync python -B scripts/verify.py --publication-ready
+```
+
+Stop conditions:
+
+- A HITL task becomes current in planning SQLite.
+- The slice requires mutating a real Codex Desktop profile, marketplace registry, external
+  credentials, or UI automation.
+- The verifier cannot prove discovery without relying on machine-local Desktop state.
+- Verification repeatedly fails without a known repo-local fix.
+
+Out of scope:
+
+- Actual Codex Desktop GUI automation or user profile mutation.
+- Marketplace or personal plugin registry writes.
+- Live Codex worker launch or mutating MCP tools.
+- GitHub/CI integration, release packaging, or Stage 13 behavior.
 
 ## Stage 12B Summary
 
@@ -75,7 +129,6 @@ style, type, planning, public hygiene, source inventory, skill inventory, protec
 
 ## Next Action
 
-Shape the next Stage 12 AFK slice from planning SQLite. Likely candidates are clean local Codex
-Desktop plugin install verification or a plugin workflow smoke-check slice. Confirm the new Goal
-Contract, allowed paths, verification commands, stop conditions, and review requirement before
-claiming or executing the next task.
+Execute `task-stage12c-plugin-clean-discovery` through the Story Loop. Run the task verification
+commands, perform the required fresh-thread-style review, fix accepted findings, update planning
+SQLite and this handoff, then ACP the step.

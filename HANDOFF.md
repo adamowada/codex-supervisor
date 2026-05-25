@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 05:56 PDT
+Last updated: 2026-05-25 06:03 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,11 +9,11 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `running`.
-- Current AFK task: `task-stage13d-ci-run-evidence-links`.
-- Current worker run: `worker-run-stage13d-ci-run-evidence-links-inline-20260525`.
+- Current queue state: `ready`.
+- Current AFK task: `task-stage13e-pr-issue-evidence-links`.
+- Current worker run: none yet; claim the ready Stage 13E task to create the next worker run.
 - Current plan: `plan-stage13-github-ci-integration` (`Stage 13 GitHub And CI/CD Integration`).
-- Latest completed task: `task-stage13c-ci-full-history-planning-integrity`.
+- Latest completed task: `task-stage13d-ci-run-evidence-links`.
 - Recent pushed implementation/evidence commits before this handoff update:
   - `fbc0f0c99d61d0f0b9bb1bbcf2edc69d8a675ac9` - Stage 13B path-normalization repair.
   - `7e5b266f47fd505fbe23033cff1af7d8fb7bc8e5` - Stage 13B completion evidence.
@@ -21,6 +21,7 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   - `9e311ae99061bd8978a03d55d22ef0cbf9be4dda` - Stage 13C workflow repair.
   - `eeee711de1e2a275c01f105d8e6a3ab946027a01` - Stage 13C completion evidence.
   - `c5fe64a85b1a76100487eab79b8a4e9e7e2fd881` - Stage 13D claim.
+  - `263354c5c3867be9baa370562225c737e0e63768` - Stage 13D CI evidence implementation.
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.
@@ -55,57 +56,13 @@ uv run --no-sync python -B scripts/verify.py
 uv run --no-sync python -B scripts/verify.py --publication-ready
 ```
 
-## Stage 13D Contract
-
-Task: `task-stage13d-ci-run-evidence-links`.
-Status: `running`.
-Worker run: `worker-run-stage13d-ci-run-evidence-links-inline-20260525`.
-Review required: yes, because the slice changes planning persistence and CLI public surface.
-
-Allowed paths:
-
-- `src/codex_supervisor/planning.py`
-- `src/codex_supervisor/cli.py`
-- `tests/test_planning.py`
-- `tests/test_planning_integrity.py`
-- `plans/planning.sqlite3`
-- `HANDOFF.md`
-- `insights/**`
-- `.agents/skills/**`
-
-Acceptance criteria:
-
-- A typed planning helper or CLI command records CI run evidence with provider, run URL, head SHA,
-  workflow/job metadata, status, and conclusion without ad hoc SQL.
-- Recording CI evidence creates durable planning progress and safe artifact or commit links that
-  pass planning integrity and publication hygiene.
-- Focused planning/CLI tests, planning integrity, full verification, and publication-ready
-  verification pass with the CI evidence helper included.
-
-Verification commands:
-
-```sh
-uv run --no-sync python -B -m pytest tests/test_planning.py -q -p no:cacheprovider
-uv run --no-sync python -B scripts/check_planning_integrity.py
-uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
-uv run --no-sync python -B scripts/verify.py
-uv run --no-sync python -B scripts/verify.py --publication-ready
-```
-
-Stop conditions:
-
-- A HITL task becomes current in planning SQLite.
-- The implementation requires GitHub credentials, secrets, repository settings, or network access
-  during local tests.
-- The helper cannot be implemented through typed planning APIs without ad hoc SQL mutations.
-- Verification repeatedly fails without a known repo-local fix.
-
-## Stage 13D Progress
+## Stage 13D Summary
 
 Review anchor: stage13d-review.
 Review result anchor: stage13d-review-result.
+Summary anchor: stage13d-summary.
 
-Current unpushed implementation state:
+Completed task: `task-stage13d-ci-run-evidence-links`.
 
 - Added typed `CiRunEvidenceRecord` / `CiRunEvidenceRecorded` records and
   `PlanningSQLiteStore.record_ci_run_evidence`.
@@ -124,6 +81,10 @@ Current unpushed implementation state:
 - Review `review-stage13d-ci-run-evidence-links-20260525` found one accepted P2 issue: CI evidence
   upsert must not overwrite unrelated non-CI progress IDs. The implementation now rejects that
   collision and `tests/test_planning.py` covers it.
+- Worker result: `worker-result-stage13d-ci-run-evidence-links-result`.
+- Implementation commit: `263354c5c3867be9baa370562225c737e0e63768`.
+- Successful post-implementation CI: GitHub Actions run
+  `https://github.com/adamowada/codex-supervisor/actions/runs/26401678510`.
 
 Verification passed with Stage 13D included:
 
@@ -135,9 +96,62 @@ uv run --no-sync python -B scripts/verify.py
 uv run --no-sync python -B scripts/verify.py --publication-ready
 ```
 
+## Stage 13E Contract
+
+Task: `task-stage13e-pr-issue-evidence-links`.
+Status: `ready`.
+Review required: yes, because the slice changes planning persistence and CLI public surface for
+GitHub evidence.
+
+Goal: add typed planning and CLI paths for recording GitHub pull request and issue-comment evidence
+into planning SQLite so PRs, comments, commits, and optional repo-local artifacts can be linked
+durably without live credentials or ad hoc SQL.
+
+Allowed paths:
+
+- `src/codex_supervisor/planning.py`
+- `src/codex_supervisor/cli.py`
+- `tests/test_planning.py`
+- `tests/test_planning_integrity.py`
+- `plans/planning.sqlite3`
+- `HANDOFF.md`
+- `insights/**`
+- `.agents/skills/**`
+
+Acceptance criteria:
+
+- A typed planning helper or CLI command records GitHub pull request evidence with provider,
+  repository, PR number, PR URL, title or summary, head/base refs or SHAs, state, draft/merged
+  flags, and optional issue thread metadata without ad hoc SQL.
+- A typed planning helper or CLI command records GitHub issue-comment evidence with provider,
+  repository, issue or PR number, comment ID or URL, author when provided, and summary/details
+  without requiring live GitHub credentials.
+- Recording PR and issue evidence creates durable planning progress plus safe commit links or
+  optional repo-local artifact links that pass planning integrity and publication hygiene.
+- Focused planning/CLI tests, planning integrity, full verification, and publication-ready
+  verification pass with the PR/issue evidence helper included.
+
+Verification commands:
+
+```sh
+uv run --no-sync python -B -m pytest tests/test_planning.py -q -p no:cacheprovider
+uv run --no-sync python -B scripts/check_planning_integrity.py
+uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
+uv run --no-sync python -B scripts/verify.py
+uv run --no-sync python -B scripts/verify.py --publication-ready
+```
+
+Stop conditions:
+
+- A HITL task becomes current in planning SQLite.
+- The implementation requires GitHub credentials, secrets, repository settings, or network access
+  during local tests.
+- The helper cannot be implemented through typed planning APIs without ad hoc SQL mutations.
+- The scope expands into creating/updating PRs, posting comments, merging, release publishing, or
+  live API fetching.
+- Verification repeatedly fails without a known repo-local fix.
+
 ## Next Action
 
-Commit and push the staged Stage 13D implementation/review/insight/handoff state. Then inspect the
-GitHub Actions `Verify` run for the new implementation commit; if it passes, record Stage 13D
-completion in planning SQLite and shape the next Stage 13 AFK slice. If CI fails, record the failure
-and route it as the next repair task.
+ACP the Stage 13D completion and Stage 13E shaping state, then claim
+`task-stage13e-pr-issue-evidence-links` and implement only that slice.

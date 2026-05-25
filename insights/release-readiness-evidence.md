@@ -12,3 +12,17 @@
 - `next action`: Keep live release evidence in planning SQLite, but evaluate trailing evidence-only
   commits against the latest audited code/doc commit so the final ACP can be both published and
   checkable.
+
+## Live Codex Launch Environment
+
+- `claim`: Windows live Codex worker subprocesses need a minimal environment allowlist that matches
+  variable names case-insensitively, because required runtime keys such as `SYSTEMROOT` may not use
+  the mixed-case spelling in source code.
+- `confidence`: confirmed
+- `evidence`: failed worker run `worker-run-v1-live-worker-smoke-cmd-20260525` in
+  `plans/planning.sqlite3`, `src/codex_supervisor/worker_backends.py`, and
+  `tests/test_worker_backends.py`.
+- `scope`: live `codex.cmd` launches from `CodexExecBackend` on Windows.
+- `supersedes`: none
+- `next action`: Keep the subprocess environment allowlist minimal, but compare environment keys
+  case-insensitively and preserve the host-provided key spelling.

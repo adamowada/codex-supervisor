@@ -1062,7 +1062,8 @@ def _minimal_process_environment(source: os._Environ[str]) -> dict[str, str]:
         "USERPROFILE",
         "WINDIR",
     }
-    return {key: value for key, value in source.items() if key in allowed}
+    normalized_allowed = {key.upper() for key in allowed}
+    return {key: value for key, value in source.items() if key.upper() in normalized_allowed}
 
 
 def _timeout_text(value: object) -> str:

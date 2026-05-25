@@ -540,16 +540,18 @@ def test_codex_exec_backend_launch_missing_result_preserves_evidence(tmp_path):
 def test_default_process_environment_uses_minimal_allowlist():
     filtered = _minimal_process_environment(
         {
-            "PATH": "C:/tools",
+            "Path": "C:/tools",
             "APPDATA": "C:/AppData/Roaming",
+            "SYSTEMROOT": "C:/Windows",
             "OPENAI_API_KEY": "sk-redacted",
             "SECRET_TOKEN": "nope",
         }
     )
 
     assert filtered == {
-        "PATH": "C:/tools",
+        "Path": "C:/tools",
         "APPDATA": "C:/AppData/Roaming",
+        "SYSTEMROOT": "C:/Windows",
     }
 
 

@@ -19,8 +19,8 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   - `uv run --no-sync python -B scripts/verify.py` - 469 passed plus hygiene, source inventory, skill inventory, planning integrity, and source locks.
   - `uv run --no-sync python -B scripts/verify.py --publication-ready` - 469 passed plus publication-ready hygiene and source locks.
 - Latest successful remote CI: GitHub Actions `Verify` run
-  `https://github.com/adamowada/codex-supervisor/actions/runs/26406106423` for commit
-  `fb628a1e7df1403b0d1fae126ad4aa0b05b971c4`.
+  `https://github.com/adamowada/codex-supervisor/actions/runs/26406847892` for commit
+  `5ea019ecf434cece0db73f15e0c47a88362d467b`.
 - Latest evidence-only push: `4def6b62cc4196af50e7a78df406af7b7ca1553f`; GitHub Actions
   `Verify` run `https://github.com/adamowada/codex-supervisor/actions/runs/26406204031` passed.
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved

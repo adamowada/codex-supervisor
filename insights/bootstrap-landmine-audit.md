@@ -48,6 +48,12 @@ Confidence: confirmed.
 - Publication hygiene does not publish ignored `sources/<name>` clone artifacts. The tracked
   `sources/README.md` inventory documents how to recreate local clones, while publication-ready
   checks require linked planning artifacts to be tracked files unless they are external URLs.
+- Ignored runtime artifacts are valid transient import sources but bad publication artifact links.
+  Stage 11B review evidence initially linked `artifacts/reviews/...` through planning SQLite, and
+  `scripts/verify.py --publication-ready` correctly failed until the planning artifact pointer was
+  rewritten to a tracked `HANDOFF.md` anchor. Keep raw worker/review/run files under ignored
+  runtime directories, ingest durable worker results into SQLite, and link only tracked supporting
+  docs or external URLs in `plan_artifact_links`.
 - `scripts/check_planning_integrity.py` now makes SQLite drift checks part of the default local
   verification suite, including queue-state drift, invalid statuses, missing worker evidence, and
   missing progress artifact links.
@@ -227,8 +233,9 @@ Confidence: confirmed.
   status enums, `review_required` boolean constraints, and strict full-SHA commit-link constraints.
 - Fresh-thread orientation now has current-queue CLI flags so blocked successor plans stay visible:
   `plan-summary --current-queue` and `task-list --current-queue-plans-only`.
-- Worker-run completion helpers now auto-link completed JSON `result_path` artifacts with the
-  `worker-result` relationship.
+- Worker-run completion helpers now ingest completed JSON `result_path` files into DB-backed worker
+  result records; ignored raw JSON remains transient and should not become a publication artifact
+  link.
 - Terminal acceptance criteria semantics now treat only `pending` and `blocked` criteria as open, so
   intentional `failed` or `cancelled` criteria do not keep a terminal plan incomplete.
 - Ready AFK task selection rejects unsafe verification commands before a worker can claim the task.

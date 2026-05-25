@@ -34,9 +34,11 @@ including the `${CODEX_HOME}/config.toml` `[features] goals = true` fallback.
 ## Standard Result Schema
 
 Require workers to return a JSON result matching `../worker-result-contract.md`. Use those field
-names because they mirror `CONTRACTS.md`; do not invent a parallel schema inside prompts. In
-particular, `artifacts` must include the JSON `result_path`, while `changed_files` should stay
-focused on implementation or durable-documentation paths covered by task `allowed_paths`.
+names because they mirror `CONTRACTS.md`; do not invent a parallel schema inside prompts.
+`changed_files` should stay focused on implementation or durable-documentation paths covered by task
+`allowed_paths`. Raw JSON result files under ignored runtime directories are transient import
+sources; after ingestion, durable evidence lives in planning SQLite, with `artifacts` reserved for
+tracked supporting docs/reports, tracked insight or handoff anchors, or external URLs.
 
 ## Exclude
 

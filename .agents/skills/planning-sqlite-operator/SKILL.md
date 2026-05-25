@@ -31,9 +31,12 @@ Use `plans/planning.sqlite3` for operational planning state.
 - Store Goal Contract and Story Loop metadata in task `scope_json`, `acceptance_criteria_json`,
   `verification_commands_json`, and worker-run `metadata_json` until the schema gains dedicated
   tables.
-- Completed worker runs must use `result_path` for an existing repo-local JSON artifact satisfying
-  `../worker-result-contract.md`. Link the exact JSON result path through `plan_artifact_links` with
-  relationship `worker-result`; link markdown reports separately as supporting artifacts.
+- Complete worker runs through `worker-run-status ... --result-path <json>` so the transient JSON is
+  ingested into `worker_result_records` and the durable worker row points at `result_id`.
+  Publication-ready state must not require ignored `runs/`, `artifacts/`, `worktrees/`, or
+  `worker-results/` files to be tracked. Link only tracked supporting docs, tracked durable reports,
+  tracked insight/handoff anchors, or external URLs through `plan_artifact_links`; leave ignored raw
+  worker/review artifacts as transient evidence summarized by the DB row.
 - Keep markdown source-of-truth docs human-facing; do not hide stable doctrine only in SQLite.
 
 ## Current Task Rule

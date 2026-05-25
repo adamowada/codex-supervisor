@@ -52,11 +52,13 @@ orientation needs dependency setup.
 12. Execute only that story.
 13. Run the task verification commands.
 14. Run review when required.
-15. If checks pass, write or link a repo-local JSON worker result that satisfies
-   `../worker-result-contract.md`: set the worker run `result_path` to that exact JSON file, include
-   the same path in `artifacts`, link it through `plan_artifact_links` with relationship
-   `worker-result`, and keep `changed_files` focused on implementation or durable-documentation
-   paths covered by task `allowed_paths`.
+15. If checks pass, write a repo-local JSON worker result that satisfies
+    `../worker-result-contract.md` and ingest it with `worker-run-status ... --result-path <json>`.
+    The JSON path is a transient import source; after ingestion the durable completion authority is
+    the DB-backed worker result record and the worker run `result_id`. Do not link ignored
+    `runs/`, `artifacts/`, `worktrees/`, or `worker-results/` paths as publication artifacts. Link
+    only tracked supporting docs, tracked durable reports, tracked insight/handoff anchors, or
+    external URLs through `plan_artifact_links`.
 16. Record progress, artifacts, changed files, and follow-up tasks.
 17. If checks fail, classify with `failure-loop-triage` or `ci-repair-loop`.
 18. Repeat only if another ready task exists and the user or official host automation tooling

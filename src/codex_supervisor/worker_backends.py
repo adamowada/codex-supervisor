@@ -10,8 +10,12 @@ import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
+
+from codex_supervisor.worker_results import WorkerResultError, validate_worker_result_file
+from codex_supervisor.worktree_artifacts import is_ignored_runtime_path
 
 JsonObject = dict[str, Any]
 
@@ -46,6 +50,8 @@ class WorkerLaunchRequest:
     service_tier: str | None = None
     native_goal_mode: bool = False
     ignore_user_config: bool = False
+    preflight_timeout_seconds: float | None = 30.0
+    launch_timeout_seconds: float | None = 3600.0
     environment: dict[str, str] = field(default_factory=dict)
     metadata: JsonObject = field(default_factory=dict)
 
@@ -84,6 +90,15 @@ type CommandRunner = Callable[[tuple[str, ...], Path, dict[str, str]], CommandEx
 
 
 @dataclass(frozen=True)
+class LaunchEnvironmentResult:
+    """Effective worker subprocess environment or a fail-closed reason."""
+
+    environment: dict[str, str]
+    failure_class: str | None = None
+    stderr: str = ""
+
+
+@dataclass(frozen=True)
 class CodexExecPreflightResult:
     """Codex executable/version evidence and launch command preview."""
 
@@ -114,6 +129,8 @@ class CodexExecBackend:
         """Resolve Codex, run version preflight, and build the intended argv list."""
 
         executable_path, resolution_method = _resolve_codex_executable(self.codex_executable)
+        environment_result = _build_launch_environment(request)
+        option_failure = _unsupported_launch_option_failure(request)
         argv = _build_codex_exec_argv(request, executable_path) if executable_path else ()
         version_command = (executable_path, "--version") if executable_path else ()
         version_exit_code: int | None = None
@@ -123,17 +140,29 @@ class CodexExecBackend:
         if executable_path is None:
             failure_class = "codex_cli_unavailable"
             version_stderr = "codex executable was not found on PATH"
+        elif environment_result.failure_class is not None:
+            failure_class = environment_result.failure_class
+            version_stderr = environment_result.stderr
+        elif option_failure is not None:
+            failure_class = option_failure[0]
+            version_stderr = option_failure[1]
         else:
             try:
-                command_runner = self.command_runner or _default_command_runner
-                version_result = command_runner(
+                version_result = _run_command(
+                    self.command_runner,
                     version_command,
                     request.worktree_path,
-                    request.environment,
+                    environment_result.environment,
+                    timeout_seconds=request.preflight_timeout_seconds,
                 )
             except OSError as exc:
                 failure_class = _classify_version_exception(executable_path, exc)
                 version_stderr = str(exc)
+            except subprocess.TimeoutExpired as exc:
+                failure_class = "codex_version_timeout"
+                version_exit_code = 124
+                version_stdout = _timeout_text(exc.stdout)
+                version_stderr = f"codex --version timed out after {exc.timeout} seconds"
             else:
                 version_exit_code = version_result.exit_code
                 version_stdout = version_result.stdout
@@ -153,6 +182,7 @@ class CodexExecBackend:
             version_stderr=version_stderr,
             failure_class=failure_class,
             argv=argv,
+            environment=environment_result.environment,
         )
         return CodexExecPreflightResult(
             executable_path=executable_path,
@@ -169,7 +199,8 @@ class CodexExecBackend:
     def run(self, request: WorkerLaunchRequest) -> WorkerLaunchResult:
         """Run Codex Exec preflight and, when enabled, the prepared exec argv."""
 
-        _write_text_artifact(request.repo_root, request.prompt_path, request.prompt)
+        composed_prompt = compose_worker_prompt(request)
+        _write_text_artifact(request.repo_root, request.prompt_path, composed_prompt)
         preflight = self.preflight(request)
         if preflight.failure_class is not None:
             _write_codex_exec_evidence(
@@ -222,13 +253,72 @@ class CodexExecBackend:
                 diff_summary_path=request.diff_summary_path,
                 metadata=metadata,
             )
-        command_runner = self.command_runner or _default_command_runner
+        schema_failure = _ensure_result_schema_available(request)
+        if schema_failure is not None:
+            metadata = {
+                **preflight.metadata,
+                "launch_decision": "result_schema_unavailable",
+            }
+            _write_codex_exec_evidence(
+                request,
+                event="codex_exec.result_schema_unavailable",
+                stdout="",
+                stderr=schema_failure,
+                final_message=f"Codex Exec result schema is unavailable: {schema_failure}\n",
+                preflight=preflight,
+                extra_event={"failure_class": "worker_result_schema_unavailable"},
+            )
+            return WorkerLaunchResult(
+                worker_run_id=request.worker_run_id,
+                task_id=request.task_id,
+                status="failed",
+                exit_code=1,
+                duration_seconds=0.0,
+                prompt_path=request.prompt_path,
+                jsonl_path=request.jsonl_path,
+                stdout_path=request.stdout_path,
+                stderr_path=request.stderr_path,
+                final_message_path=request.final_message_path,
+                diff_summary_path=request.diff_summary_path,
+                failure_class="worker_result_schema_unavailable",
+                metadata=metadata,
+            )
+        environment_result = _build_launch_environment(request)
+        if environment_result.failure_class is not None:
+            _write_codex_exec_evidence(
+                request,
+                event="codex_exec.environment_failed",
+                stdout="",
+                stderr=environment_result.stderr,
+                final_message=(
+                    f"Codex Exec environment failed: {environment_result.failure_class}\n"
+                ),
+                preflight=preflight,
+            )
+            return WorkerLaunchResult(
+                worker_run_id=request.worker_run_id,
+                task_id=request.task_id,
+                status="failed",
+                exit_code=1,
+                duration_seconds=0.0,
+                prompt_path=request.prompt_path,
+                jsonl_path=request.jsonl_path,
+                stdout_path=request.stdout_path,
+                stderr_path=request.stderr_path,
+                final_message_path=request.final_message_path,
+                diff_summary_path=request.diff_summary_path,
+                failure_class=environment_result.failure_class,
+                metadata=preflight.metadata,
+            )
         started_at = time.perf_counter()
         try:
-            exec_result = command_runner(
+            exec_result = _run_command(
+                self.command_runner,
                 preflight.argv,
                 request.worktree_path,
-                request.environment,
+                environment_result.environment,
+                stdin=composed_prompt,
+                timeout_seconds=request.launch_timeout_seconds,
             )
         except OSError as exc:
             duration_seconds = time.perf_counter() - started_at
@@ -264,6 +354,41 @@ class CodexExecBackend:
                 failure_class="codex_exec_failed",
                 metadata=metadata,
             )
+        except subprocess.TimeoutExpired as exc:
+            duration_seconds = time.perf_counter() - started_at
+            metadata = _codex_exec_launch_metadata(
+                preflight,
+                launch_decision="exec_timeout",
+                exec_exit_code=124,
+                duration_seconds=duration_seconds,
+            )
+            _write_codex_exec_evidence(
+                request,
+                event="codex_exec.timeout",
+                stdout=_timeout_text(exc.stdout),
+                stderr=f"codex exec timed out after {exc.timeout} seconds",
+                final_message="Codex Exec launch timed out before producing a result.\n",
+                preflight=preflight,
+                extra_event={"failure_class": "codex_exec_timeout"},
+                process_jsonl=_timeout_text(exc.stdout),
+                preserve_existing_jsonl=True,
+                preserve_existing_diff_summary=True,
+            )
+            return WorkerLaunchResult(
+                worker_run_id=request.worker_run_id,
+                task_id=request.task_id,
+                status="failed",
+                exit_code=124,
+                duration_seconds=duration_seconds,
+                prompt_path=request.prompt_path,
+                jsonl_path=request.jsonl_path,
+                stdout_path=request.stdout_path,
+                stderr_path=request.stderr_path,
+                final_message_path=request.final_message_path,
+                diff_summary_path=request.diff_summary_path,
+                failure_class="codex_exec_timeout",
+                metadata=metadata,
+            )
         duration_seconds = time.perf_counter() - started_at
         if exec_result.exit_code != 0:
             metadata = _codex_exec_launch_metadata(
@@ -283,6 +408,7 @@ class CodexExecBackend:
                     "exec_exit_code": exec_result.exit_code,
                     "failure_class": "codex_exec_failed",
                 },
+                process_jsonl=exec_result.stdout,
                 preserve_existing_jsonl=True,
                 preserve_existing_diff_summary=True,
             )
@@ -321,6 +447,7 @@ class CodexExecBackend:
                     "failure_class": "worker_result_missing",
                     "result_path": request.result_path,
                 },
+                process_jsonl=exec_result.stdout,
                 preserve_existing_jsonl=True,
                 preserve_existing_diff_summary=True,
             )
@@ -337,6 +464,54 @@ class CodexExecBackend:
                 final_message_path=request.final_message_path,
                 diff_summary_path=request.diff_summary_path,
                 failure_class="worker_result_missing",
+                metadata=metadata,
+            )
+        try:
+            validate_worker_result_file(
+                result_file,
+                repo_root=request.repo_root,
+                result_path=request.result_path,
+                worker_run_id=request.worker_run_id,
+                allowed_paths=request.allowed_paths,
+                verification_commands=request.verification_commands,
+                acceptance_criteria=request.acceptance_criteria,
+            )
+        except (OSError, WorkerResultError, json.JSONDecodeError) as exc:
+            metadata = _codex_exec_launch_metadata(
+                preflight,
+                launch_decision="worker_result_invalid",
+                exec_exit_code=exec_result.exit_code,
+                duration_seconds=duration_seconds,
+            )
+            _write_codex_exec_evidence(
+                request,
+                event="codex_exec.worker_result_invalid",
+                stdout=exec_result.stdout,
+                stderr=exec_result.stderr,
+                final_message=f"Codex Exec produced an invalid Worker Result: {exc}\n",
+                preflight=preflight,
+                extra_event={
+                    "exec_exit_code": exec_result.exit_code,
+                    "failure_class": "worker_result_invalid",
+                    "result_path": request.result_path,
+                },
+                process_jsonl=exec_result.stdout,
+                preserve_existing_jsonl=True,
+                preserve_existing_diff_summary=True,
+            )
+            return WorkerLaunchResult(
+                worker_run_id=request.worker_run_id,
+                task_id=request.task_id,
+                status="failed",
+                exit_code=1,
+                duration_seconds=duration_seconds,
+                prompt_path=request.prompt_path,
+                jsonl_path=request.jsonl_path,
+                stdout_path=request.stdout_path,
+                stderr_path=request.stderr_path,
+                final_message_path=request.final_message_path,
+                diff_summary_path=request.diff_summary_path,
+                failure_class="worker_result_invalid",
                 metadata=metadata,
             )
         metadata = _codex_exec_launch_metadata(
@@ -356,6 +531,7 @@ class CodexExecBackend:
                 "exec_exit_code": exec_result.exit_code,
                 "result_path": request.result_path,
             },
+            process_jsonl=exec_result.stdout,
             preserve_existing_final_message=True,
             preserve_existing_jsonl=True,
             preserve_existing_diff_summary=True,
@@ -489,20 +665,108 @@ def _write_text_artifact(repo_root: Path, relative_path: str, content: str) -> N
     path.write_text(content, encoding="utf-8")
 
 
+def _ensure_result_schema_available(request: WorkerLaunchRequest) -> str | None:
+    schema_path = request.repo_root / request.result_schema_path
+    if schema_path.exists():
+        return None
+    if not is_ignored_runtime_path(request.result_schema_path):
+        return f"schema path is missing or not a runtime artifact: {request.result_schema_path}"
+    schema_path.parent.mkdir(parents=True, exist_ok=True)
+    schema_path.write_text(
+        json.dumps(_worker_result_output_schema(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return None
+
+
+def _worker_result_output_schema() -> JsonObject:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+            "worker_run_id",
+            "status",
+            "summary",
+            "changed_files",
+            "tests_run",
+            "acceptance_results",
+            "risks",
+            "follow_up_tasks",
+            "artifacts",
+        ],
+        "properties": {
+            "worker_run_id": {"type": "string", "minLength": 1},
+            "worker_run_ids": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "minItems": 1,
+            },
+            "status": {"enum": ["completed", "blocked", "failed", "needs_review"]},
+            "summary": {"type": "string", "minLength": 1},
+            "changed_files": {"type": "array", "items": {"type": "string"}},
+            "tests_run": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["command", "exit_code", "summary"],
+                    "properties": {
+                        "command": {"type": "string", "minLength": 1},
+                        "exit_code": {"type": "integer"},
+                        "summary": {"type": "string", "minLength": 1},
+                    },
+                    "additionalProperties": True,
+                },
+            },
+            "acceptance_results": {"type": "object"},
+            "risks": {"type": "array", "items": {"type": "string"}},
+            "follow_up_tasks": {"type": "array", "items": {"type": "string"}},
+            "artifacts": {"type": "array", "items": {"type": "string"}},
+            "completion_notes": {"type": "string"},
+            "handoff_notes": {"type": "string"},
+        },
+        "additionalProperties": True,
+    }
+
+
+def _run_command(
+    command_runner: CommandRunner | None,
+    argv: tuple[str, ...],
+    cwd: Path,
+    environment: dict[str, str],
+    *,
+    stdin: str | None = None,
+    timeout_seconds: float | None = None,
+) -> CommandExecutionResult:
+    if command_runner is None:
+        return _default_command_runner(
+            argv,
+            cwd,
+            environment,
+            stdin=stdin,
+            timeout_seconds=timeout_seconds,
+        )
+    return command_runner(argv, cwd, environment)
+
+
 def _default_command_runner(
     argv: tuple[str, ...],
     cwd: Path,
     environment: dict[str, str],
+    *,
+    stdin: str | None = None,
+    timeout_seconds: float | None = None,
 ) -> CommandExecutionResult:
-    process_environment = os.environ.copy()
+    process_environment = _minimal_process_environment(os.environ)
     process_environment.update(environment)
     completed = subprocess.run(
         argv,
         cwd=cwd,
         env=process_environment,
         text=True,
+        input=stdin,
         capture_output=True,
         check=False,
+        timeout=timeout_seconds,
     )
     return CommandExecutionResult(
         exit_code=completed.returncode,
@@ -520,6 +784,47 @@ def _resolve_codex_executable(configured_executable: str | None) -> tuple[str | 
     return resolved, "path"
 
 
+def compose_worker_prompt(request: WorkerLaunchRequest) -> str:
+    """Return the prompt sent to Codex Exec over stdin and saved as raw evidence."""
+
+    acceptance = "\n".join(f"- {criterion}" for criterion in request.acceptance_criteria)
+    verification = "\n".join(f"- `{command}`" for command in request.verification_commands)
+    allowed_paths = "\n".join(f"- `{path}`" for path in request.allowed_paths)
+    sections = (
+        "# Goal Contract",
+        request.rendered_goal_contract.strip() or "No rendered Goal Contract supplied.",
+        "# Worker Instructions",
+        request.prompt.strip(),
+        "# Required Worker Result",
+        (
+            "Before finishing, write a Worker Result JSON file that satisfies the schema at "
+            f"`{request.result_schema_path}` to `{_worker_visible_result_path(request)}`. "
+            f"The supervisor imports that file as `{request.result_path}`."
+        ),
+        (
+            "The JSON must include worker_run_id, status, summary, changed_files, tests_run, "
+            "acceptance_results, risks, follow_up_tasks, artifacts, and completion_notes."
+        ),
+        "# Acceptance Criteria",
+        acceptance or "- none",
+        "# Verification Commands",
+        verification or "- none",
+        "# Allowed Paths",
+        allowed_paths or "- none",
+    )
+    return "\n\n".join(sections).rstrip() + "\n"
+
+
+def _worker_visible_result_path(request: WorkerLaunchRequest) -> str:
+    """Return a path the worker can use from its configured worktree cwd."""
+
+    target = request.repo_root / request.result_path
+    try:
+        return Path(os.path.relpath(target, request.worktree_path)).as_posix()
+    except ValueError:
+        return request.result_path
+
+
 def _build_codex_exec_argv(
     request: WorkerLaunchRequest,
     executable_path: str,
@@ -529,15 +834,21 @@ def _build_codex_exec_argv(
         "exec",
         "--json",
         "--output-schema",
-        request.result_schema_path,
+        str(request.repo_root / request.result_schema_path),
         "--output-last-message",
-        request.final_message_path,
+        str(request.repo_root / request.final_message_path),
         "--sandbox",
         request.sandbox_mode,
+        "--cd",
+        str(request.worktree_path),
     ]
+    if request.model is not None:
+        argv.extend(("--model", request.model))
+    if request.approval_policy:
+        argv.extend(("-c", f"approval_policy={json.dumps(request.approval_policy)}"))
     if request.ignore_user_config:
         argv.append("--ignore-user-config")
-    argv.append(request.prompt)
+    argv.append("-")
     return tuple(argv)
 
 
@@ -573,18 +884,20 @@ def _codex_exec_metadata(
     version_stderr: str,
     failure_class: str | None,
     argv: tuple[str, ...],
+    environment: dict[str, str],
 ) -> JsonObject:
+    composed_prompt = compose_worker_prompt(request)
     return {
         "backend": "codex_exec",
-        "resolved_executable": executable_path,
+        "resolved_executable": _redact_executable(executable_path),
         "resolution_method": resolution_method,
-        "version_command": list(version_command),
+        "version_command": _redact_argv(version_command, request),
         "version_exit_code": version_exit_code,
         "version_stdout": version_stdout,
         "version_stderr": version_stderr,
         "failure_class": failure_class,
-        "codex_home": request.codex_home,
-        "codex_config_path": request.codex_config_path,
+        "codex_home": _redact_optional_path(request.codex_home, label="codex-home"),
+        "codex_config_path": _redact_optional_path(request.codex_config_path, label="codex-config"),
         "sandbox_mode": request.sandbox_mode,
         "approval_policy": request.approval_policy,
         "native_goal_mode": request.native_goal_mode,
@@ -597,10 +910,16 @@ def _codex_exec_metadata(
         "service_tier": request.service_tier,
         "version_gated_options": _version_gated_options(request),
         "host_platform": platform.platform(),
-        "working_directory": str(request.worktree_path),
+        "working_directory": _repo_relative_or_placeholder(
+            request.worktree_path,
+            request.repo_root,
+        ),
         "raw_evidence_paths": _raw_evidence_paths(request),
-        "argv": list(argv),
-        "environment_keys": sorted(request.environment),
+        "argv": _redact_argv(argv, request),
+        "prompt_sha256": sha256(composed_prompt.encode("utf-8")).hexdigest(),
+        "prompt_length": len(composed_prompt),
+        "prompt_transport": "stdin",
+        "environment_keys": sorted(environment),
     }
 
 
@@ -621,9 +940,9 @@ def _version_gated_options(request: WorkerLaunchRequest) -> list[str]:
     if request.model is not None:
         options.append("model")
     if request.reasoning_effort is not None:
-        options.append("reasoning_effort")
+        options.append("reasoning_effort_unsupported")
     if request.service_tier is not None:
-        options.append("service_tier")
+        options.append("service_tier_unsupported")
     if request.codex_config_path is not None:
         options.append("config")
     return options
@@ -653,6 +972,7 @@ def _write_codex_exec_evidence(
     final_message: str,
     preflight: CodexExecPreflightResult,
     extra_event: JsonObject | None = None,
+    process_jsonl: str = "",
     preserve_existing_final_message: bool = False,
     preserve_existing_jsonl: bool = False,
     preserve_existing_diff_summary: bool = False,
@@ -668,7 +988,7 @@ def _write_codex_exec_evidence(
     event_payload = {
         "event": event,
         "failure_class": preflight.failure_class,
-        "argv": list(preflight.argv),
+        "argv": preflight.metadata.get("argv", []),
     }
     if extra_event:
         event_payload.update(extra_event)
@@ -683,4 +1003,102 @@ def _write_codex_exec_evidence(
             existing_jsonl + separator + event_line,
         )
     else:
-        _write_text_artifact(request.repo_root, request.jsonl_path, event_line)
+        prefix = process_jsonl
+        if prefix and not prefix.endswith("\n"):
+            prefix += "\n"
+        _write_text_artifact(request.repo_root, request.jsonl_path, prefix + event_line)
+
+
+def _build_launch_environment(request: WorkerLaunchRequest) -> LaunchEnvironmentResult:
+    environment = dict(request.environment)
+    if request.codex_home is not None:
+        existing = environment.get("CODEX_HOME")
+        if existing is not None and Path(existing) != Path(request.codex_home):
+            return LaunchEnvironmentResult(
+                environment=environment,
+                failure_class="codex_home_conflict",
+                stderr="codex_home conflicts with environment CODEX_HOME",
+            )
+        environment["CODEX_HOME"] = request.codex_home
+    return LaunchEnvironmentResult(environment=environment)
+
+
+def _unsupported_launch_option_failure(request: WorkerLaunchRequest) -> tuple[str, str] | None:
+    unsupported: list[str] = []
+    if request.reasoning_effort is not None:
+        unsupported.append("reasoning_effort")
+    if request.service_tier is not None:
+        unsupported.append("service_tier")
+    if request.native_goal_mode:
+        unsupported.append("native_goal_mode")
+    if request.codex_config_path is not None and request.codex_home is not None:
+        expected_config = Path(request.codex_home) / "config.toml"
+        if Path(request.codex_config_path) != expected_config:
+            unsupported.append("codex_config_path")
+    if unsupported:
+        joined = ", ".join(unsupported)
+        return "codex_launch_option_unsupported", f"Unsupported Codex launch option(s): {joined}"
+    return None
+
+
+def _minimal_process_environment(source: os._Environ[str]) -> dict[str, str]:
+    allowed = {
+        "APPDATA",
+        "COMSPEC",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "LOCALAPPDATA",
+        "PATH",
+        "PATHEXT",
+        "PROGRAMDATA",
+        "SystemRoot",
+        "TEMP",
+        "TMP",
+        "USERPROFILE",
+        "WINDIR",
+    }
+    return {key: value for key, value in source.items() if key in allowed}
+
+
+def _timeout_text(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
+def _redact_executable(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return f"<codex-executable:{Path(value).name}>"
+
+
+def _redact_optional_path(value: str | None, *, label: str) -> str | None:
+    if value is None:
+        return None
+    return f"<{label}>"
+
+
+def _redact_argv(argv: tuple[str, ...], request: WorkerLaunchRequest) -> list[str]:
+    return [_redact_argv_item(item, request) for item in argv]
+
+
+def _redact_argv_item(item: str, request: WorkerLaunchRequest) -> str:
+    if item == request.prompt:
+        return "<prompt>"
+    path = Path(item)
+    if path.is_absolute():
+        return _repo_relative_or_placeholder(path, request.repo_root)
+    return item
+
+
+def _repo_relative_or_placeholder(path: Path, repo_root: Path) -> str:
+    try:
+        relative = path.resolve(strict=False).relative_to(repo_root.resolve(strict=False))
+    except ValueError:
+        return f"<local-path:{path.name}>"
+    if relative.as_posix() == ".":
+        return "<repo-root>"
+    return f"<repo-root>/{relative.as_posix()}"

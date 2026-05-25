@@ -1,4 +1,4 @@
-"""Non-live worker launch request preparation."""
+"""Worker launch request preparation."""
 
 from __future__ import annotations
 
@@ -128,7 +128,7 @@ def _worker_run_metadata(
         "task_id": task.task_id,
         "worker_run_id": layout.worker_run_id,
         "launch_preparation": {
-            "mode": "non_live_request_preparation",
+            "mode": "worker_launch_request_preparation",
             "result_schema_path": result_schema_path,
             "sandbox_mode": sandbox_mode,
             "approval_policy": approval_policy,

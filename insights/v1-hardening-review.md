@@ -12,8 +12,8 @@
   adapters, spawned-project bootstrap, review routing, release readiness, security, and public
   hygiene.
 - `supersedes`: none
-- `next action`: Execute `task-v1-live-story-loop-worker` first, then unblock the dependent MCP,
-  live review, release evidence, and final completion-audit tasks.
+- `next action`: Finish ACP for `task-v1-live-story-loop-worker`, then continue with the dependent
+  MCP, live review, release evidence, and final completion-audit tasks.
 
 ## Normalized Finding Clusters
 
@@ -44,3 +44,18 @@
 - Project adapter infrastructure, Goal Contract rendering, Codex local-state read-only telemetry,
   review result schemas, review persistence, and repair-task routing all exist; the gaps are live
   launch paths, stricter evidence rules, and real scaffold/application behavior.
+
+## Live Worker Slice Update
+
+- `task-v1-live-story-loop-worker` adds a production `story-loop-run-once` service/CLI path that
+  claims one ready AFK task, records run/worktree metadata, creates an isolated git worktree, runs
+  the live Codex Exec backend, requires git/worktree changed-path evidence, and ingests a validated
+  Worker Result into planning SQLite.
+- `CodexExecBackend` now composes the Goal Contract and Worker Result instructions into a stdin
+  prompt, writes a run-local JSON schema artifact, redacts prompt/local paths from metadata,
+  captures JSONL/stdout/stderr/final-message evidence, enforces CODEX_HOME conflicts and unsupported
+  launch options fail-closed, uses bounded timeouts, and launches with a minimal environment
+  allowlist.
+- Remaining v1 hardening clusters are still real blockers until their tasks land: mutating MCP,
+  real spawned-project bootstrap/adapters, live review integrity, current release evidence, and
+  security/public-hygiene follow-ups outside the live worker slice.

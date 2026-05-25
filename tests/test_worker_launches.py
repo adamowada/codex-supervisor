@@ -77,7 +77,7 @@ def test_prepare_worker_launch_request_exposes_worker_run_metadata():
     assert metadata["task_id"] == "task-stage7b-worker-launch-preparation"
     assert metadata["worker_run_id"] == "worker-run-stage7b-worker-launch-preparation-20260524"
     assert metadata["launch_preparation"] == {
-        "mode": "non_live_request_preparation",
+        "mode": "worker_launch_request_preparation",
         "result_schema_path": "schemas/worker-result.schema.json",
         "sandbox_mode": "workspace-write",
         "approval_policy": "never",

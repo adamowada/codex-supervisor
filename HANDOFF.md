@@ -7,11 +7,12 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Current Snapshot
 
-- Current queue state: ready by `story-loop-status --json`.
+- Current queue state: ready after the live Story Loop worker slice ACP.
 - Active plan: `plan-v1-live-operational-hardening`.
-- Current AFK task: `task-v1-live-story-loop-worker`.
+- Current AFK task: `task-v1-mutating-mcp-tools`.
 - Latest planning checkpoint: six-lane v1 hardening review digested in
-  `progress-v1-six-lane-review-digested-20260525`.
+  `progress-v1-six-lane-review-digested-20260525`; live worker implementation completed in
+  `worker-run-v1-live-story-loop-inline-20260525`.
 - Durable insights: `insights/v1-hardening-clarifications.md` and
   `insights/v1-hardening-review.md`.
 - Codex CLI smoke: npm `codex-cli 0.133.0` resolves in the current shell, and `codex exec --help`
@@ -34,8 +35,7 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Next Action
 
-Implement `task-v1-live-story-loop-worker`: production live Story Loop worker execution with an
-isolated git worktree, enforced Codex launch options, Goal Contract/result prompt composition,
-bounded subprocesses, minimal environment, JSONL/stdout/stderr/diff evidence, Worker Result
-validation, and authoritative changed-path gating. Record progress, update durable insights only for
-reusable learning, verify the slice, then ACP before moving to dependent MCP/review/release tasks.
+Implement `task-v1-mutating-mcp-tools`: default-on mutating MCP tools with explicit opt-out,
+allowed-root enforcement, path privacy, and plugin/readiness parity. Keep using one verified vertical
+slice at a time and ACP before moving to project bootstrap, live review, release evidence, and final
+audit tasks.

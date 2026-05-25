@@ -11,6 +11,8 @@ from codex_supervisor.planning import (
     initialize_planning_database,
     open_existing_planning_database,
 )
+from codex_supervisor.story_loop import run_live_story_loop_once
+from codex_supervisor.worker_backends import CommandExecutionResult
 
 
 def test_story_loop_status_reports_empty_blocked_ready_and_completed_states(tmp_path, capsys):
@@ -709,3 +711,180 @@ def test_story_loop_record_rejects_cross_plan_task_reference(tmp_path, capsys):
         == 1
     )
     assert "belongs to plan-b, not plan-a" in capsys.readouterr().err
+
+
+def test_live_story_loop_run_claims_worktree_launches_and_ingests_result(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = _live_story_loop_store(db_path)
+    calls: list[tuple[str, ...]] = []
+
+    def codex_runner(argv, cwd, environment):
+        calls.append(argv)
+        if argv == ("C:/Tools/codex.exe", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+        _write_live_worker_result(tmp_path, worker_run_id="run-live")
+        return CommandExecutionResult(exit_code=0, stdout='{"event":"done"}\n')
+
+    git_calls: list[tuple[str, ...]] = []
+
+    def git_runner(argv, cwd, environment):
+        git_calls.append(argv)
+        assert environment == {"GIT_OPTIONAL_LOCKS": "0"}
+        if argv == ("git", "rev-parse", "HEAD") and cwd == tmp_path:
+            return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
+        if argv == (
+            "git",
+            "worktree",
+            "add",
+            "--detach",
+            str(tmp_path / "worktrees" / "run-live"),
+            "base-sha",
+        ):
+            return CommandExecutionResult(exit_code=0, stdout="")
+        if argv == ("git", "rev-parse", "--abbrev-ref", "HEAD"):
+            return CommandExecutionResult(exit_code=0, stdout="HEAD\n")
+        if argv == ("git", "rev-parse", "base-sha"):
+            return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
+        if argv == ("git", "rev-parse", "HEAD"):
+            return CommandExecutionResult(exit_code=0, stdout="head-sha\n")
+        if argv == ("git", "status", "--porcelain=v1"):
+            return CommandExecutionResult(exit_code=0, stdout=" M src/live_story.py\n")
+        if argv == ("git", "diff", "--name-only", "base-sha...head-sha"):
+            return CommandExecutionResult(exit_code=0, stdout="")
+        raise AssertionError(f"unexpected git argv: {argv}")
+
+    result = run_live_story_loop_once(
+        store,
+        repo_root=tmp_path,
+        worker_run_id="run-live",
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=codex_runner,
+        git_command_runner=git_runner,
+    )
+
+    assert result.status == "completed"
+    assert result.task_id == "task-live"
+    assert result.result_id is not None
+    assert result.result_path == "artifacts/run-live/worker-result.raw.json"
+    assert result.worktree_path == "worktrees/run-live"
+    assert result.changed_files == ("src/live_story.py",)
+    assert result.changed_files_source == "git_worktree"
+    assert result.worktree_created is True
+    assert calls[0] == ("C:/Tools/codex.exe", "--version")
+    assert calls[1][1:4] == ("exec", "--json", "--output-schema")
+    assert calls[1][-1] == "-"
+    assert (
+        "git",
+        "worktree",
+        "add",
+        "--detach",
+        str(tmp_path / "worktrees" / "run-live"),
+        "base-sha",
+    ) in tuple(git_calls)
+
+    read_store = open_existing_planning_database(db_path)
+    worker = next(run for run in read_store.list_worker_runs() if run.worker_run_id == "run-live")
+    assert worker.status == "completed"
+    assert worker.result_id == result.result_id
+    assert worker.result_path is None
+    task = next(task for task in read_store.list_supervisor_tasks() if task.task_id == "task-live")
+    assert task.status == "completed"
+
+
+def test_live_story_loop_run_fails_claimed_run_when_worktree_creation_fails(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = _live_story_loop_store(db_path)
+    codex_calls: list[tuple[str, ...]] = []
+
+    def codex_runner(argv, cwd, environment):
+        codex_calls.append(argv)
+        return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+
+    def git_runner(argv, cwd, environment):
+        if argv == ("git", "rev-parse", "HEAD"):
+            return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
+        if argv[:4] == ("git", "worktree", "add", "--detach"):
+            return CommandExecutionResult(exit_code=1, stderr="cannot create worktree\n")
+        raise AssertionError(f"unexpected git argv: {argv}")
+
+    result = run_live_story_loop_once(
+        store,
+        repo_root=tmp_path,
+        worker_run_id="run-live",
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=codex_runner,
+        git_command_runner=git_runner,
+    )
+
+    assert result.status == "failed"
+    assert result.failure_class == "worktree_create_failed"
+    assert result.worktree_created is False
+    assert codex_calls == []
+
+    read_store = open_existing_planning_database(db_path)
+    worker = next(run for run in read_store.list_worker_runs() if run.worker_run_id == "run-live")
+    assert worker.status == "failed"
+    assert worker.failure_class == "worktree_create_failed"
+
+
+def _live_story_loop_store(db_path):
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-live",
+            slug="live",
+            title="Live",
+            goal="Run a live worker.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-live",
+            plan_id="plan-live",
+            title="Live task",
+            goal="Exercise live Story Loop worker execution.",
+            task_type="AFK",
+            status="ready",
+            acceptance_criteria=["done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            worker_backend="codex_exec",
+            review_required=False,
+        ),
+        validate_current_queue_contract=True,
+    )
+    return store
+
+
+def _write_live_worker_result(repo_root, *, worker_run_id):
+    changed_file = repo_root / "src" / "live_story.py"
+    changed_file.parent.mkdir(parents=True, exist_ok=True)
+    changed_file.write_text("print('ok')\n", encoding="utf-8")
+    result_path = f"artifacts/{worker_run_id}/worker-result.raw.json"
+    result_file = repo_root / result_path
+    result_file.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "worker_run_id": worker_run_id,
+        "status": "completed",
+        "summary": "Live Story Loop worker completed.",
+        "changed_files": ["src/live_story.py"],
+        "tests_run": [
+            {
+                "command": "python -B -m pytest -p no:cacheprovider",
+                "exit_code": 0,
+                "summary": "passed",
+            }
+        ],
+        "acceptance_results": {
+            "done": {
+                "status": "passed",
+                "evidence": "Live Story Loop test wrote and ingested the result.",
+            }
+        },
+        "risks": [],
+        "follow_up_tasks": [],
+        "artifacts": [result_path],
+        "completion_notes": "Ready.",
+    }
+    result_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

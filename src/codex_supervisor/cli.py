@@ -124,6 +124,7 @@ from codex_supervisor.spawned_projects import (
 from codex_supervisor.story_loop import (
     build_story_loop_status,
     record_story_loop_progress,
+    run_live_story_loop_once,
 )
 from codex_supervisor.worktree_artifacts import WorktreeArtifactError
 from codex_supervisor.worktree_cleanup import CleanupPlan, plan_cleanup_targets
@@ -360,6 +361,31 @@ def main(argv: list[str] | None = None) -> int:
     )
     story_record_parser.add_argument("--linked-artifact-id", default=None)
     story_record_parser.add_argument("--json", action="store_true", default=False)
+
+    story_run_parser = subparsers.add_parser(
+        "story-loop-run-once",
+        help="Claim and run one ready AFK task through the live Codex Exec worker path",
+    )
+    story_run_parser.add_argument("--path", type=Path, default=None)
+    story_run_parser.add_argument("--repo-root", type=Path, default=None)
+    story_run_parser.add_argument("--worker-run-id", required=True)
+    story_run_parser.add_argument(
+        "--result-schema-path",
+        default=None,
+        help="Override the generated ignored run-local Worker Result schema path.",
+    )
+    story_run_parser.add_argument("--sandbox-mode", default="workspace-write")
+    story_run_parser.add_argument("--approval-policy", default="never")
+    story_run_parser.add_argument("--codex-bin", default=None)
+    story_run_parser.add_argument("--codex-home", default=None)
+    story_run_parser.add_argument("--codex-config-path", default=None)
+    story_run_parser.add_argument("--model", default=None)
+    story_run_parser.add_argument("--reasoning-effort", default=None)
+    story_run_parser.add_argument("--service-tier", default=None)
+    story_run_parser.add_argument("--native-goal-mode", action="store_true", default=False)
+    story_run_parser.add_argument("--ignore-user-config", action="store_true", default=False)
+    story_run_parser.add_argument("--environment-json", type=_json_object_arg, default={})
+    story_run_parser.add_argument("--json", action="store_true", default=False)
 
     decision_add_parser = subparsers.add_parser("decision-add", help="Record a plan decision")
     decision_add_parser.add_argument("--path", type=Path, default=None)
@@ -1380,6 +1406,47 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         _print_mutation_result("story_loop_progress", args.progress_id, story_result, args.json)
         return 0
+
+    if args.command == "story-loop-run-once":
+        write_store = _open_write_store(args.path)
+        if write_store is None:
+            return 1
+        story_run_store = write_store
+        repo_root = args.repo_root or Path.cwd()
+        environment = {str(key): str(value) for key, value in args.environment_json.items()}
+        run_result = _write_value_or_report(
+            lambda: run_live_story_loop_once(
+                story_run_store,
+                repo_root=repo_root,
+                worker_run_id=args.worker_run_id,
+                result_schema_path=args.result_schema_path,
+                sandbox_mode=args.sandbox_mode,
+                approval_policy=args.approval_policy,
+                codex_executable=args.codex_bin,
+                codex_home=args.codex_home,
+                codex_config_path=args.codex_config_path,
+                model=args.model,
+                reasoning_effort=args.reasoning_effort,
+                service_tier=args.service_tier,
+                native_goal_mode=args.native_goal_mode,
+                ignore_user_config=args.ignore_user_config,
+                environment=environment,
+            )
+        )
+        if run_result is None:
+            return 1
+        if args.json:
+            _print_json(run_result)
+        else:
+            print(
+                f"story_loop_run: {run_result.status} "
+                f"{run_result.task_id or 'none'} {run_result.worker_run_id}"
+            )
+            if run_result.failure_class:
+                print(f"failure_class: {run_result.failure_class}")
+            if run_result.result_id:
+                print(f"result_id: {run_result.result_id}")
+        return 0 if run_result.status == "completed" else 1
 
     if args.command == "decision-add":
         write_store = _open_write_store(args.path)

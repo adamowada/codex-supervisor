@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
 from codex_supervisor.planning import SupervisorTaskRecord, SupervisorTaskSummaryRecord
-from codex_supervisor.worker_backends import WorkerLaunchRequest, WorkerLaunchResult
+from codex_supervisor.worker_backends import (
+    CommandExecutionResult,
+    CommandRunner,
+    WorkerLaunchRequest,
+    WorkerLaunchResult,
+    _minimal_process_environment,
+)
 from codex_supervisor.worker_launches import WorkerLaunchPreparation, prepare_worker_launch_request
 from codex_supervisor.worktree_artifacts import ChangedPathViolation, validate_changed_files
+from codex_supervisor.worktree_state import WorktreeStateSnapshot, inspect_worktree_state
 
 TaskRecord = SupervisorTaskRecord | SupervisorTaskSummaryRecord
 
@@ -30,6 +39,7 @@ class WorkerOrchestrationResult:
     changed_files: tuple[str, ...]
     changed_files_source: str
     changed_path_violations: tuple[ChangedPathViolation, ...]
+    worktree_state: WorktreeStateSnapshot | None = None
 
 
 def orchestrate_worker_launch(
@@ -52,6 +62,10 @@ def orchestrate_worker_launch(
     ignore_user_config: bool = False,
     environment: dict[str, str] | None = None,
     metadata: dict[str, object] | None = None,
+    require_git_changed_files: bool = False,
+    git_command_runner: CommandRunner | None = None,
+    git_base_ref: str = "HEAD",
+    git_executable: str = "git",
 ) -> WorkerOrchestrationResult:
     """Prepare and run one worker backend, then apply changed-path acceptance gates."""
 
@@ -75,10 +89,22 @@ def orchestrate_worker_launch(
         metadata=metadata,
     )
     launch_result = backend.run(preparation.request)
+    worktree_state: WorktreeStateSnapshot | None = None
+    if require_git_changed_files and launch_result.status == "completed":
+        worktree_state = inspect_worktree_state(
+            workspace_root=repo_root,
+            worktree_path=preparation.request.worktree_path,
+            allowed_paths=tuple(task.allowed_paths),
+            command_runner=git_command_runner or _default_git_command_runner,
+            base_ref=git_base_ref,
+            git_executable=git_executable,
+            environment={"GIT_OPTIONAL_LOCKS": "0"},
+        )
     changed_files, source = _changed_files_for_validation(
         repo_root,
         diff_summary_path=preparation.request.diff_summary_path,
         launch_result=launch_result,
+        worktree_state=worktree_state,
     )
     violations = validate_changed_files(changed_files, tuple(task.allowed_paths))
     gated_result = _apply_changed_path_gate(
@@ -87,6 +113,7 @@ def orchestrate_worker_launch(
         changed_files_source=source,
         violations=violations,
         allowed_paths=tuple(task.allowed_paths),
+        worktree_state=worktree_state,
     )
     return WorkerOrchestrationResult(
         preparation=preparation,
@@ -94,6 +121,7 @@ def orchestrate_worker_launch(
         changed_files=changed_files,
         changed_files_source=source,
         changed_path_violations=violations,
+        worktree_state=worktree_state,
     )
 
 
@@ -117,7 +145,12 @@ def _changed_files_for_validation(
     *,
     diff_summary_path: str | None,
     launch_result: WorkerLaunchResult,
+    worktree_state: WorktreeStateSnapshot | None,
 ) -> tuple[tuple[str, ...], str]:
+    if worktree_state is not None:
+        if worktree_state.status == "completed":
+            return worktree_state.changed_files, "git_worktree"
+        return (), "git_worktree_failed"
     diff_summary_files = load_diff_summary_changed_files(repo_root, diff_summary_path)
     if diff_summary_files:
         return diff_summary_files, "diff_summary"
@@ -133,6 +166,7 @@ def _apply_changed_path_gate(
     changed_files_source: str,
     violations: tuple[ChangedPathViolation, ...],
     allowed_paths: tuple[str, ...],
+    worktree_state: WorktreeStateSnapshot | None,
 ) -> WorkerLaunchResult:
     metadata = {
         **launch_result.metadata,
@@ -143,6 +177,22 @@ def _apply_changed_path_gate(
             "violations": [_violation_payload(violation) for violation in violations],
         },
     }
+    if worktree_state is not None:
+        metadata["worktree_state"] = _worktree_state_payload(worktree_state)
+    if (
+        launch_result.status == "completed"
+        and worktree_state is not None
+        and worktree_state.status != "completed"
+    ):
+        return replace(
+            launch_result,
+            status="failed",
+            result_path=None,
+            exit_code=_failed_exit_code(launch_result.exit_code),
+            changed_files=(),
+            failure_class="worktree_state_unavailable",
+            metadata=metadata,
+        )
     if violations:
         metadata["changed_path_violations"] = [
             _violation_payload(violation) for violation in violations
@@ -175,3 +225,50 @@ def _violation_payload(violation: ChangedPathViolation) -> dict[str, str]:
         "path": violation.path,
         "reason": violation.reason,
     }
+
+
+def _worktree_state_payload(snapshot: WorktreeStateSnapshot) -> dict[str, object]:
+    return {
+        "status": snapshot.status,
+        "worktree_path": snapshot.worktree_path,
+        "branch": snapshot.branch,
+        "base_commit": snapshot.base_commit,
+        "head_commit": snapshot.head_commit,
+        "dirty": snapshot.dirty,
+        "changed_files": list(snapshot.changed_files),
+        "failure_class": snapshot.failure_class,
+        "failure_reason": snapshot.failure_reason,
+        "commands": [
+            {
+                "name": command.name,
+                "argv": list(command.argv),
+                "cwd": snapshot.worktree_path,
+                "exit_code": command.exit_code,
+                "stdout": command.stdout,
+                "stderr": command.stderr,
+            }
+            for command in snapshot.commands
+        ],
+    }
+
+
+def _default_git_command_runner(
+    argv: tuple[str, ...],
+    cwd: Path,
+    environment: dict[str, str],
+) -> CommandExecutionResult:
+    process_environment = _minimal_process_environment(os.environ)
+    process_environment.update(environment)
+    process = subprocess.run(
+        argv,
+        cwd=cwd,
+        env=process_environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return CommandExecutionResult(
+        exit_code=process.returncode,
+        stdout=process.stdout,
+        stderr=process.stderr,
+    )

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Protocol
 
+from codex_supervisor.goal_contracts import render_goal_contract, render_goal_contract_markdown
 from codex_supervisor.planning import (
     CURRENT_QUEUE_PLAN_STATUSES,
     OPEN_CRITERION_STATUSES,
@@ -14,12 +17,32 @@ from codex_supervisor.planning import (
     PlanProgressRecord,
     PlanRecord,
     SupervisorTaskSummaryRecord,
+    WorkerResultRecord,
     WorkerRunRecord,
     has_nonterminal_worker_run,
     has_unresolved_task_blockers,
     is_executable_afk_task,
     missing_execution_contract_fields,
 )
+from codex_supervisor.worker_backends import (
+    CodexExecBackend,
+    CommandExecutionResult,
+    CommandRunner,
+    WorkerLaunchRequest,
+    WorkerLaunchResult,
+)
+from codex_supervisor.worker_orchestration import (
+    _default_git_command_runner,
+    orchestrate_worker_launch,
+)
+from codex_supervisor.worktree_artifacts import WorktreeRunLayout, build_worktree_run_layout
+
+
+class WorkerBackend(Protocol):
+    """Backend surface required by the live Story Loop runner."""
+
+    def run(self, request: WorkerLaunchRequest) -> WorkerLaunchResult:
+        """Run one prepared worker request."""
 
 
 @dataclass(frozen=True)
@@ -55,6 +78,26 @@ class StoryLoopStatus:
 class StoryLoopRecordResult:
     progress: PlanProgressRecord
     artifact_links: tuple[PlanArtifactLinkRecord, ...]
+
+
+@dataclass(frozen=True)
+class LiveStoryLoopRunResult:
+    """Outcome of one production Story Loop worker execution attempt."""
+
+    status: str
+    task_id: str | None
+    worker_run_id: str
+    worktree_path: str | None
+    prompt_path: str | None
+    jsonl_path: str | None
+    result_path: str | None
+    result_id: str | None
+    failure_class: str | None
+    changed_files: tuple[str, ...]
+    changed_files_source: str | None
+    worktree_created: bool
+    launch_result: WorkerLaunchResult | None = None
+    ingested_result: WorkerResultRecord | None = None
 
 
 def build_story_loop_status(
@@ -180,6 +223,194 @@ def record_story_loop_progress(
     return StoryLoopRecordResult(progress=progress, artifact_links=artifact_links)
 
 
+def run_live_story_loop_once(
+    store: PlanningSQLiteStore,
+    *,
+    repo_root: Path,
+    worker_run_id: str,
+    result_schema_path: str | None = None,
+    sandbox_mode: str = "workspace-write",
+    approval_policy: str = "never",
+    codex_executable: str | None = None,
+    codex_home: str | None = None,
+    codex_config_path: str | None = None,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
+    service_tier: str | None = None,
+    native_goal_mode: bool = False,
+    ignore_user_config: bool = False,
+    environment: dict[str, str] | None = None,
+    prompt: str | None = None,
+    backend: WorkerBackend | None = None,
+    command_runner: CommandRunner | None = None,
+    git_command_runner: CommandRunner | None = None,
+    git_executable: str = "git",
+) -> LiveStoryLoopRunResult:
+    """Claim and execute one ready AFK task through the live Codex Exec path."""
+
+    status = build_story_loop_status(store)
+    task = status.current_afk_task
+    if task is None:
+        return LiveStoryLoopRunResult(
+            status="no_ready_task",
+            task_id=status.current_task_id,
+            worker_run_id=worker_run_id,
+            worktree_path=None,
+            prompt_path=None,
+            jsonl_path=None,
+            result_path=None,
+            result_id=None,
+            failure_class="no_ready_afk_task",
+            changed_files=(),
+            changed_files_source=None,
+            worktree_created=False,
+        )
+    layout = build_worktree_run_layout(task.task_id, worker_run_id)
+    effective_result_schema_path = (
+        result_schema_path or f"{layout.run_directory}/worker-result.schema.json"
+    )
+    claim = store.claim_next_ready_afk_task(
+        worker_run_id=worker_run_id,
+        backend=task.worker_backend,
+        task_id=task.task_id,
+        status="running",
+        worktree_path=layout.worktree_path,
+        prompt_path=layout.prompt_path,
+        jsonl_path=layout.jsonl_path,
+        metadata=_live_worker_run_metadata(
+            layout,
+            result_schema_path=effective_result_schema_path,
+            sandbox_mode=sandbox_mode,
+            approval_policy=approval_policy,
+            codex_home=codex_home,
+            codex_config_path=codex_config_path,
+            model=model,
+            reasoning_effort=reasoning_effort,
+            service_tier=service_tier,
+            native_goal_mode=native_goal_mode,
+            ignore_user_config=ignore_user_config,
+        ),
+    )
+    if claim is None:
+        return LiveStoryLoopRunResult(
+            status="claim_conflict",
+            task_id=task.task_id,
+            worker_run_id=worker_run_id,
+            worktree_path=layout.worktree_path,
+            prompt_path=layout.prompt_path,
+            jsonl_path=layout.jsonl_path,
+            result_path=None,
+            result_id=None,
+            failure_class="claim_conflict",
+            changed_files=(),
+            changed_files_source=None,
+            worktree_created=False,
+        )
+    base_commit = _git_single_line(
+        git_command_runner or _default_git_command_runner,
+        repo_root,
+        ("rev-parse", "HEAD"),
+        git_executable=git_executable,
+    )
+    if base_commit.exit_code != 0:
+        return _fail_claimed_run(
+            store,
+            worker_run_id=worker_run_id,
+            task_id=claim.task.task_id,
+            layout=layout,
+            failure_class="worktree_base_ref_failed",
+            changed_files_source=None,
+        )
+    worktree_result = _git_single_line(
+        git_command_runner or _default_git_command_runner,
+        repo_root,
+        ("worktree", "add", "--detach", str(repo_root / layout.worktree_path), base_commit.stdout),
+        git_executable=git_executable,
+    )
+    if worktree_result.exit_code != 0:
+        return _fail_claimed_run(
+            store,
+            worker_run_id=worker_run_id,
+            task_id=claim.task.task_id,
+            layout=layout,
+            failure_class="worktree_create_failed",
+            changed_files_source=None,
+        )
+
+    goal_contract = render_goal_contract(task)
+    rendered_goal_contract = render_goal_contract_markdown(goal_contract)
+    active_backend = backend or CodexExecBackend(
+        codex_executable=codex_executable,
+        command_runner=command_runner,
+        launch_enabled=True,
+    )
+    orchestration = orchestrate_worker_launch(
+        claim.task,
+        backend=active_backend,
+        worker_run_id=worker_run_id,
+        repo_root=repo_root,
+        result_schema_path=effective_result_schema_path,
+        prompt=prompt or _default_live_worker_prompt(),
+        rendered_goal_contract=rendered_goal_contract,
+        sandbox_mode=sandbox_mode,
+        approval_policy=approval_policy,
+        codex_home=codex_home,
+        codex_config_path=codex_config_path,
+        model=model,
+        reasoning_effort=reasoning_effort,
+        service_tier=service_tier,
+        native_goal_mode=native_goal_mode,
+        ignore_user_config=ignore_user_config,
+        environment=environment,
+        metadata={"launch_mode": "live_story_loop_run"},
+        require_git_changed_files=True,
+        git_command_runner=git_command_runner,
+        git_base_ref=base_commit.stdout,
+        git_executable=git_executable,
+    )
+    launch_result = orchestration.launch_result
+    if launch_result.status == "completed" and launch_result.result_path is not None:
+        ingested = store.ingest_worker_result(worker_run_id, launch_result.result_path)
+        return LiveStoryLoopRunResult(
+            status=ingested.status,
+            task_id=claim.task.task_id,
+            worker_run_id=worker_run_id,
+            worktree_path=layout.worktree_path,
+            prompt_path=layout.prompt_path,
+            jsonl_path=layout.jsonl_path,
+            result_path=ingested.source_path,
+            result_id=ingested.result_id,
+            failure_class=None,
+            changed_files=orchestration.changed_files,
+            changed_files_source=orchestration.changed_files_source,
+            worktree_created=True,
+            launch_result=launch_result,
+            ingested_result=ingested,
+        )
+    terminal_status = _terminal_worker_run_status(launch_result.status)
+    store.update_worker_run_status(
+        worker_run_id,
+        terminal_status,
+        failure_class=launch_result.failure_class,
+        result_path=launch_result.result_path,
+    )
+    return LiveStoryLoopRunResult(
+        status=terminal_status,
+        task_id=claim.task.task_id,
+        worker_run_id=worker_run_id,
+        worktree_path=layout.worktree_path,
+        prompt_path=layout.prompt_path,
+        jsonl_path=layout.jsonl_path,
+        result_path=launch_result.result_path,
+        result_id=None,
+        failure_class=launch_result.failure_class,
+        changed_files=orchestration.changed_files,
+        changed_files_source=orchestration.changed_files_source,
+        worktree_created=True,
+        launch_result=launch_result,
+    )
+
+
 def _select_plans(
     plans: tuple[PlanRecord, ...],
     *,
@@ -192,6 +423,96 @@ def _select_plans(
     if active_only:
         selected = tuple(plan for plan in selected if plan.status in CURRENT_QUEUE_PLAN_STATUSES)
     return selected
+
+
+def _live_worker_run_metadata(
+    layout: WorktreeRunLayout,
+    *,
+    result_schema_path: str,
+    sandbox_mode: str,
+    approval_policy: str,
+    codex_home: str | None,
+    codex_config_path: str | None,
+    model: str | None,
+    reasoning_effort: str | None,
+    service_tier: str | None,
+    native_goal_mode: bool,
+    ignore_user_config: bool,
+) -> dict[str, object]:
+    return {
+        "backend": "codex_exec",
+        "worker_run_id": layout.worker_run_id,
+        "launch_preparation": {
+            "mode": "live_story_loop_run",
+            "result_schema_path": result_schema_path,
+            "sandbox_mode": sandbox_mode,
+            "approval_policy": approval_policy,
+            "native_goal_mode": native_goal_mode,
+            "ignore_user_config": ignore_user_config,
+        },
+        "codex_home": "<configured>" if codex_home is not None else None,
+        "codex_config_path": "<configured>" if codex_config_path is not None else None,
+        "model": model,
+        "reasoning_effort": reasoning_effort,
+        "service_tier": service_tier,
+        "worktree_path": layout.worktree_path,
+        "raw_result_path": layout.raw_result_path,
+        "raw_evidence_paths": layout.raw_evidence_paths(),
+    }
+
+
+def _git_single_line(
+    command_runner: CommandRunner,
+    cwd: Path,
+    args: tuple[str, ...],
+    *,
+    git_executable: str,
+) -> CommandExecutionResult:
+    result = command_runner((git_executable, *args), cwd, {"GIT_OPTIONAL_LOCKS": "0"})
+    if result.exit_code != 0:
+        return result
+    stdout = result.stdout.strip().splitlines()[0].strip() if result.stdout.strip() else ""
+    return CommandExecutionResult(exit_code=0, stdout=stdout, stderr=result.stderr)
+
+
+def _fail_claimed_run(
+    store: PlanningSQLiteStore,
+    *,
+    worker_run_id: str,
+    task_id: str,
+    layout: WorktreeRunLayout,
+    failure_class: str,
+    changed_files_source: str | None,
+) -> LiveStoryLoopRunResult:
+    store.update_worker_run_status(worker_run_id, "failed", failure_class=failure_class)
+    return LiveStoryLoopRunResult(
+        status="failed",
+        task_id=task_id,
+        worker_run_id=worker_run_id,
+        worktree_path=layout.worktree_path,
+        prompt_path=layout.prompt_path,
+        jsonl_path=layout.jsonl_path,
+        result_path=None,
+        result_id=None,
+        failure_class=failure_class,
+        changed_files=(),
+        changed_files_source=changed_files_source,
+        worktree_created=False,
+    )
+
+
+def _default_live_worker_prompt() -> str:
+    return (
+        "Execute the claimed Story Loop task exactly once from this isolated worktree. "
+        "Keep edits within the allowed paths, run the required verification commands, "
+        "write the required Worker Result JSON, and stop."
+    )
+
+
+def _terminal_worker_run_status(launch_status: str) -> str:
+    if launch_status == "blocked":
+        return "blocked"
+    return "failed"
 
 
 def _build_plan_status(

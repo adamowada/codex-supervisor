@@ -132,3 +132,76 @@ SQLite-backed records preserve raw payloads and provenance while keeping the pub
 Consequence: `worker-results/` is ignored and rejected by hygiene checks. Completed worker runs must
 link to `worker_result_records` and `worker_result_run_links`; source-of-truth docs and `insights/`
 stay focused on doctrine and synthesized learning rather than completion logs.
+
+## D-0013: V1 Hardening Uses Mainline Verified ACP Slices
+
+Decision: V1 hardening work is performed directly on `main` and published by ACP after each
+verified vertical slice. Release tags, release artifacts, and final release action still require a
+separate explicit user instruction.
+
+Rationale: Adam authorized mainline development for this hardening run and wants timely checkpoints
+without branch or PR overhead, while keeping release as a distinct human boundary.
+
+Consequence: Before pushing, compare remote `main` with local `HEAD`; if remote `main` moved, stop
+for HITL direction instead of rebasing or merging automatically.
+
+## D-0014: Live Codex Defaults To The User Codex Home
+
+Decision: Live Codex worker and reviewer launches default to the user's normal Codex home, with an
+optional `--codex-home` override for explicit isolation or alternate credentials.
+
+Rationale: V1 must exercise the real authenticated Codex environment by default, while still giving
+operators a way to choose another home when a run needs stricter control.
+
+Consequence: Worker preflight records the resolved Codex executable, version, intended Codex home
+policy, feature state, and fallback decision. Tracked docs and planning records must not persist
+machine-specific absolute paths.
+
+## D-0015: V1 Product Paths Must Be Real
+
+Decision: Production code paths must not depend on fake, dummy, demo-only, or scaffold-only data or
+behavior. Test fixtures remain allowed, and project scaffolding remains a real production
+capability when it writes actual project files and initializes supervisor state.
+
+Rationale: The v1 done condition is a live, operational supervisor whose documented capabilities
+are implemented rather than simulated.
+
+Consequence: Live review uses real Codex subagents or `codex exec` reviewer runs, mutating MCP tools
+are enabled by default with an explicit opt-out, and project scaffolding must create files,
+planning SQLite, git checks, source locks, and first task contracts.
+
+## D-0016: Local Adapter Paths Stay Out Of Tracked State
+
+Decision: Project adapters may target locally available repositories, but tracked markdown and
+planning SQLite may store only safe project identifiers and repo-relative evidence, not local
+absolute roots.
+
+Rationale: Adapter development needs local projects, while public history must not expose
+machine-specific paths.
+
+Consequence: Use ignored local configuration or runtime inputs to map project ids to local roots.
+Planning records can describe adapter policy, but not the user's private filesystem layout.
+
+## D-0017: Worker Integration Conflicts Are Contract Decisions
+
+Decision: This v1 hardening run does not use parallel writer workers. Future worktree integration
+conflicts are supervisor-managed contract decisions: mechanical edit/delete conflicts can be
+resolved during integration when task contracts are clear, while contradictory contracts require
+HITL or repair before merging worker output.
+
+Rationale: Avoiding parallel writers keeps this hardening pass focused, and the durable product
+should treat conflicts as integration evidence rather than as an impossible state.
+
+Consequence: Parallel read-only exploration remains safe, but production writer fanout needs an
+explicit integration policy and evidence trail before it is used.
+
+## D-0018: Skill Promotion Requires Evidence And Evaluation
+
+Decision: A skill update requires a source-linked insight, the skill edit, a golden eval or focused
+test, and passing relevant verification before ACP.
+
+Rationale: Durable learning should move from evidence to insight to skill only when the change is
+proven, not merely because a session noticed a pattern.
+
+Consequence: If no insight is created or updated for a workflow lesson, there is normally no skill
+promotion to publish for that lesson.

@@ -1467,6 +1467,25 @@ class PlanningSQLiteStore:
             rows = connection.execute(query, parameters).fetchall()
         return tuple(_plan_artifact_link_from_row(row) for row in rows)
 
+    def delete_plan_artifact_link(self, record: PlanArtifactLinkRecord) -> bool:
+        _validate_required(record.plan_id, "plan_id")
+        _validate_required(record.artifact_id, "artifact_id")
+        _validate_artifact_id(record.artifact_id, "artifact_id")
+        _validate_required(record.relationship, "relationship")
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                DELETE FROM plan_artifact_links
+                WHERE plan_id = ? AND artifact_id = ? AND relationship = ?
+                """,
+                (record.plan_id, record.artifact_id, record.relationship),
+            )
+            if cursor.rowcount:
+                now = _format_datetime(_utc_now())
+                _touch_plan(connection, record.plan_id, now)
+                return True
+            return False
+
     def add_plan_commit_link(self, record: PlanCommitLinkRecord) -> None:
         _validate_required(record.plan_id, "plan_id")
         _validate_required(record.commit_sha, "commit_sha")

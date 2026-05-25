@@ -28,7 +28,8 @@ Use it for synthesized, provenance-backed knowledge about:
   explorer audits.
 - `project-sop.md`: project bootstrap SOP distilled for spawned projects.
 - `skill-learning-loop.md`: how skills should be updated and tested over time.
-- `open-questions.md`: unresolved design questions for future planning sessions.
+- `v1-hardening-clarifications.md`: resolved v1 hardening policy for live Codex work, ACP cadence,
+  MCP mutation defaults, adapters, project scaffolding, and skill promotion.
 - `graph.md`: lightweight markdown knowledge graph.
 
 Historical audit and worker-result files are evidence, not mandatory orientation. Fresh threads

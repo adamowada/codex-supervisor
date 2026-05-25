@@ -2653,6 +2653,44 @@ def test_plan_progress_rejects_unsafe_linked_artifact_paths(tmp_path):
         )
 
 
+def test_delete_plan_artifact_link_removes_link_and_touches_parent(tmp_path, monkeypatch):
+    moments = iter(
+        [
+            datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC),
+            datetime(2026, 1, 1, 0, 0, 5, tzinfo=UTC),
+            datetime(2026, 1, 1, 0, 0, 10, tzinfo=UTC),
+            datetime(2026, 1, 1, 0, 0, 15, tzinfo=UTC),
+        ]
+    )
+    monkeypatch.setattr(planning_module, "_utc_now", lambda: next(moments))
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Exercise artifact link deletion.",
+            status="active",
+        )
+    )
+    record = PlanArtifactLinkRecord(
+        plan_id="plan-test",
+        artifact_id="insights/obsolete.md",
+        relationship="evidence",
+    )
+    store.add_plan_artifact_link(record)
+
+    assert store.delete_plan_artifact_link(record) is True
+    assert store.list_plan_artifact_links(plan_id="plan-test") == ()
+    with sqlite3.connect(store.path) as connection:
+        updated_at = connection.execute(
+            "SELECT updated_at FROM plans WHERE plan_id = ?",
+            ("plan-test",),
+        ).fetchone()[0]
+    assert updated_at == "2026-01-01T00:00:15Z"
+    assert store.delete_plan_artifact_link(record) is False
+
+
 def test_plan_commit_links_require_full_commit_sha(tmp_path):
     store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
 

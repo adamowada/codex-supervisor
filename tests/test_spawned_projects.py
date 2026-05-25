@@ -71,7 +71,7 @@ def test_spawned_project_classifier_keeps_durable_learning_separate_from_sources
 
     assert recommendation.tiers == ("base", "durable-learning")
     assert "insights/graph.md" in recommendation.required_files
-    assert "insights/open-questions.md" in recommendation.required_files
+    assert "insights/open-questions.md" not in recommendation.required_files
     assert ".agents/skills/" not in recommendation.required_files
     assert "sources/README.md" not in recommendation.required_files
     assert "uv run --no-sync python -B scripts/check_skill_inventory.py" not in (

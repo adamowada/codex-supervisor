@@ -42,10 +42,7 @@ PUBLICATION_READY_FILES = (
     "ATTRIBUTIONS.md",
     "scripts/check_public_repo_hygiene.py",
 )
-DURABLE_LEARNING_FILES = (
-    "insights/graph.md",
-    "insights/open-questions.md",
-)
+DURABLE_LEARNING_FILES = ("insights/graph.md",)
 REPO_LOCAL_SKILL_FILES = (
     "scripts/check_skill_inventory.py",
     ".agents/skills/",
@@ -350,7 +347,6 @@ def _purpose_for_path(path: str) -> str:
         "TESTING.md": "verification strategy",
         "insights/README.md": "durable learning index",
         "insights/graph.md": "synthesized durable learning graph",
-        "insights/open-questions.md": "learning questions that should not be buried in chat",
         "plans/planning.sqlite3": "canonical operational planning queue",
         "scripts/check_file_justification.py": "public file purpose gate",
         "scripts/check_planning_integrity.py": "planning SQLite integrity gate",

@@ -221,9 +221,6 @@ FILE_PURPOSES = {
         "Goal Mode and Ralph loop synthesis", "check_public_repo_hygiene"
     ),
     "insights/graph.md": FilePurpose("markdown knowledge graph", "check_file_justification"),
-    "insights/open-questions.md": FilePurpose(
-        "open planning questions", "check_file_justification"
-    ),
     "insights/project-sop.md": FilePurpose(
         "spawned-project SOP insight", "check_file_justification"
     ),
@@ -232,6 +229,9 @@ FILE_PURPOSES = {
     ),
     "insights/source-index.md": FilePurpose(
         "source corpus usefulness index", "check_source_inventory"
+    ),
+    "insights/v1-hardening-clarifications.md": FilePurpose(
+        "resolved v1 hardening policy insight", "check_file_justification"
     ),
     "insights/workflow-patterns.md": FilePurpose(
         "workflow pattern synthesis", "check_file_justification"

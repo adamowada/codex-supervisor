@@ -16,14 +16,17 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, Stage 10E official Codex automation bridge dry-run work is complete in
-planning SQLite. The expected queue state is `completed` for active plan
-`plan-stage10-codex-state-automation-bridge`, with no current AFK task. Stage 10A, Stage 10B, Stage
-10C, Stage 10D, Stage 10E, and Stage 9 are marked completed in planning SQLite. If the database
-reports anything else, trust the database and call this handoff stale.
+As of this snapshot, Stage 10F official Codex automation bridge apply work is shaped and ready in
+planning SQLite. The expected queue state is `ready` for active plan
+`plan-stage10-codex-state-automation-bridge`, with current AFK task
+`task-stage10f-official-automation-bridge-apply`. Stage 10A, Stage 10B, Stage 10C, Stage 10D,
+Stage 10E, and Stage 9 are marked completed in planning SQLite. If the database reports anything
+else, trust the database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
+- `3a2933a`: added the Stage 10E official Codex automation bridge dry-run helper, CLI, tests,
+  planning completion, handoff, and worker result.
 - `a883de8`: shaped the Stage 10E Codex automation bridge dry-run task and handoff.
 - `58a1277`: added the Stage 10D reviewed Codex state reconciliation apply helper, CLI, tests,
   planning completion, handoff, and worker result.
@@ -428,6 +431,25 @@ Stage 10E official Codex automation bridge dry-run changed:
   `uv run --no-sync python -B -m pytest tests/test_codex_automation.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/verify.py`.
 
+Stage 10F official Codex automation bridge apply has been shaped:
+
+- `plans/planning.sqlite3`: adds `task-stage10f-official-automation-bridge-apply` as the ready AFK
+  slice, `milestone-stage10f-official-automation-bridge-apply`, and
+  `criterion-stage10f-official-automation-bridge-apply`.
+- Scope: inspect existing official Codex automations, create or update recurring queue
+  reconciliation and project health check automations through official Codex automation tooling,
+  and record automation evidence in planning SQLite and handoff.
+- Out of scope: direct writes to Codex internal SQLite databases or Codex config files, live Codex
+  Exec worker launch, unrelated automations, MCP/plugin/GitHub/CI/release/project-spawn surfaces,
+  and any push, merge, publish, delete, or release action.
+- Allowed durable paths:
+  `plans/planning.sqlite3`, `HANDOFF.md`, and
+  `insights/stage10f-official-automation-bridge-apply-worker-result.json`.
+- Expected checks:
+  `uv run --no-sync python -B scripts/check_planning_integrity.py`;
+  `uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json`;
+  `uv run --no-sync python -B scripts/verify.py`.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -453,10 +475,8 @@ selector. If queue_state is hitl or running, inspect current_task_id with task-s
 If queue_state is `ready`, run `task-current --json` and execute the current AFK slice with
 story-loop discipline.
 
-As of this handoff, the expected queue_state is `completed` with no current AFK task. Shape the next
-roadmap slice through typed helpers before implementation. A likely successor is a Stage 10F
-reviewed automation apply/export step that invokes official Codex automation tooling only after
-explicit approval, but trust ROADMAP.md and planning SQLite over this suggestion.
+As of this handoff, the expected queue_state is `ready` with current AFK task
+`task-stage10f-official-automation-bridge-apply`. Execute that slice with story-loop discipline.
 Keep live Codex Exec launch disabled while the local Codex CLI still fails preflight with
 `Access is denied`; do not launch live `codex exec` until an accessible executable path and intended
 `CODEX_HOME` are confirmed.

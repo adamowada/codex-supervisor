@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 05:35 PDT
+Last updated: 2026-05-25 05:36 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,9 +9,9 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `ready`.
+- Current queue state: `running`.
 - Current AFK task: `task-stage13d-ci-run-evidence-links`.
-- Current worker run: none yet for Stage 13D.
+- Current worker run: `worker-run-stage13d-ci-run-evidence-links-inline-20260525`.
 - Current plan: `plan-stage13-github-ci-integration` (`Stage 13 GitHub And CI/CD Integration`).
 - Latest completed task: `task-stage13c-ci-full-history-planning-integrity`.
 - Recent pushed implementation/evidence commits before this handoff update:
@@ -19,6 +19,7 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   - `7e5b266f47fd505fbe23033cff1af7d8fb7bc8e5` - Stage 13B completion evidence.
   - `41fa038a1576d5c4087afd143d75b669925a2e4f` - Stage 13C claim.
   - `9e311ae99061bd8978a03d55d22ef0cbf9be4dda` - Stage 13C workflow repair.
+  - `eeee711de1e2a275c01f105d8e6a3ab946027a01` - Stage 13C completion evidence.
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.
@@ -56,7 +57,8 @@ uv run --no-sync python -B scripts/verify.py --publication-ready
 ## Stage 13D Contract
 
 Task: `task-stage13d-ci-run-evidence-links`.
-Status: `ready`.
+Status: `running`.
+Worker run: `worker-run-stage13d-ci-run-evidence-links-inline-20260525`.
 Review required: yes, because the slice changes planning persistence and CLI public surface.
 
 Allowed paths:
@@ -99,5 +101,5 @@ Stop conditions:
 
 ## Next Action
 
-Claim `task-stage13d-ci-run-evidence-links`, confirm its Goal Contract, implement the typed CI run
-evidence recording path, run the task verification commands and review, then ACP the slice.
+Continue the claimed `task-stage13d-ci-run-evidence-links` run. Implement the typed CI run evidence
+recording path, run the task verification commands and review, then ACP the slice.

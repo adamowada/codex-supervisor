@@ -200,7 +200,9 @@ historical links or weakening the integrity rule.
 Evidence: The Stage 13B post-repair GitHub Actions `Verify` run passed all 441 tests on Linux plus
 ruff, formatting, mypy, CLI help, file-purpose, and public hygiene. It then failed
 `scripts/check_planning_integrity.py` with missing historical commit links because the workflow used
-the default shallow checkout.
+the default shallow checkout. Stage 13C repaired the workflow with `fetch-depth: 0`, and GitHub
+Actions run `26400531911` completed successfully for commit
+`9e311ae99061bd8978a03d55d22ef0cbf9be4dda`.
 
 Next action: when CI planning integrity reports missing git commits, inspect checkout depth before
 changing planning data or integrity semantics.

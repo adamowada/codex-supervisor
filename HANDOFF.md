@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 05:24 PDT
+Last updated: 2026-05-25 05:35 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,92 +9,41 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `running`.
-- Current AFK task: `task-stage13c-ci-full-history-planning-integrity`.
-- Current worker run: `worker-run-stage13c-ci-full-history-planning-integrity-inline-20260525`.
+- Current queue state: `ready`.
+- Current AFK task: `task-stage13d-ci-run-evidence-links`.
+- Current worker run: none yet for Stage 13D.
 - Current plan: `plan-stage13-github-ci-integration` (`Stage 13 GitHub And CI/CD Integration`).
-- Latest completed task: `task-stage13b-linux-path-normalization-ci-repair`.
+- Latest completed task: `task-stage13c-ci-full-history-planning-integrity`.
 - Recent pushed implementation/evidence commits before this handoff update:
-  - `0ba7afbd2f65d90b5a290971012045864a7d1a43` - Stage 13A implementation.
-  - `90b74e613d5de7e606bf2afb4f547b7176a9a46f` - Stage 13A evidence link.
   - `fbc0f0c99d61d0f0b9bb1bbcf2edc69d8a675ac9` - Stage 13B path-normalization repair.
   - `7e5b266f47fd505fbe23033cff1af7d8fb7bc8e5` - Stage 13B completion evidence.
+  - `41fa038a1576d5c4087afd143d75b669925a2e4f` - Stage 13C claim.
+  - `9e311ae99061bd8978a03d55d22ef0cbf9be4dda` - Stage 13C workflow repair.
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.
 
-## Stage 13B Summary
+## Stage 13C Summary
 
-Completed task: `task-stage13b-linux-path-normalization-ci-repair`.
+Completed task: `task-stage13c-ci-full-history-planning-integrity`.
 
-- Worker run: `worker-run-stage13b-linux-path-normalization-ci-repair-inline-20260525`.
-- DB result: `worker-result-stage13b-linux-path-normalization-ci-repair-result`.
-- Review: `review-stage13b-linux-path-normalization-ci-repair-20260525`, 0 findings.
-- Implementation commit: `fbc0f0c99d61d0f0b9bb1bbcf2edc69d8a675ac9`.
+- Worker run: `worker-run-stage13c-ci-full-history-planning-integrity-inline-20260525`.
+- DB result: `worker-result-stage13c-ci-history-depth-result`.
+- Review: `review-stage13c-ci-history-depth-repair-20260525`, 0 findings.
+- Implementation commit: `9e311ae99061bd8978a03d55d22ef0cbf9be4dda`.
 - Source CI failure: GitHub Actions run
-  `https://github.com/adamowada/codex-supervisor/actions/runs/26399431134`, job `77707810921`.
+  `https://github.com/adamowada/codex-supervisor/actions/runs/26399874125`, job `77709321691`.
+- Successful post-repair CI: GitHub Actions run
+  `https://github.com/adamowada/codex-supervisor/actions/runs/26400531911`.
 
 Implemented:
 
-- Normalized Windows-style adapter paths through `PureWindowsPath(value).as_posix()` before
-  resolving on POSIX.
-- Added regression coverage for Windows-style prompt paths, insights allowed paths, and `..\`
-  traversal rejection.
-- Updated `insights/workflow-patterns.md` with the cross-platform adapter lesson.
+- Added `fetch-depth: 0` to `.github/workflows/verify.yml` so planning integrity can validate
+  historical commit links in clean Linux CI.
+- Added focused workflow contract coverage in `tests/test_github_ci.py`.
+- Updated `insights/workflow-patterns.md` with the confirmed CI history-depth lesson.
 
-Verification passed locally with Stage 13B included:
-
-```sh
-uv run --no-sync python -B -m pytest tests/test_projects.py -q -p no:cacheprovider
-uv run --no-sync python -B scripts/check_planning_integrity.py
-uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
-uv run --no-sync python -B scripts/verify.py
-uv run --no-sync python -B scripts/verify.py --publication-ready
-```
-
-Post-repair remote outcome: GitHub Actions run
-`https://github.com/adamowada/codex-supervisor/actions/runs/26399874125`, job `77709321691`,
-passed all 441 Linux tests plus ruff, formatting, mypy, CLI help, file-purpose, and public hygiene,
-then failed `scripts/check_planning_integrity.py` because the workflow used a shallow checkout that
-did not contain historical commits linked from `plans/planning.sqlite3`. That failure is routed into
-Stage 13C.
-
-## Stage 13C Contract
-
-Task: `task-stage13c-ci-full-history-planning-integrity`.
-Status: `running`.
-Worker run: `worker-run-stage13c-ci-full-history-planning-integrity-inline-20260525`.
-Review required: yes, because the workflow checkout behavior defines public CI evidence and
-planning-integrity trust.
-
-Source CI failure:
-
-- Run: `https://github.com/adamowada/codex-supervisor/actions/runs/26399874125`.
-- Job: `77709321691`.
-- Step: `Run publication-ready verification`.
-- Class: `ci_shallow_checkout_planning_integrity`.
-- First bad check: `scripts/check_planning_integrity.py`.
-
-Allowed paths:
-
-- `.github/workflows/verify.yml`
-- `tests/test_github_ci.py`
-- `plans/planning.sqlite3`
-- `HANDOFF.md`
-- `insights/**`
-- `.agents/skills/**`
-
-Acceptance criteria:
-
-- The GitHub Actions `Verify` workflow fetches enough git history for planning integrity to
-  validate DB commit links in clean Linux CI.
-- Workflow contract tests assert the checkout history-depth requirement while preserving locked
-  dependency setup and publication-ready verification.
-- Focused workflow tests, planning integrity, full verification, and publication-ready verification
-  pass locally, and the post-repair GitHub Actions `Verify` result is inspected or any remaining CI
-  failure is shaped as follow-up work.
-
-Verification commands:
+Verification passed locally with Stage 13C included:
 
 ```sh
 uv run --no-sync python -B -m pytest tests/test_github_ci.py -q -p no:cacheprovider
@@ -104,16 +53,51 @@ uv run --no-sync python -B scripts/verify.py
 uv run --no-sync python -B scripts/verify.py --publication-ready
 ```
 
+## Stage 13D Contract
+
+Task: `task-stage13d-ci-run-evidence-links`.
+Status: `ready`.
+Review required: yes, because the slice changes planning persistence and CLI public surface.
+
+Allowed paths:
+
+- `src/codex_supervisor/planning.py`
+- `src/codex_supervisor/cli.py`
+- `tests/test_planning.py`
+- `tests/test_planning_integrity.py`
+- `plans/planning.sqlite3`
+- `HANDOFF.md`
+- `insights/**`
+- `.agents/skills/**`
+
+Acceptance criteria:
+
+- A typed planning helper or CLI command records CI run evidence with provider, run URL, head SHA,
+  workflow/job metadata, status, and conclusion without ad hoc SQL.
+- Recording CI evidence creates durable planning progress and safe artifact or commit links that
+  pass planning integrity and publication hygiene.
+- Focused planning/CLI tests, planning integrity, full verification, and publication-ready
+  verification pass with the CI evidence helper included.
+
+Verification commands:
+
+```sh
+uv run --no-sync python -B -m pytest tests/test_planning.py -q -p no:cacheprovider
+uv run --no-sync python -B scripts/check_planning_integrity.py
+uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
+uv run --no-sync python -B scripts/verify.py
+uv run --no-sync python -B scripts/verify.py --publication-ready
+```
+
 Stop conditions:
 
 - A HITL task becomes current in planning SQLite.
-- The repair requires repository settings, credentials, branch protection, or external secrets.
-- The fix requires deleting historical commit links or weakening planning-integrity semantics.
-- Post-repair CI fails for an unrelated reason; record and shape that as follow-up rather than
-  widening this slice.
+- The implementation requires GitHub credentials, secrets, repository settings, or network access
+  during local tests.
+- The helper cannot be implemented through typed planning APIs without ad hoc SQL mutations.
+- Verification repeatedly fails without a known repo-local fix.
 
 ## Next Action
 
-Continue the claimed `task-stage13c-ci-full-history-planning-integrity` run. Repair the workflow
-checkout history depth with focused tests, run the task verification commands and review, then push
-and inspect the next GitHub Actions result.
+Claim `task-stage13d-ci-run-evidence-links`, confirm its Goal Contract, implement the typed CI run
+evidence recording path, run the task verification commands and review, then ACP the slice.

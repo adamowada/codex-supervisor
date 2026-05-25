@@ -16,6 +16,13 @@ from codex_supervisor.goal_contracts import (
     render_goal_contract,
     render_goal_contract_markdown,
 )
+from codex_supervisor.insight_updates import (
+    AppliedInsightUpdate,
+    InsightMarkdownUpdate,
+    InsightUpdateError,
+    apply_insight_update,
+    render_insight_markdown_update,
+)
 from codex_supervisor.insights import (
     InsightContractError,
     InsightRecord,
@@ -421,6 +428,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     insight_validate_parser.add_argument("--insight-path", type=Path, required=True)
     insight_validate_parser.add_argument("--json", action="store_true", default=False)
+
+    insight_update_parser = subparsers.add_parser(
+        "insight-update",
+        help="Render or apply a guarded reusable insight markdown update",
+    )
+    insight_update_parser.add_argument("--insight-path", type=Path, required=True)
+    insight_update_parser.add_argument(
+        "--target-path",
+        type=Path,
+        default=None,
+        help="Markdown file to update. Omit to print only the rendered update block.",
+    )
+    insight_update_parser.add_argument("--promotion-criterion", action="append", default=[])
+    insight_update_parser.add_argument("--provenance", action="append", default=[])
+    insight_update_parser.add_argument("--json", action="store_true", default=False)
 
     cleanup_plan_parser = subparsers.add_parser(
         "cleanup-plan",
@@ -1044,6 +1066,34 @@ def main(argv: list[str] | None = None) -> int:
             _print_json(insight_record)
         else:
             _print_insight_record(insight_record)
+        return 0
+
+    if args.command == "insight-update":
+        try:
+            insight_record = _load_insight_record(args.insight_path)
+            insight_update: AppliedInsightUpdate | InsightMarkdownUpdate
+            if args.target_path is None:
+                insight_update = render_insight_markdown_update(
+                    insight_record,
+                    promotion_criteria=tuple(args.promotion_criterion),
+                    provenance=tuple(args.provenance),
+                )
+            else:
+                insight_update = apply_insight_update(
+                    args.target_path,
+                    insight_record,
+                    promotion_criteria=tuple(args.promotion_criterion),
+                    provenance=tuple(args.provenance),
+                )
+        except (OSError, json.JSONDecodeError, InsightContractError, InsightUpdateError) as exc:
+            print(f"Could not update insight: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            _print_json(insight_update)
+        elif isinstance(insight_update, AppliedInsightUpdate):
+            _print_applied_insight_update(insight_update)
+        else:
+            print(insight_update.markdown, end="")
         return 0
 
     if args.command == "plan-upsert":
@@ -1745,6 +1795,13 @@ def _print_review_result_ingestion(output: dict[str, object]) -> None:
                 )
     else:
         print("- none")
+
+
+def _print_applied_insight_update(update: AppliedInsightUpdate) -> None:
+    action = "updated" if update.changed else "unchanged"
+    print(f"insight_update: {action}")
+    print(f"target_path: {update.target_path}")
+    print(f"anchor: {update.anchor}")
 
 
 def _print_insight_record(record: InsightRecord) -> None:

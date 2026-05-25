@@ -11,7 +11,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from hashlib import sha256
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from codex_supervisor.worker_results import WorkerResultError, validate_worker_result_file
@@ -1092,6 +1092,9 @@ def _redact_argv(argv: tuple[str, ...], request: WorkerLaunchRequest) -> list[st
 def _redact_argv_item(item: str, request: WorkerLaunchRequest) -> str:
     if item == request.prompt:
         return "<prompt>"
+    windows_path = PureWindowsPath(item)
+    if windows_path.is_absolute() or windows_path.drive:
+        return f"<local-path:{windows_path.name}>"
     path = Path(item)
     if path.is_absolute():
         return _repo_relative_or_placeholder(path, request.repo_root)

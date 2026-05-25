@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 07:27 PDT
+Last updated: 2026-05-25 07:38 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,137 +9,65 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `ready`.
-- Current AFK task: `task-stage15a-release-readiness-audit`.
-- Current worker run: none yet.
 - Current plan: `plan-stage15-release-hardening`.
-- Latest completed task in planning: `task-stage14b-spawned-project-scaffold-proposal`.
-- Recent pushed commits:
-  - `263354c5c3867be9baa370562225c737e0e63768` - Stage 13D CI evidence implementation.
-  - `622c52f685c399e12c347d64ab5a0c4aafed17d9` - Stage 13D completion and Stage 13E shaping.
-  - `520b8616e4f525d05dc4d5e4c2f7a4f0e9ac495f` - Stage 13E claim.
-  - `3461945e57450e81d60b19053630214b005c3fd9` - Stage 13E implementation and completion.
-  - `abde5c60a46d9caeea0302c8de606f6f1feaa61c` - Stage 13E CI evidence and Stage 14A shaping.
-  - `4133cbf765f190fa3c93bf8d1d57e43314310045` - Stage 14A implementation and Stage 14B shaping.
-  - `f482c410fb350718177921d8c28d0a05d46011bc` - Stage 14B completion and Stage 15A shaping.
+- Latest completed task: `task-stage15a-release-readiness-audit`.
+- Worker run: `worker-run-stage15a-release-readiness-audit-inline-20260525`.
+- Latest successful local gates:
+  - `uv run --no-sync python -B -m pytest tests/test_release_readiness.py tests/test_file_justification.py -q -p no:cacheprovider` - 18 passed.
+  - `uv run --no-sync python -B scripts/check_planning_integrity.py` - passed.
+  - `uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json` - Stage 15A running before completion ingest.
+  - `uv run --no-sync python -B scripts/verify.py` - 469 passed plus hygiene, source inventory, skill inventory, planning integrity, and source locks.
+  - `uv run --no-sync python -B scripts/verify.py --publication-ready` - 469 passed plus publication-ready hygiene and source locks.
 - Latest successful remote CI: GitHub Actions `Verify` run
-  `https://github.com/adamowada/codex-supervisor/actions/runs/26405006727`.
+  `https://github.com/adamowada/codex-supervisor/actions/runs/26405139863` for commit
+  `79ec62e1e575e1709c5cdec6241403b29944297d`.
 - Worker backend note: local `codex --version` still fails with Access denied for the resolved
   WindowsApps executable, so native Goal Mode worker launch remains unavailable for this worker
   until the CLI path and `CODEX_HOME` are confirmed.
 
-## Stage 13E Summary
+## Stage 15A Summary
 
-Review anchor: stage13e-review.
-Review result anchor: stage13e-review-result.
-Summary anchor: stage13e-summary.
+Review anchor: stage15a-review.
+Review result anchor: stage15a-review-result.
+Summary anchor: stage15a-summary.
 
-Task: `task-stage13e-pr-issue-evidence-links`.
-Status: completed in planning SQLite, pushed, and verified by remote CI.
+Task: `task-stage15a-release-readiness-audit`.
+Plan: `plan-stage15-release-hardening`.
+Worker run: `worker-run-stage15a-release-readiness-audit-inline-20260525`.
+Status: completed in planning SQLite after worker-result ingest and review-result recording.
 
 Implemented:
 
-- Added typed `PullRequestEvidenceRecord` / `PullRequestEvidenceRecorded` and
-  `IssueCommentEvidenceRecord` / `IssueCommentEvidenceRecorded`.
-- Added `PlanningSQLiteStore.record_pull_request_evidence` and
-  `PlanningSQLiteStore.record_issue_comment_evidence`.
-- Added CLI commands `pr-evidence-record` and `issue-comment-record` for credential-free recording
-  of GitHub PR and issue-comment evidence.
-- Durable progress details now store provider/repository/URL/remote IDs and optional metadata;
-  optional repo-local artifacts create artifact links; optional SHAs create commit links.
-- Review `review-stage13e-pr-issue-evidence-links-20260525` found one accepted P2 issue: re-recorded
-  PR/comment evidence could leave stale commit links behind. The repair removes obsolete `pr-head`
-  and `issue-comment-commit` links when evidence is replaced or cleared.
-- Updated `insights/workflow-patterns.md` with the durable rule that typed evidence upserts must
-  remove stale derived links.
+- Added `src/codex_supervisor/release.py` with frozen typed release-readiness report/check
+  contracts and deterministic repo-owned checks for CLI, MCP, plugin, spawned-project scaffold,
+  verification, documentation, Linux CI surface, and external Windows validation.
+- Added CLI command `release-readiness` with deterministic JSON and human-readable dry-run output.
+- Added focused release-readiness tests for current repo evidence, empty/missing evidence, JSON
+  output, and human output.
+- Updated file-purpose justification for the new release audit module and tests.
+- Release-readiness output currently reports 8 passing checks and 1 explicit gap:
+  external Windows install validation evidence is not tracked yet.
+- Review `review-stage15a-release-readiness-audit-20260525` found one accepted P3 issue: text-based
+  gap checks could emit optimistic evidence. The repair now emits `present:` / `missing:` evidence
+  for text contracts and covers missing CLI/docs/CI evidence in tests.
+- Updated `insights/workflow-patterns.md` with durable lessons for explicit missing evidence in gap
+  reports and UTF-8-without-BOM JSON import artifacts on Windows.
 
 Verification passed locally:
 
 ```sh
-uv run --no-sync python -B -m pytest tests/test_planning.py -q -p no:cacheprovider
-uv run --no-sync python -B scripts/verify.py
-```
-
-Publication-ready verification initially failed only because this handoff exceeded the compact
-snapshot line limit. This file was compacted, and publication-ready verification passed after
-staging.
-
-## Stage 14A Summary
-
-Task: `task-stage14a-spawned-project-tier-classifier`.
-Plan: `plan-stage14-spawned-project-factory-sop`.
-Worker run: `worker-run-stage14a-spawned-project-tier-classifier-inline-20260525`.
-Review required: yes, because it adds a new core model and CLI public surface.
-Review anchor: stage14a-review.
-Review result anchor: stage14a-review-result.
-Summary anchor: stage14a-summary.
-
-Goal: add a deterministic, credential-free spawned-project scaffold recommendation model and CLI
-dry-run command so `codex-supervisor` can choose SOP tiers for prototypes versus
-production-intended projects before creating files.
-
-Allowed paths: `src/codex_supervisor/spawned_projects.py`, `src/codex_supervisor/cli.py`,
-`tests/test_spawned_projects.py`, `tests/test_file_justification.py`,
-`scripts/check_file_justification.py`, `plans/planning.sqlite3`, `HANDOFF.md`, and `insights/**`.
-
-Stop instead of guessing if the slice requires a real external project, user product/publication
-policy, a new verification script beyond command-safety scope, or repeated unknown
-publication-ready failure.
-
-Implemented locally:
-
-- Added `src/codex_supervisor/spawned_projects.py` with typed `SpawnedProjectBrief` and
-  `SpawnedProjectRecommendation` contracts plus deterministic tier recommendation.
-- Added `spawned-project-classify` CLI dry-run output for prototype, base, supervisor-managed,
-  publication-ready, durable-learning, repo-local skill, and source-study recommendations.
-- Added `tests/test_spawned_projects.py` and file-purpose entries for the new public files.
-- Review `review-stage14a-spawned-project-tier-classifier-20260525` found one accepted P2
-  source-of-truth drift: durable learning must not imply empty skill/source-study surfaces. The
-  repair split durable-learning insight files from repo-local skill and source-study files.
-- Updated `insights/workflow-patterns.md` with the optional-tier trigger lesson.
-
-Verification passed locally:
-
-```sh
-uv run --no-sync python -B -m pytest tests/test_spawned_projects.py tests/test_file_justification.py -q -p no:cacheprovider
-uv run --no-sync python -B scripts/verify.py
-```
-
-## Stage 14B Summary
-
-Task: `task-stage14b-spawned-project-scaffold-proposal`.
-Worker run: `worker-run-stage14b-spawned-project-scaffold-proposal-inline-20260525`.
-Status: completed in planning SQLite; Stage 14 plan is completed.
-Review anchor: stage14b-review.
-Review result anchor: stage14b-review-result.
-Summary anchor: stage14b-summary.
-
-Goal: extend the Stage 14A classifier into deterministic dry-run scaffold proposals without writing
-external project files.
-
-Implemented locally:
-
-- Added typed scaffold proposal contracts for ordered file actions, planning/source-lock guidance,
-  insight/skill/source-study guidance, and first-task guidance.
-- Added `spawned-project-propose` CLI dry-run JSON output.
-- Added prototype and full production/public/unattended proposal coverage in
-  `tests/test_spawned_projects.py`.
-- Review `review-stage14b-spawned-project-scaffold-proposal-20260525` found no actionable issues.
-- Updated `insights/workflow-patterns.md` with the mypy/CLI branch-local naming lesson.
-
-Verification passed locally:
-
-```sh
-uv run --no-sync python -B -m pytest tests/test_spawned_projects.py tests/test_file_justification.py -q -p no:cacheprovider
+uv run --no-sync python -B -m pytest tests/test_release_readiness.py tests/test_file_justification.py -q -p no:cacheprovider
+uv run --no-sync python -B scripts/check_planning_integrity.py
+uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
 uv run --no-sync python -B scripts/verify.py
 uv run --no-sync python -B scripts/verify.py --publication-ready
 ```
 
 ## Next Action
 
-ACP the Stage 14B completion plus Stage 15A shaping checkpoint, push, inspect remote CI, then claim
-and implement `task-stage15a-release-readiness-audit`.
+Run planning integrity, ACP, push, inspect remote CI, then select the next current AFK slice from
+planning SQLite.
 
 ```sh
-uv run --no-sync python -B -m codex_supervisor.cli task-current --json
+uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
 ```

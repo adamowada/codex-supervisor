@@ -85,6 +85,10 @@ from codex_supervisor.projects import (
     build_project_task_seeds,
     discover_projects,
 )
+from codex_supervisor.release import (
+    ReleaseReadinessReport,
+    build_release_readiness_report,
+)
 from codex_supervisor.review_loop import (
     ReviewContractError,
     ReviewResult,
@@ -198,6 +202,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Dry-run spawned project scaffold file and task proposal",
     )
     _add_spawned_project_brief_arguments(spawned_propose_parser)
+
+    release_readiness_parser = subparsers.add_parser(
+        "release-readiness",
+        help="Dry-run release readiness audit from repo-owned evidence",
+    )
+    release_readiness_parser.add_argument("--repo-root", type=Path, default=None)
+    release_readiness_parser.add_argument("--json", action="store_true", default=False)
 
     list_parser = subparsers.add_parser("plan-list", help="List plans")
     list_parser.add_argument("--path", type=Path, default=None)
@@ -825,6 +836,14 @@ def main(argv: list[str] | None = None) -> int:
             _print_json(proposal)
         else:
             _print_spawned_project_proposal(proposal)
+        return 0
+
+    if args.command == "release-readiness":
+        release_report = build_release_readiness_report(args.repo_root)
+        if args.json:
+            _print_json(release_report)
+        else:
+            _print_release_readiness_report(release_report)
         return 0
 
     if args.command == "codex-state-inventory":
@@ -2461,6 +2480,20 @@ def _print_spawned_project_proposal(proposal: SpawnedProjectScaffoldProposal) ->
     _print_json_list("skill_actions", proposal.skill_actions)
     _print_json_list("source_study_actions", proposal.source_study_actions)
     print(f"first_task: {proposal.first_task.title}")
+
+
+def _print_release_readiness_report(report: ReleaseReadinessReport) -> None:
+    print(f"repo_root: {report.repo_root}")
+    print(f"release_ready: {report.ready}")
+    print(f"passing_checks: {report.passing_checks}")
+    print(f"gap_checks: {report.gap_checks}")
+    print("checks:")
+    for check in report.checks:
+        print(f"- {check.section}\t{check.status}\t{check.name}")
+        for evidence in check.evidence:
+            print(f"  evidence: {evidence}")
+        if check.next_action:
+            print(f"  next_action: {check.next_action}")
 
 
 def _add_spawned_project_brief_arguments(command_parser: argparse.ArgumentParser) -> None:

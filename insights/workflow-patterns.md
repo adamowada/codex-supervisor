@@ -295,3 +295,36 @@ renamed to `skill_proposal`.
 
 Next action: when adding CLI subcommands to `src/codex_supervisor/cli.py`, run mypy before review
 and avoid generic local result names in command branches that return different typed records.
+
+## Gap Reports Must Name Missing Evidence
+
+Confidence: confirmed.
+
+Release, hygiene, and readiness reports should never pair `gap` status with optimistic evidence
+phrases. Each check should identify the present evidence and the missing evidence explicitly so the
+next action is traceable from the report without re-running a debugger or reading the implementation.
+
+Evidence: Stage 15A review found that the first release-readiness audit correctly marked an empty
+repo dry-run as gaps, but text-contract checks still emitted positive evidence strings for missing
+CLI, documentation, and CI contracts. The repair changed those checks to emit `present:` and
+`missing:` evidence and added regression coverage for missing text contracts.
+
+Next action: when adding evidence reports, test an empty or deliberately incomplete fixture and
+assert that every gap exposes the missing proof, not only the intended proof.
+
+## JSON Import Artifacts Need UTF-8 Without BOM
+
+Confidence: confirmed.
+
+Planning import commands parse JSON as strict UTF-8. On Windows PowerShell, `Set-Content
+-Encoding UTF8` can write a UTF-8 BOM that Python's default `json.loads` path rejects. For transient
+review or worker-result payloads, write UTF-8 without BOM or use repo-owned JSON helpers before
+ingesting.
+
+Evidence: Stage 15A review-result ingestion first failed with `Unexpected UTF-8 BOM` after
+PowerShell wrote the transient review JSON. Rewriting the file with
+`[System.Text.UTF8Encoding]::new($false)` allowed `review-result-ingest` to accept and persist the
+same structured payload.
+
+Next action: when creating temporary JSON for planning CLI ingestion on Windows, use a no-BOM writer
+and rerun the ingest command before recording progress.

@@ -322,6 +322,9 @@ FILE_PURPOSES = {
     "src/codex_supervisor/review_repairs.py": FilePurpose(
         "accepted review finding repair task routing helpers", "pytest"
     ),
+    "src/codex_supervisor/release.py": FilePurpose(
+        "release-readiness audit contracts and evidence checks", "pytest"
+    ),
     "src/codex_supervisor/spawned_projects.py": FilePurpose(
         "spawned-project scaffold recommendation contracts", "pytest"
     ),
@@ -370,6 +373,7 @@ FILE_PURPOSES = {
     "tests/test_review_cli.py": FilePurpose("review result CLI ingestion tests", "pytest"),
     "tests/test_review_persistence.py": FilePurpose("review result persistence tests", "pytest"),
     "tests/test_review_repairs.py": FilePurpose("review repair routing tests", "pytest"),
+    "tests/test_release_readiness.py": FilePurpose("release-readiness audit tests", "pytest"),
     "tests/test_skill_inventory.py": FilePurpose("skill inventory gate tests", "pytest"),
     "tests/test_source_inventory.py": FilePurpose("source inventory gate tests", "pytest"),
     "tests/test_spawned_projects.py": FilePurpose(
@@ -442,6 +446,7 @@ REQUIRED_PYTHON_MARKERS = {
     "src/codex_supervisor/mcp_stdio.py": "serve_stdio",
     "src/codex_supervisor/paths.py": "default_planning_database_path",
     "src/codex_supervisor/planning.py": "PlanningSQLiteStore",
+    "src/codex_supervisor/release.py": "build_release_readiness_report",
     "src/codex_supervisor/story_loop.py": "build_story_loop_status",
 }
 

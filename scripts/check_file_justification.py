@@ -305,6 +305,11 @@ FILE_PURPOSES = {
         "structured worker-result evidence for the Stage 10E Codex automation bridge dry-run slice",
         "check_planning_integrity",
     ),
+    "insights/stage10f-official-automation-bridge-apply-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 10F official Codex automation bridge "
+        "apply slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),

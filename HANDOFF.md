@@ -16,15 +16,15 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, Stage 10F official Codex automation bridge apply work is shaped and ready in
-planning SQLite. The expected queue state is `ready` for active plan
-`plan-stage10-codex-state-automation-bridge`, with current AFK task
-`task-stage10f-official-automation-bridge-apply`. Stage 10A, Stage 10B, Stage 10C, Stage 10D,
-Stage 10E, and Stage 9 are marked completed in planning SQLite. If the database reports anything
-else, trust the database and call this handoff stale.
+As of this snapshot, Stage 10F official Codex automation bridge apply work is complete in planning
+SQLite. The expected queue state is `completed` for active plan
+`plan-stage10-codex-state-automation-bridge`, with no current AFK task. Stage 10A, Stage 10B,
+Stage 10C, Stage 10D, Stage 10E, Stage 10F, and Stage 9 are marked completed in planning SQLite.
+If the database reports anything else, trust the database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
+- `b88529c`: shaped the Stage 10F official Codex automation bridge apply task and handoff.
 - `3a2933a`: added the Stage 10E official Codex automation bridge dry-run helper, CLI, tests,
   planning completion, handoff, and worker result.
 - `a883de8`: shaped the Stage 10E Codex automation bridge dry-run task and handoff.
@@ -48,8 +48,8 @@ Recent completed ACP checkpoints:
 - `200d027`: hardened exact task claiming, Story Loop queue snapshots, completed-plan criteria, and
   worker-result/attribution skill contracts.
 
-The latest full local gate passed after the Stage 10E official Codex automation bridge dry-run
-implementation with:
+The latest full local gate passed after the Stage 10F official Codex automation bridge apply
+completion with:
 
 ```sh
 uv run --no-sync python -B scripts/verify.py
@@ -450,6 +450,27 @@ Stage 10F official Codex automation bridge apply has been shaped:
   `uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json`;
   `uv run --no-sync python -B scripts/verify.py`.
 
+Stage 10F official Codex automation bridge apply changed:
+
+- Created two ACTIVE official Codex cron automations through `codex_app.automation_update`:
+  `codex-supervisor-queue-reconciliation` and `codex-supervisor-project-health-check`.
+- Verified local automation records exist under the configured Codex automation store after creation.
+  The automations are scoped to the configured `codex-supervisor` checkout and use read-only
+  reporting prompts.
+- `plans/planning.sqlite3`: records Stage 10F completion through
+  `worker-run-stage10f-official-automation-bridge-apply-20260525`,
+  `progress-stage10f-review-completed-20260525`, completed task, completed milestone, completed
+  criterion, and linked worker-result artifact.
+- `scripts/check_file_justification.py`: records the new Stage 10F worker-result artifact purpose.
+- `insights/stage10f-official-automation-bridge-apply-worker-result.json`: durable Stage 10F
+  worker-result evidence.
+- Verification:
+  `uv run --no-sync python -B scripts/check_planning_integrity.py`;
+  `uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json`;
+  `uv run --no-sync python -B scripts/verify.py`.
+- Residual risks: the two recurring automations are active external Codex app state and should be
+  changed only through official automation tooling; they are intentionally report-only.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -475,8 +496,9 @@ selector. If queue_state is hitl or running, inspect current_task_id with task-s
 If queue_state is `ready`, run `task-current --json` and execute the current AFK slice with
 story-loop discipline.
 
-As of this handoff, the expected queue_state is `ready` with current AFK task
-`task-stage10f-official-automation-bridge-apply`. Execute that slice with story-loop discipline.
+As of this handoff, the expected queue_state is `completed` with no current AFK task. Shape the next
+roadmap slice through typed helpers before implementation. A likely successor is Stage 11 MCP server
+work, but trust ROADMAP.md and planning SQLite over this suggestion.
 Keep live Codex Exec launch disabled while the local Codex CLI still fails preflight with
 `Access is denied`; do not launch live `codex exec` until an accessible executable path and intended
 `CODEX_HOME` are confirmed.

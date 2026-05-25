@@ -16,14 +16,15 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, Stage 10A Codex local-state inventory work is shaped in planning SQLite. The
-expected queue state is `ready` for active plan
-`plan-stage10-codex-state-automation-bridge`, with current AFK task
-`task-stage10a-codex-state-inventory`. Stage 9 is marked completed in planning SQLite. If the
-database reports anything else, trust the database and call this handoff stale.
+As of this snapshot, Stage 10A Codex local-state inventory work is complete in planning SQLite. The
+expected queue state is `completed` for active plan
+`plan-stage10-codex-state-automation-bridge`, with no current AFK task until the next Stage 10 slice
+is shaped. Stage 9 is marked completed in planning SQLite. If the database reports anything else,
+trust the database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
+- `e565921`: shaped the Stage 10 Codex state inventory plan and Stage 10A task.
 - `04931a8`: added Stage 9D skill promotion proposal and golden-eval evidence contracts.
 - `34df19e`: shaped the Stage 9D skill promotion golden-eval contract task and handoff.
 - `bf9386f`: shaped the Stage 9C guarded insight update workflow task and handoff.
@@ -33,14 +34,14 @@ Recent completed ACP checkpoints:
 - `200d027`: hardened exact task claiming, Story Loop queue snapshots, completed-plan criteria, and
   worker-result/attribution skill contracts.
 
-The latest full local gate passed after the Stage 9D skill promotion eval contract implementation
+The latest full local gate passed after the Stage 10A Codex local-state inventory implementation
 with:
 
 ```sh
 uv run --no-sync python -B scripts/verify.py
 ```
 
-That run covered 354 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
+That run covered 358 tests, Ruff, format check, mypy, CLI smoke checks, file justification, public
 hygiene, planning integrity, skill inventory, source inventory, protected locks, and
 `uv lock --check`.
 
@@ -298,28 +299,23 @@ Stage 9D skill promotion golden-eval contract work changed:
   `uv run --no-sync python -B -m pytest tests/test_skill_promotion.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/verify.py`.
 
-Stage 10A Codex local-state inventory work is shaped:
+Stage 10A Codex local-state inventory changed:
 
-- `plans/planning.sqlite3`: marks `plan-stage9-insights-skill-learning` completed and adds active
-  plan `plan-stage10-codex-state-automation-bridge` with ready AFK task
-  `task-stage10a-codex-state-inventory`, milestone
-  `milestone-stage10a-codex-state-inventory`, criterion
-  `criterion-stage10a-codex-state-inventory`, and
-  `progress-stage10a-task-shaped-20260525`.
-- Goal: add a privacy-safe read-only helper and CLI for inventorying documented Codex local SQLite
-  databases by metadata only, producing normalized observations for future reconciliation without
-  reading row payloads or writing Codex internal state.
-- Scope: inspect a supplied Codex home path for documented SQLite databases such as
-  `state_5.sqlite`, `goals_1.sqlite`, `logs_2.sqlite`, and `sqlite/codex-dev.db`; record
-  existence/status, table names, row counts, and source database/table provenance; handle missing
-  or corrupt databases as nonfatal observations.
-- Out of scope: writing under `~/.codex`, printing raw chats/logs/auth/token values or row payloads,
-  official automation mutation, planning reconciliation beyond this task's own records, protected
-  source-of-truth edits, and live worker launch.
-- Allowed implementation paths:
-  `src/codex_supervisor/codex_state.py`, `src/codex_supervisor/cli.py`,
-  `tests/test_codex_state.py`, `scripts/check_file_justification.py`, `plans/planning.sqlite3`,
-  `HANDOFF.md`, and `insights/stage10a-codex-state-inventory-worker-result.json`.
+- `src/codex_supervisor/codex_state.py`: added `inventory_codex_state`, documented local Codex
+  database specs, read-only SQLite `mode=ro` opening, table-name/row-count inventories, source
+  database/table provenance, source-kind inference, and nonfatal missing/unreadable database
+  statuses.
+- `src/codex_supervisor/cli.py`: added `codex-state-inventory --codex-home <path> --json` for
+  normalized metadata output without opening planning SQLite or writing Codex internal state.
+- `tests/test_codex_state.py`: covers temp Codex home inventory, table row counts, missing and
+  corrupt databases, no-mutation behavior, and CLI JSON that omits private row payload values.
+- `scripts/check_file_justification.py`: records the new module, tests, and worker-result artifact.
+- `plans/planning.sqlite3`: records Stage 10A completion through
+  `worker-run-stage10a-codex-state-inventory-20260525`,
+  `progress-stage10a-review-completed-20260525`, completed task, completed milestone, and completed
+  criterion.
+- `insights/stage10a-codex-state-inventory-worker-result.json`: durable Stage 10A worker-result
+  evidence.
 - Verification:
   `uv run --no-sync python -B -m pytest tests/test_codex_state.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/verify.py`.
@@ -347,11 +343,11 @@ Use story-loop-status as the queue state machine. Use task-current only as the e
 selector. If queue_state is hitl or running, inspect current_task_id with task-show.
 
 If queue_state is `ready`, run `task-current --json` and execute the current AFK slice with
-story-loop discipline. The expected current task is `task-stage10a-codex-state-inventory`.
+story-loop discipline.
 
 If queue_state is `completed`, shape the next AFK vertical slice from `ROADMAP.md`. The likely next
-slice after Stage 10A is deeper Codex local-state summarization/reconciliation or automation bridge
-work.
+slice after Stage 10A is Stage 10B: safe local-state summarization/reconciliation findings or an
+official automation-bridge dry-run surface.
 Keep live Codex Exec launch disabled while the local Codex CLI still fails preflight with
 `Access is denied`; do not launch live `codex exec` until an accessible executable path and intended
 `CODEX_HOME` are confirmed.

@@ -12,6 +12,7 @@ from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from codex_supervisor.codex_state import CodexStateInventory, inventory_codex_state
 from codex_supervisor.goal_contracts import (
     render_goal_contract,
     render_goal_contract_markdown,
@@ -456,6 +457,14 @@ def main(argv: list[str] | None = None) -> int:
     skill_promotion_parser.add_argument("--proposal-path", type=Path, required=True)
     skill_promotion_parser.add_argument("--json", action="store_true", default=False)
 
+    codex_state_parser = subparsers.add_parser(
+        "codex-state-inventory",
+        help="Inventory documented Codex local SQLite databases read-only",
+    )
+    codex_state_parser.add_argument("--codex-home", type=Path, required=True)
+    codex_state_parser.add_argument("--observed-at", default=None)
+    codex_state_parser.add_argument("--json", action="store_true", default=False)
+
     cleanup_plan_parser = subparsers.add_parser(
         "cleanup-plan",
         help="Build a non-destructive cleanup plan for ignored runtime paths",
@@ -467,6 +476,14 @@ def main(argv: list[str] | None = None) -> int:
     cleanup_plan_parser.add_argument("--json", action="store_true", default=False)
 
     args = parser.parse_args(argv)
+
+    if args.command == "codex-state-inventory":
+        inventory = inventory_codex_state(args.codex_home, observed_at=args.observed_at)
+        if args.json:
+            _print_json(inventory)
+        else:
+            _print_codex_state_inventory(inventory)
+        return 0
 
     if args.command == "cleanup-plan":
         try:
@@ -1869,6 +1886,25 @@ def _print_skill_promotion_proposal(proposal: SkillPromotionProposal) -> None:
         print(f"  candidate_summary: {evidence.candidate_summary}")
         print(f"  reviewer: {reviewer}")
         print(f"  automated_verdict_rationale: {automated}")
+
+
+def _print_codex_state_inventory(inventory: CodexStateInventory) -> None:
+    print(f"codex_home: {inventory.codex_home}")
+    print(f"observed_at: {inventory.observed_at}")
+    print("databases:")
+    for database in inventory.databases:
+        print(f"- {database.relative_path}: {database.status}")
+        if database.failure_class:
+            print(f"  failure_class: {database.failure_class}")
+        if database.failure_reason:
+            print(f"  failure_reason: {database.failure_reason}")
+        if database.tables:
+            print("  tables:")
+            for table in database.tables:
+                source_kinds = ", ".join(table.source_kinds)
+                print(f"  - {table.source_table}\trows={table.row_count}\t{source_kinds}")
+        else:
+            print("  tables: none")
 
 
 def _to_jsonable(value: object) -> Any:

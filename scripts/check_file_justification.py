@@ -301,6 +301,10 @@ FILE_PURPOSES = {
         "slice",
         "check_planning_integrity",
     ),
+    "insights/stage10e-codex-automation-bridge-dry-run-worker-result.json": FilePurpose(
+        "structured worker-result evidence for the Stage 10E Codex automation bridge dry-run slice",
+        "check_planning_integrity",
+    ),
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
@@ -343,6 +347,10 @@ FILE_PURPOSES = {
     ),
     "src/codex_supervisor/__init__.py": FilePurpose("Python package marker", "mypy"),
     "src/codex_supervisor/cli.py": FilePurpose("codex-supervisor CLI", "pytest"),
+    "src/codex_supervisor/codex_automation.py": FilePurpose(
+        "official Codex automation bridge dry-run proposal helpers",
+        "pytest",
+    ),
     "src/codex_supervisor/codex_state.py": FilePurpose(
         "privacy-safe Codex local-state inventory, observation, and reconciliation helpers",
         "pytest",
@@ -413,6 +421,10 @@ FILE_PURPOSES = {
     "tests/test_skill_promotion.py": FilePurpose(
         "skill promotion proposal contract tests", "pytest"
     ),
+    "tests/test_codex_automation.py": FilePurpose(
+        "official Codex automation bridge dry-run tests",
+        "pytest",
+    ),
     "tests/test_codex_state.py": FilePurpose(
         "privacy-safe Codex local-state inventory, observation, and reconciliation tests",
         "pytest",
@@ -462,6 +474,7 @@ REQUIRED_PYTHON_MARKERS = {
     "scripts/print_protected_hashes.py": "PROTECTED_FILE_HASHES",
     "scripts/verify.py": "BASE_COMMANDS",
     "src/codex_supervisor/cli.py": "def main",
+    "src/codex_supervisor/codex_automation.py": "build_codex_automation_bridge_dry_run",
     "src/codex_supervisor/codex_state.py": "inventory_codex_state",
     "src/codex_supervisor/codex_state_reconciliation.py": (
         "apply_codex_state_reconciliation_report"

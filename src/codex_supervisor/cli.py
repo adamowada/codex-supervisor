@@ -12,6 +12,11 @@ from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from codex_supervisor.codex_automation import (
+    CodexAutomationBridgeDryRunReport,
+    build_codex_automation_bridge_dry_run,
+    default_codex_automation_bridge_specs,
+)
 from codex_supervisor.codex_state import (
     CodexStateInventory,
     CodexStateObservationReport,
@@ -514,6 +519,30 @@ def main(argv: list[str] | None = None) -> int:
     )
     codex_reconciliation_apply_parser.add_argument("--json", action="store_true", default=False)
 
+    codex_automation_parser = subparsers.add_parser(
+        "codex-automation-dry-run",
+        help="Build non-mutating official Codex automation proposals",
+    )
+    codex_automation_parser.add_argument("--workspace-root", type=Path, required=True)
+    codex_automation_parser.add_argument("--queue-reconciliation-rrule", required=True)
+    codex_automation_parser.add_argument("--health-check-rrule", required=True)
+    codex_automation_parser.add_argument("--source-plan-id", default="")
+    codex_automation_parser.add_argument("--source-task-id", default="")
+    codex_automation_parser.add_argument("--model", default="")
+    codex_automation_parser.add_argument("--reasoning-effort", default="")
+    codex_automation_parser.add_argument(
+        "--execution-environment",
+        choices=("local", "worktree"),
+        default="local",
+    )
+    codex_automation_parser.add_argument(
+        "--status",
+        choices=("ACTIVE", "PAUSED"),
+        default="ACTIVE",
+    )
+    codex_automation_parser.add_argument("--observed-at", default=None)
+    codex_automation_parser.add_argument("--json", action="store_true", default=False)
+
     cleanup_plan_parser = subparsers.add_parser(
         "cleanup-plan",
         help="Build a non-destructive cleanup plan for ignored runtime paths",
@@ -589,6 +618,27 @@ def main(argv: list[str] | None = None) -> int:
             _print_json(apply_report)
         else:
             _print_codex_state_reconciliation_apply_report(apply_report)
+        return 0
+
+    if args.command == "codex-automation-dry-run":
+        automation_report = build_codex_automation_bridge_dry_run(
+            workspace_root=args.workspace_root,
+            specs=default_codex_automation_bridge_specs(
+                queue_reconciliation_rrule=args.queue_reconciliation_rrule,
+                health_check_rrule=args.health_check_rrule,
+                model=args.model,
+                reasoning_effort=args.reasoning_effort,
+                status=args.status,
+                execution_environment=args.execution_environment,
+            ),
+            source_plan_id=args.source_plan_id,
+            source_task_id=args.source_task_id,
+            observed_at=args.observed_at,
+        )
+        if args.json:
+            _print_json(automation_report)
+        else:
+            _print_codex_automation_bridge_dry_run(automation_report)
         return 0
 
     if args.command == "cleanup-plan":
@@ -2086,6 +2136,30 @@ def _print_codex_state_reconciliation_apply_report(
         print("- none")
     for skipped in report.skipped:
         print(f"- {skipped.proposal_id}\t{skipped.action_type}\t{skipped.skip_reason}")
+    print("findings:")
+    if not report.findings:
+        print("- none")
+    for finding in report.findings:
+        print(f"- {finding.finding_type}\t{finding.source_id}\t{finding.failure_class}")
+        print(f"  summary: {finding.summary}")
+
+
+def _print_codex_automation_bridge_dry_run(
+    report: CodexAutomationBridgeDryRunReport,
+) -> None:
+    print(f"workspace_root: {report.workspace_root}")
+    print(f"observed_at: {report.observed_at}")
+    print(f"source_plan_id: {report.source_plan_id or 'none'}")
+    print(f"source_task_id: {report.source_task_id or 'none'}")
+    print("proposals:")
+    if not report.proposals:
+        print("- none")
+    for proposal in report.proposals:
+        print(f"- {proposal.proposal_id}\t{proposal.kind}\t{proposal.name}")
+        print(f"  action_status: {proposal.action_status}")
+        print(f"  rrule: {proposal.rrule}")
+        print(f"  cwds: {', '.join(proposal.cwds) if proposal.cwds else 'none'}")
+        print(f"  summary: {proposal.summary}")
     print("findings:")
     if not report.findings:
         print("- none")

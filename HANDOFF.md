@@ -16,15 +16,17 @@ uv run --no-sync python -B -m codex_supervisor.cli task-current --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
-As of this snapshot, Stage 10C Codex local-state reconciliation dry-run work is complete in
-planning SQLite. The expected queue state is `completed` for active plan
-`plan-stage10-codex-state-automation-bridge`, with no current AFK task until the next Stage 10 slice
-is shaped. Stage 10A, Stage 10B, and Stage 10C are complete, and Stage 9 is marked completed in
-planning SQLite. If the database reports anything else, trust the database and call this handoff
-stale.
+As of this snapshot, Stage 10D reviewed Codex local-state reconciliation apply work is shaped and
+ready in planning SQLite. The expected queue state is `ready` for active plan
+`plan-stage10-codex-state-automation-bridge`, with current AFK task
+`task-stage10d-codex-state-reconciliation-apply`. Stage 10A, Stage 10B, and Stage 10C are complete,
+and Stage 9 is marked completed in planning SQLite. If the database reports anything else, trust the
+database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
+- `943e893`: added the Stage 10C Codex state reconciliation dry-run helper, CLI, tests, planning
+  completion, handoff, and worker result.
 - `225863a`: shaped the Stage 10C Codex state reconciliation dry-run task and handoff.
 - `69426ea`: added the Stage 10B Codex state observation summary helper, CLI, tests, and worker
   result.
@@ -373,6 +375,17 @@ Stage 10C Codex local-state reconciliation dry-run changed:
   `uv run --no-sync python -B -m pytest tests/test_codex_state.py -q -p no:cacheprovider`;
   `uv run --no-sync python -B scripts/verify.py`.
 
+Stage 10D reviewed Codex local-state reconciliation apply has been shaped:
+
+- `plans/planning.sqlite3`: adds `task-stage10d-codex-state-reconciliation-apply` as the ready AFK
+  slice, `milestone-stage10d-codex-state-reconciliation-apply`, and
+  `criterion-stage10d-codex-state-reconciliation-apply`.
+- Scope: apply explicitly reviewed Stage 10C dry-run proposals into planning SQLite only as
+  append-only progress and artifact evidence, with deterministic provenance, explicit approval,
+  skipped/conflict findings, and no silent canonical-row overwrites.
+- Expected focused check:
+  `uv run --no-sync python -B -m pytest tests/test_codex_state.py tests/test_codex_state_reconciliation.py -q -p no:cacheprovider`.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -398,9 +411,9 @@ selector. If queue_state is hitl or running, inspect current_task_id with task-s
 If queue_state is `ready`, run `task-current --json` and execute the current AFK slice with
 story-loop discipline.
 
-If queue_state is `completed`, shape the next AFK vertical slice from `ROADMAP.md`. The likely next
-Stage 10 slice is a reviewed reconciliation apply workflow for the dry-run proposals, or an official
-Codex automation bridge dry-run surface for recurring queue reconciliation and health checks.
+If queue_state is `ready`, run `task-current --json` and execute the current AFK slice with
+story-loop discipline. As of this handoff, the expected ready task is
+`task-stage10d-codex-state-reconciliation-apply`.
 Keep live Codex Exec launch disabled while the local Codex CLI still fails preflight with
 `Access is denied`; do not launch live `codex exec` until an accessible executable path and intended
 `CODEX_HOME` are confirmed.

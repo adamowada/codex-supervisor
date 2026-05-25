@@ -78,6 +78,11 @@ PURPOSE_RULES = (
         patterns=("plans/planning.sqlite3",),
     ),
     PurposeRule(
+        name="codex-plugin",
+        purpose="Codex Desktop plugin metadata and MCP wiring for supervisor inspection",
+        patterns=("plugins/codex-supervisor/**",),
+    ),
+    PurposeRule(
         name="oss-source-index",
         purpose="public index for ignored OSS study sources",
         patterns=("sources/README.md",),
@@ -225,6 +230,18 @@ FILE_PURPOSES = {
     "plans/planning.sqlite3": FilePurpose(
         "tracked operational planning state", "check_planning_integrity"
     ),
+    "plugins/codex-supervisor/.codex-plugin/plugin.json": FilePurpose(
+        "Codex Desktop plugin discovery metadata",
+        "pytest",
+    ),
+    "plugins/codex-supervisor/.mcp.json": FilePurpose(
+        "Codex Desktop MCP stdio server configuration",
+        "pytest",
+    ),
+    "plugins/codex-supervisor/README.md": FilePurpose(
+        "operator-facing Codex Desktop plugin usage notes",
+        "pytest",
+    ),
     "pyproject.toml": FilePurpose("Python package and tooling configuration", "uv lock --check"),
     "scripts/check_file_justification.py": FilePurpose("public file purpose gate", "pytest"),
     "scripts/check_planning_integrity.py": FilePurpose("planning SQLite integrity gate", "pytest"),
@@ -318,6 +335,9 @@ FILE_PURPOSES = {
     "tests/test_locks.py": FilePurpose("protected lock helper tests", "pytest"),
     "tests/test_mcp_server.py": FilePurpose("read-only MCP tool registry tests", "pytest"),
     "tests/test_mcp_stdio.py": FilePurpose("MCP stdio JSON-RPC transport tests", "pytest"),
+    "tests/test_codex_plugin.py": FilePurpose(
+        "Codex Desktop plugin scaffold contract tests", "pytest"
+    ),
     "tests/test_planning.py": FilePurpose("planning store and CLI tests", "pytest"),
     "tests/test_planning_integrity.py": FilePurpose("planning integrity gate tests", "pytest"),
     "tests/test_projects.py": FilePurpose(
@@ -416,6 +436,16 @@ FOLDER_PURPOSE_RULES = (
         name="planning-state",
         purpose="tracked operational planning queue and current task state",
         patterns=("plans",),
+    ),
+    FolderPurposeRule(
+        name="codex-plugin",
+        purpose="Codex Desktop plugin metadata and MCP wiring",
+        patterns=(
+            "plugins",
+            "plugins/codex-supervisor",
+            "plugins/codex-supervisor/.codex-plugin",
+            "plugins/codex-supervisor/**",
+        ),
     ),
     FolderPurposeRule(
         name="oss-source-index",

@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25 03:37 PDT
+Last updated: 2026-05-25 03:54 PDT
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
@@ -9,46 +9,48 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Active Goal posture: dangerous_full_auto/approved_afk Story Loop execution, one current AFK slice
   at a time from planning SQLite.
-- Current queue state: `ready`.
+- Current queue state: `completed`; no open ready, running, HITL, or blocked task remains in the
+  active current queue.
 - Active plan: `plan-stage12-codex-plugin-desktop-experience`
   (`Stage 12 Codex Plugin And Desktop Experience`, priority 78).
-- Current AFK task: `task-stage12a-plugin-mcp-scaffold`.
-- Worker backend: `codex_exec`, with inline supervised fallback expected until the local Codex CLI
-  path and native Goal Mode worker launch are proven usable.
-- Review requirement: fresh-thread-style review before completion because plugin metadata and
-  Desktop docs are public operator surfaces.
+- Completed task: `task-stage12a-plugin-mcp-scaffold`.
+- Worker run: `worker-run-stage12a-plugin-mcp-scaffold-inline-20260525`, completed with DB result
+  `worker-result-stage12a-plugin-mcp-scaffold-result`.
+- Execution mode: inline supervised fallback. `codex --version` still resolves to the WindowsApps
+  `codex.exe` path and fails with access denied, so no live Codex worker was launched.
 
-## Stage 12A Contract
+## Stage 12A Summary
 
-Goal: add the smallest repo-local Codex Desktop plugin scaffold that exposes the existing read-only
-supervisor MCP stdio server, documents local operator responsibilities, and verifies the new plugin
-surface with focused tests and hygiene checks.
+Stage 12A added a repo-local Codex Desktop plugin scaffold:
 
-Allowed paths:
+- `plugins/codex-supervisor/.codex-plugin/plugin.json` describes the Codex Supervisor plugin surface.
+- `plugins/codex-supervisor/.mcp.json` launches
+  `uv run --no-sync python -B -m codex_supervisor.mcp_stdio` from the repository root.
+- `plugins/codex-supervisor/README.md` documents local Desktop use, CLI/MCP/skill responsibilities,
+  planning SQLite authority, `HANDOFF.md`, and the trust boundary.
+- `tests/test_codex_plugin.py` covers manifest shape, MCP stdio launch config, Desktop docs, and
+  placeholder/local-path hygiene.
+- `scripts/check_file_justification.py` now includes public-file and folder purposes for the plugin.
+- `insights/workflow-patterns.md` records durable lessons about external validator dependency
+  envelopes, file-purpose verifier labels, and public-hygiene test fixtures.
 
-```text
-plugins/codex-supervisor/**
-tests/test_codex_plugin.py
-scripts/check_file_justification.py
-plans/planning.sqlite3
-HANDOFF.md
-insights/**
-.agents/skills/**
-```
+## Stage 12A Review
 
-Acceptance criteria:
+Review result: `review-stage12a-plugin-scaffold-20260525`.
 
-- Repo-local plugin metadata and `.mcp.json` define a Codex Supervisor Desktop plugin that launches
-  the existing `codex_supervisor.mcp_stdio` module through `uv` without live worker launch.
-- Desktop-facing plugin docs explain CLI, MCP, skill, planning SQLite, HANDOFF, and trust-posture
-  responsibilities without editing locked source-of-truth documents.
-- File-purpose, planning integrity, full verification, and publication-ready hygiene checks pass
-  with the plugin scaffold included.
+- Mode: `code_quality`.
+- Target: `working-tree:stage12a-plugin-mcp-scaffold`.
+- Findings: 0 accepted, 0 waived, 0 needs HITL.
+- Durable planning progress: `progress-stage12a-plugin-scaffold-review-20260525`.
+- Planning artifact link: `HANDOFF.md#stage12a-review`.
 
-Verification commands:
+## Verification Evidence
+
+Passed:
 
 ```sh
 uv run --no-sync python -B -m pytest tests/test_codex_plugin.py -q -p no:cacheprovider
+uv run --with pyyaml --no-project python -B <plugin-creator>/scripts/validate_plugin.py plugins/codex-supervisor
 uv run --no-sync python -B scripts/check_file_justification.py
 uv run --no-sync python -B scripts/check_planning_integrity.py
 uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
@@ -56,43 +58,21 @@ uv run --no-sync python -B scripts/verify.py
 uv run --no-sync python -B scripts/verify.py --publication-ready
 ```
 
-Stop conditions:
+The external plugin validator was run as an extra contract preflight with `uv --with pyyaml`; the
+task's official worker-result `tests_run` evidence stays limited to repo-owned safe verification
+commands.
 
-- A HITL task becomes current in planning SQLite.
-- Plugin conventions conflict with local Codex plugin schema examples.
-- Verification repeatedly fails without a known repo-local fix.
-- The slice requires external credentials, marketplace publishing, or live Desktop installation.
+## Residual Risk
 
-Out of scope:
-
-- Marketplace or personal plugin registry writes.
-- Actual clean Desktop install validation.
-- Copied skill packaging or app manifests.
-- Mutating MCP tools, worker launches, GitHub/CI integration, or release packaging.
-
-## Recent Evidence
-
-Stage 12A shaping completed:
-
-```sh
-uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
-uv run --no-sync python -B -m codex_supervisor.cli task-current --json
-uv run --no-sync python -B scripts/check_planning_integrity.py
-```
-
-Planning integrity passed, and `story-loop-status` selected
-`task-stage12a-plugin-mcp-scaffold` as the current ready AFK task.
-
-Prior completed checkpoint:
-
-- Completed plan: `plan-stage11-mcp-server`.
-- Completed task: `task-stage11b-mcp-stdio-transport`.
-- Added `src/codex_supervisor/mcp_stdio.py` and `tests/test_mcp_stdio.py`.
-- Publication-ready verification passed before ACP.
+- Clean Codex Desktop installation verification remains out of scope for Stage 12A.
+- The plugin assumes `uv` and this repository's development dependencies are available when Desktop
+  launches the MCP server.
+- Skill packaging, marketplace metadata, mutating MCP tools, GitHub/CI integration, and live worker
+  launch remain later slices.
 
 ## Next Action
 
-Execute `task-stage12a-plugin-mcp-scaffold` through the Story Loop, using `plugin-creator`,
-`story-loop-runner`, and `planning-sqlite-operator` guidance as needed. After implementation,
-run the task verification commands, perform the required review, fix accepted findings, update
-planning SQLite and this handoff, then ACP the step.
+Shape the next Stage 12 AFK slice in planning SQLite before implementation. Likely candidates are
+clean local Codex Desktop install verification, plugin skill packaging/reference strategy, or
+Desktop-friendly workflow commands for bootstrap, queue inspection, worker launch, review, ACP, and
+handoff.

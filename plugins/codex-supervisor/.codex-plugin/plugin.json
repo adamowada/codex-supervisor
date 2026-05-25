@@ -1,0 +1,37 @@
+{
+  "name": "codex-supervisor",
+  "version": "0.1.0",
+  "description": "Codex Desktop wiring for the codex-supervisor agentic engineering factory.",
+  "author": {
+    "name": "Adam Owada"
+  },
+  "homepage": "https://github.com/adamowada/codex-supervisor",
+  "repository": "https://github.com/adamowada/codex-supervisor",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "mcp",
+    "agentic-engineering",
+    "planning",
+    "worktrees"
+  ],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Codex Supervisor",
+    "shortDescription": "Inspect supervisor queues and evidence from Codex Desktop.",
+    "longDescription": "Codex Supervisor exposes the repository's read-only MCP stdio server so Codex Desktop can inspect planning SQLite queue state, current tasks, project facts, and worker evidence through the Python core.",
+    "developerName": "Adam Owada",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ],
+    "websiteURL": "https://github.com/adamowada/codex-supervisor",
+    "defaultPrompt": [
+      "Show the supervisor queue.",
+      "Inspect the current AFK task.",
+      "Summarize worker evidence."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

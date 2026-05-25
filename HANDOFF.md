@@ -17,14 +17,16 @@ uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 ```
 
 As of this snapshot, the Stage 3 project registry and adapter plan is complete in planning SQLite.
-Stage 3A through Stage 3G cover the generic repository adapter, adapter task-candidate output,
-project task seeding, planning SQLite adapter, structured markdown plan adapter, harness config
-adapter, and tech-resume insights graph adapter. The expected queue state is `empty`: no active
-current-queue AFK task remains. If the database reports anything else, trust the database and call
-this handoff stale.
+Stage 11 MCP Server is the active current-queue plan, and the expected queue state is `ready` with
+current AFK task `task-stage11a-mcp-readonly-tools`. That task is a stdlib-only read-only MCP tool
+registry and in-process dispatcher slice; it deliberately excludes stdio/network transport, mutating
+MCP tools, plugin packaging, GitHub/CI, release work, and live Codex worker launch. If the database
+reports anything else, trust the database and call this handoff stale.
 
 Recent completed ACP checkpoints:
 
+- `3238b50`: added Stage 3G insights graph adapter, completed Stage 3, and moved worker-result JSON
+  evidence from `insights/` to `worker-results/`.
 - `3e9a3d0`: shaped the Stage 3G insights graph adapter task and handoff.
 - `8b270ca`: added Stage 3F harness config adapter, review repairs, planning completion, handoff,
   and worker result.
@@ -899,6 +901,35 @@ Stage 3G insights graph project adapter changed:
   evidence is available; live Codex Exec launch remains unavailable in this Windows shell because
   the resolved WindowsApps `codex.exe` path returns `Access is denied`.
 
+Stage 11A MCP read-only tool registry has been shaped:
+
+- `plans/planning.sqlite3`: adds active plan `plan-stage11-mcp-server`, ready AFK task
+  `task-stage11a-mcp-readonly-tools`, active milestone
+  `milestone-stage11a-mcp-readonly-tools`, pending criterion
+  `criterion-stage11a-mcp-readonly-tools`, decision `decision-stage11a-readonly-first`, and progress
+  `progress-stage11a-task-shaped-20260525`.
+- Scope: add a stdlib-only MCP server module with tool metadata, input schema shape, result/error
+  envelopes, a disabled mode, and read-only handlers over existing project registry and planning
+  services.
+- Out of scope: stdio/network MCP transport unless impossible to test without it, mutating MCP
+  tools, plugin metadata or Codex Desktop packaging, GitHub/CI, release, live Codex worker or
+  reviewer launch, Codex internal database/config writes, and protected-doc edits unless a stable
+  contract change is unavoidable.
+- Allowed durable paths:
+  `src/codex_supervisor/mcp_server.py`, `tests/test_mcp_server.py`,
+  `scripts/check_file_justification.py`, `plans/planning.sqlite3`, `HANDOFF.md`, and
+  `worker-results/stage11a-mcp-readonly-tools-worker-result.json`.
+- Expected checks:
+  `uv run --no-sync python -B -m pytest tests/test_mcp_server.py -q -p no:cacheprovider`;
+  `uv run --no-sync python -B scripts/check_planning_integrity.py`;
+  `uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json`;
+  `uv run --no-sync python -B scripts/verify.py`.
+- Blocked conditions: pause if official MCP protocol requirements force a broader architecture
+  decision, if a useful read-only surface requires a new dependency or protected-doc contract
+  change, or if existing Python services cannot provide read-only data without shelling out or
+  mutating planning state.
+- Review: required after implementation because this defines a new public interface surface.
+
 Important environment note: local `codex --version` and `codex exec --help` resolved to the
 WindowsApps `codex.exe` path but failed with `Access is denied`. Treat live Codex Exec launch as
 unavailable until the CLI path and intended `CODEX_HOME` are confirmed.
@@ -924,10 +955,11 @@ selector. If queue_state is hitl or running, inspect current_task_id with task-s
 If queue_state is `ready`, run `task-current --json` and execute the current AFK slice with
 story-loop discipline.
 
-As of this handoff, the expected queue_state is `empty`: the Stage 3 project registry and adapter
-plan is complete and no active current-queue task remains. The next development action is to inspect
-ROADMAP.md, PLANS.md, and current planning state, then shape the next missing v1 ROADMAP slice
-through typed planning helpers before implementation.
+As of this handoff, the expected queue_state is `ready` for active plan
+`plan-stage11-mcp-server`, with current AFK task `task-stage11a-mcp-readonly-tools`. Confirm the
+Goal Contract, then execute exactly this Stage 11A read-only MCP tool registry slice. Do not jump to
+MCP transport, plugin packaging, GitHub/CI, release, or live worker launch until the Stage 11A
+contract is satisfied or explicitly revised.
 Keep live Codex Exec launch disabled while the local Codex CLI still fails preflight with
 `Access is denied`; do not launch live `codex exec` until an accessible executable path and intended
 `CODEX_HOME` are confirmed.

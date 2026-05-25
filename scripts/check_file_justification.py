@@ -288,6 +288,10 @@ FILE_PURPOSES = {
         "reviewed Codex local-state reconciliation apply helpers",
         "pytest",
     ),
+    "src/codex_supervisor/factory_demo.py": FilePurpose(
+        "deterministic release factory-loop demo runner",
+        "pytest",
+    ),
     "src/codex_supervisor/goal_contracts.py": FilePurpose("Goal Contract renderer", "pytest"),
     "src/codex_supervisor/insights.py": FilePurpose(
         "reusable insight record validation contracts", "pytest"
@@ -351,6 +355,7 @@ FILE_PURPOSES = {
         "read-only worktree state snapshots", "pytest"
     ),
     "tests/test_file_justification.py": FilePurpose("file purpose gate tests", "pytest"),
+    "tests/test_factory_demo.py": FilePurpose("factory-loop demo tests", "pytest"),
     "tests/test_github_ci.py": FilePurpose("GitHub Actions workflow contract tests", "pytest"),
     "tests/test_goal_contracts.py": FilePurpose("Goal Contract renderer tests", "pytest"),
     "tests/test_insights.py": FilePurpose("reusable insight contract tests", "pytest"),
@@ -440,6 +445,7 @@ REQUIRED_PYTHON_MARKERS = {
     "src/codex_supervisor/codex_state_reconciliation.py": (
         "apply_codex_state_reconciliation_report"
     ),
+    "src/codex_supervisor/factory_demo.py": "run_factory_loop_demo",
     "src/codex_supervisor/goal_contracts.py": "render_goal_contract",
     "src/codex_supervisor/locks.py": "PROTECTED_FILES",
     "src/codex_supervisor/mcp_server.py": "dispatch_mcp_tool",

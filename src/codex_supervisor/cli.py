@@ -32,6 +32,10 @@ from codex_supervisor.codex_state_reconciliation import (
     apply_codex_state_reconciliation_report,
     codex_state_reconciliation_report_from_payload,
 )
+from codex_supervisor.factory_demo import (
+    FactoryLoopDemoReport,
+    run_factory_loop_demo,
+)
 from codex_supervisor.goal_contracts import (
     render_goal_contract,
     render_goal_contract_markdown,
@@ -210,6 +214,14 @@ def main(argv: list[str] | None = None) -> int:
     release_readiness_parser.add_argument("--repo-root", type=Path, default=None)
     release_readiness_parser.add_argument("--planning-db", type=Path, default=None)
     release_readiness_parser.add_argument("--json", action="store_true", default=False)
+
+    factory_demo_parser = subparsers.add_parser(
+        "factory-loop-demo",
+        help="Run a deterministic throwaway factory-loop demo",
+    )
+    factory_demo_parser.add_argument("--workspace", type=Path, default=None)
+    factory_demo_parser.add_argument("--keep-workspace", action="store_true", default=False)
+    factory_demo_parser.add_argument("--json", action="store_true", default=False)
 
     list_parser = subparsers.add_parser("plan-list", help="List plans")
     list_parser.add_argument("--path", type=Path, default=None)
@@ -848,6 +860,20 @@ def main(argv: list[str] | None = None) -> int:
             _print_json(release_report)
         else:
             _print_release_readiness_report(release_report)
+        return 0
+
+    if args.command == "factory-loop-demo":
+        if args.keep_workspace and args.workspace is None:
+            print("--keep-workspace requires --workspace", file=sys.stderr)
+            return 1
+        factory_demo_report = run_factory_loop_demo(
+            workspace_root=args.workspace,
+            keep_workspace=args.keep_workspace,
+        )
+        if args.json:
+            _print_json(factory_demo_report)
+        else:
+            _print_factory_loop_demo_report(factory_demo_report)
         return 0
 
     if args.command == "codex-state-inventory":
@@ -2498,6 +2524,19 @@ def _print_release_readiness_report(report: ReleaseReadinessReport) -> None:
             print(f"  evidence: {evidence}")
         if check.next_action:
             print(f"  next_action: {check.next_action}")
+
+
+def _print_factory_loop_demo_report(report: FactoryLoopDemoReport) -> None:
+    print(f"success: {report.success}")
+    print(f"project_name: {report.project_name}")
+    print(f"cleanup_performed: {report.cleanup_performed}")
+    print(f"workspace_retained: {report.workspace_retained}")
+    print(f"completed_stages: {report.completed_stages}")
+    print("stages:")
+    for stage in report.stages:
+        print(f"- {stage.name}\t{stage.status}")
+        for evidence in stage.evidence:
+            print(f"  evidence: {evidence}")
 
 
 def _add_spawned_project_brief_arguments(command_parser: argparse.ArgumentParser) -> None:

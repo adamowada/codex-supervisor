@@ -344,3 +344,18 @@ read_only=False)` created the milestone, criteria, task, and shaping progress co
 
 Next action: when using inline Python for planning mutations, import `default_planning_database_path`
 and open the store with `read_only=False`; reserve the default for orientation and audits.
+
+## Retained Demo Artifacts Need Explicit Destinations
+
+Confidence: confirmed.
+
+Dry-run demos that clean up by default may offer an inspection mode, but retained artifacts must be
+written to an operator-chosen path. If `--keep-workspace` silently creates a random temp directory,
+the demo is no longer auditable from its own output and can leave hidden runtime state behind.
+
+Evidence: Stage 15C review found that `factory-loop-demo --keep-workspace` without `--workspace`
+would retain an anonymous temp directory. The repair made retained workspaces require an explicit
+workspace path and added API plus CLI regression coverage.
+
+Next action: when adding dry-run or demo CLIs with retention flags, require an explicit destination
+or include a deterministic, inspectable artifact path in the command output.

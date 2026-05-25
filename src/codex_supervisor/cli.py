@@ -1974,6 +1974,9 @@ def _print_project_registry_entries(entries: Sequence[ProjectRegistryEntry]) -> 
             verification = ", ".join(entry.facts.verification_commands) or "none"
             print(f"  source_documents: {source_documents}")
             print(f"  verification_commands: {verification}")
+            print(f"  candidate_tasks: {len(entry.facts.candidate_tasks)}")
+            for finding in entry.facts.adapter_findings:
+                print(f"  adapter_finding: {finding}")
         if entry.failure_reason:
             print(f"  failure: {entry.failure_reason}")
 

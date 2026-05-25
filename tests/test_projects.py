@@ -3,6 +3,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from codex_supervisor.cli import main
 from codex_supervisor.projects import (
+    MAX_TASKS_JSON_BYTES,
     discover_projects,
     stable_project_id_from_path,
 )
@@ -32,8 +33,8 @@ def test_project_registry_discovers_generic_repo_with_stable_id(tmp_path: Path) 
         "README.md",
     )
     assert entry.facts.verification_commands == (
-        "uv run python -B scripts/verify.py",
-        "uv run python -B scripts/check_protected_files.py",
+        "uv run --no-sync python -B scripts/verify.py",
+        "uv run --no-sync python -B scripts/check_protected_files.py",
     )
 
 
@@ -57,6 +58,79 @@ def test_generic_repo_adapter_reports_bounded_facts_only(tmp_path: Path) -> None
     )
 
 
+def test_generic_repo_adapter_extracts_bounded_task_candidates(tmp_path: Path) -> None:
+    repo = _write_generic_repo(
+        tmp_path / "task-candidates",
+        tasks=[
+            {
+                "id": "ship-search",
+                "title": "Ship search",
+                "goal": "Add search to the product list.",
+                "task_type": "AFK",
+                "acceptance_criteria": ["Search results filter by query."],
+                "verification_commands": ["uv run --no-sync python -B scripts/verify.py"],
+                "allowed_paths": ["src/search.py", "tests/test_search.py"],
+                "blocked_by": ["task-design-review"],
+            },
+            {
+                "title": "Approve launch copy",
+                "goal": "Get human approval for launch copy.",
+                "task_type": "hitl",
+                "acceptance_criteria": ["Human approval is recorded."],
+                "allowed_paths": ["README.md"],
+            },
+        ],
+    )
+
+    facts = discover_projects((repo,))[0].facts
+
+    assert facts is not None
+    assert facts.adapter_findings == ()
+    assert len(facts.candidate_tasks) == 2
+    first = facts.candidate_tasks[0]
+    assert first.source_id == "tasks-json-ship-search"
+    assert first.source_path == "TASKS.json"
+    assert first.title == "Ship search"
+    assert first.goal == "Add search to the product list."
+    assert first.task_type == "AFK"
+    assert first.acceptance_criteria == ("Search results filter by query.",)
+    assert first.verification_commands == ("uv run --no-sync python -B scripts/verify.py",)
+    assert first.allowed_paths == ("src/search.py", "tests/test_search.py")
+    assert first.blocked_by == ("task-design-review",)
+    assert first.source_authority == ("TASKS.json",)
+    second = facts.candidate_tasks[1]
+    assert second.task_type == "HITL"
+    assert second.verification_commands == (
+        "uv run --no-sync python -B scripts/verify.py",
+        "uv run --no-sync python -B scripts/check_protected_files.py",
+    )
+
+
+def test_generic_repo_adapter_reports_invalid_and_oversized_tasks_json(
+    tmp_path: Path,
+) -> None:
+    invalid_repo = _write_generic_repo(tmp_path / "invalid-tasks")
+    (invalid_repo / "TASKS.json").write_text("{not json", encoding="utf-8")
+    oversized_repo = _write_generic_repo(tmp_path / "oversized-tasks")
+    (oversized_repo / "TASKS.json").write_text(
+        " " * (MAX_TASKS_JSON_BYTES + 1),
+        encoding="utf-8",
+    )
+
+    invalid_facts = discover_projects((invalid_repo,))[0].facts
+    oversized_facts = discover_projects((oversized_repo,))[0].facts
+
+    assert invalid_facts is not None
+    assert invalid_facts.candidate_tasks == ()
+    assert invalid_facts.adapter_findings
+    assert "TASKS.json could not be parsed" in invalid_facts.adapter_findings[0]
+    assert oversized_facts is not None
+    assert oversized_facts.candidate_tasks == ()
+    assert oversized_facts.adapter_findings == (
+        f"TASKS.json is larger than {MAX_TASKS_JSON_BYTES} bytes.",
+    )
+
+
 def test_project_list_cli_prints_json_for_current_repo(
     tmp_path: Path,
     monkeypatch,
@@ -72,10 +146,23 @@ def test_project_list_cli_prints_json_for_current_repo(
     assert payload[0]["adapter_type"] == "generic_repo"
     assert payload[0]["status"] == "ready"
     assert payload[0]["facts"]["has_planning_database"] is True
+    assert payload[0]["facts"]["candidate_tasks"] == []
 
 
-def test_project_list_cli_prints_human_summary(tmp_path: Path, capsys) -> None:
-    repo = _write_generic_repo(tmp_path / "human-summary")
+def test_project_list_cli_prints_human_summary_with_candidate_count(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    repo = _write_generic_repo(
+        tmp_path / "human-summary",
+        tasks=[
+            {
+                "title": "Document setup",
+                "goal": "Document setup commands.",
+                "acceptance_criteria": ["Setup docs exist."],
+            }
+        ],
+    )
 
     assert main(["project-list", "--root", str(repo)]) == 0
 
@@ -84,6 +171,36 @@ def test_project_list_cli_prints_human_summary(tmp_path: Path, capsys) -> None:
     assert "generic_repo" in output
     assert "local_trusted" in output
     assert "source_documents: AGENTS.md, PLANS.md, TESTING.md, README.md" in output
+    assert "candidate_tasks: 1" in output
+
+
+def test_project_list_cli_json_includes_candidate_task_output(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    repo = _write_generic_repo(
+        tmp_path / "json-candidates",
+        tasks=[
+            {
+                "title": "Add docs",
+                "goal": "Add docs for the queue.",
+                "acceptance_criteria": ["Queue docs exist."],
+                "allowed_paths": ["docs/queue.md"],
+            }
+        ],
+    )
+
+    assert main(["project-list", "--root", str(repo), "--json"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    candidate = payload[0]["facts"]["candidate_tasks"][0]
+    assert candidate["source_id"].startswith("tasks-json-add-docs-")
+    assert candidate["source_path"] == "TASKS.json"
+    assert candidate["title"] == "Add docs"
+    assert candidate["goal"] == "Add docs for the queue."
+    assert candidate["task_type"] == "AFK"
+    assert candidate["acceptance_criteria"] == ["Queue docs exist."]
+    assert candidate["allowed_paths"] == ["docs/queue.md"]
 
 
 def test_project_list_cli_reports_missing_roots_without_creating_files(
@@ -111,13 +228,13 @@ def test_stable_project_id_normalizes_windows_and_posix_paths() -> None:
     assert stable_project_id_from_path(posix) != stable_project_id_from_path(windows_a)
 
 
-def _write_generic_repo(root: Path) -> Path:
+def _write_generic_repo(root: Path, *, tasks: list[dict[str, object]] | None = None) -> Path:
     root.mkdir()
     (root / "AGENTS.md").write_text("# Agents\n", encoding="utf-8")
     (root / "PLANS.md").write_text("# Plans\n", encoding="utf-8")
     (root / "TESTING.md").write_text("# Testing\n", encoding="utf-8")
     (root / "README.md").write_text("# Demo\n", encoding="utf-8")
-    (root / "TASKS.json").write_text("[]\n", encoding="utf-8")
+    (root / "TASKS.json").write_text(json.dumps(tasks or []) + "\n", encoding="utf-8")
     (root / "plans").mkdir()
     (root / "plans" / "planning.sqlite3").write_bytes(b"not inspected by registry")
     (root / "scripts").mkdir()

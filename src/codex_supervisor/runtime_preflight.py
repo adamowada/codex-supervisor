@@ -31,6 +31,9 @@ class RuntimePreflightIssue:
 
 @dataclass(frozen=True)
 class ExecutionModeLedger:
+    entrypoint: str
+    required_surface: str
+    decision_source: str
     supervisor_backend: str
     planning_state: str
     worker_execution: str
@@ -76,13 +79,31 @@ def build_runtime_preflight_report(
     setup_mutations: tuple[str, ...] = (),
     allow_setup_mutations: bool = False,
     mcp_startup_diagnostic: str | None = None,
+    preflight_surface: str = "live_mcp",
 ) -> RuntimePreflightReport:
     """Build a fail-closed preflight report for supervised Desktop/AFK work."""
 
     effective_planning_path = planning_path or default_planning_database_path(repo_root)
     planning_exists = effective_planning_path.exists()
-    tool_set = set(mcp_tools)
+    tool_aliases = {
+        original: normalized
+        for original, normalized in (
+            (tool, _normalize_mcp_tool_name(tool)) for tool in mcp_tools if tool.strip()
+        )
+        if original != normalized
+    }
+    tool_set = {_normalize_mcp_tool_name(tool) for tool in mcp_tools if tool.strip()}
     missing_mcp_tools = tuple(sorted(REQUIRED_SUPERVISOR_MCP_TOOLS - tool_set))
+    plugin_full_afk_entrypoint = plugin_full_afk or (plugin_invocation and full_afk)
+    entrypoint = (
+        "desktop_plugin"
+        if plugin_invocation or plugin_full_afk
+        else "cli"
+        if preflight_surface == "cli_diagnostic"
+        else "api"
+    )
+    required_surface = "live_mcp" if plugin_full_afk_entrypoint else supervisor_backend
+    decision_source = preflight_surface if preflight_surface else "unknown"
     issues: list[RuntimePreflightIssue] = []
 
     if mcp_startup_diagnostic:
@@ -105,8 +126,35 @@ def build_runtime_preflight_report(
                 message=(
                     "The codex-supervisor skill is loaded but no supervisor backend is attached."
                 ),
+                next_action=("Expose live MCP tools before starting plugin-supervised work."),
+            )
+        )
+
+    if plugin_full_afk_entrypoint and preflight_surface != "live_mcp":
+        issues.append(
+            RuntimePreflightIssue(
+                code="cli_diagnostic_not_plugin_full_afk_authority",
+                severity="blocked",
+                message=(
+                    "Desktop plugin full-AFK readiness must be approved by a live MCP canary in "
+                    "the current Desktop session; CLI preflight is diagnostic only."
+                ),
                 next_action=(
-                    "Expose MCP tools or a working CLI fallback before starting supervised work."
+                    "Call codex_supervisor.runtime_preflight through MCP, or repair MCP startup "
+                    "before launching plugin full-AFK work."
+                ),
+            )
+        )
+
+    if plugin_full_afk_entrypoint and supervisor_backend != "mcp":
+        issues.append(
+            RuntimePreflightIssue(
+                code="live_mcp_required_for_plugin_full_afk",
+                severity="blocked",
+                message="Desktop plugin full-AFK requires the live MCP supervisor backend.",
+                next_action=(
+                    "Repair or expose the MCP server; do not substitute CLI or current-thread "
+                    "execution for plugin full-AFK."
                 ),
             )
         )
@@ -116,7 +164,7 @@ def build_runtime_preflight_report(
             RuntimePreflightIssue(
                 code="mcp_and_cli_unavailable",
                 severity="blocked",
-                message="Neither supervisor MCP tools nor the CLI fallback are available.",
+                message="Neither supervisor MCP tools nor CLI diagnostics are available.",
                 next_action=(
                     "Run setup repair or continue explicitly as plain Codex outside supervisor "
                     "mode."
@@ -124,7 +172,7 @@ def build_runtime_preflight_report(
             )
         )
 
-    if supervisor_backend == "mcp" and missing_mcp_tools:
+    if (supervisor_backend == "mcp" or plugin_full_afk_entrypoint) and missing_mcp_tools:
         issues.append(
             RuntimePreflightIssue(
                 code="mcp_tools_missing",
@@ -235,6 +283,9 @@ def build_runtime_preflight_report(
         )
 
     ledger = ExecutionModeLedger(
+        entrypoint=entrypoint,
+        required_surface=required_surface,
+        decision_source=decision_source,
         supervisor_backend=supervisor_backend,
         planning_state="existing" if planning_exists else "unavailable",
         worker_execution=worker_execution,
@@ -264,7 +315,10 @@ def build_runtime_preflight_report(
         "full_afk": full_afk,
         "plugin_full_afk": plugin_full_afk,
         "cli_available": cli_available,
+        "preflight_surface": preflight_surface,
         "missing_mcp_tools": list(missing_mcp_tools),
+        "normalized_mcp_tools": sorted(tool_set),
+        "mcp_tool_aliases": dict(sorted(tool_aliases.items())),
         "setup_mutations": list(setup_mutations),
     }
     if mcp_startup_diagnostic:
@@ -276,6 +330,19 @@ def build_runtime_preflight_report(
         issues=tuple(issues),
         diagnostics=diagnostics,
     )
+
+
+def _normalize_mcp_tool_name(tool_name: str) -> str:
+    value = tool_name.strip()
+    for prefix in ("mcp__codex_supervisor__.", "mcp__codex_supervisor__"):
+        if value.startswith(prefix):
+            value = value[len(prefix) :]
+            if value.startswith("."):
+                value = value[1:]
+            break
+    if value.startswith("codex_supervisor_") and "." not in value:
+        return "codex_supervisor." + value.removeprefix("codex_supervisor_")
+    return value
 
 
 def _goal_contract_mode(

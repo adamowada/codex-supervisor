@@ -214,6 +214,7 @@ def _handle_runtime_preflight(arguments: JsonObject, context: McpServerContext) 
         ),
         allow_setup_mutations=bool(arguments.get("allow_setup_mutations", False)),
         mcp_startup_diagnostic=_optional_string(arguments.get("mcp_startup_diagnostic")),
+        preflight_surface="live_mcp",
     )
 
 

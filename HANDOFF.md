@@ -7,22 +7,28 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Current Snapshot
 
-- Current queue state: completed after `plan-plugin-cache-launcher-20260526`
-  (`Desktop Plugin Cache Launcher And Runtime Canary`).
-- Completed AFK task: `task-plugin-cache-launcher-runtime-canary`, with DB-backed worker result
-  `worker-run-plugin-cache-launcher-runtime-canary-20260526`.
-- Completed fix: repaired the Desktop plugin cache/runtime boundary exposed by the second
-  `todo-list-test-2` smoke. The source guardrails existed, but Desktop loaded stale cached plugin
-  version `0.1.0`, and the cached `.mcp.json` resolved `../..` inside `$CODEX_HOME/plugins/cache`
-  instead of to the `codex-supervisor` source package.
-- Implementation result: plugin/package version is now `0.1.1`; `.mcp.json` starts
+- Current queue state: completed. `story-loop-status --json` reports no current AFK, HITL, or
+  running task.
+- Completed repair plan: `plan-desktop-plugin-live-mcp-authority-20260526`
+  (`Desktop Plugin Live MCP Authority`).
+- Completed task: `task-desktop-plugin-live-mcp-authority`, with DB-backed worker result
+  `worker-result-artifacts-worker-run-desktop-plugin-live-mcp-authority-20260526-fda9a201e7e3-0f5df64ab77d`.
+- Completed fix: repaired the `todo-list-test-3` false canary failure. Desktop plugin full-AFK
+  readiness must be authorized only by the live MCP `codex_supervisor.runtime_preflight` canary in
+  the current Desktop session. CLI/package checks remain useful diagnostics after MCP failure, but
+  they must not approve plugin full-AFK readiness or override a successful live MCP canary.
+- Implementation result: runtime preflight normalizes Desktop callable tool-name aliases such as
+  `codex_supervisor_runtime_preflight` to canonical dotted MCP names before required-tool
+  comparison, records `entrypoint`, `required_surface`, and `decision_source`, blocks CLI
+  diagnostics from authorizing plugin full-AFK, updates packaged Desktop skill wording, and adds
+  focused regression tests.
+- Durable lesson recorded in `insights/workflow-patterns.md`: Desktop plugin full-AFK requires live
+  MCP authority; CLI preflight is diagnostics-only for that entrypoint.
+- Previous completed fix: repaired the Desktop plugin cache/runtime boundary exposed by the second
+  `todo-list-test-2` smoke. Plugin/package version is now `0.1.1`; `.mcp.json` starts
   `plugins/codex-supervisor/scripts/mcp_launcher.py` from the plugin root; the launcher delegates
   from source or Desktop cache to the real MCP server and otherwise exposes a diagnostic
-  `codex_supervisor.runtime_preflight` fallback; the packaged skill now requires that runtime
-  canary before plugin full-AFK work.
-- Local Desktop cache refresh: copied the updated plugin into
-  `$CODEX_HOME/plugins/cache/codex-supervisor-local/codex-supervisor/0.1.1`. Source and real
-  Desktop-profile plugin verification both pass and expose `codex_supervisor.runtime_preflight`.
+  `codex_supervisor.runtime_preflight` fallback.
 - Previous completed plan: `plan-plugin-runtime-guardrails-20260526`
   (`Desktop Plugin Runtime Guardrails`).
 - Previous completed AFK task: `task-plugin-runtime-preflight-guardrails`.
@@ -32,11 +38,8 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   supervisor task/contract; always scaffold supervisor-managed for plugin full-AFK requests; forbid
   memory database fallback for supervised full-AFK acceptance; require `story-loop-status` before
   `task-current`.
-- Verification for the completed slice: focused runtime/MCP/plugin/planning tests passed, and
+- Verification for the completed repair: focused runtime/MCP/plugin tests passed, and
   `uv run --no-sync python -B scripts/verify.py` passed.
-- Durable lesson recorded in `insights/workflow-patterns.md`: source plugin fixes are not live
-  Desktop fixes until the installed cache proves it has refreshed, and MCP launchers need a
-  diagnostic fallback.
 - Previous v1 hardening plan: `plan-v1-live-operational-hardening` remains active but has no open
   work; `story-loop-status --json` reports it as completed within the current queue.
 - Latest release-readiness target checked during architecture-fix work: code commit
@@ -70,4 +73,5 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Next Action
 
-ACP the completed plugin cache launcher slice, then rerun the Desktop smoke in a fresh folder.
+ACP the completed live-MCP authority repair, then rerun the Desktop smoke in a fresh folder after
+the updated plugin cache is available to Desktop.

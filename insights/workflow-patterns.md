@@ -445,6 +445,28 @@ and fail-closed Desktop diagnostics.
 Next action: route plugin `.mcp.json` through a cache-safe launcher that either delegates to the
 real supervisor package or serves a minimal runtime-preflight diagnostic MCP server.
 
+## Desktop Full-AFK Requires Live MCP Authority
+
+Confidence: confirmed.
+
+Claim: When a user invokes `codex-supervisor` from the Codex Desktop plugin in full-AFK mode, the
+current Desktop session's live MCP canary is the only authority that can approve the run. CLI
+package checks may explain why MCP failed, but they must not authorize plugin full-AFK readiness or
+override a successful live MCP canary.
+
+Evidence: The `todo-list-test-3` smoke first called `runtime_preflight` with Desktop-callable names
+such as `codex_supervisor_runtime_preflight`, then reran the live MCP canary with canonical dotted
+names such as `codex_supervisor.runtime_preflight` and passed. A later CLI `runtime-preflight`
+diagnostic supplied only one `--mcp-tool` value and falsely reported missing tools; that diagnostic
+was recorded as a HITL blocker even though MCP had already passed.
+
+Scope: Codex Desktop plugin full-AFK requests, runtime preflight, tool-name normalization, packaged
+skill instructions, and smoke-test interpretation.
+
+Next action: normalize Desktop callable tool aliases before comparing required MCP tools, make CLI
+preflight diagnostics-only for Desktop plugin full-AFK, and prevent secondary CLI checks from
+downgrading a successful live MCP canary.
+
 ## Execution Mode Ledgers Should Precede Full-AFK Work
 
 Confidence: confirmed.

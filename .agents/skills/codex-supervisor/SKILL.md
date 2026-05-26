@@ -129,6 +129,9 @@ When the user has granted dangerous/full-auto operation, spend autonomy on throu
 - For full-AFK work, run the callable runtime preflight first. If it reports skill-only mode,
   current-thread worker fallback, missing supervisor backend, memory database fallback, degraded
   evidence, or unapproved setup mutations, record a blocker/HITL decision instead of implementing.
+- Desktop plugin full-AFK work must be authorized by a live MCP `runtime_preflight` canary in the
+  current Desktop session. CLI preflight can diagnose package/cache/startup problems after MCP
+  failure, but it cannot approve plugin full-AFK readiness or override a successful live MCP canary.
 - Plugin full-AFK project bootstrap always uses the supervisor-managed scaffold tier.
 - Parallelize read-only exploration, independent workers, CI inspection, and review where safe.
 - Never run two writers against the same files or branch without an explicit coordination plan.

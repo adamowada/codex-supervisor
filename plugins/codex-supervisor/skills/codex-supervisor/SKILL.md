@@ -14,10 +14,15 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
 - Use `uv run --no-sync python -B -m codex_supervisor.cli ...` as the reference queue mutation and
   evidence workflow when MCP is unavailable or an operation needs CLI-only flags.
 - Before full-AFK, project bootstrap, worker launch, or `task-current`, call
-  `codex_supervisor.runtime_preflight` through MCP. If MCP is unavailable, run
-  `uv run --no-sync python -B -m codex_supervisor.cli runtime-preflight --json` with equivalent
-  flags. If neither surface is available, stop and report that `codex-supervisor` is unavailable;
-  do not continue as a supervisor run.
+  `codex_supervisor.runtime_preflight` through MCP. Use canonical dotted MCP tool names in
+  `mcp_tools`, for example `codex_supervisor.runtime_preflight`, not Desktop callable aliases such
+  as `codex_supervisor_runtime_preflight`.
+- Desktop plugin full-AFK readiness must be authorized by that live MCP canary in the current
+  Desktop session. If MCP is unavailable, a CLI `runtime-preflight` run may be used only to diagnose
+  package, cache, PATH, or launcher problems; it must not approve plugin full-AFK readiness and must
+  not override a successful live MCP canary.
+- If the live MCP canary is unavailable or blocked, stop, report the diagnostic, and record the
+  setup repair needed. Do not continue as a supervisor run.
 - Runtime canary: for plugin full-AFK requests, the first supervisor action must prove that
   `codex_supervisor.runtime_preflight` is callable. If `tools/list` does not expose that tool, or
   the tool returns `status=blocked`, refuse current-thread implementation and report the diagnostic
@@ -47,8 +52,9 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
 
 - Do not write directly to Codex internal SQLite databases.
 - Do not treat MCP as the state owner.
-- Skill-only mode is not supervisor mode. If MCP tools and CLI fallback are both unavailable, stop,
-  ask for setup/repair, or explicitly downgrade to plain Codex only after the user chooses that.
+- Skill-only mode is not supervisor mode. For plugin full-AFK, missing live MCP is a blocker even if
+  the CLI package is installed; ask for setup/repair or explicitly downgrade to plain Codex only
+  after the user chooses that.
 - Mutating MCP tools are enabled by default; use `--disable-mutations` only for an intentionally
   read-only Desktop session.
 - Do not launch live workers unless the selected backend, Codex executable, `CODEX_HOME`, and Goal

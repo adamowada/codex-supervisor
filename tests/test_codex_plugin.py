@@ -128,6 +128,8 @@ def test_plugin_skill_is_valid_and_maps_desktop_workflows() -> None:
         "goal-contract-render --task-id",
         "task-claim",
         "Runtime canary",
+        "canonical dotted MCP tool names",
+        "must not approve plugin full-AFK readiness",
         "fresh-thread-code-reviewer",
         "review-result-ingest",
         "acp-publisher",
@@ -381,5 +383,7 @@ def test_plugin_launcher_diagnostic_fallback_exposes_runtime_preflight() -> None
     payload = result["result"]["structuredContent"]
     assert payload["ok"] is False
     assert payload["data"]["status"] == "blocked"
+    assert payload["data"]["ledger"]["required_surface"] == "live_mcp"
+    assert payload["data"]["ledger"]["decision_source"] == "diagnostic_mcp_fallback"
     assert payload["data"]["issues"][0]["code"] == "mcp_startup_failed"
     assert result["result"]["isError"] is True

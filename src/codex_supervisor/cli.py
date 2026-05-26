@@ -1704,6 +1704,7 @@ def main(argv: list[str] | None = None) -> int:
             setup_mutations=tuple(args.setup_mutation),
             allow_setup_mutations=args.allow_setup_mutations,
             mcp_startup_diagnostic=args.mcp_startup_diagnostic,
+            preflight_surface="cli_diagnostic",
         )
         if args.json:
             _print_json(report)

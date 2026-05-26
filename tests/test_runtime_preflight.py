@@ -37,8 +37,47 @@ def test_runtime_preflight_passes_for_linked_full_afk_supervisor_modes(tmp_path:
 
     assert report.ok is True
     assert report.status == "passed"
+    assert report.ledger.entrypoint == "desktop_plugin"
+    assert report.ledger.required_surface == "live_mcp"
+    assert report.ledger.decision_source == "live_mcp"
     assert report.ledger.goal_contract == "native_goal_linked_to_supervisor_contract"
     assert report.ledger.queue_discovery == "story_loop_status_then_task_current"
+
+
+def test_runtime_preflight_normalizes_desktop_callable_mcp_tool_names(tmp_path: Path) -> None:
+    initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+
+    report = build_runtime_preflight_report(
+        repo_root=tmp_path,
+        full_afk=True,
+        plugin_invocation=True,
+        plugin_full_afk=True,
+        supervisor_backend="mcp",
+        mcp_tools=(
+            "mcp__codex_supervisor__.codex_supervisor_runtime_preflight",
+            "codex_supervisor_story_loop_status",
+            "codex_supervisor_task_current",
+            "codex_supervisor_task_claim",
+            "codex_supervisor_story_loop_run_once",
+        ),
+        worker_execution="codex_exec",
+        story_loop_status_checked=True,
+        task_current_requested=True,
+    )
+
+    assert report.ok is True
+    assert report.diagnostics["missing_mcp_tools"] == []
+    assert report.diagnostics["normalized_mcp_tools"] == [
+        "codex_supervisor.runtime_preflight",
+        "codex_supervisor.story_loop_run_once",
+        "codex_supervisor.story_loop_status",
+        "codex_supervisor.task_claim",
+        "codex_supervisor.task_current",
+    ]
+    assert (
+        report.diagnostics["mcp_tool_aliases"]["codex_supervisor_story_loop_status"]
+        == "codex_supervisor.story_loop_status"
+    )
 
 
 def test_runtime_preflight_blocks_memory_database_and_current_thread(tmp_path: Path) -> None:
@@ -63,6 +102,52 @@ def test_runtime_preflight_blocks_memory_database_and_current_thread(tmp_path: P
     assert "current_thread_fallback_blocked" in issue_codes
     assert "memory_database_fallback_forbidden" in issue_codes
     assert "story_loop_status_required" in issue_codes
+
+
+def test_runtime_preflight_cli_is_diagnostic_only_for_plugin_full_afk(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+
+    assert (
+        main(
+            [
+                "runtime-preflight",
+                "--repo-root",
+                str(tmp_path),
+                "--path",
+                str(tmp_path / "plans" / "planning.sqlite3"),
+                "--full-afk",
+                "--plugin-invocation",
+                "--plugin-full-afk",
+                "--story-loop-status-checked",
+                "--task-current-requested",
+                "--mcp-tool",
+                "codex_supervisor.runtime_preflight",
+                "--mcp-tool",
+                "codex_supervisor.story_loop_status",
+                "--mcp-tool",
+                "codex_supervisor.task_current",
+                "--mcp-tool",
+                "codex_supervisor.task_claim",
+                "--mcp-tool",
+                "codex_supervisor.story_loop_run_once",
+                "--json",
+            ]
+        )
+        == 1
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+    assert payload["ledger"]["entrypoint"] == "desktop_plugin"
+    assert payload["ledger"]["required_surface"] == "live_mcp"
+    assert payload["ledger"]["decision_source"] == "cli_diagnostic"
+    assert payload["diagnostics"]["missing_mcp_tools"] == []
+    assert {issue["code"] for issue in payload["issues"]} == {
+        "cli_diagnostic_not_plugin_full_afk_authority"
+    }
 
 
 def test_runtime_preflight_cli_returns_json_and_nonzero_on_blocker(tmp_path, capsys) -> None:

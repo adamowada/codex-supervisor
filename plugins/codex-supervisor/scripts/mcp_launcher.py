@@ -283,6 +283,9 @@ def _runtime_preflight_blocked_result(diagnostic: str) -> JsonObject:
         "ok": False,
         "status": "blocked",
         "ledger": {
+            "entrypoint": "desktop_plugin",
+            "required_surface": "live_mcp",
+            "decision_source": "diagnostic_mcp_fallback",
             "supervisor_backend": "unavailable",
             "planning_state": "unavailable",
             "worker_execution": "blocked",

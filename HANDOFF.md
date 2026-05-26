@@ -40,6 +40,10 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   `task-current`.
 - Verification for the completed repair: focused runtime/MCP/plugin tests passed, and
   `uv run --no-sync python -B scripts/verify.py` passed.
+- Latest CI repair: the Verify workflow failed during GitHub Actions setup before repo code ran
+  because `astral-sh/setup-uv` was pinned to the `v5` annotated tag object `e58605a...`; rerunning
+  reproduced the failure. The workflow now pins the peeled `v5^{}` commit `d4b2f3b...`, with a
+  regression test and durable insight update.
 - Previous v1 hardening plan: `plan-v1-live-operational-hardening` remains active but has no open
   work; `story-loop-status --json` reports it as completed within the current queue.
 - Latest release-readiness target checked during architecture-fix work: code commit

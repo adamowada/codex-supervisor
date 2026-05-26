@@ -52,6 +52,14 @@ def test_verify_workflow_pins_external_actions_to_full_commit_shas() -> None:
     assert not any(re.search(r"@(v\d+|main|master)$", line) for line in uses_lines)
 
 
+def test_verify_workflow_pins_setup_uv_to_peeled_commit_not_tag_object() -> None:
+    text = _workflow_text()
+
+    assert "peeled reviewed release tags" in text
+    assert "astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86" in text
+    assert "astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081" not in text
+
+
 def test_verify_workflow_fetches_history_for_planning_commit_links() -> None:
     text = _workflow_text()
     lines = _meaningful_lines(text)

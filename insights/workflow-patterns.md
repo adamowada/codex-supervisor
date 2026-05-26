@@ -207,6 +207,22 @@ Actions run `26400531911` completed successfully for commit
 Next action: when CI planning integrity reports missing git commits, inspect checkout depth before
 changing planning data or integrity semantics.
 
+## Pinned GitHub Actions Need Commit Objects
+
+Confidence: confirmed.
+
+GitHub Actions `uses:` pins should reference commit objects, not annotated tag objects. A 40-hex
+tag object can look like a supply-chain-safe SHA but still fail during action archive download on
+GitHub runners; resolve reviewed release tags to their peeled commit SHA before pinning.
+
+Evidence: The Verify workflow pinned `astral-sh/setup-uv` to `e58605a...`, the `v5` tag object.
+GitHub Actions failed in job setup while downloading
+`https://codeload.github.com/astral-sh/setup-uv/tar.gz/e58605a...`. `git ls-remote` showed the
+peeled `v5^{}` commit is `d4b2f3b...`, which is now the workflow pin.
+
+Next action: when updating action pins, record the reviewed tag and peeled commit, and keep workflow
+tests from accepting known tag-object pins.
+
 ## External CI Evidence Stays Out Of Artifact Links
 
 Confidence: confirmed.

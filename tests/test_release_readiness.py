@@ -8,6 +8,7 @@ from codex_supervisor.cli import main
 from codex_supervisor.planning import (
     CiRunEvidenceRecord,
     PlanArtifactLinkRecord,
+    PlanningSQLiteStore,
     PlanProgressRecord,
     PlanRecord,
     initialize_planning_database,
@@ -216,6 +217,69 @@ def test_cli_release_readiness_emits_human_report(capsys) -> None:
     assert "release_ready: False" in output
     assert "os_validation" in output
     assert "External Windows install validation evidence" in output
+
+
+def test_cli_release_evidence_refresh_redacts_local_output_paths(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    db_path = tmp_path / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-release",
+            title="Release",
+            slug="release",
+            status="active",
+            owner_agent="codex",
+            goal="Record release evidence.",
+        )
+    )
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    windows_user_path = "C:" + "\\" + "Users" + "\\" + "alice" + "\\secret\\tool.exe"
+
+    def fake_run(*args, **kwargs) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout=f"{repo_root}\\venv\\Scripts\\python.exe\n{windows_user_path}\n",
+            stderr=f"{repo_root.as_posix()}/dist/codex_supervisor.whl\n",
+        )
+
+    monkeypatch.setattr("codex_supervisor.cli.subprocess.run", fake_run)
+
+    assert (
+        main(
+            [
+                "release-evidence-refresh",
+                "--path",
+                str(db_path),
+                "--repo-root",
+                str(repo_root),
+                "--plan-id",
+                "plan-release",
+                "--commit",
+                TARGET_COMMIT,
+                "--command",
+                "python -c pass",
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    capsys.readouterr()
+    progress = PlanningSQLiteStore(db_path).list_plan_progress(plan_id="plan-release")[0]
+    details = json.loads(progress.details or "{}")
+    details_json = json.dumps(details)
+
+    assert "<repo-root>" in details_json
+    assert "<home>" in details_json
+    assert str(repo_root) not in details_json
+    assert repo_root.as_posix() not in details_json
+    assert windows_user_path not in details_json
 
 
 def test_release_readiness_requires_current_live_and_ci_evidence(tmp_path: Path) -> None:

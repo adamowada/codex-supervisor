@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shlex
 import sqlite3
 import subprocess
@@ -1140,15 +1141,21 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "head_sha": commit,
                     "status": "passed" if completed.returncode == 0 else "failed",
-                    "commands": [args.verify_command],
+                    "commands": [_redact_public_evidence_text(args.verify_command, repo_root)],
                     "exit_code": completed.returncode,
-                    "stdout_tail": completed.stdout[-4000:],
-                    "stderr_tail": completed.stderr[-4000:],
+                    "stdout_tail": _redact_public_evidence_text(
+                        completed.stdout[-4000:],
+                        repo_root,
+                    ),
+                    "stderr_tail": _redact_public_evidence_text(
+                        completed.stderr[-4000:],
+                        repo_root,
+                    ),
                 },
                 sort_keys=True,
             ),
         )
-        if not _write_or_report(lambda: refresh_store.add_plan_progress(evidence)):
+        if not _write_or_report(lambda: refresh_store.upsert_plan_progress(evidence)):
             return 1
         result = {"progress": evidence, "exit_code": completed.returncode}
         if args.json:
@@ -2646,6 +2653,35 @@ def _git_head_or_report(repo_root: Path) -> str | None:
         print(f"Could not resolve HEAD: {completed.stderr.strip()}", file=sys.stderr)
         return None
     return completed.stdout.strip()
+
+
+def _redact_public_evidence_text(text: str, repo_root: Path) -> str:
+    if not text:
+        return text
+    redacted = text
+    resolved_root = repo_root.resolve()
+    path_replacements = {
+        str(resolved_root): "<repo-root>",
+        resolved_root.as_posix(): "<repo-root>",
+    }
+    with suppress(RuntimeError, OSError):
+        home = Path.home().resolve()
+        path_replacements[str(home)] = "<home>"
+        path_replacements[home.as_posix()] = "<home>"
+    for raw_path, replacement in sorted(
+        path_replacements.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
+        redacted = re.sub(re.escape(raw_path), replacement, redacted, flags=re.IGNORECASE)
+    local_home_patterns = (
+        re.compile(r"[A-Za-z]:[/\\]Users[/\\][^/\\\s]+", re.IGNORECASE),
+        re.compile(r"/(?:home|Users)/[^/\s]+"),
+        re.compile(r"\\\\Users\\\\[^\\\s]+", re.IGNORECASE),
+    )
+    for pattern in local_home_patterns:
+        redacted = pattern.sub("<home>", redacted)
+    return redacted
 
 
 def _load_review_result(path: Path) -> ReviewResult:

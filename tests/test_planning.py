@@ -86,6 +86,43 @@ def test_plan_round_trip_and_append_only_logs(tmp_path):
     assert store.list_plan_progress(plan_id="plan-test")[0].event_type == "started"
 
 
+def test_upsert_plan_progress_replaces_existing_record(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-progress",
+            slug="progress",
+            title="Progress",
+            goal="Record idempotent progress.",
+            status="active",
+        )
+    )
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id="progress-refresh",
+            plan_id="plan-progress",
+            event_type="publication_ready_verification_recorded",
+            summary="Old evidence.",
+            details='{"status": "failed"}',
+        )
+    )
+
+    store.upsert_plan_progress(
+        PlanProgressRecord(
+            progress_id="progress-refresh",
+            plan_id="plan-progress",
+            event_type="publication_ready_verification_recorded",
+            summary="New evidence.",
+            details='{"status": "passed"}',
+        )
+    )
+
+    progress = store.list_plan_progress(plan_id="plan-progress")
+    assert len(progress) == 1
+    assert progress[0].summary == "New evidence."
+    assert progress[0].details == '{"status": "passed"}'
+
+
 def test_child_plan_mutations_touch_parent_updated_at(tmp_path, monkeypatch):
     moments = iter(
         [

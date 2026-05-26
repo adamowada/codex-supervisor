@@ -1399,6 +1399,50 @@ class PlanningSQLiteStore:
                 )
             _touch_plan(connection, record.plan_id, occurred_at)
 
+    def upsert_plan_progress(self, record: PlanProgressRecord) -> None:
+        _validate_required(record.progress_id, "progress_id")
+        _validate_required(record.plan_id, "plan_id")
+        _validate_required(record.event_type, "event_type")
+        _validate_required(record.summary, "summary")
+        if record.linked_artifact_id is not None:
+            _validate_artifact_id(record.linked_artifact_id, "linked_artifact_id")
+        occurred_at = _format_datetime(record.occurred_at or _utc_now())
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO plan_progress_events (
+                    progress_id, plan_id, event_type, summary, details,
+                    linked_artifact_id, occurred_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(progress_id) DO UPDATE SET
+                    plan_id = excluded.plan_id,
+                    event_type = excluded.event_type,
+                    summary = excluded.summary,
+                    details = excluded.details,
+                    linked_artifact_id = excluded.linked_artifact_id,
+                    occurred_at = excluded.occurred_at
+                """,
+                (
+                    record.progress_id,
+                    record.plan_id,
+                    record.event_type,
+                    record.summary,
+                    record.details,
+                    record.linked_artifact_id,
+                    occurred_at,
+                ),
+            )
+            if record.linked_artifact_id is not None:
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO plan_artifact_links(plan_id, artifact_id, relationship)
+                    VALUES (?, ?, ?)
+                    """,
+                    (record.plan_id, record.linked_artifact_id, "progress-linked-artifact"),
+                )
+            _touch_plan(connection, record.plan_id, occurred_at)
+
     def add_plan_progress_with_artifact_links(
         self,
         progress: PlanProgressRecord,

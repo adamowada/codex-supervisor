@@ -143,6 +143,41 @@ def test_story_loop_status_reports_empty_blocked_ready_and_completed_states(tmp_
     assert hitl_plan["hitl_task_ids"] == ["task-hitl"]
 
 
+def test_story_loop_status_blocks_failed_tasks_until_reconciled(tmp_path, capsys):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-failed",
+            slug="failed",
+            title="Failed",
+            goal="A failed terminal task still needs reconciliation.",
+            status="active",
+            priority=100,
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-failed",
+            plan_id="plan-failed",
+            title="Failed task",
+            goal="This failed and needs an explicit outcome.",
+            task_type="AFK",
+            status="failed",
+        )
+    )
+
+    assert main(["story-loop-status", "--path", str(db_path), "--json"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["queue_state"] == "blocked"
+    assert payload["current_task_id"] is None
+    assert payload["plans"][0]["state"] == "blocked"
+    assert payload["plans"][0]["summary"] == "Failed task requires reconciliation: task-failed"
+    assert payload["plans"][0]["blocked_task_ids"] == ["task-failed"]
+    assert payload["plans"][0]["open_task_ids"] == []
+
+
 def test_story_loop_default_reports_blocked_successor_plan(tmp_path, capsys):
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)

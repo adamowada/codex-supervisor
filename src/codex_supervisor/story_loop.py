@@ -523,6 +523,7 @@ def _build_plan_status(
     criteria: tuple[PlanAcceptanceCriterionRecord, ...],
 ) -> StoryLoopPlanStatus:
     open_tasks = tuple(task for task in tasks if task.status in OPEN_TASK_STATUSES)
+    failed_tasks = tuple(task for task in tasks if task.status == "failed")
     hitl_tasks = tuple(
         task
         for task in open_tasks
@@ -589,6 +590,10 @@ def _build_plan_status(
         state = "blocked"
         summary = "Open work exists, but no unblocked ready AFK task is available."
         current_task_id = None
+    elif failed_tasks:
+        state = "blocked"
+        summary = f"Failed task requires reconciliation: {failed_tasks[0].task_id}"
+        current_task_id = None
     elif tasks or criteria:
         state = "completed" if not pending_criteria else "blocked"
         summary = "No open work remains." if state == "completed" else "Criteria remain pending."
@@ -608,7 +613,7 @@ def _build_plan_status(
         current_task_id=current_task_id,
         running_task_ids=tuple(task.task_id for task in running_tasks),
         ready_task_ids=tuple(task.task_id for task in ready_tasks),
-        blocked_task_ids=tuple(task.task_id for task in blocked_tasks),
+        blocked_task_ids=tuple(task.task_id for task in (*blocked_tasks, *failed_tasks)),
         hitl_task_ids=tuple(task.task_id for task in hitl_tasks),
         pending_task_ids=tuple(task.task_id for task in pending_tasks),
         open_task_ids=tuple(task.task_id for task in open_tasks),

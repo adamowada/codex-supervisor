@@ -134,3 +134,18 @@
 - `supersedes`: none
 - `next action`: Wait for the user's explicit release instruction, then rerun release-readiness
   before tagging or publishing release artifacts.
+
+## Failed Task Reconciliation
+
+- `claim`: A current-queue plan with a failed terminal task is not complete until the task is
+  explicitly repaired, blocked for HITL, or superseded with durable evidence; Story Loop status must
+  surface that failed task instead of hiding it behind `completed`.
+- `confidence`: confirmed
+- `evidence`: live review `review-v1-final-audit-reconciliation-20260526` found
+  `story-loop-status-masks-failed-tasks`; fixed in `src/codex_supervisor/story_loop.py` with
+  regression coverage in `tests/test_story_loop.py`.
+- `scope`: final completion audits and Story Loop status for active/current-queue plans.
+- `supersedes`: relying on `story-loop-status` alone when active-plan failed terminal tasks may
+  exist.
+- `next action`: During completion audits, inspect current-queue task details as well as the
+  top-level Story Loop state before claiming there is no remaining work.

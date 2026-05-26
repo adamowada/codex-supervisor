@@ -360,3 +360,69 @@ workspace path and added API plus CLI regression coverage.
 
 Next action: when adding dry-run or smoke CLIs with retention flags, require an explicit destination
 or include a deterministic, inspectable artifact path in the command output.
+
+## Supervisor Plugins Must Fail Closed When Backend Tools Are Missing
+
+Confidence: confirmed.
+
+Claim: A Codex Desktop skill being available is not proof that its backing MCP server, CLI fallback,
+planning database, or worker backend is available. For `codex-supervisor`, skill-only mode must not
+silently degrade into ordinary current-thread implementation, especially when the user asked for
+AFK or full-auto supervision.
+
+Evidence: A 2026-05-26 Desktop smoke in a fresh todo-list folder loaded the cached
+`codex-supervisor` skill, but the thread exposed no supervisor MCP tools, `uv` was unavailable in
+the effective shell, and the output project contained a working app without `.agents/`,
+`plans/planning.sqlite3`, `HANDOFF.md`, git state, task claims, or worker-result evidence. The
+plugin skill currently says to use MCP "when available" and the CLI as fallback, while the plugin
+MCP command in `plugins/codex-supervisor/.mcp.json` relies on ambient `uv` and a relative `cwd`.
+
+Scope: Codex Desktop plugins, supervisor bootstrap, full-AFK requests, and any workflow where
+auditability depends on repo-owned planning state rather than chat memory.
+
+Next action: add a supervisor runtime preflight and hard-stop rule: if MCP tools and CLI fallback
+are unavailable, record a blocker or ask for setup/repair instead of starting implementation.
+
+## Installed Plugin Cache Layout Is A Release Surface
+
+Confidence: confirmed.
+
+Claim: Plugin verification must exercise the installed Desktop cache layout, not only the source
+plugin directory. Relative MCP `cwd` values that work from `plugins/<name>/` can point at the wrong
+directory after Desktop copies the plugin into `$CODEX_HOME/plugins/cache/...`.
+
+Evidence: The same smoke exposed a mismatch between source verification and real Desktop startup:
+the source plugin's `../..` resolves to the repository root, while the cached plugin's `../..`
+resolves inside the plugin cache and lacks `pyproject.toml`, `src/codex_supervisor`, and
+`plans/planning.sqlite3`. Existing plugin verification checks the source plugin path and fake-runs
+the intended `uv` command shape, so it did not catch the cache relocation or broken-PATH startup
+failure.
+
+Scope: plugin packaging, clean-profile installs, release readiness, and Desktop smoke tests.
+
+Next action: add an installed-cache verifier that reads the enabled plugin config, resolves the
+cached `.mcp.json` exactly as Desktop does, launches `initialize`/`tools/list`, and asserts the
+expected supervisor tools are exposed.
+
+## Execution Mode Ledgers Should Precede Full-AFK Work
+
+Confidence: confirmed.
+
+Claim: Full-AFK supervisor runs need a visible execution-mode ledger before code work starts. The
+ledger should name whether the run is using MCP or CLI, whether planning SQLite exists or was
+created, whether execution is a fresh worker or current thread, whether the Goal Contract is native
+or prompt-rendered, whether evidence is strict or degraded, and whether target infrastructure such
+as Docker or a database is real or a disposable fallback.
+
+Evidence: The todo-list smoke completed useful implementation work while several modes changed
+silently: supervisor backend became skill-only prose, native Codex thread Goals stood in for a
+supervisor Goal Contract, Docker MongoDB became memory MongoDB, and full-AFK worker execution became
+current-thread implementation. Each switch was individually understandable, but together they
+changed the meaning of "complete."
+
+Scope: Story Loop launch, spawned-project bootstrap, plugin smoke tests, and project acceptance
+summaries.
+
+Next action: make full-AFK start with an explicit ledger and require user approval or a recorded
+HITL/blocker for `unavailable`, `current_thread`, `prototype_light`, `memory_database`, or
+`degraded_evidence` modes.

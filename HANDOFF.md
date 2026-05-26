@@ -7,10 +7,12 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Current Snapshot
 
-- Current queue state: completed. `story-loop-status --json` reports no open AFK, HITL, running,
-  blocked, or pending tasks for `plan-v1-live-operational-hardening`.
-- Active plan: `plan-v1-live-operational-hardening`.
-- Current AFK task: none.
+- Current queue state: ready. `story-loop-status --json` selects
+  `task-plugin-runtime-preflight-guardrails`.
+- Active plan: `plan-plugin-runtime-guardrails-20260526` (`Desktop Plugin Runtime Guardrails`).
+- Current AFK task: `task-plugin-runtime-preflight-guardrails`.
+- Previous v1 hardening plan: `plan-v1-live-operational-hardening` remains active but has no open
+  work; `story-loop-status --json` reports it as completed within the current queue.
 - Latest release-readiness target checked during architecture-fix work: code commit
   `d88ddf4c277dc7625bd89b7fbf641b0639f49df8`.
 - Latest release-readiness result: `ready: false`, 10/16 checks passing. Real bootstrap smoke
@@ -20,7 +22,8 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   mutating MCP smoke for the checked target. After the architecture-fix ACP, refresh release
   readiness for the new commit before any release action.
 - Durable insights: `insights/v1-hardening-clarifications.md`,
-  `insights/v1-hardening-review.md`, and `insights/release-readiness-evidence.md`.
+  `insights/v1-hardening-review.md`, `insights/release-readiness-evidence.md`,
+  `insights/workflow-patterns.md`, and `insights/graph.md`.
 - Codex CLI smoke: npm `codex-cli 0.133.0` resolves in the current shell, and `codex exec --help`
   is available. Previous Windows executable resolution drift is not a current blocker for this
   process.
@@ -41,7 +44,6 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Next Action
 
-Wait for the user's explicit release instruction. Until then, do not create a release tag or publish
-release artifacts. A fresh session should run
-`uv run --no-sync python -B -m codex_supervisor.cli release-readiness --json` before release action
-and refresh any stale evidence until it reports `ready: true`.
+Execute `task-plugin-runtime-preflight-guardrails` as one verified AFK slice: add fail-closed
+Desktop plugin runtime preflight, installed-cache MCP verification, and an execution-mode ledger for
+full-AFK kickoff. Do not create a release tag or publish release artifacts as part of this task.

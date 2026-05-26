@@ -18,6 +18,9 @@ graph.
 - `RalphLoop`: OSS inspiration for fresh-context story execution with durable progress.
 - `SkillLearningLoop`: process for turning repeated lessons into tested skills.
 - `AgenticEngineeringFactory`: operating model for AFK/HITL task flow.
+- `DesktopPluginRuntime`: installed Codex Desktop plugin cache, skill, and MCP startup surface.
+- `ExecutionModeLedger`: visible preflight record of backend, planning, worker, goal, evidence, and
+  infrastructure modes before supervised execution begins.
 
 ## Edges
 
@@ -33,3 +36,6 @@ graph.
 | `RalphLoop` | informs | `StoryLoop` | `insights/goal-mode-and-ralph-loop.md`, `sources/README.md` pinned `snarktank/ralph` commit `6c53cb0b831ebe8739c6a003e22af14902d8b0b5` | confirmed | 2026-05-24 | Use as pattern source, not operational state. |
 | `SkillLearningLoop` | refines | `InsightsWiki` | `insights/skill-learning-loop.md`, `insights/v1-hardening-clarifications.md`, `skill-golden-eval-loop` skill | confirmed | 2026-05-25 | Require source-linked insight, skill edit, golden eval or focused test, and passing verification before ACP. |
 | `AgenticEngineeringFactory` | implemented by | `CodexSupervisor` | `README.md`, `ROADMAP.md`, repo-local skills | confirmed | 2026-05-24 | Continue tightening bootstrap and ACP reproducibility. |
+| `DesktopPluginRuntime` | attaches | `CodexSupervisor` | `plugins/codex-supervisor/.mcp.json`, `plugins/codex-supervisor/skills/codex-supervisor/SKILL.md`, `insights/workflow-patterns.md` | confirmed | 2026-05-26 | Verify installed-cache MCP startup, not only source plugin shape. |
+| `CodexSupervisor` | fails closed without | `DesktopPluginRuntime` | `insights/workflow-patterns.md` 2026-05-26 Desktop smoke RCA | confirmed | 2026-05-26 | Stop or record blocker when skill loads but MCP and CLI fallback are unavailable. |
+| `ExecutionModeLedger` | guards | `StoryLoop` | `insights/workflow-patterns.md` 2026-05-26 mode-switch RCA | confirmed | 2026-05-26 | Make full-AFK preflight expose unavailable, current-thread, fallback database, and degraded evidence modes. |

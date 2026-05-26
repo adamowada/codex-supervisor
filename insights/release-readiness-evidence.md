@@ -54,3 +54,32 @@
 - `supersedes`: none
 - `next action`: Keep Worker Result validation stricter than the model schema when needed, but make
   the model-facing schema acceptable to the live API.
+
+## Live Review Structured Output Schema
+
+- `claim`: Live Review Result schemas need the same strict Structured Outputs posture as worker
+  results, and review launch argv paths should be absolute when Codex Exec is launched with an
+  explicit working directory.
+- `confidence`: confirmed
+- `evidence`: `src/codex_supervisor/review_persistence.py`,
+  `tests/test_review_persistence.py`, and the live worker schema failure recorded as
+  `worker-run-v1-live-worker-smoke-abspath-20260525` in `plans/planning.sqlite3`.
+- `scope`: `CodexReviewBackend` launches through `codex exec --output-schema`.
+- `supersedes`: none
+- `next action`: Keep reviewer model schemas strict at every object boundary and keep subprocess
+  paths resolved before running live review smokes.
+
+## Worker Result Identity
+
+- `claim`: DB-backed Worker Result IDs must include source-path context, not only a filename stem,
+  because live artifact layouts commonly reuse names such as `worker-result.raw.json`.
+- `confidence`: confirmed
+- `evidence`: `scripts/check_planning_integrity.py` rejected the collision between
+  `worker-run-stage11b-mcp-stdio-transport-inline-20260525` and
+  `worker-run-v1-live-worker-smoke-trusted-20260525`; fixed in
+  `src/codex_supervisor/planning.py` and `tests/test_planning.py`.
+- `scope`: worker result ingestion, re-ingestion, and compatibility result records in
+  `plans/planning.sqlite3`.
+- `supersedes`: filename-stem-only worker result IDs.
+- `next action`: Keep worker-result links single-owner per run unless a structured result explicitly
+  declares multiple worker runs, and replace stale links when a run is re-ingested.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -18,6 +19,8 @@ from codex_supervisor.review_persistence import (
     LiveReviewRunResult,
     ReviewLaunchRequest,
     ReviewLaunchResult,
+    _codex_review_argv,
+    _review_result_schema,
     record_review_result,
     run_live_review_for_task,
 )
@@ -196,6 +199,50 @@ def test_run_live_review_for_task_keeps_task_reviewing_when_hitl_is_needed(tmp_p
     assert result.status == "needs_hitl"
     assert source_task.status == "reviewing"
     assert result.created_repair_task_ids == ()
+
+
+def test_review_result_schema_is_strict_for_structured_outputs() -> None:
+    schema = _review_result_schema()
+    finding_schema = schema["properties"]["findings"]["items"]
+    location_schema = finding_schema["properties"]["location"]
+    verification_schema = schema["properties"]["verification_evidence"]["items"]
+
+    assert schema["additionalProperties"] is False
+    assert finding_schema["additionalProperties"] is False
+    assert location_schema["additionalProperties"] is False
+    assert verification_schema["additionalProperties"] is False
+    assert set(finding_schema["required"]) == set(finding_schema["properties"])
+    assert set(location_schema["required"]) == set(location_schema["properties"])
+
+
+def test_codex_review_argv_uses_absolute_paths(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    request = ReviewLaunchRequest(
+        review_id="review-live-001",
+        task_id="task-source-review",
+        mode="everything",
+        target="task-source-review",
+        repo_root=Path("."),
+        result_path="runs/reviews/task-source-review/review-live-001/review-result.json",
+        prompt_path="runs/reviews/task-source-review/review-live-001/prompt.md",
+        jsonl_path="runs/reviews/task-source-review/review-live-001/codex.jsonl",
+        stdout_path="runs/reviews/task-source-review/review-live-001/stdout.txt",
+        stderr_path="runs/reviews/task-source-review/review-live-001/stderr.txt",
+        final_message_path="runs/reviews/task-source-review/review-live-001/final-message.txt",
+        schema_path="runs/reviews/task-source-review/review-live-001/review-result.schema.json",
+        prompt="review this",
+        sandbox_mode="danger-full-access",
+        approval_policy="never",
+    )
+
+    argv = _codex_review_argv(request, "codex")
+
+    assert Path(argv[4]).is_absolute()
+    assert Path(argv[6]).is_absolute()
+    assert Path(argv[10]).is_absolute()
 
 
 def _store(tmp_path):

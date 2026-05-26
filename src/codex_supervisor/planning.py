@@ -2000,12 +2000,10 @@ class PlanningSQLiteStore:
             )
             _sync_task_and_plan_for_worker_run(connection, stored_task_id, record.status, now)
             if record.status == "completed" and result_id is not None:
-                connection.execute(
-                    """
-                    INSERT OR IGNORE INTO worker_result_run_links(result_id, worker_run_id)
-                    VALUES (?, ?)
-                    """,
-                    (result_id, record.worker_run_id),
+                _replace_worker_result_run_link(
+                    connection,
+                    result_id=str(result_id),
+                    worker_run_id=record.worker_run_id,
                 )
 
     def claim_next_ready_afk_task(
@@ -2213,12 +2211,10 @@ class PlanningSQLiteStore:
             _raise_missing(cursor.rowcount, "worker_run", worker_run_id)
             _sync_task_and_plan_for_worker_run(connection, str(row["task_id"]), status, now)
             if status == "completed" and effective_result_id is not None:
-                connection.execute(
-                    """
-                    INSERT OR IGNORE INTO worker_result_run_links(result_id, worker_run_id)
-                    VALUES (?, ?)
-                    """,
-                    (str(effective_result_id), worker_run_id),
+                _replace_worker_result_run_link(
+                    connection,
+                    result_id=str(effective_result_id),
+                    worker_run_id=worker_run_id,
                 )
 
     def ingest_worker_result(
@@ -2378,12 +2374,10 @@ class PlanningSQLiteStore:
                     "worker_run",
                     linked_worker_run_id,
                 )
-                connection.execute(
-                    """
-                    INSERT OR IGNORE INTO worker_result_run_links(result_id, worker_run_id)
-                    VALUES (?, ?)
-                    """,
-                    (result_id, linked_worker_run_id),
+                _replace_worker_result_run_link(
+                    connection,
+                    result_id=result_id,
+                    worker_run_id=linked_worker_run_id,
                 )
                 connection.execute(
                     """
@@ -4061,11 +4055,60 @@ def _ensure_legacy_direct_worker_result_record(
 
 
 def _worker_result_id(source_path: str, source_sha256: str) -> str:
-    stem = Path(source_path.replace("\\", "/")).stem
-    safe_stem = re.sub(r"[^A-Za-z0-9_.:-]+", "-", stem).strip("-")
-    if safe_stem:
-        return f"worker-result-{safe_stem[:96]}"
-    return f"worker-result-{source_sha256[:24]}"
+    normalized_path = source_path.replace("\\", "/").strip().strip("/")
+    safe_key = re.sub(r"[^A-Za-z0-9_.:-]+", "-", normalized_path).strip("-")
+    hash_suffix = source_sha256[:16]
+    if not safe_key:
+        return f"worker-result-{hash_suffix}"
+    return f"worker-result-{safe_key[:72].rstrip('-')}-{hash_suffix}"
+
+
+def _replace_worker_result_run_link(
+    connection: sqlite3.Connection,
+    *,
+    result_id: str,
+    worker_run_id: str,
+) -> None:
+    stale_result_ids = tuple(
+        str(row["result_id"])
+        for row in connection.execute(
+            """
+            SELECT result_id
+            FROM worker_result_run_links
+            WHERE worker_run_id = ?
+              AND result_id != ?
+            """,
+            (worker_run_id, result_id),
+        ).fetchall()
+    )
+    connection.execute(
+        """
+        DELETE FROM worker_result_run_links
+        WHERE worker_run_id = ?
+          AND result_id != ?
+        """,
+        (worker_run_id, result_id),
+    )
+    connection.execute(
+        """
+        INSERT OR IGNORE INTO worker_result_run_links(result_id, worker_run_id)
+        VALUES (?, ?)
+        """,
+        (result_id, worker_run_id),
+    )
+    for stale_result_id in stale_result_ids:
+        connection.execute(
+            """
+            DELETE FROM worker_result_records
+            WHERE result_id = ?
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM worker_result_run_links link
+                  WHERE link.result_id = worker_result_records.result_id
+              )
+            """,
+            (stale_result_id,),
+        )
 
 
 def _legacy_result_source_hash(source_path: str) -> str:

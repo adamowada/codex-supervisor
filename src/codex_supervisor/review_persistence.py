@@ -541,6 +541,61 @@ def _review_result_schema_json() -> str:
 
 
 def _review_result_schema() -> JsonObject:
+    location_schema = {
+        "type": "object",
+        "required": ["path", "line", "scope"],
+        "properties": {
+            "path": {"type": ["string", "null"]},
+            "line": {"type": ["integer", "null"], "minimum": 1},
+            "scope": {"type": ["string", "null"]},
+        },
+        "additionalProperties": False,
+    }
+    finding_schema = {
+        "type": "object",
+        "required": [
+            "finding_id",
+            "mode",
+            "severity",
+            "status",
+            "title",
+            "evidence",
+            "location",
+            "recommendation",
+            "waiver_rationale",
+            "allowed_paths",
+        ],
+        "properties": {
+            "finding_id": {"type": "string", "minLength": 1},
+            "mode": {
+                "enum": [
+                    "everything",
+                    "code_quality",
+                    "architecture",
+                    "source_of_truth_drift",
+                ]
+            },
+            "severity": {"enum": ["P0", "P1", "P2", "P3"]},
+            "status": {"enum": ["accepted", "waived", "needs_hitl"]},
+            "title": {"type": "string", "minLength": 1},
+            "evidence": {"type": "string", "minLength": 1},
+            "location": location_schema,
+            "recommendation": {"type": "string", "minLength": 1},
+            "waiver_rationale": {"type": ["string", "null"]},
+            "allowed_paths": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        },
+        "additionalProperties": False,
+    }
+    verification_schema = {
+        "type": "object",
+        "required": ["command", "exit_code", "summary"],
+        "properties": {
+            "command": {"type": "string", "minLength": 1},
+            "exit_code": {"type": "integer"},
+            "summary": {"type": "string", "minLength": 1},
+        },
+        "additionalProperties": False,
+    }
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -558,32 +613,15 @@ def _review_result_schema() -> JsonObject:
             "target": {"type": "string", "minLength": 1},
             "findings": {
                 "type": "array",
-                "items": {
-                    "type": "object",
-                    "required": [
-                        "finding_id",
-                        "mode",
-                        "severity",
-                        "status",
-                        "title",
-                        "evidence",
-                        "location",
-                        "recommendation",
-                    ],
-                    "additionalProperties": True,
-                },
+                "items": finding_schema,
             },
             "verification_evidence": {
                 "type": "array",
                 "minItems": 1,
-                "items": {
-                    "type": "object",
-                    "required": ["command", "exit_code", "summary"],
-                    "additionalProperties": True,
-                },
+                "items": verification_schema,
             },
         },
-        "additionalProperties": True,
+        "additionalProperties": False,
     }
 
 
@@ -611,18 +649,19 @@ def _needs_hitl_findings(review_result: ReviewResult) -> tuple[ReviewFinding, ..
 
 
 def _codex_review_argv(request: ReviewLaunchRequest, executable: str) -> tuple[str, ...]:
+    repo_root = request.repo_root.resolve(strict=False)
     argv = [
         executable,
         "exec",
         "--json",
         "--output-schema",
-        str(request.repo_root / request.schema_path),
+        str((repo_root / request.schema_path).resolve(strict=False)),
         "--output-last-message",
-        str(request.repo_root / request.final_message_path),
+        str((repo_root / request.final_message_path).resolve(strict=False)),
         "--sandbox",
         request.sandbox_mode,
         "--cd",
-        str(request.repo_root),
+        str(repo_root),
     ]
     if request.model is not None:
         argv.extend(("--model", request.model))

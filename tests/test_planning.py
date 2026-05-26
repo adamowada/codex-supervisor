@@ -939,7 +939,7 @@ def test_cli_write_commands_record_planning_rows(tmp_path, capsys):
     assert main(["worker-run-show", "--path", str(db_path), "run-write", "--json"]) == 0
     worker_run = json.loads(capsys.readouterr().out)
     assert worker_run["result_path"] is None
-    assert worker_run["result_id"] == "worker-result-run-write-result"
+    assert worker_run["result_id"].startswith("worker-result-insights-run-write-result.json-")
     assert read_store.list_worker_results()[0].source_path == "insights/run-write-result.json"
 
     assert main(["plan-summary", "--path", str(db_path), "--plan-id", "plan-write", "--json"]) == 0
@@ -2889,7 +2889,8 @@ def test_worker_run_status_rejects_blank_result_path_without_erasing_existing_re
 
     run = open_existing_planning_database(db_path).list_worker_runs(task_id="task-test")[0]
     assert run.result_path is None
-    assert run.result_id == "worker-result-result"
+    assert run.result_id is not None
+    assert run.result_id.startswith("worker-result-runs-run-test-result.json-")
 
 
 def test_task_status_cannot_hide_active_worker_run(tmp_path):
@@ -3279,7 +3280,8 @@ def test_worker_run_status_can_complete_with_result_path_without_full_upsert(tmp
     run = open_existing_planning_database(db_path).list_worker_runs(task_id="task-test")[0]
     assert run.status == "completed"
     assert run.result_path is None
-    assert run.result_id == "worker-result-run-test-result"
+    assert run.result_id is not None
+    assert run.result_id.startswith("worker-result-worker-results-run-test-result.json-")
     assert run.prompt_path == "runs/run-test/prompt.md"
     assert run.metadata == {"kept": True}
     task = open_existing_planning_database(db_path).list_supervisor_tasks()[0]
@@ -3499,7 +3501,8 @@ def test_worker_run_status_clears_failure_class_on_completion(tmp_path):
     run = open_existing_planning_database(db_path).list_worker_runs(task_id="task-test")[0]
     assert run.status == "completed"
     assert run.result_path is None
-    assert run.result_id == "worker-result-run-test-result"
+    assert run.result_id is not None
+    assert run.result_id.startswith("worker-result-worker-results-run-test-result.json-")
     assert run.failure_class is None
 
 
@@ -3676,8 +3679,128 @@ def test_worker_result_ingestion_completes_after_validation(tmp_path):
     assert task.status == "completed"
     assert run.status == "completed"
     assert run.result_path is None
-    assert run.result_id == "worker-result-run-test-result"
+    assert run.result_id == result.result_id
+    assert run.result_id.startswith("worker-result-worker-results-run-test-result.json-")
     assert read_store.list_worker_result_run_links()[0].result_id == run.result_id
+
+
+def test_worker_result_ids_include_source_path_for_repeated_filenames(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Avoid worker result ID collisions.",
+            status="active",
+        )
+    )
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
+    for worker_run_id in ("run-a", "run-b"):
+        store.upsert_supervisor_task(
+            SupervisorTaskRecord(
+                task_id=f"task-{worker_run_id}",
+                plan_id="plan-test",
+                title=f"Task {worker_run_id}",
+                goal="Complete through result ingestion.",
+                task_type="AFK",
+                status="ready",
+                acceptance_criteria=["Criterion passes."],
+                verification_commands=["python -B -m pytest -p no:cacheprovider"],
+                allowed_paths=["src/**"],
+                review_required=False,
+            )
+        )
+        store.upsert_worker_run(
+            WorkerRunRecord(
+                worker_run_id=worker_run_id,
+                task_id=f"task-{worker_run_id}",
+                backend="codex_exec",
+                status="running",
+            )
+        )
+        _write_worker_result(
+            tmp_path,
+            result_path=f"artifacts/{worker_run_id}/worker-result.raw.json",
+            worker_run_id=worker_run_id,
+            changed_files=("src/worker.py",),
+            verification_commands=("python -B -m pytest -p no:cacheprovider",),
+            acceptance_criteria=("Criterion passes.",),
+        )
+
+    result_a = store.ingest_worker_result("run-a", "artifacts/run-a/worker-result.raw.json")
+    result_b = store.ingest_worker_result("run-b", "artifacts/run-b/worker-result.raw.json")
+
+    assert result_a.result_id != result_b.result_id
+    assert result_a.result_id.startswith("worker-result-artifacts-run-a-worker-result.raw.json-")
+    assert result_b.result_id.startswith("worker-result-artifacts-run-b-worker-result.raw.json-")
+
+
+def test_worker_result_reingestion_replaces_stale_run_links(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Replace stale result links.",
+            status="active",
+        )
+    )
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-test",
+            plan_id="plan-test",
+            title="Task",
+            goal="Complete through result ingestion.",
+            task_type="AFK",
+            status="ready",
+            acceptance_criteria=["Criterion passes."],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            review_required=False,
+        )
+    )
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-test",
+            task_id="task-test",
+            backend="codex_exec",
+            status="running",
+        )
+    )
+    _write_worker_result(
+        tmp_path,
+        result_path="runs/run-test/result.json",
+        changed_files=("src/worker.py",),
+        verification_commands=("python -B -m pytest -p no:cacheprovider",),
+        acceptance_criteria=("Criterion passes.",),
+    )
+    old_result = store.ingest_worker_result("run-test", "runs/run-test/result.json")
+    _write_worker_result(
+        tmp_path,
+        result_path="artifacts/run-test/worker-result.raw.json",
+        changed_files=("src/worker.py",),
+        verification_commands=("python -B -m pytest -p no:cacheprovider",),
+        acceptance_criteria=("Criterion passes.",),
+    )
+
+    new_result = store.ingest_worker_result("run-test", "artifacts/run-test/worker-result.raw.json")
+
+    read_store = open_existing_planning_database(db_path)
+    run = read_store.list_worker_runs(task_id="task-test")[0]
+    links = read_store.list_worker_result_run_links()
+    result_ids = {result.result_id for result in read_store.list_worker_results()}
+    assert old_result.result_id not in result_ids
+    assert run.result_id == new_result.result_id
+    assert [(link.result_id, link.worker_run_id) for link in links] == [
+        (new_result.result_id, "run-test")
+    ]
 
 
 def test_worker_result_ingestion_failure_preserves_evidence_without_completion(tmp_path):
@@ -3790,7 +3913,8 @@ def test_worker_result_ingestion_preserves_noncompleted_worker_result_status(
     assert run.status == status
     assert run.failure_class == status
     assert run.result_path is None
-    assert run.result_id == "worker-result-result"
+    assert run.result_id == result.result_id
+    assert run.result_id.startswith("worker-result-runs-run-test-result.json-")
 
 
 def test_worker_result_ingestion_needs_review_preserves_evidence(tmp_path):
@@ -3839,7 +3963,8 @@ def test_worker_result_ingestion_needs_review_preserves_evidence(tmp_path):
     assert run.status == "needs_review"
     assert run.failure_class is None
     assert run.result_path is None
-    assert run.result_id == "worker-result-result"
+    assert run.result_id == result.result_id
+    assert run.result_id.startswith("worker-result-runs-run-test-result.json-")
 
 
 def test_worker_result_ingestion_rejects_uncompleted_shared_worker_run(tmp_path):

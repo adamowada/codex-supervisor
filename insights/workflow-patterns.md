@@ -207,21 +207,23 @@ Actions run `26400531911` completed successfully for commit
 Next action: when CI planning integrity reports missing git commits, inspect checkout depth before
 changing planning data or integrity semantics.
 
-## Pinned GitHub Actions Need Commit Objects
+## CI Should Minimize Action Download Dependencies
 
 Confidence: confirmed.
 
-GitHub Actions `uses:` pins should reference commit objects, not annotated tag objects. A 40-hex
-tag object can look like a supply-chain-safe SHA but still fail during action archive download on
-GitHub runners; resolve reviewed release tags to their peeled commit SHA before pinning.
+GitHub Actions can fail before checkout while pre-downloading action archives from codeload. When
+an external action only installs a tool that can be installed after `setup-python`, prefer a
+version-pinned package install over another `uses:` dependency so runner setup has fewer remote
+archive failure points.
 
-Evidence: The Verify workflow pinned `astral-sh/setup-uv` to `e58605a...`, the `v5` tag object.
-GitHub Actions failed in job setup while downloading
-`https://codeload.github.com/astral-sh/setup-uv/tar.gz/e58605a...`. `git ls-remote` showed the
-peeled `v5^{}` commit is `d4b2f3b...`, which is now the workflow pin.
+Evidence: The Verify workflow failed in `Set up job` while pre-downloading
+`astral-sh/setup-uv` from codeload. Re-running reproduced the failure. Changing the action pin from
+the `v5` tag object `e58605a...` to the peeled commit `d4b2f3b...` still failed the same way, so
+the repair removed `astral-sh/setup-uv` and installs `uv==0.11.7` with `python -m pip install`
+after the pinned `actions/setup-python` step.
 
-Next action: when updating action pins, record the reviewed tag and peeled commit, and keep workflow
-tests from accepting known tag-object pins.
+Next action: keep essential actions pinned to reviewed commits, but avoid optional installer
+actions when a version-pinned package install gives the same result after checkout/setup.
 
 ## External CI Evidence Stays Out Of Artifact Links
 

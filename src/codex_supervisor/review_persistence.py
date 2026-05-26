@@ -195,15 +195,20 @@ class CodexReviewBackend:
                 stderr_path=request.stderr_path,
                 final_message_path=request.final_message_path,
             )
-        result_file = request.repo_root / request.result_path
-        if not result_file.exists():
+        result_source = _review_result_source(request)
+        if result_source is None:
             return _failed_review_launch(
                 request,
                 failure_class="review_result_missing",
                 stdout=completed.stdout,
-                stderr=f"review result file was not written: {request.result_path}",
+                stderr=(
+                    "review result was not written to the structured final message "
+                    f"or legacy result artifact: {request.final_message_path}, "
+                    f"{request.result_path}"
+                ),
                 exit_code=completed.exit_code,
             )
+        result_file, result_artifact_path = result_source
         try:
             review_result = _load_review_result_file(result_file)
             _validate_review_result_identity(review_result, request)
@@ -215,6 +220,8 @@ class CodexReviewBackend:
                 stderr=str(exc),
                 exit_code=completed.exit_code,
             )
+        if result_artifact_path != request.result_path:
+            _copy_review_result_artifact(request, result_file)
         return ReviewLaunchResult(
             review_id=request.review_id,
             task_id=request.task_id,
@@ -695,6 +702,22 @@ def _load_review_result_file(path: Path) -> ReviewResult:
 
     payload = json.loads(path.read_text(encoding="utf-8"))
     return validate_review_result_payload(payload)
+
+
+def _review_result_source(request: ReviewLaunchRequest) -> tuple[Path, str] | None:
+    final_message_file = request.repo_root / request.final_message_path
+    if final_message_file.exists():
+        return final_message_file, request.final_message_path
+    result_file = request.repo_root / request.result_path
+    if result_file.exists():
+        return result_file, request.result_path
+    return None
+
+
+def _copy_review_result_artifact(request: ReviewLaunchRequest, source: Path) -> None:
+    target = request.repo_root / request.result_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
 
 
 def _validate_review_result_identity(

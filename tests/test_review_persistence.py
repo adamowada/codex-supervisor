@@ -16,6 +16,7 @@ from codex_supervisor.review_persistence import (
     REVIEW_ARTIFACT_RELATIONSHIP,
     REVIEW_RESULT_ARTIFACT_RELATIONSHIP,
     REVIEW_RESULT_RECORDED_EVENT,
+    CodexReviewBackend,
     LiveReviewRunResult,
     ReviewLaunchRequest,
     ReviewLaunchResult,
@@ -24,6 +25,7 @@ from codex_supervisor.review_persistence import (
     record_review_result,
     run_live_review_for_task,
 )
+from codex_supervisor.worker_backends import CommandExecutionResult
 
 
 def test_record_review_result_persists_progress_details_and_artifact_links(tmp_path) -> None:
@@ -285,6 +287,75 @@ def test_codex_review_argv_uses_absolute_paths(
     assert Path(argv[10]).is_absolute()
 
 
+def test_codex_review_backend_uses_structured_final_message(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    request = ReviewLaunchRequest(
+        review_id="review-live-001",
+        task_id="task-source-review",
+        mode="everything",
+        target="task-source-review",
+        repo_root=tmp_path,
+        result_path="runs/reviews/task-source-review/review-live-001/review-result.json",
+        prompt_path="runs/reviews/task-source-review/review-live-001/prompt.md",
+        jsonl_path="runs/reviews/task-source-review/review-live-001/codex.jsonl",
+        stdout_path="runs/reviews/task-source-review/review-live-001/stdout.txt",
+        stderr_path="runs/reviews/task-source-review/review-live-001/stderr.txt",
+        final_message_path="runs/reviews/task-source-review/review-live-001/final-message.txt",
+        schema_path="runs/reviews/task-source-review/review-live-001/review-result.schema.json",
+        prompt="review this",
+        sandbox_mode="danger-full-access",
+        approval_policy="never",
+    )
+
+    def fake_run_review_command(
+        argv: tuple[str, ...],
+        cwd: Path,
+        environment: dict[str, str],
+        *,
+        stdin: str | None,
+        timeout_seconds: float | None,
+    ) -> CommandExecutionResult:
+        if argv == ("codex", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 0.133.0\n")
+        final_message_arg = argv[argv.index("--output-last-message") + 1]
+        final_message_path = Path(final_message_arg)
+        final_message_path.parent.mkdir(parents=True, exist_ok=True)
+        final_message_path.write_text(
+            json.dumps(
+                _review_result_payload(
+                    _review_result(
+                        review_id="review-live-001",
+                        target="task-source-review",
+                        include_hitl=False,
+                    )
+                ),
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        return CommandExecutionResult(exit_code=0, stdout='{"event":"completed"}\n')
+
+    monkeypatch.setattr(
+        "codex_supervisor.review_persistence._run_review_command",
+        fake_run_review_command,
+    )
+
+    result = CodexReviewBackend(codex_executable="codex").run(request)
+
+    result_file = tmp_path / request.result_path
+    final_message_file = tmp_path / request.final_message_path
+    assert result.status == "completed"
+    assert result.result_path == request.result_path
+    assert result.review_result is not None
+    assert result.review_result.review_id == "review-live-001"
+    assert result_file.exists()
+    assert json.loads(result_file.read_text(encoding="utf-8")) == json.loads(
+        final_message_file.read_text(encoding="utf-8")
+    )
+
+
 def _store(tmp_path):
     store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
     store.upsert_plan(
@@ -382,6 +453,41 @@ def _review_result(
             ),
         ),
     )
+
+
+def _review_result_payload(review_result: ReviewResult) -> dict[str, object]:
+    return {
+        "review_id": review_result.review_id,
+        "mode": review_result.mode,
+        "target": review_result.target,
+        "findings": [
+            {
+                "finding_id": finding.finding_id,
+                "mode": finding.mode,
+                "severity": finding.severity,
+                "status": finding.status,
+                "title": finding.title,
+                "evidence": finding.evidence,
+                "location": {
+                    "path": finding.location.path,
+                    "line": finding.location.line,
+                    "scope": finding.location.scope,
+                },
+                "recommendation": finding.recommendation,
+                "waiver_rationale": finding.waiver_rationale,
+                "allowed_paths": list(finding.allowed_paths),
+            }
+            for finding in review_result.findings
+        ],
+        "verification_evidence": [
+            {
+                "command": evidence.command,
+                "exit_code": evidence.exit_code,
+                "summary": evidence.summary,
+            }
+            for evidence in review_result.verification_evidence
+        ],
+    }
 
 
 def _hitl_review_result() -> ReviewResult:

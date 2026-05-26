@@ -19,6 +19,8 @@ graph.
 - `SkillLearningLoop`: process for turning repeated lessons into tested skills.
 - `AgenticEngineeringFactory`: operating model for AFK/HITL task flow.
 - `DesktopPluginRuntime`: installed Codex Desktop plugin cache, skill, and MCP startup surface.
+- `PluginMcpLauncher`: cache-safe stdlib launcher that locates the supervisor source package or
+  exposes a diagnostic MCP fallback.
 - `ExecutionModeLedger`: visible preflight record of backend, planning, worker, goal, evidence, and
   infrastructure modes before supervised execution begins.
 
@@ -39,3 +41,5 @@ graph.
 | `DesktopPluginRuntime` | attaches | `CodexSupervisor` | `plugins/codex-supervisor/.mcp.json`, `plugins/codex-supervisor/skills/codex-supervisor/SKILL.md`, `insights/workflow-patterns.md` | confirmed | 2026-05-26 | Verify installed-cache MCP startup, not only source plugin shape. |
 | `CodexSupervisor` | fails closed without | `DesktopPluginRuntime` | `insights/workflow-patterns.md` 2026-05-26 Desktop smoke RCA | confirmed | 2026-05-26 | Stop or record blocker when skill loads but MCP and CLI fallback are unavailable. |
 | `ExecutionModeLedger` | guards | `StoryLoop` | `insights/workflow-patterns.md` 2026-05-26 mode-switch RCA | confirmed | 2026-05-26 | Make full-AFK preflight expose unavailable, current-thread, fallback database, and degraded evidence modes. |
+| `PluginMcpLauncher` | guards | `DesktopPluginRuntime` | `insights/workflow-patterns.md` 2026-05-26 second Desktop smoke RCA | confirmed | 2026-05-26 | Delegate from cache to source repo or expose a blocked `runtime_preflight` diagnostic. |
+| `DesktopPluginRuntime` | requires refresh evidence for | `CodexSupervisor` | `insights/workflow-patterns.md` 2026-05-26 stale cache smoke | confirmed | 2026-05-26 | Version-bump or refresh cache before treating source skill changes as live. |

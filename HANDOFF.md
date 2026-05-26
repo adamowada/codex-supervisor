@@ -7,9 +7,25 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Current Snapshot
 
-- Current queue state: completed after the plugin runtime guardrail slice.
-- Completed plan: `plan-plugin-runtime-guardrails-20260526` (`Desktop Plugin Runtime Guardrails`).
-- Completed AFK task: `task-plugin-runtime-preflight-guardrails`.
+- Current queue state: completed after `plan-plugin-cache-launcher-20260526`
+  (`Desktop Plugin Cache Launcher And Runtime Canary`).
+- Completed AFK task: `task-plugin-cache-launcher-runtime-canary`, with DB-backed worker result
+  `worker-run-plugin-cache-launcher-runtime-canary-20260526`.
+- Completed fix: repaired the Desktop plugin cache/runtime boundary exposed by the second
+  `todo-list-test-2` smoke. The source guardrails existed, but Desktop loaded stale cached plugin
+  version `0.1.0`, and the cached `.mcp.json` resolved `../..` inside `$CODEX_HOME/plugins/cache`
+  instead of to the `codex-supervisor` source package.
+- Implementation result: plugin/package version is now `0.1.1`; `.mcp.json` starts
+  `plugins/codex-supervisor/scripts/mcp_launcher.py` from the plugin root; the launcher delegates
+  from source or Desktop cache to the real MCP server and otherwise exposes a diagnostic
+  `codex_supervisor.runtime_preflight` fallback; the packaged skill now requires that runtime
+  canary before plugin full-AFK work.
+- Local Desktop cache refresh: copied the updated plugin into
+  `$CODEX_HOME/plugins/cache/codex-supervisor-local/codex-supervisor/0.1.1`. Source and real
+  Desktop-profile plugin verification both pass and expose `codex_supervisor.runtime_preflight`.
+- Previous completed plan: `plan-plugin-runtime-guardrails-20260526`
+  (`Desktop Plugin Runtime Guardrails`).
+- Previous completed AFK task: `task-plugin-runtime-preflight-guardrails`.
 - User-selected implementation posture: real Desktop/profile smoke that inspects exposed tools;
   visible Desktop/plugin MCP startup diagnostics; callable preflight tool instead of prose-only
   behavior; block current-thread fallback for full-AFK; allow native Goals only when linked to a
@@ -18,10 +34,9 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   `task-current`.
 - Verification for the completed slice: focused runtime/MCP/plugin/planning tests passed, and
   `uv run --no-sync python -B scripts/verify.py` passed.
-- Real Desktop profile smoke against the current `CODEX_HOME` now fails visibly with an installed
-  cache diagnostic: the cache cwd does not contain the `codex_supervisor` source package. Source
-  verification passes; refresh/reinstall the Desktop plugin cache before expecting that real-profile
-  smoke to pass.
+- Durable lesson recorded in `insights/workflow-patterns.md`: source plugin fixes are not live
+  Desktop fixes until the installed cache proves it has refreshed, and MCP launchers need a
+  diagnostic fallback.
 - Previous v1 hardening plan: `plan-v1-live-operational-hardening` remains active but has no open
   work; `story-loop-status --json` reports it as completed within the current queue.
 - Latest release-readiness target checked during architecture-fix work: code commit
@@ -55,5 +70,4 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Next Action
 
-ACP the completed plugin runtime guardrail slice, then inspect `story-loop-status --json` before
-selecting any new work.
+ACP the completed plugin cache launcher slice, then rerun the Desktop smoke in a fresh folder.

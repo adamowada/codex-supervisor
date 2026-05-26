@@ -7,8 +7,14 @@ operator-facing local install notes, and workflow routing.
 ## What It Provides
 
 - `.codex-plugin/plugin.json` gives Codex Desktop discovery metadata for Codex Supervisor.
-- `.mcp.json` defines a `codex-supervisor` MCP server that runs
-  `uv run --no-sync python -B -m codex_supervisor.mcp_stdio` from the repository root.
+- `.mcp.json` defines a `codex-supervisor` MCP server that starts
+  `scripts/mcp_launcher.py` from the plugin root. The launcher is safe after Desktop copies the
+  plugin into `$CODEX_HOME/plugins/cache`: it locates the source repository from the source layout
+  or the Desktop marketplace config, then delegates to
+  `uv run --no-sync python -B -m codex_supervisor.mcp_stdio --repo-root <repo>`.
+- If the launcher cannot find the source repository or cannot start `uv`, it exposes a diagnostic
+  MCP server with only `codex_supervisor.runtime_preflight`; full-AFK work must treat that blocked
+  report as a setup failure.
 - `skills/codex-supervisor/SKILL.md` gives Desktop a packaged workflow entrypoint for queue
   inspection, project bootstrap, worker launch, review, ACP, and handoff.
 - The MCP server routes through the Python core, reads `plans/planning.sqlite3` as the queue
@@ -18,9 +24,9 @@ operator-facing local install notes, and workflow routing.
 
 ## Local Use
 
-Point Codex Desktop at `plugins/codex-supervisor` as a local plugin source from this repository. The
-plugin expects to run with the repository root as its MCP working directory through the `.mcp.json`
-`cwd` setting.
+Point Codex Desktop at `plugins/codex-supervisor` as a local plugin source from this repository.
+After changing the packaged skill or MCP wiring, bump the plugin version or refresh the Desktop
+cache, then verify the installed cache profile before smoke testing.
 
 Run the MCP server directly during local checks:
 
@@ -39,6 +45,12 @@ Verify the plugin source from a clean local discovery context:
 
 ```sh
 uv run --no-sync python -B scripts/verify_codex_plugin_install.py
+```
+
+Verify the currently installed Desktop profile cache:
+
+```sh
+uv run --no-sync python -B scripts/verify_codex_plugin_install.py --desktop-profile --codex-home <CODEX_HOME>
 ```
 
 ## Workflow Map

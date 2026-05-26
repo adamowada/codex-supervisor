@@ -163,6 +163,7 @@ def _plugin_check(root: Path) -> ReleaseReadinessCheck:
         root / "plugins" / "codex-supervisor" / ".codex-plugin" / "plugin.json",
         root / "plugins" / "codex-supervisor" / ".mcp.json",
         root / "plugins" / "codex-supervisor" / "README.md",
+        root / "plugins" / "codex-supervisor" / "scripts" / "mcp_launcher.py",
         root / "plugins" / "codex-supervisor" / "skills" / "codex-supervisor" / "SKILL.md",
     )
     return _path_check(
@@ -170,7 +171,7 @@ def _plugin_check(root: Path) -> ReleaseReadinessCheck:
         section="plugin",
         name="Codex Desktop plugin surface",
         paths=paths,
-        next_action="Restore plugin metadata, MCP wiring, README, and packaged skill.",
+        next_action=("Restore plugin metadata, MCP wiring, launcher, README, and packaged skill."),
     )
 
 

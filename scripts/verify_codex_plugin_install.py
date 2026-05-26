@@ -222,7 +222,10 @@ def _verify_mcp_stdio(
     cwd = _resolve_mcp_cwd(plugin_root, server, repo_root)
     payload = _mcp_lifecycle_payload()
 
-    _raise_if_source_cwd_is_not_runnable(command, args, cwd)
+    if _command_uses_plugin_launcher(command, args):
+        _raise_if_launcher_is_not_runnable(args, cwd)
+    else:
+        _raise_if_source_cwd_is_not_runnable(command, args, cwd)
     try:
         completed = runner((command, *args), cwd, payload, timeout_seconds)
     except FileNotFoundError as exc:
@@ -262,7 +265,13 @@ def _resolve_mcp_cwd(plugin_root: Path, server: JsonObject, repo_root: Path | No
     if relative.is_absolute():
         raise PluginInstallVerificationError("MCP cwd must be relative to the plugin root")
     resolved = (plugin_root / relative).resolve()
-    if repo_root is not None and resolved != repo_root:
+    command = _require_string(server, "command")
+    args = _require_string_list(server, "args")
+    if (
+        repo_root is not None
+        and resolved != repo_root
+        and not _command_uses_plugin_launcher(command, args)
+    ):
         raise PluginInstallVerificationError("MCP cwd must resolve to the repository root")
     return resolved
 
@@ -277,10 +286,32 @@ def _raise_if_source_cwd_is_not_runnable(command: str, args: tuple[str, ...], cw
     )
 
 
+def _raise_if_launcher_is_not_runnable(args: tuple[str, ...], cwd: Path) -> None:
+    launcher_path = _launcher_argument(args)
+    if launcher_path is None:
+        raise PluginInstallVerificationError(
+            "MCP launcher command must name scripts/mcp_launcher.py"
+        )
+    if not (cwd / launcher_path).is_file():
+        raise PluginInstallVerificationError(f"MCP launcher script is missing: {launcher_path}")
+
+
 def _command_requires_codex_supervisor_source(command: str, args: tuple[str, ...]) -> bool:
     return (
         command == "uv" and "run" in args and "-m" in args and "codex_supervisor.mcp_stdio" in args
     )
+
+
+def _command_uses_plugin_launcher(command: str, args: tuple[str, ...]) -> bool:
+    return command == "python" and _launcher_argument(args) is not None
+
+
+def _launcher_argument(args: tuple[str, ...]) -> Path | None:
+    for item in args:
+        normalized = item.replace("\\", "/")
+        if normalized == "scripts/mcp_launcher.py":
+            return Path(item)
+    return None
 
 
 def _discover_desktop_profile_plugin_root(codex_home: Path) -> Path:

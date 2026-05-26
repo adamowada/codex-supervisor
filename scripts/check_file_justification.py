@@ -266,6 +266,10 @@ FILE_PURPOSES = {
         "operator-facing Codex Desktop plugin usage notes",
         "pytest",
     ),
+    "plugins/codex-supervisor/scripts/mcp_launcher.py": FilePurpose(
+        "cache-safe Codex Desktop MCP launcher",
+        "pytest",
+    ),
     "plugins/codex-supervisor/skills/codex-supervisor/SKILL.md": FilePurpose(
         "Codex Desktop packaged supervisor workflow skill",
         "pytest",

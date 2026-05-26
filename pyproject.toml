@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "codex-supervisor"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Codex-native supervisor for agentic engineering factories."
 readme = "README.md"
 requires-python = ">=3.14"

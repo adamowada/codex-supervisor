@@ -1,16 +1,12 @@
 {
   "mcpServers": {
     "codex-supervisor": {
-      "command": "uv",
+      "command": "python",
       "args": [
-        "run",
-        "--no-sync",
-        "python",
         "-B",
-        "-m",
-        "codex_supervisor.mcp_stdio"
+        "scripts/mcp_launcher.py"
       ],
-      "cwd": "../.."
+      "cwd": "."
     }
   }
 }

@@ -404,6 +404,47 @@ Next action: add an installed-cache verifier that reads the enabled plugin confi
 cached `.mcp.json` exactly as Desktop does, launches `initialize`/`tools/list`, and asserts the
 expected supervisor tools are exposed.
 
+## Plugin Cache Refresh Must Be Observable
+
+Confidence: confirmed.
+
+Claim: Source-side plugin fixes are not live Desktop fixes until the installed plugin cache refreshes
+to a new version or otherwise proves it is running the updated skill and MCP wiring. A stale cache
+can continue to load old prose instructions after the repository commit that fixed them.
+
+Evidence: A second 2026-05-26 todo-list Desktop smoke started after commit
+`9e86338938234ac0fed477cfdc31f5b37671bc87`, but the thread still loaded
+`$CODEX_HOME/plugins/cache/codex-supervisor-local/codex-supervisor/0.1.0/.../SKILL.md`, whose
+mtime predated the source fix and lacked the runtime-preflight full-AFK guardrails. The source skill
+had the guardrails; the live Desktop cache did not.
+
+Scope: Codex Desktop plugin releases, local marketplace development, smoke tests, and any skill
+fix that must affect live plugin behavior.
+
+Next action: bump the plugin version or run an explicit cache refresh before Desktop smoke tests,
+then verify the installed cache skill and MCP tool list, not only the source tree.
+
+## MCP Launchers Need A Diagnostic Fallback
+
+Confidence: confirmed.
+
+Claim: A Desktop MCP server that cannot import its real backend should still expose a minimal
+diagnostic surface when its launcher can start. For `codex-supervisor`, the minimum safe surface is
+`codex_supervisor.runtime_preflight` returning a blocked report, because that is the canary full-AFK
+requests must call before implementation.
+
+Evidence: The second todo-list Desktop smoke had no supervisor MCP tools and no visible in-thread
+MCP startup diagnostic. The agent saw only a failed CLI import from the fresh project directory and
+continued as ordinary current-thread Codex, leaving no planning database, task claim, worker run, or
+Goal Contract. The hidden startup failure changed the run mode without the user seeing a hard
+blocker.
+
+Scope: MCP stdio launchers, plugin cache startup, runtime preflight, full-AFK supervisor requests,
+and fail-closed Desktop diagnostics.
+
+Next action: route plugin `.mcp.json` through a cache-safe launcher that either delegates to the
+real supervisor package or serves a minimal runtime-preflight diagnostic MCP server.
+
 ## Execution Mode Ledgers Should Precede Full-AFK Work
 
 Confidence: confirmed.

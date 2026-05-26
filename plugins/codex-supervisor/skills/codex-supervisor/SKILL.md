@@ -18,6 +18,10 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
   `uv run --no-sync python -B -m codex_supervisor.cli runtime-preflight --json` with equivalent
   flags. If neither surface is available, stop and report that `codex-supervisor` is unavailable;
   do not continue as a supervisor run.
+- Runtime canary: for plugin full-AFK requests, the first supervisor action must prove that
+  `codex_supervisor.runtime_preflight` is callable. If `tools/list` does not expose that tool, or
+  the tool returns `status=blocked`, refuse current-thread implementation and report the diagnostic
+  or setup repair needed.
 - Read `HANDOFF.md` only after `story-loop-status --json`; update it after planning SQLite changes.
 - Use `.agents/skills/skill-router/SKILL.md` to choose the detailed repo-local skill for the next
   workflow.

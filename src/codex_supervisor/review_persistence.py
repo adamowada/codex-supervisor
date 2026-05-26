@@ -24,7 +24,12 @@ from codex_supervisor.review_repairs import (
     apply_repair_task_plan,
     plan_repair_tasks_from_review_result,
 )
-from codex_supervisor.worker_backends import CommandExecutionResult, _minimal_process_environment
+from codex_supervisor.worker_backends import (
+    CommandExecutionResult,
+    LaunchEnvironmentResult,
+    _minimal_process_environment,
+    build_codex_launch_environment,
+)
 
 REVIEW_RESULT_RECORDED_EVENT = "review_result_recorded"
 REVIEW_RESULT_ARTIFACT_RELATIONSHIP = "review-result"
@@ -129,7 +134,14 @@ class CodexReviewBackend:
                 failure_class="codex_cli_unavailable",
                 stderr="codex executable was not found on PATH",
             )
-        environment = _review_environment(request)
+        environment_result = _review_environment(request)
+        if environment_result.failure_class is not None:
+            return _failed_review_launch(
+                request,
+                failure_class=environment_result.failure_class,
+                stderr=environment_result.stderr,
+            )
+        environment = environment_result.environment
         version = _run_review_command(
             (executable, "--version"),
             request.repo_root,
@@ -759,12 +771,13 @@ def _codex_review_argv(request: ReviewLaunchRequest, executable: str) -> tuple[s
     return tuple(argv)
 
 
-def _review_environment(request: ReviewLaunchRequest) -> dict[str, str]:
+def _review_environment(request: ReviewLaunchRequest) -> LaunchEnvironmentResult:
     environment = _minimal_process_environment(os.environ)
     environment.update(request.environment or {})
-    if request.codex_home is not None:
-        environment["CODEX_HOME"] = request.codex_home
-    return environment
+    return build_codex_launch_environment(
+        codex_home=request.codex_home,
+        environment=environment,
+    )
 
 
 def _run_review_command(

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import fnmatch
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from codex_supervisor.worktree_artifacts import ChangedPathViolation, validate_changed_files
 
 JsonObject = dict[str, Any]
 MAX_WORKER_RESULT_BYTES = 256 * 1024
@@ -115,7 +116,7 @@ def validate_worker_result_payload(
     worker_run_ids = _worker_run_ids(payload, worker_run_id)
     completed = status == "completed"
     changed_files = _string_list(payload, "changed_files", require_nonempty=completed)
-    artifacts = _string_list(payload, "artifacts", require_nonempty=completed)
+    artifacts = _string_list(payload, "artifacts", require_nonempty=False)
     _require_nonblank(payload, "summary")
     _require_completion_notes(payload)
     _require_list(payload, "risks")
@@ -290,12 +291,25 @@ def _validate_changed_files(
     changed_files: tuple[str, ...],
     allowed_paths: tuple[str, ...],
 ) -> None:
-    normalized_allowed = tuple(_normalize(path) for path in allowed_paths)
-    for changed_file in tuple(_normalize(path) for path in changed_files):
+    normalized_changed_files = tuple(_normalize(path) for path in changed_files)
+    for changed_file in normalized_changed_files:
         _validate_repo_relative_path(repo_root, changed_file, "changed_files")
-        if not any(_matches_allowed_path(changed_file, allowed) for allowed in normalized_allowed):
-            msg = f"{changed_file} is not covered by allowed_paths"
-            raise WorkerResultError(msg)
+    violations = validate_changed_files(
+        normalized_changed_files,
+        tuple(_normalize(path) for path in allowed_paths),
+    )
+    if violations:
+        raise WorkerResultError(_changed_path_violation_message(violations[0]))
+
+
+def _changed_path_violation_message(violation: ChangedPathViolation) -> str:
+    if violation.reason == "outside_allowed_paths":
+        return f"{violation.path} is not covered by allowed_paths"
+    if violation.reason.startswith("unsafe_allowed_path:"):
+        return f"allowed_paths entry is unsafe: {violation.path}"
+    if violation.reason.startswith("unsafe_changed_file:"):
+        return f"changed_files entry is unsafe: {violation.path}"
+    return f"{violation.path} is invalid: {violation.reason}"
 
 
 def _validate_repo_relative_path(repo_root: Path, value: str, field_name: str) -> None:
@@ -308,13 +322,6 @@ def _validate_repo_relative_path(repo_root: Path, value: str, field_name: str) -
     if not (repo_root / value).exists():
         msg = f"{field_name} entry does not exist: {value}"
         raise WorkerResultError(msg)
-
-
-def _matches_allowed_path(path: str, allowed: str) -> bool:
-    if allowed.endswith("/**"):
-        prefix = allowed[:-3].rstrip("/")
-        return path == prefix or path.startswith(prefix + "/")
-    return path == allowed or fnmatch.fnmatchcase(path, allowed)
 
 
 def _normalize(value: str) -> str:

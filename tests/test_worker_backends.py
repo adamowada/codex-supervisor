@@ -215,6 +215,59 @@ def test_codex_exec_backend_fails_closed_for_unsupported_options(tmp_path):
     assert "native_goal_mode" in preflight.version_stderr
 
 
+def test_codex_exec_backend_fails_closed_for_unapplied_config_path(tmp_path):
+    calls: list[tuple[str, ...]] = []
+
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        calls.append(argv)
+        return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+
+    request = _codex_exec_request(
+        tmp_path,
+        codex_config_path="C:/codex-home/config.toml",
+    )
+
+    preflight = CodexExecBackend(
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=runner,
+    ).preflight(request)
+
+    assert calls == []
+    assert preflight.failure_class == "codex_launch_option_unsupported"
+    assert "codex_config_path_without_codex_home" in preflight.version_stderr
+
+
+def test_codex_exec_backend_fails_closed_for_mismatched_config_path(tmp_path):
+    calls: list[tuple[str, ...]] = []
+
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        calls.append(argv)
+        return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+
+    request = _codex_exec_request(
+        tmp_path,
+        codex_home="C:/codex-home",
+        codex_config_path="C:/other-codex-home/config.toml",
+    )
+
+    preflight = CodexExecBackend(
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=runner,
+    ).preflight(request)
+
+    assert calls == []
+    assert preflight.failure_class == "codex_launch_option_unsupported"
+    assert "codex_config_path" in preflight.version_stderr
+
+
 def test_codex_exec_backend_uses_absolute_paths_for_relative_repo_request(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     worktree = tmp_path / "worktrees" / "run-worker"

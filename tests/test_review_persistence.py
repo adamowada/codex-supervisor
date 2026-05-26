@@ -356,6 +356,55 @@ def test_codex_review_backend_uses_structured_final_message(
     )
 
 
+def test_codex_review_backend_fails_closed_on_codex_home_environment_conflict(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    request = ReviewLaunchRequest(
+        review_id="review-live-001",
+        task_id="task-source-review",
+        mode="everything",
+        target="task-source-review",
+        repo_root=tmp_path,
+        result_path="runs/reviews/task-source-review/review-live-001/review-result.json",
+        prompt_path="runs/reviews/task-source-review/review-live-001/prompt.md",
+        jsonl_path="runs/reviews/task-source-review/review-live-001/codex.jsonl",
+        stdout_path="runs/reviews/task-source-review/review-live-001/stdout.txt",
+        stderr_path="runs/reviews/task-source-review/review-live-001/stderr.txt",
+        final_message_path="runs/reviews/task-source-review/review-live-001/final-message.txt",
+        schema_path="runs/reviews/task-source-review/review-live-001/review-result.schema.json",
+        prompt="review this",
+        sandbox_mode="danger-full-access",
+        approval_policy="never",
+        codex_home="C:/intended-codex-home",
+        environment={"CODEX_HOME": "C:/other-codex-home"},
+    )
+    calls: list[tuple[str, ...]] = []
+
+    def fake_run_review_command(
+        argv: tuple[str, ...],
+        cwd: Path,
+        environment: dict[str, str],
+        *,
+        stdin: str | None,
+        timeout_seconds: float | None,
+    ) -> CommandExecutionResult:
+        calls.append(argv)
+        return CommandExecutionResult(exit_code=0, stdout="codex 0.133.0\n")
+
+    monkeypatch.setattr(
+        "codex_supervisor.review_persistence._run_review_command",
+        fake_run_review_command,
+    )
+
+    result = CodexReviewBackend(codex_executable="codex").run(request)
+
+    assert calls == []
+    assert result.status == "failed"
+    assert result.failure_class == "codex_home_conflict"
+    assert "codex_home conflicts" in (tmp_path / request.stderr_path).read_text()
+
+
 def _store(tmp_path):
     store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
     store.upsert_plan(

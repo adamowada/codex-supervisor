@@ -518,9 +518,10 @@ def _real_project_bootstrap_smoke_check(
             continue
         if details.get("writes_files") is not True:
             continue
-        artifact_ok, artifact_evidence, artifact_reason = _bootstrap_apply_artifact_evidence(
+        artifact_ok, artifact_evidence, artifact_reason = _bootstrap_apply_evidence(
             root,
             progress,
+            details,
             artifact_links,
         )
         if not artifact_ok:
@@ -545,7 +546,7 @@ def _real_project_bootstrap_smoke_check(
     missing = (
         f"missing: {REAL_PROJECT_BOOTSTRAP_SMOKE_EVENT_TYPE} progress with status=passed, "
         f"head_sha={target_commit}, at least one command, writes_files=true, and a linked "
-        "spawned-project-apply JSON artifact"
+        "spawned-project-apply JSON artifact or embedded apply_result"
     )
     if missing_reasons:
         missing += f" ({missing_reasons[0]})"
@@ -568,6 +569,31 @@ def _real_project_bootstrap_smoke_check(
     )
 
 
+def _bootstrap_apply_evidence(
+    root: Path,
+    progress: PlanProgressRecord,
+    details: dict[str, Any],
+    artifact_links: tuple[PlanArtifactLinkRecord, ...],
+) -> tuple[bool, tuple[str, ...], str]:
+    artifact_ok, artifact_evidence, artifact_reason = _bootstrap_apply_artifact_evidence(
+        root,
+        progress,
+        artifact_links,
+    )
+    if artifact_ok:
+        return artifact_ok, artifact_evidence, artifact_reason
+    apply_result = details.get("apply_result")
+    if isinstance(apply_result, dict):
+        inline_ok, inline_evidence, inline_reason = _bootstrap_apply_payload_evidence(
+            apply_result,
+            "embedded spawned-project-apply result",
+        )
+        if inline_ok:
+            return inline_ok, inline_evidence, inline_reason
+        return False, (), inline_reason
+    return False, (), artifact_reason or "progress is missing apply_result"
+
+
 def _bootstrap_apply_artifact_evidence(
     root: Path,
     progress: PlanProgressRecord,
@@ -588,6 +614,13 @@ def _bootstrap_apply_artifact_evidence(
     payload = _json_file_object(artifact_path)
     if payload is None:
         return False, (), f"{artifact_id} is missing or is not valid JSON"
+    return _bootstrap_apply_payload_evidence(payload, f"linked artifact {artifact_id}")
+
+
+def _bootstrap_apply_payload_evidence(
+    payload: dict[str, Any],
+    evidence_label: str,
+) -> tuple[bool, tuple[str, ...], str]:
     created_files = _string_tuple(payload.get("created_files"))
     existing_files = _string_tuple(payload.get("existing_files"))
     verification_commands = _string_tuple(payload.get("verification_commands"))
@@ -606,11 +639,11 @@ def _bootstrap_apply_artifact_evidence(
     if not isinstance(project_name, str) or not project_name.strip():
         missing.append("project_name")
     if missing:
-        return False, (), f"{artifact_id} is missing {', '.join(missing)}"
+        return False, (), f"{evidence_label} is missing {', '.join(missing)}"
     return (
         True,
         (
-            f"present: linked artifact {artifact_id}",
+            f"present: {evidence_label}",
             f"present: scaffold apply artifact has {len(created_files)} created file(s)",
             f"present: scaffold apply artifact records {len(existing_files)} existing file(s)",
             "present: scaffold apply artifact records first_task contract",

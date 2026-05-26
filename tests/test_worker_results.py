@@ -119,6 +119,25 @@ def test_completed_worker_result_can_use_transient_raw_json_source(tmp_path):
     assert result.artifacts == ("artifacts/run-worker/worker-result.raw.json",)
 
 
+def test_completed_worker_result_accepts_empty_supporting_artifacts(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
+    payload = _worker_result()
+    payload["artifacts"] = []
+
+    result = validate_worker_result_payload(
+        payload,
+        repo_root=tmp_path,
+        result_path="artifacts/run-worker/worker-result.raw.json",
+        worker_run_id="run-worker",
+        allowed_paths=("src/**",),
+        verification_commands=("python -B -m pytest -p no:cacheprovider",),
+        acceptance_criteria=("Criterion passes.",),
+    )
+
+    assert result.artifacts == ()
+
+
 def test_worker_result_validation_requires_task_verification_command(tmp_path):
     payload = _worker_result()
 

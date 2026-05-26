@@ -1159,7 +1159,6 @@ def test_planning_integrity_requires_completed_worker_result_evidence(tmp_path):
     assert "nonempty changed_files" in reasons
     assert "nonempty tests_run" in reasons
     assert "acceptance_results evidence" in reasons
-    assert "nonempty artifacts" in reasons
     assert "summary must be nonblank" in reasons
     assert "handoff_notes must be nonblank" in reasons
 
@@ -1295,6 +1294,63 @@ def test_planning_integrity_allows_worker_result_changed_files_to_omit_result_pa
         "changed_files" in failure.reason and "result_path" in failure.reason
         for failure in failures
     )
+
+
+def test_planning_integrity_allows_worker_result_artifacts_to_omit_result_path(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker",
+            slug="worker",
+            title="Worker Plan",
+            goal="Validate worker result supporting artifacts.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-worker",
+            title="Worker task",
+            goal="Run.",
+            task_type="AFK",
+            status="ready",
+            acceptance_criteria=["criterion"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+        )
+    )
+    result_path = tmp_path / "runs" / "run-worker" / "result.json"
+    result_path.parent.mkdir(parents=True)
+    changed_path = tmp_path / "src" / "worker.py"
+    changed_path.parent.mkdir(parents=True)
+    changed_path.write_text("print('changed')\n", encoding="utf-8")
+    payload = json.loads(json_worker_result())
+    payload["changed_files"] = ["src/worker.py"]
+    payload["artifacts"] = ["src/worker.py"]
+    result_path.write_text(json.dumps(payload), encoding="utf-8")
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-worker",
+            task_id="task-worker",
+            backend="subagent_explorer",
+            status="completed",
+            result_path="runs/run-worker/result.json",
+        )
+    )
+    store.add_plan_artifact_link(
+        PlanArtifactLinkRecord(
+            plan_id="plan-worker",
+            artifact_id="runs/run-worker/result.json",
+            relationship="worker-result",
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert not any("artifacts must include result_path" in failure.reason for failure in failures)
 
 
 def test_planning_integrity_requires_worker_result_to_cover_task_contract(tmp_path):

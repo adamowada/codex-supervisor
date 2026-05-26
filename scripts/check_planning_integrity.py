@@ -1476,19 +1476,15 @@ def _completed_worker_result_evidence_failures(
 ) -> tuple[PlanningIntegrityFailure, ...]:
     if payload.get("status") != "completed":
         return ()
-    evidence_fields = ("changed_files", "artifacts")
     failures: list[PlanningIntegrityFailure] = []
-    for key in evidence_fields:
-        value = payload.get(key)
-        if not isinstance(value, list):
-            continue
-        if not _has_nonblank_string(value):
-            failures.append(
-                PlanningIntegrityFailure(
-                    "completed_worker_run_invalid_result_schema",
-                    f"{worker_run_id}: completed result requires nonempty {key}",
-                )
+    changed_files = payload.get("changed_files")
+    if isinstance(changed_files, list) and not _has_nonblank_string(changed_files):
+        failures.append(
+            PlanningIntegrityFailure(
+                "completed_worker_run_invalid_result_schema",
+                f"{worker_run_id}: completed result requires nonempty changed_files",
             )
+        )
     tests_run = payload.get("tests_run")
     if isinstance(tests_run, list) and not tests_run:
         failures.append(
@@ -1602,23 +1598,7 @@ def _completed_worker_result_artifact_reference_failures(
     result_path: str,
     payload: dict[object, object],
 ) -> tuple[PlanningIntegrityFailure, ...]:
-    normalized_result_path = _normalize_repo_path(result_path)
-    failures: list[PlanningIntegrityFailure] = []
-    values = payload.get("artifacts")
-    if isinstance(values, list):
-        normalized_values = {
-            value.strip().replace("\\", "/")
-            for value in values
-            if isinstance(value, str) and value.strip()
-        }
-        if normalized_result_path not in normalized_values:
-            failures.append(
-                PlanningIntegrityFailure(
-                    "completed_worker_run_invalid_result_schema",
-                    f"{worker_run_id}: artifacts must include result_path {normalized_result_path}",
-                )
-            )
-    return tuple(failures)
+    return ()
 
 
 def _normalize_repo_path(value: str) -> str:

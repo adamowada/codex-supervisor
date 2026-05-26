@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import time
 import tomllib
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path, PureWindowsPath
@@ -1250,18 +1250,33 @@ def _write_codex_exec_evidence(
         _write_text_artifact(request.repo_root, request.jsonl_path, prefix + event_line)
 
 
-def _build_launch_environment(request: WorkerLaunchRequest) -> LaunchEnvironmentResult:
-    environment = dict(request.environment)
-    if request.codex_home is not None:
-        existing = environment.get("CODEX_HOME")
-        if existing is not None and Path(existing) != Path(request.codex_home):
+def build_codex_launch_environment(
+    *,
+    codex_home: str | None,
+    environment: Mapping[str, str] | None,
+) -> LaunchEnvironmentResult:
+    """Build a Codex subprocess environment with shared CODEX_HOME conflict checks."""
+
+    effective_environment = dict(environment or {})
+    if codex_home is not None:
+        existing = effective_environment.get("CODEX_HOME")
+        if existing is not None and _canonical_launch_path(existing) != _canonical_launch_path(
+            codex_home
+        ):
             return LaunchEnvironmentResult(
-                environment=environment,
+                environment=effective_environment,
                 failure_class="codex_home_conflict",
                 stderr="codex_home conflicts with environment CODEX_HOME",
             )
-        environment["CODEX_HOME"] = request.codex_home
-    return LaunchEnvironmentResult(environment=environment)
+        effective_environment["CODEX_HOME"] = codex_home
+    return LaunchEnvironmentResult(environment=effective_environment)
+
+
+def _build_launch_environment(request: WorkerLaunchRequest) -> LaunchEnvironmentResult:
+    return build_codex_launch_environment(
+        codex_home=request.codex_home,
+        environment=request.environment,
+    )
 
 
 def _unsupported_launch_option_failure(request: WorkerLaunchRequest) -> tuple[str, str] | None:
@@ -1272,14 +1287,32 @@ def _unsupported_launch_option_failure(request: WorkerLaunchRequest) -> tuple[st
         unsupported.append("service_tier")
     if request.native_goal_mode:
         unsupported.append("native_goal_mode")
-    if request.codex_config_path is not None and request.codex_home is not None:
-        expected_config = Path(request.codex_home) / "config.toml"
-        if Path(request.codex_config_path) != expected_config:
-            unsupported.append("codex_config_path")
+    if request.codex_config_path is not None:
+        if request.codex_home is None:
+            unsupported.append("codex_config_path_without_codex_home")
+        else:
+            expected_config = _codex_home_config_path(request.codex_home)
+            if _canonical_launch_path(request.codex_config_path) != _canonical_launch_path(
+                expected_config
+            ):
+                unsupported.append("codex_config_path")
     if unsupported:
         joined = ", ".join(unsupported)
         return "codex_launch_option_unsupported", f"Unsupported Codex launch option(s): {joined}"
     return None
+
+
+def _codex_home_config_path(codex_home: str) -> str:
+    trimmed = codex_home.rstrip("/\\")
+    return f"{trimmed}/config.toml"
+
+
+def _canonical_launch_path(value: str) -> str:
+    normalized = value.strip().replace("\\", "/")
+    windows_path = PureWindowsPath(normalized)
+    if windows_path.drive:
+        return windows_path.as_posix().rstrip("/").lower()
+    return Path(normalized).expanduser().resolve(strict=False).as_posix().rstrip("/")
 
 
 def _minimal_process_environment(source: os._Environ[str]) -> dict[str, str]:

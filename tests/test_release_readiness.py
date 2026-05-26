@@ -326,6 +326,29 @@ def test_release_readiness_requires_bootstrap_apply_artifact_link(tmp_path: Path
     assert any("spawned-project-apply JSON artifact" in item for item in check.evidence)
 
 
+def test_release_readiness_accepts_embedded_bootstrap_apply_result(tmp_path: Path) -> None:
+    db_path = _release_db(
+        tmp_path,
+        target_commit=TARGET_COMMIT,
+        include_bootstrap_artifact=False,
+        inline_bootstrap_apply_result=True,
+    )
+
+    report = build_release_readiness_report(
+        REPO_ROOT,
+        planning_db_path=db_path,
+        target_commit=TARGET_COMMIT,
+    )
+    check = next(
+        check
+        for check in report.checks
+        if (check.section, check.name) == ("live_evidence", "Real project bootstrap smoke evidence")
+    )
+
+    assert check.status == "pass"
+    assert any("embedded spawned-project-apply result" in item for item in check.evidence)
+
+
 def test_release_readiness_rejects_stale_ci_and_live_evidence(tmp_path: Path) -> None:
     db_path = _release_db(tmp_path, target_commit=STALE_COMMIT)
 
@@ -459,6 +482,7 @@ def _release_db(
     *,
     target_commit: str,
     include_bootstrap_artifact: bool = True,
+    inline_bootstrap_apply_result: bool = False,
 ) -> Path:
     db_path = _validation_db(
         tmp_path,
@@ -536,6 +560,11 @@ def _release_db(
                 "commands": [
                     "uv run --no-sync python -B -m codex_supervisor.cli spawned-project-apply"
                 ],
+                **(
+                    {"apply_result": _bootstrap_apply_fixture_payload()}
+                    if inline_bootstrap_apply_result
+                    else {}
+                ),
             },
         ),
     ):
@@ -566,3 +595,8 @@ def _release_db(
         else:
             store.add_plan_progress(progress)
     return db_path
+
+
+def _bootstrap_apply_fixture_payload() -> dict[str, object]:
+    fixture = REPO_ROOT / "tests" / "fixtures" / "spawned-project-apply.json"
+    return json.loads(fixture.read_text())

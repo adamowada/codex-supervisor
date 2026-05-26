@@ -11,11 +11,14 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   blocked, or pending tasks for `plan-v1-live-operational-hardening`.
 - Active plan: `plan-v1-live-operational-hardening`.
 - Current AFK task: none.
-- Latest release-readiness target: code commit
-  `e2ddc02155a9f253ec9b675c374f2e7c0ab4b3d4`.
-- Latest release-readiness result: `ready: true`, 16/16 checks passing. Current evidence is recorded
-  in `plans/planning.sqlite3`, including live worker, live review, mutating MCP, real bootstrap,
-  Windows validation, publication-ready verification, and GitHub Actions CI for the target commit.
+- Latest release-readiness target checked during architecture-fix work: code commit
+  `d88ddf4c277dc7625bd89b7fbf641b0639f49df8`.
+- Latest release-readiness result: `ready: false`, 10/16 checks passing. Real bootstrap smoke
+  evidence now passes via `progress-real-bootstrap-arch-fixes-d88ddf4c` with embedded
+  `spawned-project-apply` evidence in `plans/planning.sqlite3`; the remaining gaps are current
+  CI, publication-ready verification, Windows validation, live worker smoke, live review smoke, and
+  mutating MCP smoke for the checked target. After the architecture-fix ACP, refresh release
+  readiness for the new commit before any release action.
 - Durable insights: `insights/v1-hardening-clarifications.md`,
   `insights/v1-hardening-review.md`, and `insights/release-readiness-evidence.md`.
 - Codex CLI smoke: npm `codex-cli 0.133.0` resolves in the current shell, and `codex exec --help`
@@ -41,4 +44,4 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 Wait for the user's explicit release instruction. Until then, do not create a release tag or publish
 release artifacts. A fresh session should run
 `uv run --no-sync python -B -m codex_supervisor.cli release-readiness --json` before release action
-and confirm it remains `ready: true`.
+and refresh any stale evidence until it reports `ready: true`.

@@ -2400,6 +2400,12 @@ class PlanningSQLiteStore:
                 repo_root=repo_root,
             )
         except WorkerResultError as exc:
+            self.update_worker_run_status(
+                worker_run_id,
+                "failed",
+                failure_class=failure_class,
+                result_path=result_path,
+            )
             raise ValueError(str(exc)) from exc
         return self.record_worker_result(
             worker_run_id=worker_run_id,
@@ -2456,6 +2462,14 @@ class PlanningSQLiteStore:
                 repo_root=repo_root,
             )
         except WorkerResultError as exc:
+            self.upsert_worker_run(
+                _worker_run_record_with_result_status(
+                    record,
+                    status="failed",
+                    result_path=record.result_path,
+                    failure_class=failure_class,
+                )
+            )
             raise ValueError(str(exc)) from exc
         self.upsert_worker_run(
             WorkerRunRecord(

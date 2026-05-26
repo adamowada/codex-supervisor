@@ -4138,8 +4138,9 @@ def test_worker_result_ingestion_rejects_uncompleted_shared_worker_run(tmp_path)
         store.ingest_worker_result("run-test", "insights/shared-result.json")
 
     run = open_existing_planning_database(db_path).list_worker_runs(task_id="task-test")[0]
-    assert run.status == "running"
-    assert run.failure_class is None
+    assert run.status == "failed"
+    assert run.failure_class == "worker_result_invalid"
+    assert run.result_path == "insights/shared-result.json"
 
 
 def test_worker_result_ingestion_validates_each_shared_run_contract(tmp_path):
@@ -4209,7 +4210,9 @@ def test_worker_result_ingestion_validates_each_shared_run_contract(tmp_path):
 
     read_store = open_existing_planning_database(db_path)
     run = read_store.list_worker_runs(task_id="task-test")[0]
-    assert run.status == "running"
+    assert run.status == "failed"
+    assert run.failure_class == "worker_result_invalid"
+    assert run.result_path == "insights/shared-result.json"
     assert run.result_id is None
     assert read_store.list_worker_result_run_links() == links_before
 

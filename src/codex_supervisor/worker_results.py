@@ -75,6 +75,7 @@ def validate_worker_result_file(
     path: Path,
     *,
     repo_root: Path,
+    changed_files_root: Path | None = None,
     result_path: str,
     worker_run_id: str,
     allowed_paths: tuple[str, ...],
@@ -86,6 +87,7 @@ def validate_worker_result_file(
     return validate_worker_result_payload(
         load_worker_result(path),
         repo_root=repo_root,
+        changed_files_root=changed_files_root,
         result_path=result_path,
         worker_run_id=worker_run_id,
         allowed_paths=allowed_paths,
@@ -98,6 +100,7 @@ def validate_worker_result_payload(
     payload: JsonObject,
     *,
     repo_root: Path,
+    changed_files_root: Path | None = None,
     result_path: str,
     worker_run_id: str,
     allowed_paths: tuple[str, ...],
@@ -120,7 +123,7 @@ def validate_worker_result_payload(
     _validate_tests_run(payload, verification_commands, require_success=completed)
     _validate_acceptance_results(payload, acceptance_criteria, require_passed=completed)
     _validate_artifacts(repo_root, artifacts)
-    _validate_changed_files(repo_root, changed_files, allowed_paths)
+    _validate_changed_files(changed_files_root or repo_root, changed_files, allowed_paths)
     return WorkerResult(
         payload=payload,
         status=status,

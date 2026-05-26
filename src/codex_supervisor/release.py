@@ -8,7 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from codex_supervisor.planning import PlanProgressRecord, open_existing_planning_database
+from codex_supervisor.planning import (
+    PlanArtifactLinkRecord,
+    PlanProgressRecord,
+    open_existing_planning_database,
+)
 
 RELEASE_READINESS_SECTIONS = (
     "cli",
@@ -75,6 +79,7 @@ def build_release_readiness_report(
     planning_path = planning_db_path or root / "plans" / "planning.sqlite3"
     resolved_target_commit = _resolve_target_commit(root, target_commit)
     progress_events = _planning_progress(planning_path)
+    artifact_links = _planning_artifact_links(planning_path)
     checks = (
         _cli_check(root),
         _mcp_check(root),
@@ -101,7 +106,9 @@ def build_release_readiness_report(
         _live_review_smoke_check(progress_events, resolved_target_commit, planning_path),
         _mutating_mcp_smoke_check(progress_events, resolved_target_commit, planning_path),
         _real_project_bootstrap_smoke_check(
+            root,
             progress_events,
+            artifact_links,
             resolved_target_commit,
             planning_path,
         ),
@@ -486,22 +493,151 @@ def _mutating_mcp_smoke_check(
 
 
 def _real_project_bootstrap_smoke_check(
+    root: Path,
     progress_events: tuple[PlanProgressRecord, ...],
+    artifact_links: tuple[PlanArtifactLinkRecord, ...],
     target_commit: str | None,
     planning_db_path: Path,
 ) -> ReleaseReadinessCheck:
-    return _release_progress_evidence_check(
+    if target_commit is None:
+        return _missing_target_commit_check(
+            section="live_evidence",
+            name="Real project bootstrap smoke evidence",
+        )
+    matching, stale = _matching_progress_events(
         progress_events,
-        target_commit,
-        planning_db_path,
+        event_type=REAL_PROJECT_BOOTSTRAP_SMOKE_EVENT_TYPE,
+        target_commit=target_commit,
+    )
+    missing_reasons: list[str] = []
+    for progress, details in matching:
+        commands = _string_tuple(details.get("commands"))
+        if not _release_status_passed(details):
+            continue
+        if not commands:
+            continue
+        if details.get("writes_files") is not True:
+            continue
+        artifact_ok, artifact_evidence, artifact_reason = _bootstrap_apply_artifact_evidence(
+            root,
+            progress,
+            artifact_links,
+        )
+        if not artifact_ok:
+            if artifact_reason:
+                missing_reasons.append(artifact_reason)
+            continue
+        return _check(
+            section="live_evidence",
+            name="Real project bootstrap smoke evidence",
+            passed=True,
+            evidence=(
+                f"present: {REAL_PROJECT_BOOTSTRAP_SMOKE_EVENT_TYPE} {progress.progress_id} "
+                f"records current evidence for {target_commit}",
+                *(f"present: command passed: {command}" for command in commands),
+                "present: writes_files=true",
+                *artifact_evidence,
+            ),
+            next_action=(
+                "Record real_project_bootstrap_smoke_recorded evidence for the target commit."
+            ),
+        )
+    missing = (
+        f"missing: {REAL_PROJECT_BOOTSTRAP_SMOKE_EVENT_TYPE} progress with status=passed, "
+        f"head_sha={target_commit}, at least one command, writes_files=true, and a linked "
+        "spawned-project-apply JSON artifact"
+    )
+    if missing_reasons:
+        missing += f" ({missing_reasons[0]})"
+    return _check(
         section="live_evidence",
         name="Real project bootstrap smoke evidence",
-        event_type=REAL_PROJECT_BOOTSTRAP_SMOKE_EVENT_TYPE,
-        required_truthy=("writes_files",),
+        passed=False,
+        evidence=_current_evidence_gap(
+            planning_db_path,
+            event_type=REAL_PROJECT_BOOTSTRAP_SMOKE_EVENT_TYPE,
+            target_commit=target_commit,
+            stale=stale,
+            current_count=len(matching),
+            missing=missing,
+        ),
         next_action=(
-            "Record real_project_bootstrap_smoke_recorded evidence for the target commit."
+            "Record real_project_bootstrap_smoke_recorded evidence linked to the actual "
+            "spawned-project-apply --json artifact for the target commit."
         ),
     )
+
+
+def _bootstrap_apply_artifact_evidence(
+    root: Path,
+    progress: PlanProgressRecord,
+    artifact_links: tuple[PlanArtifactLinkRecord, ...],
+) -> tuple[bool, tuple[str, ...], str]:
+    artifact_id = progress.linked_artifact_id
+    if not artifact_id:
+        return False, (), "progress is missing linked_artifact_id"
+    matching_link = any(
+        link.plan_id == progress.plan_id and link.artifact_id == artifact_id
+        for link in artifact_links
+    )
+    if not matching_link:
+        return False, (), f"{artifact_id} is not recorded in plan_artifact_links"
+    artifact_path = _release_artifact_path(root, artifact_id)
+    if artifact_path is None:
+        return False, (), f"{artifact_id} is not a repo-relative JSON artifact path"
+    payload = _json_file_object(artifact_path)
+    if payload is None:
+        return False, (), f"{artifact_id} is missing or is not valid JSON"
+    created_files = _string_tuple(payload.get("created_files"))
+    existing_files = _string_tuple(payload.get("existing_files"))
+    verification_commands = _string_tuple(payload.get("verification_commands"))
+    first_task = payload.get("first_task")
+    planning_db_path = payload.get("planning_db_path")
+    project_name = payload.get("project_name")
+    missing = []
+    if not created_files:
+        missing.append("created_files")
+    if not _valid_scaffold_apply_first_task(first_task):
+        missing.append("first_task contract")
+    if not isinstance(planning_db_path, str) or not planning_db_path.strip():
+        missing.append("planning_db_path")
+    if not verification_commands:
+        missing.append("verification_commands")
+    if not isinstance(project_name, str) or not project_name.strip():
+        missing.append("project_name")
+    if missing:
+        return False, (), f"{artifact_id} is missing {', '.join(missing)}"
+    return (
+        True,
+        (
+            f"present: linked artifact {artifact_id}",
+            f"present: scaffold apply artifact has {len(created_files)} created file(s)",
+            f"present: scaffold apply artifact records {len(existing_files)} existing file(s)",
+            "present: scaffold apply artifact records first_task contract",
+            "present: scaffold apply artifact records verification_commands",
+        ),
+        "",
+    )
+
+
+def _valid_scaffold_apply_first_task(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    for key in ("title", "goal", "task_type", "status"):
+        item = value.get(key)
+        if not isinstance(item, str) or not item.strip():
+            return False
+    return True
+
+
+def _release_artifact_path(root: Path, artifact_id: str) -> Path | None:
+    artifact_path = artifact_id.split("#", 1)[0]
+    if not artifact_path:
+        return None
+    path = Path(artifact_path)
+    if path.is_absolute() or ".." in path.parts or ":" in path.parts[0]:
+        return None
+    return root / path
 
 
 def _windows_validation_evidence(
@@ -736,6 +872,16 @@ def _planning_progress(planning_db_path: Path) -> tuple[PlanProgressRecord, ...]
         return ()
 
 
+def _planning_artifact_links(planning_db_path: Path) -> tuple[PlanArtifactLinkRecord, ...]:
+    if not planning_db_path.exists():
+        return ()
+    try:
+        store = open_existing_planning_database(planning_db_path, read_only=True)
+        return store.list_plan_artifact_links()
+    except Exception:
+        return ()
+
+
 def _resolve_target_commit(root: Path, target_commit: str | None) -> str | None:
     if target_commit is not None:
         return _normalize_commit(target_commit)
@@ -884,6 +1030,16 @@ def _json_object(value: str | None) -> dict[str, Any]:
     if isinstance(payload, dict):
         return payload
     return {}
+
+
+def _json_file_object(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError, json.JSONDecodeError, UnicodeDecodeError:
+        return None
+    if isinstance(payload, dict):
+        return payload
+    return None
 
 
 def _string_tuple(value: object) -> tuple[str, ...]:

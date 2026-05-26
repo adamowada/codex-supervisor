@@ -8,6 +8,7 @@ import pytest
 from codex_supervisor.cli import main
 from codex_supervisor.codex_automation import (
     CodexAutomationBridgeSpec,
+    apply_codex_automation_bridge_report,
     build_codex_automation_bridge_dry_run,
     default_codex_automation_bridge_specs,
 )
@@ -143,6 +144,40 @@ def test_codex_automation_bridge_dry_run_surfaces_validation_findings(
     assert {finding.finding_type for finding in missing_workspace_report.findings} == {
         "missing_workspace_root"
     }
+
+
+def test_codex_automation_apply_calls_official_runner_for_approved_proposals(
+    tmp_path: Path,
+) -> None:
+    report = build_codex_automation_bridge_dry_run(
+        workspace_root=tmp_path,
+        specs=default_codex_automation_bridge_specs(
+            queue_reconciliation_rrule="FREQ=HOURLY;INTERVAL=6",
+            health_check_rrule="FREQ=WEEKLY;BYDAY=MO;BYHOUR=9",
+        ),
+        source_plan_id=PLAN_ID,
+        source_task_id=TASK_ID,
+        observed_at=OBSERVED_AT,
+    )
+    approved = report.proposals[0]
+    calls: list[dict[str, object]] = []
+
+    apply_report = apply_codex_automation_bridge_report(
+        report,
+        approved_proposal_ids=(approved.proposal_id,),
+        official_runner=lambda payload: calls.append(payload) or {"id": "automation-1"},
+        observed_at="2026-05-25T01:00:00Z",
+    )
+
+    assert apply_report.findings == ()
+    assert len(calls) == 1
+    assert calls[0] == approved.official_payload
+    assert apply_report.applied[0].action_type == "official-automation-create"
+    assert apply_report.applied[0].action_status == "applied"
+    assert apply_report.applied[0].official_result == {"id": "automation-1"}
+    assert apply_report.skipped_proposal_ids == tuple(
+        proposal.proposal_id for proposal in report.proposals[1:]
+    )
 
 
 def test_codex_automation_dry_run_cli_prints_json_without_state_mutation(

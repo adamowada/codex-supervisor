@@ -20,6 +20,7 @@ from codex_supervisor.worker_results import (
     WorkerResultError,
     sanitize_worker_result_payload,
     validate_worker_result_file,
+    validate_worker_result_payload,
     worker_result_unknown_payload_keys,
 )
 
@@ -2228,20 +2229,20 @@ class PlanningSQLiteStore:
 
         _validate_required(worker_run_id, "worker_run_id")
         _validate_worker_result_path(result_path)
-        task = self._task_for_worker_run(worker_run_id)
         repo_root = self.path.parent.parent
+        task, changed_files_root = self._task_contract_for_worker_run(worker_run_id, repo_root)
         result = None
         try:
             result = validate_worker_result_file(
                 repo_root / result_path,
                 repo_root=repo_root,
+                changed_files_root=changed_files_root,
                 result_path=result_path,
                 worker_run_id=worker_run_id,
                 allowed_paths=tuple(task.allowed_paths),
                 verification_commands=tuple(task.verification_commands),
                 acceptance_criteria=tuple(task.acceptance_criteria),
             )
-            self._validate_shared_worker_result_membership(worker_run_id, result.worker_run_ids)
         except WorkerResultError as exc:
             self.update_worker_run_status(
                 worker_run_id,
@@ -2249,6 +2250,15 @@ class PlanningSQLiteStore:
                 failure_class=failure_class,
                 result_path=result_path,
             )
+            raise ValueError(str(exc)) from exc
+        try:
+            self._validate_shared_worker_result_contracts(
+                worker_run_id=worker_run_id,
+                result=result,
+                result_path=result_path,
+                repo_root=repo_root,
+            )
+        except WorkerResultError as exc:
             raise ValueError(str(exc)) from exc
         return self.record_worker_result(
             worker_run_id=worker_run_id,
@@ -2271,19 +2281,21 @@ class PlanningSQLiteStore:
             raise ValueError(msg)
         _validate_worker_result_path(record.result_path)
         task = self._task_by_id(record.task_id)
+        repo_root = self.path.parent.parent
+        changed_files_root = _changed_files_root_from_worktree_path(
+            repo_root,
+            record.worktree_path,
+        )
         try:
             result = validate_worker_result_file(
-                self.path.parent.parent / record.result_path,
-                repo_root=self.path.parent.parent,
+                repo_root / record.result_path,
+                repo_root=repo_root,
+                changed_files_root=changed_files_root,
                 result_path=record.result_path,
                 worker_run_id=record.worker_run_id,
                 allowed_paths=tuple(task.allowed_paths),
                 verification_commands=tuple(task.verification_commands),
                 acceptance_criteria=tuple(task.acceptance_criteria),
-            )
-            self._validate_shared_worker_result_membership(
-                record.worker_run_id,
-                result.worker_run_ids,
             )
         except WorkerResultError as exc:
             self.upsert_worker_run(
@@ -2294,6 +2306,15 @@ class PlanningSQLiteStore:
                     failure_class=failure_class,
                 )
             )
+            raise ValueError(str(exc)) from exc
+        try:
+            self._validate_shared_worker_result_contracts(
+                worker_run_id=record.worker_run_id,
+                result=result,
+                result_path=record.result_path,
+                repo_root=repo_root,
+            )
+        except WorkerResultError as exc:
             raise ValueError(str(exc)) from exc
         self.upsert_worker_run(
             WorkerRunRecord(
@@ -2582,13 +2603,29 @@ class PlanningSQLiteStore:
         return entries
 
     def _task_for_worker_run(self, worker_run_id: str) -> SupervisorTaskSummaryRecord:
+        task, _changed_files_root = self._task_contract_for_worker_run(
+            worker_run_id,
+            self.path.parent.parent,
+        )
+        return task
+
+    def _task_contract_for_worker_run(
+        self,
+        worker_run_id: str,
+        repo_root: Path,
+    ) -> tuple[SupervisorTaskSummaryRecord, Path]:
         with self.connect(read_only=True) as connection:
             row = connection.execute(
-                "SELECT task_id FROM worker_runs WHERE worker_run_id = ?",
+                "SELECT task_id, worktree_path FROM worker_runs WHERE worker_run_id = ?",
                 (worker_run_id,),
             ).fetchone()
             _raise_missing(0 if row is None else 1, "worker_run", worker_run_id)
-            return _get_supervisor_task_summary(connection, str(row["task_id"]))
+            task = _get_supervisor_task_summary(connection, str(row["task_id"]))
+            _raise_missing(0 if task is None else 1, "task", str(row["task_id"]))
+            return task, _changed_files_root_from_worktree_path(
+                repo_root,
+                str(row["worktree_path"]) if row["worktree_path"] is not None else None,
+            )
 
     def _task_by_id(self, task_id: str) -> SupervisorTaskSummaryRecord:
         with self.connect(read_only=True) as connection:
@@ -2596,19 +2633,24 @@ class PlanningSQLiteStore:
             _raise_missing(0 if task is None else 1, "task", task_id)
             return task
 
-    def _validate_shared_worker_result_membership(
+    def _validate_shared_worker_result_contracts(
         self,
+        *,
         worker_run_id: str,
-        worker_run_ids: tuple[str, ...],
+        result: WorkerResult,
+        result_path: str,
+        repo_root: Path,
     ) -> None:
-        if len(worker_run_ids) == 1:
+        if len(result.worker_run_ids) == 1:
             return
         with self.connect(read_only=True) as connection:
-            for declared_worker_run_id in worker_run_ids:
-                if declared_worker_run_id == worker_run_id:
-                    continue
+            for declared_worker_run_id in result.worker_run_ids:
                 row = connection.execute(
-                    "SELECT status, result_path FROM worker_runs WHERE worker_run_id = ?",
+                    """
+                    SELECT task_id, status, worktree_path
+                    FROM worker_runs
+                    WHERE worker_run_id = ?
+                    """,
                     (declared_worker_run_id,),
                 ).fetchone()
                 if row is None:
@@ -2617,12 +2659,27 @@ class PlanningSQLiteStore:
                         "known worker run"
                     )
                     raise WorkerResultError(msg)
-                if row["status"] != "completed":
+                if declared_worker_run_id != worker_run_id and row["status"] != "completed":
                     msg = (
                         f"worker_run_ids entry {declared_worker_run_id!r} is "
                         f"{row['status']}, not completed"
                     )
                     raise WorkerResultError(msg)
+                task = _get_supervisor_task_summary(connection, str(row["task_id"]))
+                _raise_missing(0 if task is None else 1, "task", str(row["task_id"]))
+                validate_worker_result_payload(
+                    result.payload,
+                    repo_root=repo_root,
+                    changed_files_root=_changed_files_root_from_worktree_path(
+                        repo_root,
+                        str(row["worktree_path"]) if row["worktree_path"] is not None else None,
+                    ),
+                    result_path=result_path,
+                    worker_run_id=declared_worker_run_id,
+                    allowed_paths=tuple(task.allowed_paths),
+                    verification_commands=tuple(task.verification_commands),
+                    acceptance_criteria=tuple(task.acceptance_criteria),
+                )
 
     def list_worker_runs(
         self,
@@ -2647,6 +2704,15 @@ def initialize_planning_database(path: Path) -> PlanningSQLiteStore:
     store.initialize()
     store.validate_schema()
     return store
+
+
+def _changed_files_root_from_worktree_path(repo_root: Path, worktree_path: str | None) -> Path:
+    if not worktree_path:
+        return repo_root
+    path = Path(worktree_path)
+    if path.is_absolute():
+        return path
+    return repo_root / path
 
 
 def open_existing_planning_database(

@@ -90,7 +90,14 @@ def test_orchestrate_worker_launch_runs_prepared_codex_backend_and_accepts_allow
     assert result.changed_path_violations == ()
     assert result.launch_result.changed_files == result.changed_files
     assert result.launch_result.metadata["changed_path_validation"]["source"] == "diff_summary"
-    assert not (tmp_path / "worktrees").exists()
+    assert (
+        tmp_path
+        / "worktrees"
+        / "worker-run-stage7c-worker-orchestration-20260524"
+        / "src"
+        / "codex_supervisor"
+        / "worker_orchestration.py"
+    ).exists()
 
 
 def test_orchestrate_worker_launch_rejects_completed_result_with_out_of_scope_diff(
@@ -330,7 +337,7 @@ def test_orchestrate_worker_launch_rejects_unsafe_worker_run_id(tmp_path: Path) 
 
 def _write_backend_success(tmp_path: Path, *, worker_run_id: str, changed_file: str) -> None:
     result_changed_file = "src/codex_supervisor/worker_orchestration.py"
-    changed_path = tmp_path / result_changed_file
+    changed_path = tmp_path / "worktrees" / worker_run_id / result_changed_file
     changed_path.parent.mkdir(parents=True, exist_ok=True)
     changed_path.write_text("print('ok')\n", encoding="utf-8")
     result_file = tmp_path / "artifacts" / worker_run_id / "worker-result.raw.json"

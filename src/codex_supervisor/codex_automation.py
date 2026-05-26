@@ -1,9 +1,10 @@
-"""Non-mutating Codex automation bridge proposal helpers."""
+"""Codex automation bridge proposal and official apply helpers."""
 
 from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,6 +14,8 @@ SUPPORTED_CRON_FREQUENCIES = frozenset({"HOURLY", "WEEKLY"})
 SUPPORTED_HEARTBEAT_FREQUENCIES = frozenset({"MINUTELY", "DAILY", "WEEKLY"})
 SUPPORTED_STATUSES = frozenset({"ACTIVE", "PAUSED"})
 SUPPORTED_EXECUTION_ENVIRONMENTS = frozenset({"local", "worktree"})
+JsonObject = dict[str, object]
+OfficialAutomationRunner = Callable[[JsonObject], Mapping[str, object] | None]
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,36 @@ class CodexAutomationBridgeDryRunReport:
     findings: tuple[CodexAutomationBridgeFinding, ...]
 
 
+@dataclass(frozen=True)
+class CodexAutomationBridgeApplyRecord:
+    """One applied official Codex automation call."""
+
+    proposal_id: str
+    action_type: str
+    action_status: str
+    name: str
+    purpose: str
+    kind: str
+    observed_at: str
+    official_payload: dict[str, object]
+    official_result: dict[str, object]
+    summary: str
+
+
+@dataclass(frozen=True)
+class CodexAutomationBridgeApplyReport:
+    """Result of applying approved official Codex automation proposals."""
+
+    workspace_root: str
+    observed_at: str
+    source_plan_id: str
+    source_task_id: str
+    approved_proposal_ids: tuple[str, ...]
+    applied: tuple[CodexAutomationBridgeApplyRecord, ...]
+    skipped_proposal_ids: tuple[str, ...]
+    findings: tuple[CodexAutomationBridgeFinding, ...]
+
+
 def default_codex_automation_bridge_specs(
     *,
     queue_reconciliation_rrule: str,
@@ -123,6 +156,142 @@ def default_codex_automation_bridge_specs(
             status=status,
             execution_environment=execution_environment,
         ),
+    )
+
+
+def apply_codex_automation_bridge_report(
+    report: CodexAutomationBridgeDryRunReport,
+    *,
+    approved_proposal_ids: tuple[str, ...],
+    official_runner: OfficialAutomationRunner,
+    observed_at: str | None = None,
+) -> CodexAutomationBridgeApplyReport:
+    """Apply approved proposals through the official Codex automation runner boundary."""
+
+    timestamp = observed_at or _utc_timestamp()
+    approved = tuple(
+        dict.fromkeys(proposal_id for proposal_id in approved_proposal_ids if proposal_id)
+    )
+    approved_set = set(approved)
+    proposals_by_id = {proposal.proposal_id: proposal for proposal in report.proposals}
+    findings: list[CodexAutomationBridgeFinding] = []
+    applied: list[CodexAutomationBridgeApplyRecord] = []
+
+    if not approved:
+        findings.append(
+            _finding(
+                finding_type="missing_automation_approval",
+                source_id="codex-automation-apply",
+                observed_at=timestamp,
+                summary="At least one proposal_id must be explicitly approved before apply.",
+            )
+        )
+    for proposal_id in approved:
+        if proposal_id not in proposals_by_id:
+            findings.append(
+                _finding(
+                    finding_type="unknown_automation_proposal",
+                    source_id=proposal_id,
+                    observed_at=timestamp,
+                    summary=(
+                        f"Approved proposal_id does not exist in the dry-run report: {proposal_id}."
+                    ),
+                )
+            )
+
+    for proposal in report.proposals:
+        if proposal.proposal_id not in approved_set:
+            continue
+        if proposal.action_status != "proposed":
+            findings.append(
+                _finding(
+                    finding_type="automation_proposal_not_applicable",
+                    source_id=proposal.proposal_id,
+                    observed_at=timestamp,
+                    summary=(
+                        f"Proposal {proposal.proposal_id} has action_status="
+                        f"{proposal.action_status!r}, not 'proposed'."
+                    ),
+                )
+            )
+            continue
+        try:
+            official_result = official_runner(dict(proposal.official_payload))
+        except Exception as exc:
+            findings.append(
+                _finding(
+                    finding_type="official_automation_apply_failed",
+                    source_id=proposal.proposal_id,
+                    observed_at=timestamp,
+                    summary=f"Official automation apply failed for {proposal.name!r}: {exc}.",
+                )
+            )
+            continue
+        applied.append(
+            CodexAutomationBridgeApplyRecord(
+                proposal_id=proposal.proposal_id,
+                action_type="official-automation-create",
+                action_status="applied",
+                name=proposal.name,
+                purpose=proposal.purpose,
+                kind=proposal.kind,
+                observed_at=timestamp,
+                official_payload=dict(proposal.official_payload),
+                official_result=dict(official_result or {}),
+                summary=(
+                    f"Applied official Codex {proposal.kind} automation {proposal.name!r} "
+                    f"for {proposal.purpose}."
+                ),
+            )
+        )
+
+    return CodexAutomationBridgeApplyReport(
+        workspace_root=report.workspace_root,
+        observed_at=timestamp,
+        source_plan_id=report.source_plan_id,
+        source_task_id=report.source_task_id,
+        approved_proposal_ids=approved,
+        applied=tuple(applied),
+        skipped_proposal_ids=tuple(
+            proposal.proposal_id
+            for proposal in report.proposals
+            if proposal.proposal_id not in approved_set
+        ),
+        findings=tuple(
+            sorted(
+                findings,
+                key=lambda finding: (
+                    finding.source_id,
+                    finding.finding_type,
+                    finding.failure_class,
+                ),
+            )
+        ),
+    )
+
+
+def codex_automation_bridge_dry_run_report_from_payload(
+    payload: Mapping[str, object],
+) -> CodexAutomationBridgeDryRunReport:
+    """Rehydrate a dry-run report from its JSON representation."""
+
+    proposals = payload.get("proposals")
+    findings = payload.get("findings")
+    return CodexAutomationBridgeDryRunReport(
+        workspace_root=_payload_string(payload, "workspace_root"),
+        observed_at=_payload_string(payload, "observed_at"),
+        source_plan_id=_payload_string(payload, "source_plan_id"),
+        source_task_id=_payload_string(payload, "source_task_id"),
+        proposals=tuple(
+            _proposal_from_payload(item) for item in proposals if isinstance(item, Mapping)
+        )
+        if isinstance(proposals, list)
+        else (),
+        findings=tuple(
+            _finding_from_payload(item) for item in findings if isinstance(item, Mapping)
+        )
+        if isinstance(findings, list)
+        else (),
     )
 
 
@@ -194,6 +363,65 @@ def build_codex_automation_bridge_dry_run(
             )
         ),
     )
+
+
+def _proposal_from_payload(payload: Mapping[str, object]) -> CodexAutomationBridgeProposal:
+    return CodexAutomationBridgeProposal(
+        proposal_id=_payload_string(payload, "proposal_id"),
+        action_type=_payload_string(payload, "action_type"),
+        action_status=_payload_string(payload, "action_status"),
+        name=_payload_string(payload, "name"),
+        purpose=_payload_string(payload, "purpose"),
+        kind=_payload_string(payload, "kind"),
+        destination=_payload_string(payload, "destination"),
+        rrule=_payload_string(payload, "rrule"),
+        prompt=_payload_string(payload, "prompt"),
+        execution_environment=_payload_string(payload, "execution_environment"),
+        cwds=_payload_string_tuple(payload.get("cwds")),
+        status=_payload_string(payload, "status"),
+        model=_payload_string(payload, "model"),
+        reasoning_effort=_payload_string(payload, "reasoning_effort"),
+        source_kind=_payload_string(payload, "source_kind"),
+        source_id=_payload_string(payload, "source_id"),
+        source_plan_id=_payload_string(payload, "source_plan_id"),
+        source_task_id=_payload_string(payload, "source_task_id"),
+        observed_at=_payload_string(payload, "observed_at"),
+        confidence=_payload_string(payload, "confidence"),
+        official_payload=_payload_object(payload.get("official_payload")),
+        summary=_payload_string(payload, "summary"),
+    )
+
+
+def _finding_from_payload(payload: Mapping[str, object]) -> CodexAutomationBridgeFinding:
+    return CodexAutomationBridgeFinding(
+        finding_type=_payload_string(payload, "finding_type"),
+        source_id=_payload_string(payload, "source_id"),
+        observed_at=_payload_string(payload, "observed_at"),
+        failure_class=_payload_string(payload, "failure_class"),
+        summary=_payload_string(payload, "summary"),
+    )
+
+
+def _payload_string(payload: Mapping[str, object], key: str) -> str:
+    value = payload.get(key)
+    if isinstance(value, str):
+        return value
+    return ""
+
+
+def _payload_string_tuple(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    strings = tuple(item for item in value if isinstance(item, str))
+    if len(strings) != len(value):
+        return ()
+    return strings
+
+
+def _payload_object(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    return dict(value)
 
 
 def _validate_spec(

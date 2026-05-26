@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from contextlib import suppress
@@ -14,8 +15,11 @@ from pathlib import Path
 from typing import Any, cast
 
 from codex_supervisor.codex_automation import (
+    CodexAutomationBridgeApplyReport,
     CodexAutomationBridgeDryRunReport,
+    apply_codex_automation_bridge_report,
     build_codex_automation_bridge_dry_run,
+    codex_automation_bridge_dry_run_report_from_payload,
     default_codex_automation_bridge_specs,
 )
 from codex_supervisor.codex_state import (
@@ -821,6 +825,29 @@ def main(argv: list[str] | None = None) -> int:
     codex_automation_parser.add_argument("--observed-at", default=None)
     codex_automation_parser.add_argument("--json", action="store_true", default=False)
 
+    codex_automation_apply_parser = subparsers.add_parser(
+        "codex-automation-apply",
+        help="Apply reviewed official Codex automation proposals through an approved runner",
+    )
+    codex_automation_apply_parser.add_argument("--report-path", type=Path, required=True)
+    codex_automation_apply_parser.add_argument(
+        "--approve-proposal-id",
+        action="append",
+        default=[],
+        required=True,
+        help="Proposal ID from a reviewed dry-run report to apply. Repeat for multiple IDs.",
+    )
+    codex_automation_apply_parser.add_argument(
+        "--apply-command",
+        required=True,
+        help=(
+            "Official automation runner command. It receives one automation_update payload as "
+            "JSON on stdin and may emit a JSON result on stdout."
+        ),
+    )
+    codex_automation_apply_parser.add_argument("--observed-at", default=None)
+    codex_automation_apply_parser.add_argument("--json", action="store_true", default=False)
+
     cleanup_plan_parser = subparsers.add_parser(
         "cleanup-plan",
         help="Build a non-destructive cleanup plan for ignored runtime paths",
@@ -947,7 +974,7 @@ def main(argv: list[str] | None = None) -> int:
             _print_json(release_report)
         else:
             _print_release_readiness_report(release_report)
-        return 0
+        return 0 if release_report.ready else 1
 
     if args.command == "factory-loop-smoke":
         if args.keep_workspace and args.workspace is None:
@@ -1048,6 +1075,27 @@ def main(argv: list[str] | None = None) -> int:
         else:
             _print_codex_automation_bridge_dry_run(automation_report)
         return 0
+
+    if args.command == "codex-automation-apply":
+        try:
+            payload = json.loads(args.report_path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("dry-run report must be a JSON object")
+            automation_report = codex_automation_bridge_dry_run_report_from_payload(payload)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(f"Could not read Codex automation dry-run report: {exc}", file=sys.stderr)
+            return 1
+        automation_apply_report = apply_codex_automation_bridge_report(
+            automation_report,
+            approved_proposal_ids=tuple(args.approve_proposal_id),
+            official_runner=_official_automation_command_runner(args.apply_command),
+            observed_at=args.observed_at,
+        )
+        if args.json:
+            _print_json(automation_apply_report)
+        else:
+            _print_codex_automation_bridge_apply_report(automation_apply_report)
+        return 0 if not automation_apply_report.findings else 1
 
     if args.command == "cleanup-plan":
         try:
@@ -3036,6 +3084,61 @@ def _print_codex_automation_bridge_dry_run(
     for finding in report.findings:
         print(f"- {finding.finding_type}\t{finding.source_id}\t{finding.failure_class}")
         print(f"  summary: {finding.summary}")
+
+
+def _print_codex_automation_bridge_apply_report(
+    report: CodexAutomationBridgeApplyReport,
+) -> None:
+    print(f"workspace_root: {report.workspace_root}")
+    print(f"observed_at: {report.observed_at}")
+    print("approved_proposal_ids:")
+    if not report.approved_proposal_ids:
+        print("- none")
+    for proposal_id in report.approved_proposal_ids:
+        print(f"- {proposal_id}")
+    print("applied:")
+    if not report.applied:
+        print("- none")
+    for applied in report.applied:
+        print(f"- {applied.proposal_id}\t{applied.kind}\t{applied.action_status}")
+        print(f"  summary: {applied.summary}")
+    print("skipped:")
+    if not report.skipped_proposal_ids:
+        print("- none")
+    for proposal_id in report.skipped_proposal_ids:
+        print(f"- {proposal_id}")
+    print("findings:")
+    if not report.findings:
+        print("- none")
+    for finding in report.findings:
+        print(f"- {finding.finding_type}\t{finding.source_id}\t{finding.failure_class}")
+        print(f"  summary: {finding.summary}")
+
+
+def _official_automation_command_runner(
+    command: str,
+) -> Callable[[dict[str, object]], dict[str, object]]:
+    def run(payload: dict[str, object]) -> dict[str, object]:
+        result = subprocess.run(
+            command,
+            input=json.dumps(payload, sort_keys=True),
+            text=True,
+            capture_output=True,
+            shell=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.strip() or result.stdout.strip()
+            raise RuntimeError(f"official automation runner exited {result.returncode}: {stderr}")
+        stdout = result.stdout.strip()
+        if not stdout:
+            return {}
+        parsed = json.loads(stdout)
+        if not isinstance(parsed, dict):
+            return {"stdout": stdout}
+        return parsed
+
+    return run
 
 
 def _to_jsonable(value: object) -> Any:

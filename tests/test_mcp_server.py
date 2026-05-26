@@ -32,6 +32,23 @@ def test_list_mcp_tools_exposes_read_and_default_on_mutating_schemas(tmp_path: P
     assert all(tool["annotations"]["readOnlyHint"] is True for tool in read_tools)
     mutating_tool = next(tool for tool in tools if tool["name"] == "codex_supervisor.task_upsert")
     assert "annotations" not in mutating_tool
+    assert mutating_tool["inputSchema"]["required"] == [
+        "task_id",
+        "plan_id",
+        "title",
+        "goal",
+        "task_type",
+        "status",
+    ]
+    worker_run_upsert = next(
+        tool for tool in tools if tool["name"] == "codex_supervisor.worker_run_upsert"
+    )
+    assert worker_run_upsert["inputSchema"]["required"] == [
+        "worker_run_id",
+        "task_id",
+        "backend",
+        "status",
+    ]
     task_show = next(tool for tool in tools if tool["name"] == "codex_supervisor.task_show")
     assert task_show["inputSchema"]["required"] == ["task_id"]
 

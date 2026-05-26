@@ -893,7 +893,7 @@ def _live_story_loop_store(db_path):
 
 
 def _write_live_worker_result(repo_root, *, worker_run_id):
-    changed_file = repo_root / "src" / "live_story.py"
+    changed_file = repo_root / "worktrees" / worker_run_id / "src" / "live_story.py"
     changed_file.parent.mkdir(parents=True, exist_ok=True)
     changed_file.write_text("print('ok')\n", encoding="utf-8")
     result_path = f"artifacts/{worker_run_id}/worker-result.raw.json"

@@ -470,6 +470,7 @@ class CodexExecBackend:
             validate_worker_result_file(
                 result_file,
                 repo_root=request.repo_root,
+                changed_files_root=request.worktree_path,
                 result_path=request.result_path,
                 worker_run_id=request.worker_run_id,
                 allowed_paths=request.allowed_paths,

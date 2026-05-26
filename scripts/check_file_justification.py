@@ -105,7 +105,7 @@ PURPOSE_RULES = (
     PurposeRule(
         name="tests",
         purpose="executable regression coverage for supervisor contracts",
-        patterns=("tests/test_*.py",),
+        patterns=("tests/test_*.py", "tests/fixtures/**"),
     ),
 )
 
@@ -238,6 +238,10 @@ FILE_PURPOSES = {
     ),
     "insights/v1-hardening-review.md": FilePurpose(
         "six-lane v1 hardening review synthesis", "check_file_justification"
+    ),
+    "tests/fixtures/spawned-project-apply.json": FilePurpose(
+        "release-readiness regression fixture for spawned-project apply JSON evidence",
+        "pytest",
     ),
     "insights/workflow-patterns.md": FilePurpose(
         "workflow pattern synthesis", "check_file_justification"
@@ -511,7 +515,7 @@ FOLDER_PURPOSE_RULES = (
     FolderPurposeRule(
         name="tests",
         purpose="executable regression coverage for supervisor contracts",
-        patterns=("tests",),
+        patterns=("tests", "tests/fixtures"),
     ),
 )
 

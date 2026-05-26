@@ -1,0 +1,14 @@
+{
+    "project_name": "Release Bootstrap Smoke",
+    "project_root": "C:/tmp/release-bootstrap-smoke",
+    "created_files": ["AGENTS.md", "README.md", "plans/planning.sqlite3"],
+    "existing_files": [],
+    "planning_db_path": "plans/planning.sqlite3",
+    "first_task": {
+        "title": "Build first prototype slice",
+        "goal": "Create a first useful vertical slice.",
+        "task_type": "AFK",
+        "status": "ready"
+    },
+    "verification_commands": ["uv run --no-sync python -B scripts/verify.py"]
+}

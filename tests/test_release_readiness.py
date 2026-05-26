@@ -7,6 +7,7 @@ from pathlib import Path
 from codex_supervisor.cli import main
 from codex_supervisor.planning import (
     CiRunEvidenceRecord,
+    PlanArtifactLinkRecord,
     PlanProgressRecord,
     PlanRecord,
     initialize_planning_database,
@@ -179,7 +180,7 @@ def test_cli_release_readiness_emits_json(capsys) -> None:
                 "--json",
             ]
         )
-        == 0
+        == 1
     )
 
     payload = json.loads(capsys.readouterr().out)
@@ -206,7 +207,7 @@ def test_cli_release_readiness_emits_human_report(capsys) -> None:
                 TARGET_COMMIT,
             ]
         )
-        == 0
+        == 1
     )
 
     output = capsys.readouterr().out
@@ -236,6 +237,29 @@ def test_release_readiness_requires_current_live_and_ci_evidence(tmp_path: Path)
     assert checks[("live_evidence", "Live review smoke evidence")].status == "pass"
     assert checks[("live_evidence", "Mutating MCP smoke evidence")].status == "pass"
     assert checks[("live_evidence", "Real project bootstrap smoke evidence")].status == "pass"
+
+
+def test_release_readiness_requires_bootstrap_apply_artifact_link(tmp_path: Path) -> None:
+    db_path = _release_db(
+        tmp_path,
+        target_commit=TARGET_COMMIT,
+        include_bootstrap_artifact=False,
+    )
+
+    report = build_release_readiness_report(
+        REPO_ROOT,
+        planning_db_path=db_path,
+        target_commit=TARGET_COMMIT,
+    )
+    check = next(
+        check
+        for check in report.checks
+        if (check.section, check.name) == ("live_evidence", "Real project bootstrap smoke evidence")
+    )
+
+    assert report.ready is False
+    assert check.status == "gap"
+    assert any("spawned-project-apply JSON artifact" in item for item in check.evidence)
 
 
 def test_release_readiness_rejects_stale_ci_and_live_evidence(tmp_path: Path) -> None:
@@ -366,7 +390,12 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return result
 
 
-def _release_db(tmp_path: Path, *, target_commit: str) -> Path:
+def _release_db(
+    tmp_path: Path,
+    *,
+    target_commit: str,
+    include_bootstrap_artifact: bool = True,
+) -> Path:
     db_path = _validation_db(
         tmp_path,
         details={
@@ -395,6 +424,7 @@ def _release_db(tmp_path: Path, *, target_commit: str) -> Path:
             workflow="Verify",
         )
     )
+    bootstrap_artifact_id = "tests/fixtures/spawned-project-apply.json"
     for event_type, details in (
         (
             "publication_ready_verification_recorded",
@@ -445,13 +475,30 @@ def _release_db(tmp_path: Path, *, target_commit: str) -> Path:
             },
         ),
     ):
-        store.add_plan_progress(
-            PlanProgressRecord(
-                progress_id=f"progress-{event_type}",
-                plan_id="plan-release",
-                event_type=event_type,
-                summary=f"Recorded {event_type}.",
-                details=json.dumps(details),
-            )
+        progress = PlanProgressRecord(
+            progress_id=f"progress-{event_type}",
+            plan_id="plan-release",
+            event_type=event_type,
+            summary=f"Recorded {event_type}.",
+            details=json.dumps(details),
+            linked_artifact_id=(
+                bootstrap_artifact_id
+                if event_type == "real_project_bootstrap_smoke_recorded"
+                and include_bootstrap_artifact
+                else None
+            ),
         )
+        if event_type == "real_project_bootstrap_smoke_recorded" and include_bootstrap_artifact:
+            store.add_plan_progress_with_artifact_links(
+                progress,
+                (
+                    PlanArtifactLinkRecord(
+                        plan_id="plan-release",
+                        artifact_id=bootstrap_artifact_id,
+                        relationship="real-project-bootstrap-smoke",
+                    ),
+                ),
+            )
+        else:
+            store.add_plan_progress(progress)
     return db_path

@@ -4040,15 +4040,87 @@ def test_worker_result_ingestion_rejects_uncompleted_shared_worker_run(tmp_path)
         worker_run_ids=("run-test", "run-other"),
         changed_files=("src/worker.py",),
         verification_commands=("python -B -m pytest -p no:cacheprovider",),
-        acceptance_criteria=("Criterion passes.",),
+        acceptance_criteria=("Criterion passes.", "Other criterion."),
     )
 
     with pytest.raises(ValueError, match="not completed"):
         store.ingest_worker_result("run-test", "insights/shared-result.json")
 
     run = open_existing_planning_database(db_path).list_worker_runs(task_id="task-test")[0]
-    assert run.status == "failed"
-    assert run.failure_class == "worker_result_invalid"
+    assert run.status == "running"
+    assert run.failure_class is None
+
+
+def test_worker_result_ingestion_validates_each_shared_run_contract(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Validate shared worker result contracts.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-test",
+            plan_id="plan-test",
+            title="Task",
+            goal="Ingest shared result.",
+            task_type="AFK",
+            status="ready",
+            acceptance_criteria=["Criterion passes."],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            review_required=False,
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-other",
+            plan_id="plan-test",
+            title="Other Task",
+            goal="Represent another completed worker.",
+            task_type="AFK",
+            status="completed",
+            acceptance_criteria=["Other criterion."],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            review_required=False,
+        )
+    )
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
+    assert store.claim_next_ready_afk_task(worker_run_id="run-test", backend="codex_exec")
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-other",
+            task_id="task-other",
+            backend="codex_exec",
+            status="completed",
+            result_path="insights/shared-result.json",
+        )
+    )
+    _write_worker_result(
+        tmp_path,
+        result_path="insights/shared-result.json",
+        worker_run_ids=("run-test", "run-other"),
+        changed_files=("src/worker.py",),
+        verification_commands=("python -B -m pytest -p no:cacheprovider",),
+        acceptance_criteria=("Criterion passes.",),
+    )
+    links_before = open_existing_planning_database(db_path).list_worker_result_run_links()
+
+    with pytest.raises(ValueError, match="Other criterion"):
+        store.ingest_worker_result("run-test", "insights/shared-result.json")
+
+    read_store = open_existing_planning_database(db_path)
+    run = read_store.list_worker_runs(task_id="task-test")[0]
+    assert run.status == "running"
+    assert run.result_id is None
+    assert read_store.list_worker_result_run_links() == links_before
 
 
 def test_worker_result_ingestion_accepts_matching_completed_shared_worker_run(tmp_path):
@@ -4110,7 +4182,7 @@ def test_worker_result_ingestion_accepts_matching_completed_shared_worker_run(tm
         worker_run_ids=("run-test", "run-other"),
         changed_files=("src/worker.py",),
         verification_commands=("python -B -m pytest -p no:cacheprovider",),
-        acceptance_criteria=("Criterion passes.",),
+        acceptance_criteria=("Criterion passes.", "Other criterion."),
     )
 
     result = store.ingest_worker_result("run-test", "insights/shared-result.json")

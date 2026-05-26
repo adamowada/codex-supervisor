@@ -25,6 +25,9 @@ def test_build_worktree_run_layout_keeps_result_source_in_ignored_artifacts():
     assert layout.raw_result_path == (
         "artifacts/worker-run-stage7a-worktree-layout-20260524/worker-result.raw.json"
     )
+    assert layout.evidence_manifest_path == (
+        "artifacts/worker-run-stage7a-worktree-layout-20260524/evidence-manifest.json"
+    )
     assert all(is_ignored_runtime_path(path) for path in layout.raw_evidence_paths().values())
 
 

@@ -7,8 +7,20 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Current Snapshot
 
-- Current queue state: completed. `story-loop-status --json` reports no current AFK, HITL, or
-  running task.
+- Current queue state: hitl. `story-loop-status --json` reports current HITL task
+  `task-local-todo-webapp-desktop-smoke-rerun`; there is no current AFK or running task.
+- Latest implementation: hardened full-AFK supervisor execution after the `todo-list-test-4`
+  diagnosis. MCP `story_loop_run_once` and `story_loop_advance` now accept explicit
+  `planning_path` and `repo_root`; supervisor-managed full-AFK scaffolds initialize git and create a
+  baseline commit; `codex_exec` maps supervisor reasoning effort through
+  `model_reasoning_effort`; process evidence preserves raw bytes and decodes with UTF-8 replacement
+  only at display boundaries; completed workers must have ignored `runs/` and `artifacts/`
+  evidence plus an evidence manifest before planning ingestion; and `review_required=true` creates
+  a separate HITL review task.
+- Planning progress recorded:
+  `progress-supervisor-full-afk-hardening-20260526`.
+- Planning integrity repair recorded a HITL rerun task for `plan-local-todo-webapp` so the pending
+  smoke criteria have an explicit current-queue action instead of orphaned criteria.
 - Completed repair plan: `plan-desktop-plugin-live-mcp-authority-20260526`
   (`Desktop Plugin Live MCP Authority`).
 - Completed task: `task-desktop-plugin-live-mcp-authority`, with DB-backed worker result
@@ -94,5 +106,6 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Next Action
 
-Verify and ACP the `todo-list-test-4` discovery-query repair, then rerun the Desktop smoke in a
-fresh folder after Desktop reloads plugin manifest version `0.1.3`.
+After ACP for the full-AFK hardening slice, rerun the Desktop smoke in a fresh folder and confirm
+the supervised path reaches a real project-local Story Loop run rather than a CLI/current-thread
+fallback.

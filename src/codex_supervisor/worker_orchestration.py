@@ -93,7 +93,7 @@ def orchestrate_worker_launch(
     )
     launch_result = backend.run(preparation.request)
     worktree_state: WorktreeStateSnapshot | None = None
-    if require_git_changed_files and launch_result.status == "completed":
+    if require_git_changed_files and launch_result.status in {"completed", "needs_review"}:
         worktree_state = inspect_worktree_state(
             workspace_root=repo_root,
             worktree_path=preparation.request.worktree_path,
@@ -192,7 +192,7 @@ def _apply_changed_path_gate(
     if worktree_state is not None:
         metadata["worktree_state"] = _worktree_state_payload(worktree_state)
     if (
-        launch_result.status == "completed"
+        launch_result.status in {"completed", "needs_review"}
         and worktree_state is not None
         and worktree_state.status != "completed"
     ):
@@ -206,7 +206,7 @@ def _apply_changed_path_gate(
             metadata=metadata,
         )
     if (
-        launch_result.status == "completed"
+        launch_result.status in {"completed", "needs_review"}
         and worktree_state is not None
         and worktree_state.status == "completed"
     ):
@@ -242,7 +242,7 @@ def _apply_changed_path_gate(
         metadata["changed_path_violations"] = [
             _violation_payload(violation) for violation in violations
         ]
-    if launch_result.status == "completed" and violations:
+    if launch_result.status in {"completed", "needs_review"} and violations:
         return replace(
             launch_result,
             status="failed",

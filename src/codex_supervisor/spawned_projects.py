@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -153,7 +154,17 @@ class SpawnedProjectScaffoldApplyResult:
     planning_db_path: str | None
     first_task: SpawnedProjectFirstTaskProposal
     verification_commands: tuple[str, ...]
+    git_initialized: bool = False
+    baseline_commit_created: bool = False
+    baseline_commit_sha: str | None = None
     writes_files: bool = True
+
+
+@dataclass(frozen=True)
+class GitBaselineResult:
+    git_initialized: bool = False
+    baseline_commit_created: bool = False
+    baseline_commit_sha: str | None = None
 
 
 def recommend_spawned_project_scaffold(
@@ -305,6 +316,7 @@ def apply_spawned_project_scaffold(
         ):
             pass
 
+    git_baseline = _ensure_full_afk_git_baseline(brief, proposal, root)
     return SpawnedProjectScaffoldApplyResult(
         project_name=proposal.project_name,
         project_root=str(target_root),
@@ -313,7 +325,100 @@ def apply_spawned_project_scaffold(
         planning_db_path=planning_db_path,
         first_task=proposal.first_task,
         verification_commands=proposal.recommendation.verification_commands,
+        git_initialized=git_baseline.git_initialized,
+        baseline_commit_created=git_baseline.baseline_commit_created,
+        baseline_commit_sha=git_baseline.baseline_commit_sha,
     )
+
+
+def _ensure_full_afk_git_baseline(
+    brief: SpawnedProjectBrief,
+    proposal: SpawnedProjectScaffoldProposal,
+    root: Path,
+) -> GitBaselineResult:
+    if "supervisor-managed" not in proposal.recommendation.tiers:
+        return _git_baseline_result()
+    if not (brief.plugin_full_afk or brief.unattended_workers):
+        return _git_baseline_result()
+
+    git_initialized = False
+    if not (root / ".git").exists():
+        _run_git(root, ("init",))
+        git_initialized = True
+
+    head = _git_head(root)
+    if head is not None:
+        return _git_baseline_result(git_initialized=git_initialized)
+
+    _ensure_git_identity(root)
+    scaffold_paths = tuple(
+        path.rstrip("/")
+        for path in proposal.recommendation.required_files
+        if (root / path.rstrip("/")).exists()
+    )
+    if scaffold_paths:
+        _run_git(root, ("add", "--", *scaffold_paths))
+    status = _run_git(root, ("status", "--porcelain=v1"))
+    if not status.stdout.strip():
+        return _git_baseline_result(git_initialized=git_initialized)
+    _run_git(root, ("commit", "-m", "Bootstrap supervisor-managed scaffold"))
+    commit_sha = _git_head(root)
+    return _git_baseline_result(
+        git_initialized=git_initialized,
+        baseline_commit_created=commit_sha is not None,
+        baseline_commit_sha=commit_sha,
+    )
+
+
+def _git_baseline_result(
+    *,
+    git_initialized: bool = False,
+    baseline_commit_created: bool = False,
+    baseline_commit_sha: str | None = None,
+) -> GitBaselineResult:
+    return GitBaselineResult(
+        git_initialized=git_initialized,
+        baseline_commit_created=baseline_commit_created,
+        baseline_commit_sha=baseline_commit_sha,
+    )
+
+
+def _ensure_git_identity(root: Path) -> None:
+    name = _run_git(root, ("config", "--get", "user.name"), check=False)
+    if name.returncode != 0 or not name.stdout.strip():
+        _run_git(root, ("config", "user.name", "codex-supervisor"))
+    email = _run_git(root, ("config", "--get", "user.email"), check=False)
+    if email.returncode != 0 or not email.stdout.strip():
+        _run_git(root, ("config", "user.email", "codex-supervisor@example.invalid"))
+
+
+def _git_head(root: Path) -> str | None:
+    result = _run_git(root, ("rev-parse", "--verify", "HEAD"), check=False)
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def _run_git(
+    root: Path,
+    args: tuple[str, ...],
+    *,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        ("git", *args),
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if check and result.returncode != 0:
+        details = (result.stderr or result.stdout).strip()
+        msg = f"git {' '.join(args)} failed"
+        if details:
+            msg = f"{msg}: {details}"
+        raise RuntimeError(msg)
+    return result
 
 
 def _write_scaffold_file(

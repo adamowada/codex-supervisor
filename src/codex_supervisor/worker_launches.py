@@ -88,6 +88,7 @@ def prepare_worker_launch_request(
         stderr_path=layout.stderr_path,
         final_message_path=layout.final_message_path,
         diff_summary_path=layout.diff_summary_path,
+        evidence_manifest_path=layout.evidence_manifest_path,
         result_schema_path=result_schema_path,
         prompt=prompt,
         rendered_goal_contract=rendered_goal_contract,

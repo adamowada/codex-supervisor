@@ -40,6 +40,7 @@ class WorkerLaunchRequest:
     stderr_path: str
     final_message_path: str
     diff_summary_path: str
+    evidence_manifest_path: str
     result_schema_path: str
     prompt: str
     rendered_goal_contract: str
@@ -90,6 +91,8 @@ class CommandExecutionResult:
     exit_code: int
     stdout: str = ""
     stderr: str = ""
+    stdout_bytes: bytes = b""
+    stderr_bytes: bytes = b""
 
 
 type CommandRunner = Callable[[tuple[str, ...], Path, dict[str, str]], CommandExecutionResult]
@@ -377,6 +380,7 @@ class CodexExecBackend:
                 preflight=preflight,
                 extra_event={"failure_class": "codex_exec_timeout"},
                 process_jsonl=_timeout_text(exc.stdout),
+                process_jsonl_bytes=exc.stdout if isinstance(exc.stdout, bytes) else b"",
                 preserve_existing_jsonl=True,
                 preserve_existing_diff_summary=True,
             )
@@ -409,9 +413,12 @@ class CodexExecBackend:
                     "failure_class": "codex_exec_failed",
                 },
                 process_jsonl=exec_result.stdout,
+                process_jsonl_bytes=exec_result.stdout_bytes,
                 preserve_existing_jsonl=True,
                 preserve_existing_diff_summary=True,
                 preserve_existing_final_message=True,
+                stdout_bytes=exec_result.stdout_bytes,
+                stderr_bytes=exec_result.stderr_bytes,
             )
             completed_worker_result = _load_canonical_worker_result(request)
             jsonl_failure = _jsonl_validation_failure(request)
@@ -423,6 +430,29 @@ class CodexExecBackend:
                     exec_exit_code=exec_result.exit_code,
                     duration_seconds=duration_seconds,
                 )
+                missing_evidence = _write_evidence_manifest(
+                    request,
+                    status=completed_worker_result.status,
+                    launch_decision="executed_with_worker_result_after_nonzero_exit",
+                )
+                metadata["evidence_manifest_path"] = request.evidence_manifest_path
+                if missing_evidence:
+                    metadata["missing_evidence_paths"] = list(missing_evidence)
+                    return WorkerLaunchResult(
+                        worker_run_id=request.worker_run_id,
+                        task_id=request.task_id,
+                        status="failed",
+                        exit_code=1,
+                        duration_seconds=duration_seconds,
+                        prompt_path=request.prompt_path,
+                        jsonl_path=request.jsonl_path,
+                        stdout_path=request.stdout_path,
+                        stderr_path=request.stderr_path,
+                        final_message_path=request.final_message_path,
+                        diff_summary_path=request.diff_summary_path,
+                        failure_class="worker_evidence_missing",
+                        metadata=metadata,
+                    )
                 return WorkerLaunchResult(
                     worker_run_id=request.worker_run_id,
                     task_id=request.task_id,
@@ -480,10 +510,13 @@ class CodexExecBackend:
             preflight=preflight,
             extra_event={"exec_exit_code": exec_result.exit_code},
             process_jsonl=exec_result.stdout,
+            process_jsonl_bytes=exec_result.stdout_bytes,
             preserve_existing_final_message=True,
             write_final_message_if_missing=False,
             preserve_existing_jsonl=True,
             preserve_existing_diff_summary=True,
+            stdout_bytes=exec_result.stdout_bytes,
+            stderr_bytes=exec_result.stderr_bytes,
         )
         jsonl_failure = _jsonl_validation_failure(request)
         result_file = request.repo_root / request.final_message_path
@@ -507,8 +540,11 @@ class CodexExecBackend:
                     "result_path": request.final_message_path,
                 },
                 process_jsonl=exec_result.stdout,
+                process_jsonl_bytes=exec_result.stdout_bytes,
                 preserve_existing_jsonl=True,
                 preserve_existing_diff_summary=True,
+                stdout_bytes=exec_result.stdout_bytes,
+                stderr_bytes=exec_result.stderr_bytes,
             )
             return WorkerLaunchResult(
                 worker_run_id=request.worker_run_id,
@@ -556,9 +592,12 @@ class CodexExecBackend:
                     "result_path": request.final_message_path,
                 },
                 process_jsonl=exec_result.stdout,
+                process_jsonl_bytes=exec_result.stdout_bytes,
                 preserve_existing_final_message=True,
                 preserve_existing_jsonl=True,
                 preserve_existing_diff_summary=True,
+                stdout_bytes=exec_result.stdout_bytes,
+                stderr_bytes=exec_result.stderr_bytes,
             )
             return WorkerLaunchResult(
                 worker_run_id=request.worker_run_id,
@@ -618,14 +657,40 @@ class CodexExecBackend:
                 "canonical_output_last_message_path": request.final_message_path,
             },
             process_jsonl=exec_result.stdout,
+            process_jsonl_bytes=exec_result.stdout_bytes,
             preserve_existing_final_message=True,
             preserve_existing_jsonl=True,
             preserve_existing_diff_summary=True,
+            stdout_bytes=exec_result.stdout_bytes,
+            stderr_bytes=exec_result.stderr_bytes,
         )
+        missing_evidence = _write_evidence_manifest(
+            request,
+            status=worker_result.status,
+            launch_decision="executed",
+        )
+        metadata["evidence_manifest_path"] = request.evidence_manifest_path
+        if missing_evidence:
+            metadata["missing_evidence_paths"] = list(missing_evidence)
+            return WorkerLaunchResult(
+                worker_run_id=request.worker_run_id,
+                task_id=request.task_id,
+                status="failed",
+                exit_code=1,
+                duration_seconds=duration_seconds,
+                prompt_path=request.prompt_path,
+                jsonl_path=request.jsonl_path,
+                stdout_path=request.stdout_path,
+                stderr_path=request.stderr_path,
+                final_message_path=request.final_message_path,
+                diff_summary_path=request.diff_summary_path,
+                failure_class="worker_evidence_missing",
+                metadata=metadata,
+            )
         return WorkerLaunchResult(
             worker_run_id=request.worker_run_id,
             task_id=request.task_id,
-            status="completed",
+            status=worker_result.status,
             result_path=request.result_path,
             exit_code=exec_result.exit_code,
             duration_seconds=duration_seconds,
@@ -736,6 +801,33 @@ class ContractWorkerBackend:
             "handoff_notes": ("Contract backend result is ready for shared ingestion validation."),
         }
         result_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        missing_evidence = _write_evidence_manifest(
+            request,
+            status="completed",
+            launch_decision="contract_worker",
+        )
+        metadata = {
+            "backend": "contract_worker",
+            "prompt_length": len(request.prompt),
+            "evidence_manifest_path": request.evidence_manifest_path,
+        }
+        if missing_evidence:
+            metadata["missing_evidence_paths"] = list(missing_evidence)
+            return WorkerLaunchResult(
+                worker_run_id=request.worker_run_id,
+                task_id=request.task_id,
+                status="failed",
+                exit_code=1,
+                duration_seconds=0.0,
+                prompt_path=request.prompt_path,
+                jsonl_path=request.jsonl_path,
+                stdout_path=request.stdout_path,
+                stderr_path=request.stderr_path,
+                final_message_path=request.final_message_path,
+                diff_summary_path=request.diff_summary_path,
+                failure_class="worker_evidence_missing",
+                metadata=metadata,
+            )
         return WorkerLaunchResult(
             worker_run_id=request.worker_run_id,
             task_id=request.task_id,
@@ -750,7 +842,7 @@ class ContractWorkerBackend:
             stderr_path=request.stderr_path,
             final_message_path=request.final_message_path,
             diff_summary_path=request.diff_summary_path,
-            metadata={"backend": "contract_worker", "prompt_length": len(request.prompt)},
+            metadata=metadata,
         )
 
 
@@ -758,6 +850,44 @@ def _write_text_artifact(repo_root: Path, relative_path: str, content: str) -> N
     path = repo_root / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
+
+
+def _write_process_output_artifact(
+    repo_root: Path,
+    relative_path: str,
+    *,
+    decoded_text: str,
+    raw_bytes: bytes,
+) -> None:
+    path = repo_root / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if raw_bytes:
+        path.write_bytes(raw_bytes)
+        return
+    path.write_text(decoded_text, encoding="utf-8")
+
+
+def _write_process_jsonl_artifact(
+    repo_root: Path,
+    relative_path: str,
+    *,
+    decoded_text: str,
+    raw_bytes: bytes,
+    event_line: str,
+    preserve_existing: bool,
+) -> None:
+    path = repo_root / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    event_bytes = event_line.encode("utf-8")
+    if preserve_existing and path.exists():
+        existing = path.read_bytes()
+        separator = b"" if not existing or existing.endswith(b"\n") else b"\n"
+        path.write_bytes(existing + separator + event_bytes)
+        return
+    prefix = raw_bytes if raw_bytes else decoded_text.encode("utf-8")
+    if prefix and not prefix.endswith(b"\n"):
+        prefix += b"\n"
+    path.write_bytes(prefix + event_bytes)
 
 
 def _load_canonical_worker_result(request: WorkerLaunchRequest) -> WorkerResult | None:
@@ -784,6 +914,56 @@ def _copy_canonical_worker_result(request: WorkerLaunchRequest) -> None:
     target = request.repo_root / request.result_path
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def _write_evidence_manifest(
+    request: WorkerLaunchRequest,
+    *,
+    status: str,
+    launch_decision: str,
+) -> tuple[str, ...]:
+    paths = {
+        "prompt": request.prompt_path,
+        "jsonl": request.jsonl_path,
+        "stdout": request.stdout_path,
+        "stderr": request.stderr_path,
+        "final_message": request.final_message_path,
+        "diff_summary": request.diff_summary_path,
+        "raw_result": request.result_path,
+    }
+    path_records = {
+        name: _evidence_path_record(request.repo_root / relative_path)
+        for name, relative_path in paths.items()
+    }
+    missing = tuple(
+        relative_path
+        for name, relative_path in paths.items()
+        if not bool(path_records[name]["exists"])
+    )
+    manifest = {
+        "worker_run_id": request.worker_run_id,
+        "task_id": request.task_id,
+        "status": status,
+        "launch_decision": launch_decision,
+        "paths": path_records,
+    }
+    _write_text_artifact(
+        request.repo_root,
+        request.evidence_manifest_path,
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+    )
+    return missing
+
+
+def _evidence_path_record(path: Path) -> JsonObject:
+    if not path.exists() or not path.is_file():
+        return {"exists": False}
+    raw_bytes = path.read_bytes()
+    return {
+        "exists": True,
+        "bytes": len(raw_bytes),
+        "sha256": sha256(raw_bytes).hexdigest(),
+    }
 
 
 def _jsonl_validation_failure(request: WorkerLaunchRequest) -> JsonObject | None:
@@ -937,20 +1117,23 @@ def _default_command_runner(
 ) -> CommandExecutionResult:
     process_environment = _minimal_process_environment(os.environ)
     process_environment.update(environment)
+    encoded_stdin = stdin.encode("utf-8") if stdin is not None else None
     completed = subprocess.run(
         argv,
         cwd=cwd,
         env=process_environment,
-        text=True,
-        input=stdin,
+        text=False,
+        input=encoded_stdin,
         capture_output=True,
         check=False,
         timeout=timeout_seconds,
     )
     return CommandExecutionResult(
         exit_code=completed.returncode,
-        stdout=completed.stdout,
-        stderr=completed.stderr,
+        stdout=_decode_process_output(completed.stdout),
+        stderr=_decode_process_output(completed.stderr),
+        stdout_bytes=completed.stdout or b"",
+        stderr_bytes=completed.stderr or b"",
     )
 
 
@@ -1028,12 +1211,32 @@ def _build_codex_exec_argv(
     ]
     if request.model is not None:
         argv.extend(("--model", request.model))
-    if request.approval_policy:
-        argv.extend(("-c", f"approval_policy={json.dumps(request.approval_policy)}"))
+    for key, value in _codex_exec_config_overrides(request).items():
+        argv.extend(("-c", f"{key}={json.dumps(value)}"))
     if request.ignore_user_config:
         argv.append("--ignore-user-config")
     argv.append("-")
     return tuple(argv)
+
+
+def _codex_exec_config_overrides(request: WorkerLaunchRequest) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    if request.reasoning_effort is not None:
+        overrides["model_reasoning_effort"] = request.reasoning_effort
+    if request.approval_policy:
+        overrides["approval_policy"] = request.approval_policy
+    return overrides
+
+
+def _codex_exec_capability_mappings(request: WorkerLaunchRequest) -> JsonObject:
+    mappings: JsonObject = {}
+    if request.reasoning_effort is not None:
+        mappings["reasoning_effort"] = {
+            "requested": request.reasoning_effort,
+            "transport": "config_override",
+            "codex_config_key": "model_reasoning_effort",
+        }
+    return mappings
 
 
 def _classify_version_exception(executable_path: str, exc: OSError) -> str:
@@ -1096,6 +1299,7 @@ def _codex_exec_metadata(
         "ignore_user_config": request.ignore_user_config,
         "model": request.model,
         "reasoning_effort": request.reasoning_effort,
+        "capability_mappings": _codex_exec_capability_mappings(request),
         "service_tier": request.service_tier,
         "version_gated_options": _version_gated_options(request),
         "host_platform": platform.platform(),
@@ -1123,6 +1327,7 @@ def _raw_evidence_paths(request: WorkerLaunchRequest) -> JsonObject:
         "final_message": request.final_message_path,
         "diff_summary": request.diff_summary_path,
         "result": request.result_path,
+        "evidence_manifest": request.evidence_manifest_path,
     }
 
 
@@ -1178,7 +1383,7 @@ def _version_gated_options(request: WorkerLaunchRequest) -> list[str]:
     if request.model is not None:
         options.append("model")
     if request.reasoning_effort is not None:
-        options.append("reasoning_effort_unsupported")
+        options.append("reasoning_effort_config")
     if request.service_tier is not None:
         options.append("service_tier_unsupported")
     if request.codex_config_path is not None:
@@ -1211,13 +1416,26 @@ def _write_codex_exec_evidence(
     preflight: CodexExecPreflightResult,
     extra_event: JsonObject | None = None,
     process_jsonl: str = "",
+    process_jsonl_bytes: bytes = b"",
     preserve_existing_final_message: bool = False,
     write_final_message_if_missing: bool = True,
     preserve_existing_jsonl: bool = False,
     preserve_existing_diff_summary: bool = False,
+    stdout_bytes: bytes = b"",
+    stderr_bytes: bytes = b"",
 ) -> None:
-    _write_text_artifact(request.repo_root, request.stdout_path, stdout)
-    _write_text_artifact(request.repo_root, request.stderr_path, stderr)
+    _write_process_output_artifact(
+        request.repo_root,
+        request.stdout_path,
+        decoded_text=stdout,
+        raw_bytes=stdout_bytes,
+    )
+    _write_process_output_artifact(
+        request.repo_root,
+        request.stderr_path,
+        decoded_text=stderr,
+        raw_bytes=stderr_bytes,
+    )
     final_message_file = request.repo_root / request.final_message_path
     if not preserve_existing_final_message or (
         write_final_message_if_missing and not final_message_file.exists()
@@ -1234,20 +1452,14 @@ def _write_codex_exec_evidence(
     if extra_event:
         event_payload.update(extra_event)
     event_line = json.dumps(event_payload, sort_keys=True) + "\n"
-    jsonl_file = request.repo_root / request.jsonl_path
-    if preserve_existing_jsonl and jsonl_file.exists():
-        existing_jsonl = jsonl_file.read_text(encoding="utf-8")
-        separator = "" if existing_jsonl.endswith("\n") else "\n"
-        _write_text_artifact(
-            request.repo_root,
-            request.jsonl_path,
-            existing_jsonl + separator + event_line,
-        )
-    else:
-        prefix = process_jsonl
-        if prefix and not prefix.endswith("\n"):
-            prefix += "\n"
-        _write_text_artifact(request.repo_root, request.jsonl_path, prefix + event_line)
+    _write_process_jsonl_artifact(
+        request.repo_root,
+        request.jsonl_path,
+        decoded_text=process_jsonl,
+        raw_bytes=process_jsonl_bytes,
+        event_line=event_line,
+        preserve_existing=preserve_existing_jsonl,
+    )
 
 
 def build_codex_launch_environment(
@@ -1281,8 +1493,6 @@ def _build_launch_environment(request: WorkerLaunchRequest) -> LaunchEnvironment
 
 def _unsupported_launch_option_failure(request: WorkerLaunchRequest) -> tuple[str, str] | None:
     unsupported: list[str] = []
-    if request.reasoning_effort is not None:
-        unsupported.append("reasoning_effort")
     if request.service_tier is not None:
         unsupported.append("service_tier")
     if request.native_goal_mode:
@@ -1340,8 +1550,16 @@ def _timeout_text(value: object) -> str:
     if value is None:
         return ""
     if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
+        return _decode_process_output(value)
     return str(value)
+
+
+def _decode_process_output(value: bytes | str | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return value.decode("utf-8", errors="replace")
 
 
 def _redact_executable(value: str | None) -> str | None:

@@ -207,6 +207,9 @@ def test_spawned_project_apply_writes_full_supervisor_scaffold(tmp_path: Path) -
     assert result.writes_files is True
     assert result.project_root == str(target)
     assert result.created_files
+    assert result.git_initialized is True
+    assert result.baseline_commit_created is True
+    assert result.baseline_commit_sha is not None
     for relative_path in (
         "README.md",
         "AGENTS.md",
@@ -279,6 +282,15 @@ def test_spawned_project_apply_writes_full_supervisor_scaffold(tmp_path: Path) -
         check=False,
     )
     assert verify.returncode == 0, verify.stderr + verify.stdout
+    git_log = subprocess.run(
+        ("git", "log", "--oneline", "-1"),
+        cwd=target,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert git_log.returncode == 0, git_log.stderr + git_log.stdout
+    assert "Bootstrap supervisor-managed scaffold" in git_log.stdout
 
 
 def test_spawned_project_apply_writes_usable_prototype_verify_script(tmp_path: Path) -> None:
@@ -361,6 +373,8 @@ def test_cli_spawned_project_apply_emits_json_and_writes_files(
     assert payload["writes_files"] is True
     assert payload["project_root"] == str(target)
     assert "plans/planning.sqlite3" in payload["created_files"]
+    assert payload["git_initialized"] is True
+    assert payload["baseline_commit_created"] is True
     assert (target / "plans" / "planning.sqlite3").exists()
 
 

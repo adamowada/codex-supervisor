@@ -33,6 +33,7 @@ class WorktreeRunLayout:
     final_message_path: str
     diff_summary_path: str
     raw_result_path: str
+    evidence_manifest_path: str
 
     def raw_evidence_paths(self) -> dict[str, str]:
         """Return raw local evidence paths for worker-run metadata."""
@@ -48,6 +49,7 @@ class WorktreeRunLayout:
             "final_message": self.final_message_path,
             "diff_summary": self.diff_summary_path,
             "raw_result": self.raw_result_path,
+            "evidence_manifest": self.evidence_manifest_path,
         }
 
 
@@ -79,6 +81,7 @@ def build_worktree_run_layout(task_id: str, worker_run_id: str) -> WorktreeRunLa
         final_message_path=f"{run_directory}/final-message.txt",
         diff_summary_path=f"{run_directory}/diff-summary.txt",
         raw_result_path=f"{artifact_directory}/worker-result.raw.json",
+        evidence_manifest_path=f"{artifact_directory}/evidence-manifest.json",
     )
 
 

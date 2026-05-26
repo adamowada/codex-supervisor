@@ -479,6 +479,43 @@ def test_story_loop_run_once_tool_routes_to_production_service(
     assert captured["environment"] == {"CODEX_SUPERVISOR_TEST": "1"}
 
 
+def test_story_loop_run_once_tool_accepts_explicit_project_local_paths(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    plugin_cwd = tmp_path / "plugin-cache"
+    project_root = tmp_path / "project"
+    db_path = project_root / "plans" / "planning.sqlite3"
+    project_root.mkdir()
+    initialize_planning_database(db_path)
+    captured: dict[str, object] = {}
+
+    def fake_run_live_story_loop_once(store, **kwargs):
+        captured["store_path"] = store.path
+        captured.update(kwargs)
+        return {"status": "completed", "worker_run_id": kwargs["worker_run_id"]}
+
+    monkeypatch.setattr(
+        "codex_supervisor.mcp_server.run_live_story_loop_once",
+        fake_run_live_story_loop_once,
+    )
+    context = McpServerContext(repo_root=plugin_cwd)
+
+    result = dispatch_mcp_tool(
+        "codex_supervisor.story_loop_run_once",
+        {
+            "worker_run_id": "worker-run-project-local",
+            "planning_path": str(db_path),
+            "repo_root": str(project_root),
+        },
+        context=context,
+    )
+
+    assert result["ok"] is True
+    assert captured["store_path"] == db_path.resolve()
+    assert captured["repo_root"] == project_root.resolve()
+
+
 def test_disabled_mcp_context_hides_tools_and_rejects_dispatch(tmp_path: Path) -> None:
     context = McpServerContext(repo_root=tmp_path, enabled=False)
 

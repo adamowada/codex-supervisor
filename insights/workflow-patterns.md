@@ -538,3 +538,45 @@ summaries.
 Next action: make full-AFK start with an explicit ledger and require user approval or a recorded
 HITL/blocker for `unavailable`, `current_thread`, `prototype_light`, `memory_database`, or
 `degraded_evidence` modes.
+
+## Supervisor Capabilities Need Runtime Mappings
+
+Confidence: confirmed.
+
+Claim: Supervisor-level worker settings must pass through a capability/mapping layer instead of
+assuming local Codex binaries expose matching flags. For `codex_exec`, reasoning effort is a
+supervisor capability that maps to the Codex config override `model_reasoning_effort`; it is not
+safe to reject it as unsupported just because `codex exec --help` lacks a direct
+`--reasoning-effort` flag.
+
+Evidence: A Desktop smoke attempted to launch `codex_exec` with `reasoning_effort=high`; the local
+Codex executable accepted `-c model_reasoning_effort="high"`, but the supervisor preflight rejected
+non-null reasoning effort before launch. The repair added an explicit mapping and records the
+mapping in launch metadata.
+
+Scope: Codex worker backends, model/reasoning/service-tier options, Desktop full-AFK launch, and
+future backend adapters.
+
+Next action: when adding worker options, declare the supervisor capability, backend transport, and
+fail-closed behavior together, with regression coverage for the generated command or request.
+
+## Completion Requires Evidence Manifests
+
+Confidence: confirmed.
+
+Claim: Planning SQLite should index worker evidence, not become the evidence blob store, and it
+should not mark a worker complete while any indexed evidence path is missing. Raw process evidence
+belongs in ignored `runs/` and `artifacts/` paths with a manifest; terminal display decoding should
+not be the preservation boundary.
+
+Evidence: The todo-list smoke analysis showed that a supervised run can appear complete while the
+operator lacks inspectable raw output, project-local run artifacts, or a separate review gate.
+The repair stores raw stdout/stderr bytes, appends JSONL as bytes, writes an evidence manifest, and
+refuses Story Loop completion when planned evidence paths are absent.
+
+Scope: Story Loop completion, worker result ingestion, live worker review, and release-readiness
+evidence audits.
+
+Next action: treat missing prompt, JSONL, stdout, stderr, final message, diff summary, raw result,
+or manifest paths as `worker_evidence_missing`, and route `review_required=true` through a separate
+HITL review task before closing the source task.

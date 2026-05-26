@@ -595,9 +595,10 @@ def _handle_worker_result_ingest(arguments: JsonObject, context: McpServerContex
 
 
 def _handle_story_loop_run_once(arguments: JsonObject, context: McpServerContext) -> object:
+    store, repo_root = _story_loop_execution_context(arguments, context)
     return run_live_story_loop_once(
-        _open_write_store(context),
-        repo_root=context.resolved_repo_root(),
+        store,
+        repo_root=repo_root,
         worker_run_id=_required_string(arguments, "worker_run_id"),
         sandbox_mode=_optional_string(arguments.get("sandbox_mode")) or "workspace-write",
         approval_policy=_optional_string(arguments.get("approval_policy")) or "never",
@@ -615,9 +616,10 @@ def _handle_story_loop_run_once(arguments: JsonObject, context: McpServerContext
 
 
 def _handle_story_loop_advance(arguments: JsonObject, context: McpServerContext) -> object:
+    store, repo_root = _story_loop_execution_context(arguments, context)
     return advance_story_loop_once(
-        _open_write_store(context),
-        repo_root=context.resolved_repo_root(),
+        store,
+        repo_root=repo_root,
         worker_run_id=_required_string(arguments, "worker_run_id"),
         sandbox_mode=_optional_string(arguments.get("sandbox_mode")) or "workspace-write",
         approval_policy=_optional_string(arguments.get("approval_policy")) or "never",
@@ -682,6 +684,29 @@ def _open_store(context: McpServerContext) -> PlanningSQLiteStore:
 
 def _open_write_store(context: McpServerContext) -> PlanningSQLiteStore:
     return open_existing_planning_database(context.resolved_planning_path(), read_only=False)
+
+
+def _story_loop_execution_context(
+    arguments: JsonObject,
+    context: McpServerContext,
+) -> tuple[PlanningSQLiteStore, Path]:
+    repo_root = (
+        _optional_path_argument(
+            arguments.get("repo_root"),
+            base=context.resolved_repo_root(),
+            field_name="repo_root",
+        )
+        or context.resolved_repo_root()
+    )
+    planning_path = (
+        _optional_path_argument(
+            arguments.get("planning_path"),
+            base=repo_root,
+            field_name="planning_path",
+        )
+        or context.resolved_planning_path()
+    )
+    return open_existing_planning_database(planning_path, read_only=False), repo_root
 
 
 def _require_plan_visible(
@@ -962,6 +987,23 @@ def _project_root_from_argument(value: object, context: McpServerContext) -> Pat
         raise McpDispatchError("validation_error", "root_paths entries must be nonblank strings.")
     path = Path(value)
     return path if path.is_absolute() else context.resolved_repo_root() / path
+
+
+def _optional_path_argument(
+    value: object,
+    *,
+    base: Path,
+    field_name: str,
+) -> Path | None:
+    if value is None:
+        return None
+    string_value = _optional_string(value)
+    if string_value is None:
+        raise McpDispatchError("validation_error", f"{field_name} must be a nonblank string.")
+    path = Path(string_value)
+    if not path.is_absolute():
+        path = base / path
+    return path.resolve(strict=False)
 
 
 def _require_project_roots_in_scope(
@@ -1524,6 +1566,8 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
             "type": "object",
             "properties": {
                 "worker_run_id": {"type": "string"},
+                "planning_path": {"type": "string"},
+                "repo_root": {"type": "string"},
                 "sandbox_mode": {"type": "string"},
                 "approval_policy": {"type": "string"},
                 "codex_bin": {"type": "string"},
@@ -1549,6 +1593,8 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
             "type": "object",
             "properties": {
                 "worker_run_id": {"type": "string"},
+                "planning_path": {"type": "string"},
+                "repo_root": {"type": "string"},
                 "sandbox_mode": {"type": "string"},
                 "approval_policy": {"type": "string"},
                 "codex_bin": {"type": "string"},

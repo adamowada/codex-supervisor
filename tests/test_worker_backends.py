@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 from codex_supervisor.worker_backends import (
@@ -9,6 +10,7 @@ from codex_supervisor.worker_backends import (
     CommandExecutionResult,
     ContractWorkerBackend,
     WorkerLaunchRequest,
+    _default_command_runner,
     _minimal_process_environment,
 )
 
@@ -28,6 +30,7 @@ def test_contract_worker_backend_emits_contract_compatible_result(tmp_path):
         stderr_path="runs/run-worker/stderr.txt",
         final_message_path="runs/run-worker/final-message.txt",
         diff_summary_path="runs/run-worker/diff-summary.txt",
+        evidence_manifest_path="artifacts/run-worker/evidence-manifest.json",
         result_schema_path="schemas/worker-result.schema.json",
         prompt="Do the slice.",
         rendered_goal_contract="Goal Contract",
@@ -61,6 +64,13 @@ def test_contract_worker_backend_emits_contract_compatible_result(tmp_path):
     assert (tmp_path / "runs" / "run-worker" / "diff-summary.txt").read_text() == (
         "src/worker.py\n"
     )
+    manifest = json.loads(
+        (tmp_path / "artifacts" / "run-worker" / "evidence-manifest.json").read_text()
+    )
+    assert manifest["paths"]["raw_result"]["exists"] is True
+    assert (
+        result.metadata["evidence_manifest_path"] == "artifacts/run-worker/evidence-manifest.json"
+    )
 
 
 def test_contract_worker_backend_can_return_failure_without_result_file(tmp_path):
@@ -76,6 +86,7 @@ def test_contract_worker_backend_can_return_failure_without_result_file(tmp_path
         stderr_path="runs/run-worker/stderr.txt",
         final_message_path="runs/run-worker/final-message.txt",
         diff_summary_path="runs/run-worker/diff-summary.txt",
+        evidence_manifest_path="artifacts/run-worker/evidence-manifest.json",
         result_schema_path="schemas/worker-result.schema.json",
         prompt="Do the slice.",
         rendered_goal_contract="Goal Contract",
@@ -126,6 +137,7 @@ def test_codex_exec_backend_preflight_builds_list_argv_without_launching(tmp_pat
         codex_home="C:/codex-home",
         codex_config_path="C:/codex-home/config.toml",
         model="gpt-test",
+        reasoning_effort="high",
         environment={"CODEX_HOME": "C:/codex-home"},
     )
 
@@ -158,6 +170,8 @@ def test_codex_exec_backend_preflight_builds_list_argv_without_launching(tmp_pat
         "--model",
         "gpt-test",
         "-c",
+        'model_reasoning_effort="high"',
+        "-c",
         'approval_policy="never"',
         "--ignore-user-config",
         "-",
@@ -178,9 +192,16 @@ def test_codex_exec_backend_preflight_builds_list_argv_without_launching(tmp_pat
         "final_message": "runs/run-worker/final-message.txt",
         "diff_summary": "runs/run-worker/diff-summary.txt",
         "result": "artifacts/run-worker/worker-result.raw.json",
+        "evidence_manifest": "artifacts/run-worker/evidence-manifest.json",
+    }
+    assert preflight.metadata["capability_mappings"]["reasoning_effort"] == {
+        "requested": "high",
+        "transport": "config_override",
+        "codex_config_key": "model_reasoning_effort",
     }
     assert preflight.metadata["version_gated_options"] == [
         "model",
+        "reasoning_effort_config",
         "config",
     ]
 
@@ -198,7 +219,6 @@ def test_codex_exec_backend_fails_closed_for_unsupported_options(tmp_path):
 
     request = _codex_exec_request(
         tmp_path,
-        reasoning_effort="medium",
         service_tier="flex",
         native_goal_mode=True,
     )
@@ -210,9 +230,31 @@ def test_codex_exec_backend_fails_closed_for_unsupported_options(tmp_path):
 
     assert calls == []
     assert preflight.failure_class == "codex_launch_option_unsupported"
-    assert "reasoning_effort" in preflight.version_stderr
+    assert "reasoning_effort" not in preflight.version_stderr
     assert "service_tier" in preflight.version_stderr
     assert "native_goal_mode" in preflight.version_stderr
+
+
+def test_default_command_runner_preserves_raw_bytes_and_decodes_for_display(tmp_path):
+    result = _default_command_runner(
+        (
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "sys.stdout.buffer.write(b'hello\\xff'); "
+                "sys.stderr.buffer.write(b'err\\xfe')"
+            ),
+        ),
+        tmp_path,
+        {},
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout == "hello\ufffd"
+    assert result.stderr == "err\ufffd"
+    assert result.stdout_bytes == b"hello\xff"
+    assert result.stderr_bytes == b"err\xfe"
 
 
 def test_codex_exec_backend_fails_closed_for_unapplied_config_path(tmp_path):
@@ -447,6 +489,10 @@ def test_codex_exec_backend_launch_success_returns_result_path_and_preserves_fin
     assert result.result_path == "artifacts/run-worker/worker-result.raw.json"
     assert result.failure_class is None
     assert result.metadata["launch_decision"] == "executed"
+    assert (
+        result.metadata["evidence_manifest_path"] == "artifacts/run-worker/evidence-manifest.json"
+    )
+    assert (tmp_path / "artifacts" / "run-worker" / "evidence-manifest.json").exists()
     assert (
         result.metadata["raw_evidence_paths"]["result"]
         == "artifacts/run-worker/worker-result.raw.json"
@@ -713,6 +759,7 @@ def _codex_exec_request(tmp_path, **overrides) -> WorkerLaunchRequest:
         "stderr_path": "runs/run-worker/stderr.txt",
         "final_message_path": "runs/run-worker/final-message.txt",
         "diff_summary_path": "runs/run-worker/diff-summary.txt",
+        "evidence_manifest_path": "artifacts/run-worker/evidence-manifest.json",
         "result_schema_path": "runs/run-worker/worker-result.schema.json",
         "prompt": "Do the slice.",
         "rendered_goal_contract": "Goal Contract",

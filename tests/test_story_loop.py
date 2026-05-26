@@ -11,8 +11,12 @@ from codex_supervisor.planning import (
     initialize_planning_database,
     open_existing_planning_database,
 )
-from codex_supervisor.story_loop import advance_story_loop_once, run_live_story_loop_once
-from codex_supervisor.worker_backends import CommandExecutionResult
+from codex_supervisor.story_loop import (
+    advance_story_loop_once,
+    build_story_loop_status,
+    run_live_story_loop_once,
+)
+from codex_supervisor.worker_backends import CommandExecutionResult, WorkerLaunchResult
 
 
 def test_story_loop_status_reports_empty_blocked_ready_and_completed_states(tmp_path, capsys):
@@ -829,6 +833,136 @@ def test_live_story_loop_run_claims_worktree_launches_and_ingests_result(tmp_pat
     assert task.status == "completed"
 
 
+def test_live_story_loop_creates_separate_review_task_when_review_required(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = _live_story_loop_store(db_path, review_required=True)
+
+    def codex_runner(argv, cwd, environment):
+        if argv == ("C:/Tools/codex.exe", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+        _write_live_worker_result(tmp_path, worker_run_id="run-review")
+        return CommandExecutionResult(exit_code=0, stdout='{"event":"done"}\n')
+
+    def git_runner(argv, cwd, environment):
+        if argv == ("git", "rev-parse", "HEAD") and cwd == tmp_path:
+            return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
+        if argv == (
+            "git",
+            "worktree",
+            "add",
+            "--detach",
+            str(tmp_path / "worktrees" / "run-review"),
+            "base-sha",
+        ):
+            return CommandExecutionResult(exit_code=0, stdout="")
+        if argv == ("git", "rev-parse", "--abbrev-ref", "HEAD"):
+            return CommandExecutionResult(exit_code=0, stdout="HEAD\n")
+        if argv == ("git", "rev-parse", "base-sha"):
+            return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
+        if argv == ("git", "rev-parse", "HEAD"):
+            return CommandExecutionResult(exit_code=0, stdout="head-sha\n")
+        if argv == ("git", "status", "--porcelain=v1"):
+            return CommandExecutionResult(exit_code=0, stdout=" M src/live_story.py\n")
+        if argv == ("git", "diff", "--name-only", "base-sha...head-sha"):
+            return CommandExecutionResult(exit_code=0, stdout="")
+        raise AssertionError(f"unexpected git argv: {argv}")
+
+    result = run_live_story_loop_once(
+        store,
+        repo_root=tmp_path,
+        worker_run_id="run-review",
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=codex_runner,
+        git_command_runner=git_runner,
+    )
+
+    assert result.status == "completed"
+    read_store = open_existing_planning_database(db_path)
+    tasks = read_store.list_supervisor_tasks()
+    source = next(task for task in tasks if task.task_id == "task-live")
+    review = next(task for task in tasks if task.task_id == "task-review-task-live-run-review")
+    assert source.status == "reviewing"
+    assert review.task_type == "HITL"
+    assert review.status == "ready"
+    assert review.review_required is False
+    assert review.scope["source_task_id"] == "task-live"
+    assert review.scope["worker_run_id"] == "run-review"
+    status = build_story_loop_status(read_store)
+    assert status.queue_state == "hitl"
+    assert status.current_task_id == review.task_id
+
+
+def test_live_story_loop_refuses_completion_when_evidence_paths_are_missing(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = _live_story_loop_store(db_path)
+
+    class MissingEvidenceBackend:
+        def run(self, request):
+            _write_live_worker_result(tmp_path, worker_run_id="run-missing-evidence")
+            return WorkerLaunchResult(
+                worker_run_id=request.worker_run_id,
+                task_id=request.task_id,
+                status="completed",
+                result_path=request.result_path,
+                exit_code=0,
+                changed_files=("src/live_story.py",),
+                prompt_path=request.prompt_path,
+                jsonl_path=request.jsonl_path,
+                stdout_path=request.stdout_path,
+                stderr_path=request.stderr_path,
+                final_message_path=request.final_message_path,
+                diff_summary_path=request.diff_summary_path,
+                metadata={"evidence_manifest_path": request.evidence_manifest_path},
+            )
+
+    def git_runner(argv, cwd, environment):
+        if argv == ("git", "rev-parse", "HEAD") and cwd == tmp_path:
+            return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
+        if argv == (
+            "git",
+            "worktree",
+            "add",
+            "--detach",
+            str(tmp_path / "worktrees" / "run-missing-evidence"),
+            "base-sha",
+        ):
+            return CommandExecutionResult(exit_code=0, stdout="")
+        if argv == ("git", "rev-parse", "--abbrev-ref", "HEAD"):
+            return CommandExecutionResult(exit_code=0, stdout="HEAD\n")
+        if argv == ("git", "rev-parse", "base-sha"):
+            return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
+        if argv == ("git", "rev-parse", "HEAD"):
+            return CommandExecutionResult(exit_code=0, stdout="head-sha\n")
+        if argv == ("git", "status", "--porcelain=v1"):
+            return CommandExecutionResult(exit_code=0, stdout=" M src/live_story.py\n")
+        if argv == ("git", "diff", "--name-only", "base-sha...head-sha"):
+            return CommandExecutionResult(exit_code=0, stdout="")
+        raise AssertionError(f"unexpected git argv: {argv}")
+
+    result = run_live_story_loop_once(
+        store,
+        repo_root=tmp_path,
+        worker_run_id="run-missing-evidence",
+        backend=MissingEvidenceBackend(),
+        git_command_runner=git_runner,
+    )
+
+    assert result.status == "failed"
+    assert result.failure_class == "worker_evidence_missing"
+    read_store = open_existing_planning_database(db_path)
+    worker = next(
+        run for run in read_store.list_worker_runs() if run.worker_run_id == "run-missing-evidence"
+    )
+    assert worker.status == "failed"
+    assert worker.failure_class == "worker_evidence_missing"
+    event = next(
+        event
+        for event in read_store.list_worker_run_events(worker_run_id="run-missing-evidence")
+        if event.event_type == "worker_evidence_missing"
+    )
+    assert "runs/run-missing-evidence/stdout.txt" in event.details["missing_evidence_paths"]
+
+
 def test_story_loop_advance_runs_one_ready_transition(tmp_path):
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = _live_story_loop_store(db_path)
@@ -917,7 +1051,7 @@ def test_live_story_loop_run_fails_claimed_run_when_worktree_creation_fails(tmp_
     assert events[0].event_type == "worker_launch_failed"
 
 
-def _live_story_loop_store(db_path):
+def _live_story_loop_store(db_path, *, review_required=False):
     store = initialize_planning_database(db_path)
     store.upsert_plan(
         PlanRecord(
@@ -940,7 +1074,7 @@ def _live_story_loop_store(db_path):
             verification_commands=["python -B -m pytest -p no:cacheprovider"],
             allowed_paths=["src/**"],
             worker_backend="codex_exec",
-            review_required=False,
+            review_required=review_required,
         ),
         validate_current_queue_contract=True,
     )

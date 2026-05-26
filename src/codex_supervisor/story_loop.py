@@ -16,6 +16,7 @@ from codex_supervisor.planning import (
     PlanningSQLiteStore,
     PlanProgressRecord,
     PlanRecord,
+    SupervisorTaskRecord,
     SupervisorTaskSummaryRecord,
     WorkerResultRecord,
     WorkerRunEventRecord,
@@ -466,8 +467,59 @@ def run_live_story_loop_once(
         changed_files=orchestration.changed_files,
         changed_files_source=orchestration.changed_files_source,
     )
-    if launch_result.status == "completed" and launch_result.result_path is not None:
+    if (
+        launch_result.status in {"completed", "needs_review"}
+        and launch_result.result_path is not None
+    ):
+        missing_evidence = _missing_launch_evidence_paths(repo_root, launch_result)
+        if missing_evidence:
+            failure_class = "worker_evidence_missing"
+            store.update_worker_run_status(
+                worker_run_id,
+                "failed",
+                failure_class=failure_class,
+                result_path=launch_result.result_path,
+            )
+            store.add_worker_run_event(
+                WorkerRunEventRecord(
+                    event_id=f"{worker_run_id}-evidence-missing",
+                    worker_run_id=worker_run_id,
+                    event_type="worker_evidence_missing",
+                    summary=(
+                        "Story Loop refused completion because launch evidence paths are missing."
+                    ),
+                    details={
+                        "task_id": claim.task.task_id,
+                        "missing_evidence_paths": list(missing_evidence),
+                    },
+                    artifact_path=launch_result.metadata.get("evidence_manifest_path")
+                    if isinstance(launch_result.metadata.get("evidence_manifest_path"), str)
+                    else launch_result.jsonl_path,
+                    metadata=launch_result.metadata,
+                )
+            )
+            return LiveStoryLoopRunResult(
+                status="failed",
+                task_id=claim.task.task_id,
+                worker_run_id=worker_run_id,
+                worktree_path=layout.worktree_path,
+                prompt_path=layout.prompt_path,
+                jsonl_path=layout.jsonl_path,
+                result_path=launch_result.result_path,
+                result_id=None,
+                failure_class=failure_class,
+                changed_files=orchestration.changed_files,
+                changed_files_source=orchestration.changed_files_source,
+                worktree_created=True,
+                launch_result=launch_result,
+            )
         ingested = store.ingest_worker_result(worker_run_id, launch_result.result_path)
+        _create_review_task_for_review_required_result(
+            store,
+            source_task=claim.task,
+            worker_run_id=worker_run_id,
+            worker_result=ingested,
+        )
         return LiveStoryLoopRunResult(
             status=ingested.status,
             task_id=claim.task.task_id,
@@ -657,11 +709,83 @@ def _record_worker_launch_event(
                 "stderr_path": launch_result.stderr_path,
                 "final_message_path": launch_result.final_message_path,
                 "diff_summary_path": launch_result.diff_summary_path,
+                "evidence_manifest_path": launch_result.metadata.get("evidence_manifest_path"),
             },
             artifact_path=launch_result.jsonl_path,
             metadata=launch_result.metadata,
         )
     )
+
+
+def _missing_launch_evidence_paths(
+    repo_root: Path,
+    launch_result: WorkerLaunchResult,
+) -> tuple[str, ...]:
+    paths = [
+        launch_result.result_path,
+        launch_result.prompt_path,
+        launch_result.jsonl_path,
+        launch_result.stdout_path,
+        launch_result.stderr_path,
+        launch_result.final_message_path,
+        launch_result.diff_summary_path,
+    ]
+    manifest_path = launch_result.metadata.get("evidence_manifest_path")
+    if isinstance(manifest_path, str) and manifest_path.strip():
+        paths.append(manifest_path)
+    return tuple(
+        path
+        for path in dict.fromkeys(item for item in paths if isinstance(item, str) and item.strip())
+        if not (repo_root / path).is_file()
+    )
+
+
+def _create_review_task_for_review_required_result(
+    store: PlanningSQLiteStore,
+    *,
+    source_task: SupervisorTaskSummaryRecord,
+    worker_run_id: str,
+    worker_result: WorkerResultRecord,
+) -> None:
+    if not source_task.review_required or worker_result.status not in {"completed", "needs_review"}:
+        return
+    review_task_id = _review_task_id(source_task.task_id, worker_run_id)
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id=review_task_id,
+            plan_id=source_task.plan_id,
+            title=f"Review {source_task.title}",
+            goal=(
+                f"Review worker run {worker_run_id} for source task {source_task.task_id} "
+                "before the source task can be closed."
+            ),
+            task_type="HITL",
+            status="ready",
+            scope={
+                "source_task_id": source_task.task_id,
+                "worker_run_id": worker_run_id,
+                "worker_result_id": worker_result.result_id,
+                "worker_result_path": worker_result.source_path,
+                "review_gate": "separate_review_required_task",
+            },
+            out_of_scope={
+                "implementation": "Do not make code changes from the review task itself.",
+            },
+            acceptance_criteria=[
+                "A separate review verdict is recorded for the worker result.",
+                "Accepted findings are routed into repair tasks before the source task is closed.",
+            ],
+            verification_commands=list(source_task.verification_commands),
+            allowed_paths=["plans/planning.sqlite3", "runs/**", "artifacts/**"],
+            worker_backend="human_review",
+            review_required=False,
+        ),
+        validate_current_queue_contract=False,
+    )
+
+
+def _review_task_id(source_task_id: str, worker_run_id: str) -> str:
+    return f"task-review-{source_task_id}-{worker_run_id}"
 
 
 def _terminal_worker_run_status(launch_status: str) -> str:

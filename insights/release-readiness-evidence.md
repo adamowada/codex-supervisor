@@ -123,13 +123,14 @@
 - `confidence`: confirmed
 - `evidence`: `uv run --no-sync python -B -m codex_supervisor.cli release-readiness --json`
   returned `ready: true` with 16/16 checks passing for
-  `15f86034c86e3991b15d3af7b72dfcdb48ef7efd`; planning rows include
-  `progress-v1-live-worker-smoke-15f8603-20260526`,
-  `progress-v1-live-review-smoke-15f8603-20260526`,
-  `progress-v1-mutating-mcp-smoke-15f8603-20260526`,
-  `progress-v1-real-bootstrap-smoke-15f8603-20260526`,
-  `progress-v1-windows-validation-15f8603-20260526`, and
-  `progress-v1-ci-success-15f8603-20260526`.
+  `e2ddc02155a9f253ec9b675c374f2e7c0ab4b3d4`; planning rows include
+  `progress-v1-story-loop-failed-task-publication-ready-e2ddc02-20260526`,
+  `progress-v1-live-worker-smoke-e2ddc02-20260526`,
+  `progress-v1-live-review-smoke-e2ddc02-20260526`,
+  `progress-v1-mutating-mcp-smoke-e2ddc02-20260526`,
+  `progress-v1-real-bootstrap-smoke-e2ddc02-20260526`,
+  `progress-v1-windows-validation-e2ddc02-20260526`, and
+  `progress-v1-ci-success-e2ddc02-20260526`.
 - `scope`: final release-readiness checks and future handoffs for v1.
 - `supersedes`: none
 - `next action`: Wait for the user's explicit release instruction, then rerun release-readiness

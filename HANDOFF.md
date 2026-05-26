@@ -12,7 +12,7 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 - Active plan: `plan-v1-live-operational-hardening`.
 - Current AFK task: none.
 - Latest release-readiness target: code commit
-  `15f86034c86e3991b15d3af7b72dfcdb48ef7efd`.
+  `e2ddc02155a9f253ec9b675c374f2e7c0ab4b3d4`.
 - Latest release-readiness result: `ready: true`, 16/16 checks passing. Current evidence is recorded
   in `plans/planning.sqlite3`, including live worker, live review, mutating MCP, real bootstrap,
   Windows validation, publication-ready verification, and GitHub Actions CI for the target commit.

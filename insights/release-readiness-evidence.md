@@ -100,3 +100,17 @@
 - `supersedes`: none
 - `next action`: Expand the smoke task contract to match the reviewed commit scope before rerunning
   live review evidence.
+
+## Spawned Project Skill Inventory
+
+- `claim`: When spawned-project bootstrap is asked for repo-local skills, the scaffold must create
+  at least one real `SKILL.md`; an empty `.agents/skills/` directory fails its own generated
+  verification gate.
+- `confidence`: confirmed
+- `evidence`: live bootstrap smoke for target `e7e91620b77b6b7501fd615ac163d02bacbef7e6` failed
+  `scripts/verify.py` with `repo-local skills directory exists but contains no SKILL.md files`;
+  fixed in `src/codex_supervisor/spawned_projects.py` and `tests/test_spawned_projects.py`.
+- `scope`: `spawned-project-apply --repo-local-skills`.
+- `supersedes`: directory-only repo-local skill scaffolding.
+- `next action`: Keep scaffold verification and generated optional surfaces aligned: every optional
+  directory that activates an inventory gate needs a real first artifact or should not be created.

@@ -157,6 +157,9 @@ def test_spawned_project_proposal_for_full_scaffold_includes_guidance() -> None:
     assert actions_by_path["LICENSE"].tier == "publication-ready"
     assert actions_by_path["insights/graph.md"].tier == "durable-learning"
     assert actions_by_path[".agents/skills/"].tier == "repo-local-skills"
+    assert actions_by_path[".agents/skills/project-bootstrap/SKILL.md"].tier == (
+        "repo-local-skills"
+    )
     assert actions_by_path["sources/README.md"].tier == "source-study"
     assert any("Initialize plans/planning.sqlite3" in item for item in proposal.planning_actions)
     assert any("protected source-of-truth docs" in item for item in proposal.source_lock_actions)
@@ -272,6 +275,37 @@ def test_spawned_project_apply_writes_usable_prototype_verify_script(tmp_path: P
     )
 
     assert "scripts/check_planning_integrity.py" not in result.created_files
+    verify = subprocess.run(
+        (sys.executable, "scripts/verify.py"),
+        cwd=target,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert verify.returncode == 0, verify.stderr + verify.stdout
+
+
+def test_spawned_project_apply_with_repo_local_skills_writes_initial_skill(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "ops-platform"
+
+    result = apply_spawned_project_scaffold(
+        SpawnedProjectBrief(
+            name="ops platform",
+            complexity="production",
+            production_intended=True,
+            unattended_workers=True,
+            durable_queue=True,
+            repo_local_skills=True,
+        ),
+        target_root=target,
+    )
+
+    skill_path = target / ".agents" / "skills" / "project-bootstrap" / "SKILL.md"
+    assert ".agents/skills/project-bootstrap/SKILL.md" in result.created_files
+    assert skill_path.exists()
+    assert "plans/planning.sqlite3" in skill_path.read_text(encoding="utf-8")
     verify = subprocess.run(
         (sys.executable, "scripts/verify.py"),
         cwd=target,

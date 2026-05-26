@@ -59,6 +59,7 @@ DURABLE_LEARNING_FILES = ("insights/graph.md",)
 REPO_LOCAL_SKILL_FILES = (
     "scripts/check_skill_inventory.py",
     ".agents/skills/",
+    ".agents/skills/project-bootstrap/SKILL.md",
 )
 SOURCE_STUDY_FILES = (
     "scripts/check_source_inventory.py",
@@ -564,6 +565,8 @@ def _scaffold_file_content(
         return _check_skill_inventory_script()
     if relative_path == "scripts/check_source_inventory.py":
         return _check_source_inventory_script()
+    if relative_path == ".agents/skills/project-bootstrap/SKILL.md":
+        return _project_bootstrap_skill(proposal)
     return f"# {Path(relative_path).name}\n\nManaged project bootstrap surface for {project}.\n"
 
 
@@ -600,6 +603,25 @@ def _protected_file_hashes(
     return {
         path: hashlib.sha256((root / path).read_bytes()).hexdigest() for path in sorted(protected)
     }
+
+
+def _project_bootstrap_skill(proposal: SpawnedProjectScaffoldProposal) -> str:
+    project = proposal.project_name
+    return (
+        "---\n"
+        "name: project-bootstrap\n"
+        "description: Use when starting or resuming the first supervised project slice.\n"
+        "---\n\n"
+        "# Project Bootstrap\n\n"
+        f"This repo-local skill keeps `{project}` aligned with its source of truth, planning "
+        "queue, and verification gates.\n\n"
+        "## Workflow\n\n"
+        "1. Inspect `plans/planning.sqlite3` before choosing work.\n"
+        "2. Read `AGENTS.md`, `PLANS.md`, and `HANDOFF.md` for the current operating contract.\n"
+        "3. Execute one bounded vertical slice and update planning SQLite with durable evidence.\n"
+        "4. Run `uv run --no-sync python -B scripts/verify.py` before handoff or publication.\n"
+        "5. Keep reusable lessons in `insights/` and keep `HANDOFF.md` compact.\n"
+    )
 
 
 def _verify_script(proposal: SpawnedProjectScaffoldProposal) -> str:
@@ -958,6 +980,7 @@ def _tier_for_path(recommendation: SpawnedProjectRecommendation, path: str) -> s
 def _purpose_for_path(path: str) -> str:
     purposes = {
         ".agents/skills/": "repo-local skill surfaces when repeated project workflows appear",
+        ".agents/skills/project-bootstrap/SKILL.md": "initial repo-local project bootstrap skill",
         ".gitattributes": "cross-platform text and binary normalization",
         ".gitignore": "local runtime, cache, source clone, and artifact exclusion",
         "AGENTS.md": "agent operating instructions",

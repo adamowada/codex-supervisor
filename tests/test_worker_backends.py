@@ -369,9 +369,6 @@ def test_codex_exec_backend_launch_success_returns_result_path_and_preserves_fin
             worker_run_id="run-worker",
             changed_file="src/success.py",
         )
-        final_file = tmp_path / "runs" / "run-worker" / "final-message.txt"
-        final_file.parent.mkdir(parents=True, exist_ok=True)
-        final_file.write_text("assistant final\n", encoding="utf-8")
         (tmp_path / "runs" / "run-worker" / "events.jsonl").write_text(
             '{"event":"assistant.step"}\n',
             encoding="utf-8",
@@ -414,9 +411,9 @@ def test_codex_exec_backend_launch_success_returns_result_path_and_preserves_fin
         ]
         is False
     )
-    assert (tmp_path / "runs" / "run-worker" / "final-message.txt").read_text() == (
-        "assistant final\n"
-    )
+    final_payload = json.loads((tmp_path / "runs" / "run-worker" / "final-message.txt").read_text())
+    assert final_payload["worker_run_id"] == "run-worker"
+    assert result.metadata["worker_result_source"] == "output_last_message"
     assert (tmp_path / "runs" / "run-worker" / "diff-summary.txt").read_text() == (
         "src/success.py\n"
     )
@@ -462,9 +459,9 @@ def test_codex_exec_backend_launch_success_requires_valid_worker_result(tmp_path
     ) -> CommandExecutionResult:
         if argv == ("C:/Tools/codex.exe", "--version"):
             return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
-        result_file = tmp_path / "artifacts" / "run-worker" / "worker-result.raw.json"
-        result_file.parent.mkdir(parents=True)
-        result_file.write_text('{"status":"completed"}\n', encoding="utf-8")
+        final_file = tmp_path / "runs" / "run-worker" / "final-message.txt"
+        final_file.parent.mkdir(parents=True, exist_ok=True)
+        final_file.write_text('{"status":"completed"}\n', encoding="utf-8")
         return CommandExecutionResult(exit_code=0, stdout='{"event":"done"}\n')
 
     request = _codex_exec_request(tmp_path)
@@ -478,10 +475,60 @@ def test_codex_exec_backend_launch_success_requires_valid_worker_result(tmp_path
     assert result.status == "failed"
     assert result.failure_class == "worker_result_invalid"
     assert result.metadata["launch_decision"] == "worker_result_invalid"
-    assert (
-        "invalid Worker Result"
-        in (tmp_path / "runs" / "run-worker" / "final-message.txt").read_text()
+    assert (tmp_path / "runs" / "run-worker" / "final-message.txt").read_text() == (
+        '{"status":"completed"}\n'
     )
+
+
+def test_codex_exec_backend_blocks_completion_on_malformed_jsonl(tmp_path):
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        if argv == ("C:/Tools/codex.exe", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+        _write_valid_worker_result(
+            tmp_path,
+            worker_run_id="run-worker",
+            changed_file="src/success.py",
+        )
+        return CommandExecutionResult(exit_code=0, stdout="not-jsonl\n")
+
+    result = CodexExecBackend(
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=runner,
+        launch_enabled=True,
+    ).run(_codex_exec_request(tmp_path))
+
+    assert result.status == "failed"
+    assert result.failure_class == "jsonl_malformed"
+    assert result.metadata["jsonl_validation"]["line"] == 1
+
+
+def test_codex_exec_backend_allows_explicit_degraded_jsonl(tmp_path):
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        if argv == ("C:/Tools/codex.exe", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+        _write_valid_worker_result(
+            tmp_path,
+            worker_run_id="run-worker",
+            changed_file="src/success.py",
+        )
+        return CommandExecutionResult(exit_code=0, stdout="not-jsonl\n")
+
+    result = CodexExecBackend(
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=runner,
+        launch_enabled=True,
+    ).run(_codex_exec_request(tmp_path, allow_degraded_jsonl=True))
+
+    assert result.status == "completed"
+    assert result.metadata["jsonl_required"] is False
 
 
 def test_codex_exec_backend_launch_timeout_preserves_timeout_evidence(tmp_path):
@@ -574,7 +621,7 @@ def test_codex_exec_backend_launch_missing_result_preserves_evidence(tmp_path):
     assert result.metadata["launch_decision"] == "worker_result_missing"
     assert (tmp_path / "runs" / "run-worker" / "stdout.txt").read_text() == ("codex 1.2.3\n")
     assert (tmp_path / "runs" / "run-worker" / "final-message.txt").read_text() == (
-        "Codex Exec completed without a Worker Result JSON artifact.\n"
+        "Codex Exec completed without a Worker Result JSON final message.\n"
     )
     assert (
         "codex_exec.worker_result_missing"
@@ -657,3 +704,6 @@ def _write_valid_worker_result(tmp_path, *, worker_run_id: str, changed_file: st
         "completion_notes": "Ready.",
     }
     result_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    final_file = tmp_path / "runs" / worker_run_id / "final-message.txt"
+    final_file.parent.mkdir(parents=True, exist_ok=True)
+    final_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from dataclasses import dataclass, replace
@@ -60,6 +61,7 @@ def orchestrate_worker_launch(
     service_tier: str | None = None,
     native_goal_mode: bool = False,
     ignore_user_config: bool = False,
+    allow_degraded_jsonl: bool = False,
     environment: dict[str, str] | None = None,
     metadata: dict[str, object] | None = None,
     require_git_changed_files: bool = False,
@@ -85,6 +87,7 @@ def orchestrate_worker_launch(
         service_tier=service_tier,
         native_goal_mode=native_goal_mode,
         ignore_user_config=ignore_user_config,
+        allow_degraded_jsonl=allow_degraded_jsonl,
         environment=environment,
         metadata=metadata,
     )
@@ -106,11 +109,16 @@ def orchestrate_worker_launch(
         launch_result=launch_result,
         worktree_state=worktree_state,
     )
+    reported_changed_files = _reported_worker_result_changed_files(
+        repo_root,
+        launch_result.result_path,
+    )
     violations = validate_changed_files(changed_files, tuple(task.allowed_paths))
     gated_result = _apply_changed_path_gate(
         launch_result,
         changed_files=changed_files,
         changed_files_source=source,
+        reported_changed_files=reported_changed_files,
         violations=violations,
         allowed_paths=tuple(task.allowed_paths),
         worktree_state=worktree_state,
@@ -164,6 +172,7 @@ def _apply_changed_path_gate(
     *,
     changed_files: tuple[str, ...],
     changed_files_source: str,
+    reported_changed_files: tuple[str, ...] | None,
     violations: tuple[ChangedPathViolation, ...],
     allowed_paths: tuple[str, ...],
     worktree_state: WorktreeStateSnapshot | None,
@@ -173,6 +182,9 @@ def _apply_changed_path_gate(
         "changed_path_validation": {
             "source": changed_files_source,
             "changed_files": list(changed_files),
+            "reported_changed_files": (
+                None if reported_changed_files is None else list(reported_changed_files)
+            ),
             "allowed_paths": list(allowed_paths),
             "violations": [_violation_payload(violation) for violation in violations],
         },
@@ -193,6 +205,39 @@ def _apply_changed_path_gate(
             failure_class="worktree_state_unavailable",
             metadata=metadata,
         )
+    if (
+        launch_result.status == "completed"
+        and worktree_state is not None
+        and worktree_state.status == "completed"
+    ):
+        if reported_changed_files is None:
+            metadata["changed_files_mismatch"] = {
+                "git_detected_files": list(changed_files),
+                "worker_result_changed_files": None,
+            }
+            return replace(
+                launch_result,
+                status="failed",
+                result_path=None,
+                exit_code=_failed_exit_code(launch_result.exit_code),
+                changed_files=changed_files,
+                failure_class="changed_files_mismatch",
+                metadata=metadata,
+            )
+        if _normalized_path_set(reported_changed_files) != _normalized_path_set(changed_files):
+            metadata["changed_files_mismatch"] = {
+                "git_detected_files": list(changed_files),
+                "worker_result_changed_files": list(reported_changed_files),
+            }
+            return replace(
+                launch_result,
+                status="failed",
+                result_path=None,
+                exit_code=_failed_exit_code(launch_result.exit_code),
+                changed_files=changed_files,
+                failure_class="changed_files_mismatch",
+                metadata=metadata,
+            )
     if violations:
         metadata["changed_path_violations"] = [
             _violation_payload(violation) for violation in violations
@@ -218,6 +263,28 @@ def _failed_exit_code(exit_code: int | None) -> int:
     if exit_code is None or exit_code == 0:
         return 1
     return exit_code
+
+
+def _reported_worker_result_changed_files(
+    repo_root: Path,
+    result_path: str | None,
+) -> tuple[str, ...] | None:
+    if result_path is None:
+        return None
+    try:
+        payload = json.loads((repo_root / result_path).read_text(encoding="utf-8"))
+    except OSError, json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    changed_files = payload.get("changed_files")
+    if not isinstance(changed_files, list):
+        return None
+    return tuple(path for path in changed_files if isinstance(path, str))
+
+
+def _normalized_path_set(paths: tuple[str, ...]) -> set[str]:
+    return {path.strip().replace("\\", "/") for path in paths if path.strip()}
 
 
 def _violation_payload(violation: ChangedPathViolation) -> dict[str, str]:

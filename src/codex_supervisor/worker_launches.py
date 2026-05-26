@@ -50,6 +50,7 @@ def prepare_worker_launch_request(
     service_tier: str | None = None,
     native_goal_mode: bool = False,
     ignore_user_config: bool = False,
+    allow_degraded_jsonl: bool = False,
     environment: dict[str, str] | None = None,
     metadata: JsonObject | None = None,
 ) -> WorkerLaunchPreparation:
@@ -64,6 +65,7 @@ def prepare_worker_launch_request(
         approval_policy=approval_policy,
         native_goal_mode=native_goal_mode,
         ignore_user_config=ignore_user_config,
+        allow_degraded_jsonl=allow_degraded_jsonl,
         extra_metadata=metadata or {},
     )
     request_metadata = {
@@ -101,6 +103,7 @@ def prepare_worker_launch_request(
         service_tier=service_tier,
         native_goal_mode=native_goal_mode,
         ignore_user_config=ignore_user_config,
+        allow_degraded_jsonl=allow_degraded_jsonl,
         environment=environment or {},
         metadata=request_metadata,
     )
@@ -120,6 +123,7 @@ def _worker_run_metadata(
     approval_policy: str,
     native_goal_mode: bool,
     ignore_user_config: bool,
+    allow_degraded_jsonl: bool,
     extra_metadata: JsonObject,
 ) -> JsonObject:
     return {
@@ -134,6 +138,7 @@ def _worker_run_metadata(
             "approval_policy": approval_policy,
             "native_goal_mode": native_goal_mode,
             "ignore_user_config": ignore_user_config,
+            "jsonl_required": not allow_degraded_jsonl,
         },
         "worktree_path": layout.worktree_path,
         "raw_result_path": layout.raw_result_path,

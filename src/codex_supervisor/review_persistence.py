@@ -314,14 +314,21 @@ def run_live_review_for_task(
     )
     launch_result = active_backend.run(request)
     if launch_result.status != "completed" or launch_result.review_result is None:
+        persistence = _persist_failed_review_launch(
+            store,
+            plan_id=task.plan_id,
+            progress_id=effective_progress_id,
+            launch_result=launch_result,
+        )
         return LiveReviewRunResult(
             status=launch_result.status,
             review_id=review_id,
             task_id=task_id,
-            progress_id=None,
+            progress_id=effective_progress_id,
             result_path=launch_result.result_path,
             failure_class=launch_result.failure_class,
             launch_result=launch_result,
+            persistence=persistence,
         )
     review_result = launch_result.review_result
     _validate_review_result_identity(review_result, request)
@@ -382,6 +389,64 @@ def _summary(review_result: ReviewResult) -> str:
         f"{review_result.target}: {counts['accepted']} accepted, {counts['waived']} waived, "
         f"{counts['needs_hitl']} needs HITL."
     )
+
+
+def _persist_failed_review_launch(
+    store: PlanningSQLiteStore,
+    *,
+    plan_id: str,
+    progress_id: str,
+    launch_result: ReviewLaunchResult,
+) -> ReviewResultPersistenceRecord:
+    artifacts = tuple(
+        path
+        for path in (
+            launch_result.result_path,
+            launch_result.prompt_path,
+            launch_result.jsonl_path,
+            launch_result.stdout_path,
+            launch_result.stderr_path,
+            launch_result.final_message_path,
+        )
+        if path
+    )
+    progress = PlanProgressRecord(
+        progress_id=progress_id,
+        plan_id=plan_id,
+        event_type="review_launch_failed",
+        summary=(
+            f"Review launch {launch_result.review_id} ended as {launch_result.status}"
+            + (
+                f" ({launch_result.failure_class})"
+                if launch_result.failure_class is not None
+                else ""
+            )
+        ),
+        details=json.dumps(
+            {
+                "review_id": launch_result.review_id,
+                "task_id": launch_result.task_id,
+                "status": launch_result.status,
+                "exit_code": launch_result.exit_code,
+                "duration_seconds": launch_result.duration_seconds,
+                "failure_class": launch_result.failure_class,
+                "result_path": launch_result.result_path,
+                "prompt_path": launch_result.prompt_path,
+                "jsonl_path": launch_result.jsonl_path,
+                "stdout_path": launch_result.stdout_path,
+                "stderr_path": launch_result.stderr_path,
+                "final_message_path": launch_result.final_message_path,
+            },
+            sort_keys=True,
+        ),
+        linked_artifact_id=artifacts[0] if artifacts else None,
+    )
+    artifact_links = tuple(
+        PlanArtifactLinkRecord(plan_id=plan_id, artifact_id=artifact, relationship="review-launch")
+        for artifact in artifacts
+    )
+    store.add_plan_progress_with_artifact_links(progress, artifact_links)
+    return ReviewResultPersistenceRecord(progress=progress, artifact_links=artifact_links)
 
 
 def _details(review_result: ReviewResult) -> dict[str, object]:

@@ -11,7 +11,7 @@ from codex_supervisor.planning import (
     initialize_planning_database,
     open_existing_planning_database,
 )
-from codex_supervisor.story_loop import run_live_story_loop_once
+from codex_supervisor.story_loop import advance_story_loop_once, run_live_story_loop_once
 from codex_supervisor.worker_backends import CommandExecutionResult
 
 
@@ -822,8 +822,61 @@ def test_live_story_loop_run_claims_worktree_launches_and_ingests_result(tmp_pat
     assert worker.status == "completed"
     assert worker.result_id == result.result_id
     assert worker.result_path is None
+    events = read_store.list_worker_run_events(worker_run_id="run-live")
+    assert events[0].event_type == "codex_exec_launch_result"
+    assert events[0].details["changed_files"] == ["src/live_story.py"]
     task = next(task for task in read_store.list_supervisor_tasks() if task.task_id == "task-live")
     assert task.status == "completed"
+
+
+def test_story_loop_advance_runs_one_ready_transition(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = _live_story_loop_store(db_path)
+
+    def codex_runner(argv, cwd, environment):
+        if argv == ("C:/Tools/codex.exe", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+        _write_live_worker_result(tmp_path, worker_run_id="run-advance")
+        return CommandExecutionResult(exit_code=0, stdout='{"event":"done"}\n')
+
+    def git_runner(argv, cwd, environment):
+        if argv == ("git", "rev-parse", "HEAD") and cwd == tmp_path:
+            return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
+        if argv == (
+            "git",
+            "worktree",
+            "add",
+            "--detach",
+            str(tmp_path / "worktrees" / "run-advance"),
+            "base-sha",
+        ):
+            return CommandExecutionResult(exit_code=0, stdout="")
+        if argv == ("git", "rev-parse", "--abbrev-ref", "HEAD"):
+            return CommandExecutionResult(exit_code=0, stdout="HEAD\n")
+        if argv == ("git", "rev-parse", "base-sha"):
+            return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
+        if argv == ("git", "rev-parse", "HEAD"):
+            return CommandExecutionResult(exit_code=0, stdout="head-sha\n")
+        if argv == ("git", "status", "--porcelain=v1"):
+            return CommandExecutionResult(exit_code=0, stdout=" M src/live_story.py\n")
+        if argv == ("git", "diff", "--name-only", "base-sha...head-sha"):
+            return CommandExecutionResult(exit_code=0, stdout="")
+        raise AssertionError(f"unexpected git argv: {argv}")
+
+    result = advance_story_loop_once(
+        store,
+        repo_root=tmp_path,
+        worker_run_id="run-advance",
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=codex_runner,
+        git_command_runner=git_runner,
+    )
+
+    assert result.transition == "ready_to_worker_result"
+    assert result.state_before == "ready"
+    assert result.worker_run_id == "run-advance"
+    assert result.live_run is not None
+    assert result.live_run.status == "completed"
 
 
 def test_live_story_loop_run_fails_claimed_run_when_worktree_creation_fails(tmp_path):
@@ -860,6 +913,8 @@ def test_live_story_loop_run_fails_claimed_run_when_worktree_creation_fails(tmp_
     worker = next(run for run in read_store.list_worker_runs() if run.worker_run_id == "run-live")
     assert worker.status == "failed"
     assert worker.failure_class == "worktree_create_failed"
+    events = read_store.list_worker_run_events(worker_run_id="run-live")
+    assert events[0].event_type == "worker_launch_failed"
 
 
 def _live_story_loop_store(db_path):
@@ -923,3 +978,9 @@ def _write_live_worker_result(repo_root, *, worker_run_id):
         "completion_notes": "Ready.",
     }
     result_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    final_file = repo_root / "runs" / worker_run_id / "final-message.txt"
+    final_file.parent.mkdir(parents=True, exist_ok=True)
+    final_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    jsonl_file = repo_root / "runs" / worker_run_id / "events.jsonl"
+    jsonl_file.parent.mkdir(parents=True, exist_ok=True)
+    jsonl_file.write_text('{"event":"assistant.step"}\n', encoding="utf-8")

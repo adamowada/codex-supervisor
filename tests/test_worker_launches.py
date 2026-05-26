@@ -83,6 +83,7 @@ def test_prepare_worker_launch_request_exposes_worker_run_metadata():
         "approval_policy": "never",
         "native_goal_mode": False,
         "ignore_user_config": False,
+        "jsonl_required": True,
     }
     assert metadata["raw_evidence_paths"] == preparation.layout.raw_evidence_paths()
     assert metadata["raw_result_path"] == preparation.layout.raw_result_path

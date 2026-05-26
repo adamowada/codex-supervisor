@@ -39,10 +39,12 @@ from codex_supervisor.review_repairs import (
     plan_repair_tasks_from_review_result,
 )
 from codex_supervisor.story_loop import (
+    advance_story_loop_once,
     build_story_loop_status,
     record_story_loop_progress,
     run_live_story_loop_once,
 )
+from codex_supervisor.task_compiler import apply_compiled_tasks, compile_tasks_from_plan
 
 JsonObject = dict[str, Any]
 McpHandler = Callable[[JsonObject, "McpServerContext"], Any]
@@ -204,6 +206,14 @@ def _handle_worker_run_show(arguments: JsonObject, context: McpServerContext) ->
     if run is None:
         raise McpDispatchError("not_found", f"No worker run found: {worker_run_id}")
     return run
+
+
+def _handle_worker_run_event_list(
+    arguments: JsonObject,
+    context: McpServerContext,
+) -> tuple[object, ...]:
+    worker_run_id = _optional_string(arguments.get("worker_run_id"))
+    return _open_store(context).list_worker_run_events(worker_run_id=worker_run_id)
 
 
 def _handle_worker_result_list(
@@ -408,6 +418,22 @@ def _handle_task_claim(arguments: JsonObject, context: McpServerContext) -> obje
     return claim
 
 
+def _handle_task_compile(arguments: JsonObject, context: McpServerContext) -> object:
+    store = _open_write_store(context) if bool(arguments.get("apply")) else _open_store(context)
+    report = compile_tasks_from_plan(
+        store,
+        plan_id=_required_string(arguments, "plan_id"),
+        allowed_paths=tuple(_optional_string_array(arguments.get("allowed_paths"))),
+        verification_commands=tuple(_optional_string_array(arguments.get("verification_commands"))),
+        status=_optional_string(arguments.get("status")) or "pending",
+        worker_backend=_optional_string(arguments.get("worker_backend")) or "codex_exec",
+        review_required=bool(arguments.get("review_required", True)),
+    )
+    if bool(arguments.get("apply")):
+        report = apply_compiled_tasks(store, report)
+    return report
+
+
 def _handle_progress_add(arguments: JsonObject, context: McpServerContext) -> object:
     store = _open_write_store(context)
     record = PlanProgressRecord(
@@ -530,6 +556,27 @@ def _handle_story_loop_run_once(arguments: JsonObject, context: McpServerContext
         service_tier=_optional_string(arguments.get("service_tier")),
         native_goal_mode=bool(arguments.get("native_goal_mode", False)),
         ignore_user_config=bool(arguments.get("ignore_user_config", False)),
+        allow_degraded_jsonl=bool(arguments.get("allow_degraded_jsonl", False)),
+        environment=_string_object(arguments.get("environment")),
+    )
+
+
+def _handle_story_loop_advance(arguments: JsonObject, context: McpServerContext) -> object:
+    return advance_story_loop_once(
+        _open_write_store(context),
+        repo_root=context.resolved_repo_root(),
+        worker_run_id=_required_string(arguments, "worker_run_id"),
+        sandbox_mode=_optional_string(arguments.get("sandbox_mode")) or "workspace-write",
+        approval_policy=_optional_string(arguments.get("approval_policy")) or "never",
+        codex_executable=_optional_string(arguments.get("codex_bin")),
+        codex_home=_optional_string(arguments.get("codex_home")),
+        codex_config_path=_optional_string(arguments.get("codex_config_path")),
+        model=_optional_string(arguments.get("model")),
+        reasoning_effort=_optional_string(arguments.get("reasoning_effort")),
+        service_tier=_optional_string(arguments.get("service_tier")),
+        native_goal_mode=bool(arguments.get("native_goal_mode", False)),
+        ignore_user_config=bool(arguments.get("ignore_user_config", False)),
+        allow_degraded_jsonl=bool(arguments.get("allow_degraded_jsonl", False)),
         environment=_string_object(arguments.get("environment")),
     )
 
@@ -1020,6 +1067,15 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
             "additionalProperties": False,
         },
     ),
+    "codex_supervisor.worker_run_event_list": McpToolDefinition(
+        name="codex_supervisor.worker_run_event_list",
+        description="List append-only worker run events, optionally filtered by worker_run_id.",
+        input_schema={
+            "type": "object",
+            "properties": {"worker_run_id": {"type": "string"}},
+            "additionalProperties": False,
+        },
+    ),
     "codex_supervisor.worker_result_list": McpToolDefinition(
         name="codex_supervisor.worker_result_list",
         description="List DB-backed worker result records.",
@@ -1213,6 +1269,25 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
             "additionalProperties": False,
         },
     ),
+    "codex_supervisor.task_compile": McpToolDefinition(
+        name="codex_supervisor.task_compile",
+        description="Compile open plan criteria or milestones into deterministic task drafts.",
+        read_only=False,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "allowed_paths": {"type": "array", "items": {"type": "string"}},
+                "verification_commands": {"type": "array", "items": {"type": "string"}},
+                "status": {"type": "string", "enum": sorted(TASK_STATUSES)},
+                "worker_backend": {"type": "string"},
+                "review_required": {"type": "boolean"},
+                "apply": {"type": "boolean"},
+            },
+            "required": ["plan_id", "allowed_paths"],
+            "additionalProperties": False,
+        },
+    ),
     "codex_supervisor.progress_add": McpToolDefinition(
         name="codex_supervisor.progress_add",
         description="Record one plan progress event.",
@@ -1343,6 +1418,32 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
                 "service_tier": {"type": "string"},
                 "native_goal_mode": {"type": "boolean"},
                 "ignore_user_config": {"type": "boolean"},
+                "allow_degraded_jsonl": {"type": "boolean"},
+                "environment": {"type": "object"},
+            },
+            "required": ["worker_run_id"],
+            "additionalProperties": False,
+        },
+    ),
+    "codex_supervisor.story_loop_advance": McpToolDefinition(
+        name="codex_supervisor.story_loop_advance",
+        description="Advance the Story Loop state machine by exactly one transition.",
+        read_only=False,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "worker_run_id": {"type": "string"},
+                "sandbox_mode": {"type": "string"},
+                "approval_policy": {"type": "string"},
+                "codex_bin": {"type": "string"},
+                "codex_home": {"type": "string"},
+                "codex_config_path": {"type": "string"},
+                "model": {"type": "string"},
+                "reasoning_effort": {"type": "string"},
+                "service_tier": {"type": "string"},
+                "native_goal_mode": {"type": "boolean"},
+                "ignore_user_config": {"type": "boolean"},
+                "allow_degraded_jsonl": {"type": "boolean"},
                 "environment": {"type": "object"},
             },
             "required": ["worker_run_id"],
@@ -1379,6 +1480,7 @@ TOOL_HANDLERS: dict[str, McpHandler] = {
     "codex_supervisor.task_show": _handle_task_show,
     "codex_supervisor.worker_run_list": _handle_worker_run_list,
     "codex_supervisor.worker_run_show": _handle_worker_run_show,
+    "codex_supervisor.worker_run_event_list": _handle_worker_run_event_list,
     "codex_supervisor.worker_result_list": _handle_worker_result_list,
     "codex_supervisor.worker_result_show": _handle_worker_result_show,
     "codex_supervisor.plan_upsert": _handle_plan_upsert,
@@ -1391,6 +1493,7 @@ TOOL_HANDLERS: dict[str, McpHandler] = {
     "codex_supervisor.task_upsert": _handle_task_upsert,
     "codex_supervisor.task_status": _handle_task_status,
     "codex_supervisor.task_claim": _handle_task_claim,
+    "codex_supervisor.task_compile": _handle_task_compile,
     "codex_supervisor.progress_add": _handle_progress_add,
     "codex_supervisor.artifact_link_add": _handle_artifact_link_add,
     "codex_supervisor.story_loop_record": _handle_story_loop_record,
@@ -1398,5 +1501,6 @@ TOOL_HANDLERS: dict[str, McpHandler] = {
     "codex_supervisor.worker_run_status": _handle_worker_run_status,
     "codex_supervisor.worker_result_ingest": _handle_worker_result_ingest,
     "codex_supervisor.story_loop_run_once": _handle_story_loop_run_once,
+    "codex_supervisor.story_loop_advance": _handle_story_loop_advance,
     "codex_supervisor.review_result_ingest": _handle_review_result_ingest,
 }

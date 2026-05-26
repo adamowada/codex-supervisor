@@ -26,13 +26,20 @@ BASE_COMMANDS: tuple[Command, ...] = (
     (sys.executable, "scripts/check_protected_files.py"),
     ("uv", "lock", "--check"),
 )
+PUBLICATION_COMMANDS: tuple[Command, ...] = (
+    (sys.executable, "scripts/verify_codex_plugin_install.py"),
+    ("uv", "build", "--wheel", "--sdist"),
+)
 
 
 def build_commands(*, publication_ready: bool = False) -> tuple[Command, ...]:
     hygiene_command: Command = (sys.executable, "scripts/check_public_repo_hygiene.py")
     if publication_ready:
         hygiene_command = (*hygiene_command, "--publication-ready")
-    return (*BASE_COMMANDS[:7], hygiene_command, *BASE_COMMANDS[7:])
+    commands = (*BASE_COMMANDS[:7], hygiene_command, *BASE_COMMANDS[7:])
+    if publication_ready:
+        commands = (*commands, *PUBLICATION_COMMANDS)
+    return commands
 
 
 def main(argv: list[str] | None = None) -> int:

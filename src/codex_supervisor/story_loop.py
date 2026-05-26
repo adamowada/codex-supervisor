@@ -18,6 +18,7 @@ from codex_supervisor.planning import (
     PlanRecord,
     SupervisorTaskSummaryRecord,
     WorkerResultRecord,
+    WorkerRunEventRecord,
     WorkerRunRecord,
     has_nonterminal_worker_run,
     has_unresolved_task_blockers,
@@ -100,6 +101,19 @@ class LiveStoryLoopRunResult:
     ingested_result: WorkerResultRecord | None = None
 
 
+@dataclass(frozen=True)
+class StoryLoopAdvanceResult:
+    """One state-machine advance result."""
+
+    state_before: str
+    state_after: str
+    transition: str
+    task_id: str | None
+    worker_run_id: str | None
+    failure_class: str | None = None
+    live_run: LiveStoryLoopRunResult | None = None
+
+
 def build_story_loop_status(
     store: PlanningSQLiteStore,
     *,
@@ -162,6 +176,79 @@ def build_story_loop_status(
         current_afk_task=current_afk_task,
         plans=plan_statuses,
         current_task=current_task,
+    )
+
+
+def advance_story_loop_once(
+    store: PlanningSQLiteStore,
+    *,
+    repo_root: Path,
+    worker_run_id: str,
+    result_schema_path: str | None = None,
+    sandbox_mode: str = "workspace-write",
+    approval_policy: str = "never",
+    codex_executable: str | None = None,
+    codex_home: str | None = None,
+    codex_config_path: str | None = None,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
+    service_tier: str | None = None,
+    native_goal_mode: bool = False,
+    ignore_user_config: bool = False,
+    allow_degraded_jsonl: bool = False,
+    environment: dict[str, str] | None = None,
+    prompt: str | None = None,
+    backend: WorkerBackend | None = None,
+    command_runner: CommandRunner | None = None,
+    git_command_runner: CommandRunner | None = None,
+    git_executable: str = "git",
+) -> StoryLoopAdvanceResult:
+    """Advance the Story Loop state machine by exactly one transition."""
+
+    before = build_story_loop_status(store)
+    if before.queue_state != "ready":
+        return StoryLoopAdvanceResult(
+            state_before=before.queue_state,
+            state_after=before.queue_state,
+            transition=f"no_transition_{before.queue_state}",
+            task_id=before.current_task_id,
+            worker_run_id=None,
+            failure_class=None
+            if before.queue_state in {"completed", "empty"}
+            else before.queue_state,
+        )
+    live_run = run_live_story_loop_once(
+        store,
+        repo_root=repo_root,
+        worker_run_id=worker_run_id,
+        result_schema_path=result_schema_path,
+        sandbox_mode=sandbox_mode,
+        approval_policy=approval_policy,
+        codex_executable=codex_executable,
+        codex_home=codex_home,
+        codex_config_path=codex_config_path,
+        model=model,
+        reasoning_effort=reasoning_effort,
+        service_tier=service_tier,
+        native_goal_mode=native_goal_mode,
+        ignore_user_config=ignore_user_config,
+        allow_degraded_jsonl=allow_degraded_jsonl,
+        environment=environment,
+        prompt=prompt,
+        backend=backend,
+        command_runner=command_runner,
+        git_command_runner=git_command_runner,
+        git_executable=git_executable,
+    )
+    after = build_story_loop_status(store)
+    return StoryLoopAdvanceResult(
+        state_before=before.queue_state,
+        state_after=after.queue_state,
+        transition="ready_to_worker_result",
+        task_id=live_run.task_id,
+        worker_run_id=worker_run_id,
+        failure_class=live_run.failure_class,
+        live_run=live_run,
     )
 
 
@@ -239,6 +326,7 @@ def run_live_story_loop_once(
     service_tier: str | None = None,
     native_goal_mode: bool = False,
     ignore_user_config: bool = False,
+    allow_degraded_jsonl: bool = False,
     environment: dict[str, str] | None = None,
     prompt: str | None = None,
     backend: WorkerBackend | None = None,
@@ -289,6 +377,7 @@ def run_live_story_loop_once(
             service_tier=service_tier,
             native_goal_mode=native_goal_mode,
             ignore_user_config=ignore_user_config,
+            allow_degraded_jsonl=allow_degraded_jsonl,
         ),
     )
     if claim is None:
@@ -361,6 +450,7 @@ def run_live_story_loop_once(
         service_tier=service_tier,
         native_goal_mode=native_goal_mode,
         ignore_user_config=ignore_user_config,
+        allow_degraded_jsonl=allow_degraded_jsonl,
         environment=environment,
         metadata={"launch_mode": "live_story_loop_run"},
         require_git_changed_files=True,
@@ -369,6 +459,13 @@ def run_live_story_loop_once(
         git_executable=git_executable,
     )
     launch_result = orchestration.launch_result
+    _record_worker_launch_event(
+        store,
+        worker_run_id=worker_run_id,
+        launch_result=launch_result,
+        changed_files=orchestration.changed_files,
+        changed_files_source=orchestration.changed_files_source,
+    )
     if launch_result.status == "completed" and launch_result.result_path is not None:
         ingested = store.ingest_worker_result(worker_run_id, launch_result.result_path)
         return LiveStoryLoopRunResult(
@@ -438,6 +535,7 @@ def _live_worker_run_metadata(
     service_tier: str | None,
     native_goal_mode: bool,
     ignore_user_config: bool,
+    allow_degraded_jsonl: bool,
 ) -> dict[str, object]:
     return {
         "backend": "codex_exec",
@@ -449,9 +547,10 @@ def _live_worker_run_metadata(
             "approval_policy": approval_policy,
             "native_goal_mode": native_goal_mode,
             "ignore_user_config": ignore_user_config,
+            "jsonl_required": not allow_degraded_jsonl,
         },
-        "codex_home": "<configured>" if codex_home is not None else None,
-        "codex_config_path": "<configured>" if codex_config_path is not None else None,
+        "codex_home": codex_home,
+        "codex_config_path": codex_config_path,
         "model": model,
         "reasoning_effort": reasoning_effort,
         "service_tier": service_tier,
@@ -485,6 +584,19 @@ def _fail_claimed_run(
     changed_files_source: str | None,
 ) -> LiveStoryLoopRunResult:
     store.update_worker_run_status(worker_run_id, "failed", failure_class=failure_class)
+    store.add_worker_run_event(
+        WorkerRunEventRecord(
+            event_id=f"{worker_run_id}-claim-failed",
+            worker_run_id=worker_run_id,
+            event_type="worker_launch_failed",
+            summary=f"Story Loop worker launch failed before Codex Exec: {failure_class}",
+            details={
+                "task_id": task_id,
+                "failure_class": failure_class,
+                "changed_files_source": changed_files_source,
+            },
+        )
+    )
     return LiveStoryLoopRunResult(
         status="failed",
         task_id=task_id,
@@ -506,6 +618,49 @@ def _default_live_worker_prompt() -> str:
         "Execute the claimed Story Loop task exactly once from this isolated worktree. "
         "Keep edits within the allowed paths, run the required verification commands, "
         "write the required Worker Result JSON, and stop."
+    )
+
+
+def _record_worker_launch_event(
+    store: PlanningSQLiteStore,
+    *,
+    worker_run_id: str,
+    launch_result: WorkerLaunchResult,
+    changed_files: tuple[str, ...],
+    changed_files_source: str,
+) -> None:
+    store.add_worker_run_event(
+        WorkerRunEventRecord(
+            event_id=f"{worker_run_id}-launch-result",
+            worker_run_id=worker_run_id,
+            event_type="codex_exec_launch_result",
+            summary=(
+                f"Codex Exec launch ended as {launch_result.status}"
+                + (
+                    f" ({launch_result.failure_class})"
+                    if launch_result.failure_class is not None
+                    else ""
+                )
+            ),
+            details={
+                "task_id": launch_result.task_id,
+                "status": launch_result.status,
+                "exit_code": launch_result.exit_code,
+                "duration_seconds": launch_result.duration_seconds,
+                "failure_class": launch_result.failure_class,
+                "changed_files": list(changed_files),
+                "changed_files_source": changed_files_source,
+                "result_path": launch_result.result_path,
+                "prompt_path": launch_result.prompt_path,
+                "jsonl_path": launch_result.jsonl_path,
+                "stdout_path": launch_result.stdout_path,
+                "stderr_path": launch_result.stderr_path,
+                "final_message_path": launch_result.final_message_path,
+                "diff_summary_path": launch_result.diff_summary_path,
+            },
+            artifact_path=launch_result.jsonl_path,
+            metadata=launch_result.metadata,
+        )
     )
 
 

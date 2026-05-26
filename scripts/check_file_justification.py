@@ -303,6 +303,9 @@ FILE_PURPOSES = {
         "pytest",
     ),
     "src/codex_supervisor/goal_contracts.py": FilePurpose("Goal Contract renderer", "pytest"),
+    "src/codex_supervisor/github_lifecycle.py": FilePurpose(
+        "GitHub PR lifecycle command helpers", "pytest"
+    ),
     "src/codex_supervisor/insights.py": FilePurpose(
         "reusable insight record validation contracts", "pytest"
     ),
@@ -343,6 +346,9 @@ FILE_PURPOSES = {
         "spawned-project scaffold recommendation and apply contracts", "pytest"
     ),
     "src/codex_supervisor/story_loop.py": FilePurpose("Story Loop queue state machine", "pytest"),
+    "src/codex_supervisor/task_compiler.py": FilePurpose(
+        "deterministic plan-to-task compiler", "pytest"
+    ),
     "src/codex_supervisor/worker_backends.py": FilePurpose(
         "worker backend protocol and contract backend", "pytest"
     ),
@@ -367,6 +373,7 @@ FILE_PURPOSES = {
     "tests/test_file_justification.py": FilePurpose("file purpose gate tests", "pytest"),
     "tests/test_factory_smoke.py": FilePurpose("factory-loop smoke tests", "pytest"),
     "tests/test_github_ci.py": FilePurpose("GitHub Actions workflow contract tests", "pytest"),
+    "tests/test_github_lifecycle.py": FilePurpose("GitHub PR lifecycle helper tests", "pytest"),
     "tests/test_goal_contracts.py": FilePurpose("Goal Contract renderer tests", "pytest"),
     "tests/test_insights.py": FilePurpose("reusable insight contract tests", "pytest"),
     "tests/test_insight_cli.py": FilePurpose("insight validation CLI tests", "pytest"),
@@ -410,6 +417,7 @@ FILE_PURPOSES = {
         "pytest",
     ),
     "tests/test_story_loop.py": FilePurpose("Story Loop tests", "pytest"),
+    "tests/test_task_compiler.py": FilePurpose("plan-to-task compiler tests", "pytest"),
     "tests/test_worker_backends.py": FilePurpose("worker backend protocol tests", "pytest"),
     "tests/test_worker_launches.py": FilePurpose(
         "worker launch request preparation tests", "pytest"

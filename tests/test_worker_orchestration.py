@@ -265,6 +265,71 @@ def test_orchestrate_worker_launch_uses_git_worktree_changed_files_when_required
     assert len(git_calls) == 5
 
 
+def test_orchestrate_worker_launch_rejects_worker_result_git_mismatch(
+    tmp_path: Path,
+) -> None:
+    def runner(
+        argv: tuple[str, ...],
+        cwd: Path,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        if argv == ("C:/Tools/codex.exe", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+        _write_backend_success(
+            tmp_path,
+            worker_run_id="worker-run-stage7c-worker-orchestration-20260524",
+            changed_file="src/codex_supervisor/worker_orchestration.py",
+        )
+        return CommandExecutionResult(exit_code=0, stdout='{"event":"done"}\n')
+
+    def git_runner(
+        argv: tuple[str, ...],
+        cwd: Path,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        if argv == ("git", "rev-parse", "--abbrev-ref", "HEAD"):
+            return CommandExecutionResult(exit_code=0, stdout="HEAD\n")
+        if argv == ("git", "rev-parse", "base-sha"):
+            return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
+        if argv == ("git", "rev-parse", "HEAD"):
+            return CommandExecutionResult(exit_code=0, stdout="head-sha\n")
+        if argv == ("git", "status", "--porcelain=v1"):
+            return CommandExecutionResult(
+                exit_code=0, stdout=" M tests/test_worker_orchestration.py\n"
+            )
+        if argv == ("git", "diff", "--name-only", "base-sha...head-sha"):
+            return CommandExecutionResult(exit_code=0, stdout="")
+        raise AssertionError(f"unexpected git argv: {argv}")
+
+    result = orchestrate_worker_launch(
+        _task_record(),
+        backend=CodexExecBackend(
+            codex_executable="C:/Tools/codex.exe",
+            command_runner=runner,
+            launch_enabled=True,
+        ),
+        worker_run_id="worker-run-stage7c-worker-orchestration-20260524",
+        repo_root=tmp_path,
+        result_schema_path=(
+            "runs/worker-run-stage7c-worker-orchestration-20260524/worker-result.schema.json"
+        ),
+        prompt="Do the slice.",
+        rendered_goal_contract="Goal Contract",
+        sandbox_mode="workspace-write",
+        approval_policy="never",
+        require_git_changed_files=True,
+        git_command_runner=git_runner,
+        git_base_ref="base-sha",
+    )
+
+    assert result.launch_result.status == "failed"
+    assert result.launch_result.failure_class == "changed_files_mismatch"
+    assert result.launch_result.metadata["changed_files_mismatch"] == {
+        "git_detected_files": ["tests/test_worker_orchestration.py"],
+        "worker_result_changed_files": ["src/codex_supervisor/worker_orchestration.py"],
+    }
+
+
 def test_orchestrate_worker_launch_blocks_completed_run_without_git_state(
     tmp_path: Path,
 ) -> None:
@@ -375,7 +440,7 @@ def _write_backend_success(tmp_path: Path, *, worker_run_id: str, changed_file: 
     result_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     final_file = tmp_path / "runs" / worker_run_id / "final-message.txt"
     final_file.parent.mkdir(parents=True, exist_ok=True)
-    final_file.write_text("assistant final\n", encoding="utf-8")
+    final_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     (tmp_path / "runs" / worker_run_id / "events.jsonl").write_text(
         '{"event":"assistant.step"}\n',
         encoding="utf-8",

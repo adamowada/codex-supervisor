@@ -39,13 +39,14 @@ class PlanningSchemaIndex:
     where_sql: str | None = None
 
 
-CURRENT_PLANNING_SCHEMA_VERSION = 5
+CURRENT_PLANNING_SCHEMA_VERSION = 6
 PLANNING_SCHEMA_MIGRATIONS = (
     (1, "initial_supervisor_planning_schema"),
     (2, "worker_runs_one_nonterminal_per_task_index"),
     (3, "strict_status_and_review_constraints"),
     (4, "strict_commit_link_sha_constraint"),
     (5, "db_backed_worker_results_and_development_log"),
+    (6, "worker_run_events"),
 )
 PLAN_STATUSES = frozenset({"active", "blocked", "completed", "abandoned", "superseded"})
 CURRENT_QUEUE_PLAN_STATUSES = frozenset({"active", "blocked"})
@@ -96,6 +97,7 @@ SAFE_PYTHON_CHECK_SCRIPTS = frozenset(
         "scripts/check_skill_inventory.py",
         "scripts/check_source_inventory.py",
         "scripts/verify.py",
+        "scripts/verify_codex_plugin_install.py",
     }
 )
 SAFE_PYTHON_CHECK_SCRIPT_ARGS = {
@@ -236,6 +238,16 @@ PLANNING_SCHEMA_TABLE_COLUMNS = {
         "failure_class",
         "metadata_json",
     ),
+    "worker_run_events": (
+        "event_id",
+        "worker_run_id",
+        "event_type",
+        "summary",
+        "details_json",
+        "artifact_path",
+        "occurred_at",
+        "metadata_json",
+    ),
     "worker_result_records": (
         "result_id",
         "status",
@@ -292,6 +304,16 @@ PLANNING_SCHEMA_INDEXES = (
     PlanningSchemaIndex("worker_runs", "idx_worker_runs_task_id", ("task_id",)),
     PlanningSchemaIndex("worker_runs", "idx_worker_runs_status", ("status",)),
     PlanningSchemaIndex("worker_runs", "idx_worker_runs_result_id", ("result_id",)),
+    PlanningSchemaIndex(
+        "worker_run_events",
+        "idx_worker_run_events_run_id",
+        ("worker_run_id",),
+    ),
+    PlanningSchemaIndex(
+        "worker_run_events",
+        "idx_worker_run_events_occurred_at",
+        ("occurred_at",),
+    ),
     PlanningSchemaIndex("worker_result_records", "idx_worker_results_status", ("status",)),
     PlanningSchemaIndex(
         "worker_result_run_links",
@@ -371,6 +393,10 @@ PLANNING_SCHEMA_TABLE_REQUIRED_SQL = {
         "'cancelled'",
         "'needs_review'",
     ),
+    "worker_run_events": (
+        "event_type text not null check(length(event_type) > 0)",
+        "summary text not null check(length(summary) > 0)",
+    ),
     "worker_result_records": (
         "status text not null check(status in",
         "'completed'",
@@ -396,6 +422,7 @@ CONSTRAINED_TABLE_REBUILD_ORDER = (
     "supervisor_tasks",
     "worker_result_records",
     "worker_runs",
+    "worker_run_events",
     "worker_result_run_links",
     "development_log_entries",
 )
@@ -611,6 +638,18 @@ class WorkerRunRecord:
     started_at: str | None = None
     completed_at: str | None = None
     failure_class: str | None = None
+    metadata: JsonObject = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class WorkerRunEventRecord:
+    event_id: str
+    worker_run_id: str
+    event_type: str
+    summary: str
+    details: JsonObject = field(default_factory=dict)
+    artifact_path: str | None = None
+    occurred_at: datetime | str | None = None
     metadata: JsonObject = field(default_factory=dict)
 
 
@@ -2218,6 +2257,64 @@ class PlanningSQLiteStore:
                     worker_run_id=worker_run_id,
                 )
 
+    def add_worker_run_event(self, record: WorkerRunEventRecord) -> WorkerRunEventRecord:
+        """Persist one append-only worker-run event."""
+
+        _validate_required(record.event_id, "event_id")
+        _validate_required(record.worker_run_id, "worker_run_id")
+        _validate_required(record.event_type, "event_type")
+        _validate_required(record.summary, "summary")
+        if record.artifact_path is not None:
+            _validate_artifact_id(record.artifact_path, "artifact_path")
+        occurred_at = (
+            record.occurred_at
+            if isinstance(record.occurred_at, str)
+            else _format_datetime(record.occurred_at or _utc_now())
+        )
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT 1 FROM worker_runs WHERE worker_run_id = ?",
+                (record.worker_run_id,),
+            ).fetchone()
+            _raise_missing(0 if row is None else 1, "worker_run", record.worker_run_id)
+            connection.execute(
+                """
+                INSERT INTO worker_run_events (
+                    event_id, worker_run_id, event_type, summary, details_json,
+                    artifact_path, occurred_at, metadata_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(event_id) DO UPDATE SET
+                    event_type = excluded.event_type,
+                    summary = excluded.summary,
+                    details_json = excluded.details_json,
+                    artifact_path = excluded.artifact_path,
+                    occurred_at = excluded.occurred_at,
+                    metadata_json = excluded.metadata_json
+                """,
+                (
+                    record.event_id,
+                    record.worker_run_id,
+                    record.event_type,
+                    record.summary,
+                    _dump_json(record.details),
+                    record.artifact_path,
+                    occurred_at,
+                    _dump_json(record.metadata),
+                ),
+            )
+        return WorkerRunEventRecord(
+            event_id=record.event_id,
+            worker_run_id=record.worker_run_id,
+            event_type=record.event_type,
+            summary=record.summary,
+            details=record.details,
+            artifact_path=record.artifact_path,
+            occurred_at=occurred_at,
+            metadata=record.metadata,
+        )
+
     def ingest_worker_result(
         self,
         worker_run_id: str,
@@ -2695,6 +2792,21 @@ class PlanningSQLiteStore:
         with self.connect() as connection:
             rows = connection.execute(query, parameters).fetchall()
         return tuple(_worker_run_from_row(row) for row in rows)
+
+    def list_worker_run_events(
+        self,
+        *,
+        worker_run_id: str | None = None,
+    ) -> tuple[WorkerRunEventRecord, ...]:
+        query = "SELECT * FROM worker_run_events"
+        parameters: list[object] = []
+        if worker_run_id is not None:
+            query += " WHERE worker_run_id = ?"
+            parameters.append(worker_run_id)
+        query += " ORDER BY occurred_at ASC, event_id"
+        with self.connect() as connection:
+            rows = connection.execute(query, parameters).fetchall()
+        return tuple(_worker_run_event_from_row(row) for row in rows)
 
 
 def initialize_planning_database(path: Path) -> PlanningSQLiteStore:
@@ -3945,6 +4057,19 @@ def _worker_run_from_row(row: sqlite3.Row) -> WorkerRunRecord:
     )
 
 
+def _worker_run_event_from_row(row: sqlite3.Row) -> WorkerRunEventRecord:
+    return WorkerRunEventRecord(
+        event_id=str(row["event_id"]),
+        worker_run_id=str(row["worker_run_id"]),
+        event_type=str(row["event_type"]),
+        summary=str(row["summary"]),
+        details=_load_json_object(str(row["details_json"])),
+        artifact_path=str(row["artifact_path"]) if row["artifact_path"] is not None else None,
+        occurred_at=str(row["occurred_at"]),
+        metadata=_load_json_object(str(row["metadata_json"])),
+    )
+
+
 def _worker_result_from_row(row: sqlite3.Row) -> WorkerResultRecord:
     return WorkerResultRecord(
         result_id=str(row["result_id"]),
@@ -4652,6 +4777,22 @@ CREATE INDEX IF NOT EXISTS idx_worker_runs_result_id ON worker_runs(result_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_worker_runs_one_nonterminal_per_task
 ON worker_runs(task_id)
 WHERE status IN ('queued', 'running', 'blocked', 'needs_review');
+
+CREATE TABLE IF NOT EXISTS worker_run_events (
+    event_id TEXT PRIMARY KEY CHECK(length(event_id) > 0),
+    worker_run_id TEXT NOT NULL REFERENCES worker_runs(worker_run_id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL CHECK(length(event_type) > 0),
+    summary TEXT NOT NULL CHECK(length(summary) > 0),
+    details_json TEXT NOT NULL DEFAULT '{}',
+    artifact_path TEXT,
+    occurred_at TEXT NOT NULL,
+    metadata_json TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_worker_run_events_run_id
+ON worker_run_events(worker_run_id);
+CREATE INDEX IF NOT EXISTS idx_worker_run_events_occurred_at
+ON worker_run_events(occurred_at);
 
 CREATE TABLE IF NOT EXISTS worker_result_records (
     result_id TEXT PRIMARY KEY CHECK(length(result_id) > 0),

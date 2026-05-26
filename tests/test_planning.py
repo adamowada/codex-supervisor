@@ -23,6 +23,7 @@ from codex_supervisor.planning import (
     PullRequestEvidenceRecord,
     SupervisorTaskRecord,
     WorkerResultRecord,
+    WorkerRunEventRecord,
     WorkerRunRecord,
     initialize_planning_database,
     open_existing_planning_database,
@@ -3573,6 +3574,59 @@ def test_worker_run_upsert_clears_preserved_terminal_evidence_on_rerun(tmp_path)
     assert run.result_path is None
     assert run.completed_at is None
     assert run.failure_class is None
+
+
+def test_worker_run_events_are_append_only_and_filterable(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker-events",
+            slug="worker-events",
+            title="Worker Events",
+            goal="Persist worker launch events.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker-events",
+            plan_id="plan-worker-events",
+            title="Task",
+            goal="Run worker.",
+            task_type="AFK",
+            status="running",
+            acceptance_criteria=["Criterion"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+        ),
+        validate_current_queue_contract=True,
+    )
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-worker-events",
+            task_id="task-worker-events",
+            backend="codex_exec",
+            status="running",
+        )
+    )
+
+    event = store.add_worker_run_event(
+        WorkerRunEventRecord(
+            event_id="event-worker-events-launch",
+            worker_run_id="run-worker-events",
+            event_type="codex_exec_launch_result",
+            summary="Launch completed.",
+            details={"status": "completed"},
+            artifact_path="runs/run-worker-events/events.jsonl",
+            metadata={"backend": "codex_exec"},
+        )
+    )
+
+    assert event.occurred_at is not None
+    events = store.list_worker_run_events(worker_run_id="run-worker-events")
+    assert [item.event_id for item in events] == ["event-worker-events-launch"]
+    assert events[0].details == {"status": "completed"}
+    assert events[0].artifact_path == "runs/run-worker-events/events.jsonl"
 
 
 def test_worker_run_completion_can_complete_non_review_task(tmp_path):

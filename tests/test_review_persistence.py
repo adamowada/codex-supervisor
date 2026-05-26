@@ -201,6 +201,46 @@ def test_run_live_review_for_task_keeps_task_reviewing_when_hitl_is_needed(tmp_p
     assert result.created_repair_task_ids == ()
 
 
+def test_run_live_review_for_task_persists_failed_review_attempt(tmp_path) -> None:
+    store = _store(tmp_path)
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-source-review",
+            plan_id="plan-review",
+            title="Source Review",
+            goal="Provide completed review evidence.",
+            task_type="AFK",
+            status="reviewing",
+            acceptance_criteria=("Review completed.",),
+            verification_commands=("uv run --no-sync python -B scripts/verify.py",),
+            allowed_paths=("src/codex_supervisor/review_persistence.py",),
+            review_required=True,
+        )
+    )
+
+    result = run_live_review_for_task(
+        store,
+        task_id="task-source-review",
+        review_id="review-failed-001",
+        repo_root=tmp_path,
+        backend=FailedReviewBackend(),
+        review_result_artifact_id="insights/review-result.md",
+    )
+
+    progress = store.list_plan_progress(plan_id="plan-review")
+    links = store.list_plan_artifact_links(plan_id="plan-review")
+
+    assert result.status == "failed"
+    assert result.progress_id == "progress-review-review-failed-001"
+    assert result.persistence is not None
+    assert progress[0].event_type == "review_launch_failed"
+    assert json.loads(progress[0].details or "{}")["failure_class"] == "codex_review_failed"
+    assert {link.artifact_id for link in links} == {
+        "runs/reviews/task-source-review/review-failed-001/stdout.txt",
+        "runs/reviews/task-source-review/review-failed-001/stderr.txt",
+    }
+
+
 def test_review_result_schema_is_strict_for_structured_outputs() -> None:
     schema = _review_result_schema()
     finding_schema = schema["properties"]["findings"]["items"]
@@ -272,6 +312,18 @@ class StaticReviewBackend:
             status="completed",
             review_result=self.review_result,
             result_path=request.result_path,
+        )
+
+
+class FailedReviewBackend:
+    def run(self, request: ReviewLaunchRequest) -> ReviewLaunchResult:
+        return ReviewLaunchResult(
+            review_id=request.review_id,
+            task_id=request.task_id,
+            status="failed",
+            failure_class="codex_review_failed",
+            stdout_path=request.stdout_path,
+            stderr_path=request.stderr_path,
         )
 
 

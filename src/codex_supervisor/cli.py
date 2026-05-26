@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sqlite3
 import subprocess
 import sys
@@ -39,6 +40,15 @@ from codex_supervisor.codex_state_reconciliation import (
 from codex_supervisor.factory_smoke import (
     FactoryLoopSmokeReport,
     run_factory_loop_smoke,
+)
+from codex_supervisor.github_lifecycle import (
+    classify_github_checks,
+    create_or_update_pr,
+    decide_merge_policy,
+    enqueue_repair_tasks,
+    merge_pr,
+    monitor_pr_checks,
+    repair_tasks_from_failed_checks,
 )
 from codex_supervisor.goal_contracts import (
     render_goal_contract,
@@ -94,6 +104,7 @@ from codex_supervisor.projects import (
     discover_projects,
 )
 from codex_supervisor.release import (
+    PUBLICATION_READY_EVENT_TYPE,
     ReleaseReadinessReport,
     build_release_readiness_report,
 )
@@ -131,10 +142,12 @@ from codex_supervisor.spawned_projects import (
     recommend_spawned_project_scaffold,
 )
 from codex_supervisor.story_loop import (
+    advance_story_loop_once,
     build_story_loop_status,
     record_story_loop_progress,
     run_live_story_loop_once,
 )
+from codex_supervisor.task_compiler import apply_compiled_tasks, compile_tasks_from_plan
 from codex_supervisor.worktree_artifacts import WorktreeArtifactError
 from codex_supervisor.worktree_cleanup import CleanupPlan, plan_cleanup_targets
 
@@ -205,6 +218,34 @@ def main(argv: list[str] | None = None) -> int:
     )
     project_seed_parser.add_argument("--json", action="store_true", default=False)
 
+    task_compile_parser = subparsers.add_parser(
+        "task-compile",
+        help="Compile open plan milestones or criteria into deterministic task drafts",
+    )
+    task_compile_parser.add_argument("--path", type=Path, default=None)
+    task_compile_parser.add_argument("--plan-id", required=True)
+    task_compile_parser.add_argument("--allowed-path", action="append", required=True)
+    task_compile_parser.add_argument("--verification-command", action="append", default=[])
+    task_compile_parser.add_argument(
+        "--status",
+        choices=("blocked", "pending", "ready"),
+        default="pending",
+    )
+    task_compile_parser.add_argument("--worker-backend", default="codex_exec")
+    task_compile_parser.add_argument(
+        "--review-required",
+        dest="review_required",
+        action="store_true",
+        default=True,
+    )
+    task_compile_parser.add_argument(
+        "--no-review-required",
+        dest="review_required",
+        action="store_false",
+    )
+    task_compile_parser.add_argument("--apply", action="store_true", default=False)
+    task_compile_parser.add_argument("--json", action="store_true", default=False)
+
     spawned_classify_parser = subparsers.add_parser(
         "spawned-project-classify",
         help="Dry-run spawned project scaffold tier recommendation",
@@ -232,6 +273,21 @@ def main(argv: list[str] | None = None) -> int:
     release_readiness_parser.add_argument("--planning-db", type=Path, default=None)
     release_readiness_parser.add_argument("--commit", default=None)
     release_readiness_parser.add_argument("--json", action="store_true", default=False)
+
+    release_refresh_parser = subparsers.add_parser(
+        "release-evidence-refresh",
+        help="Run local publication verification and record current release evidence",
+    )
+    release_refresh_parser.add_argument("--path", type=Path, default=None)
+    release_refresh_parser.add_argument("--repo-root", type=Path, default=None)
+    release_refresh_parser.add_argument("--plan-id", required=True)
+    release_refresh_parser.add_argument("--commit", default=None)
+    release_refresh_parser.add_argument(
+        "--command",
+        dest="verify_command",
+        default="uv run --no-sync python -B scripts/verify.py --publication-ready",
+    )
+    release_refresh_parser.add_argument("--json", action="store_true", default=False)
 
     factory_smoke_parser = subparsers.add_parser(
         "factory-loop-smoke",
@@ -401,8 +457,60 @@ def main(argv: list[str] | None = None) -> int:
     story_run_parser.add_argument("--service-tier", default=None)
     story_run_parser.add_argument("--native-goal-mode", action="store_true", default=False)
     story_run_parser.add_argument("--ignore-user-config", action="store_true", default=False)
+    story_run_parser.add_argument("--allow-degraded-jsonl", action="store_true", default=False)
     story_run_parser.add_argument("--environment-json", type=_json_object_arg, default={})
     story_run_parser.add_argument("--json", action="store_true", default=False)
+
+    story_advance_parser = subparsers.add_parser(
+        "story-loop-advance",
+        help="Advance the Story Loop state machine by one transition",
+    )
+    story_advance_parser.add_argument("--path", type=Path, default=None)
+    story_advance_parser.add_argument("--repo-root", type=Path, default=None)
+    story_advance_parser.add_argument("--worker-run-id", required=True)
+    story_advance_parser.add_argument("--result-schema-path", default=None)
+    story_advance_parser.add_argument("--sandbox-mode", default="workspace-write")
+    story_advance_parser.add_argument("--approval-policy", default="never")
+    story_advance_parser.add_argument("--codex-bin", default=None)
+    story_advance_parser.add_argument("--codex-home", default=None)
+    story_advance_parser.add_argument("--codex-config-path", default=None)
+    story_advance_parser.add_argument("--model", default=None)
+    story_advance_parser.add_argument("--reasoning-effort", default=None)
+    story_advance_parser.add_argument("--service-tier", default=None)
+    story_advance_parser.add_argument("--native-goal-mode", action="store_true", default=False)
+    story_advance_parser.add_argument("--ignore-user-config", action="store_true", default=False)
+    story_advance_parser.add_argument("--allow-degraded-jsonl", action="store_true", default=False)
+    story_advance_parser.add_argument("--environment-json", type=_json_object_arg, default={})
+    story_advance_parser.add_argument("--json", action="store_true", default=False)
+
+    github_lifecycle_parser = subparsers.add_parser(
+        "github-pr-lifecycle",
+        help="Create/update PRs, monitor CI, classify failures, enqueue repair, or merge",
+    )
+    github_lifecycle_parser.add_argument("--path", type=Path, default=None)
+    github_lifecycle_parser.add_argument(
+        "--action",
+        choices=("create", "update", "monitor", "classify", "enqueue-repair", "merge"),
+        required=True,
+    )
+    github_lifecycle_parser.add_argument("--repository", required=True)
+    github_lifecycle_parser.add_argument("--pr-number", type=int, default=None)
+    github_lifecycle_parser.add_argument("--head", default=None)
+    github_lifecycle_parser.add_argument("--base", default="main")
+    github_lifecycle_parser.add_argument("--title", default=None)
+    github_lifecycle_parser.add_argument("--body", default="")
+    github_lifecycle_parser.add_argument("--checks-json-path", type=Path, default=None)
+    github_lifecycle_parser.add_argument("--plan-id", default=None)
+    github_lifecycle_parser.add_argument("--source-task-id", default=None)
+    github_lifecycle_parser.add_argument("--allowed-path", action="append", default=[])
+    github_lifecycle_parser.add_argument("--verification-command", action="append", default=[])
+    github_lifecycle_parser.add_argument("--release-approved", action="store_true", default=False)
+    github_lifecycle_parser.add_argument("--merge-method", default="squash")
+    github_lifecycle_parser.add_argument("--execute", action="store_true", default=False)
+    github_lifecycle_parser.add_argument("--draft", action="store_true", default=True)
+    github_lifecycle_parser.add_argument("--ready", dest="draft", action="store_false")
+    github_lifecycle_parser.add_argument("--apply-repair-tasks", action="store_true", default=False)
+    github_lifecycle_parser.add_argument("--json", action="store_true", default=False)
 
     decision_add_parser = subparsers.add_parser("decision-add", help="Record a plan decision")
     decision_add_parser.add_argument("--path", type=Path, default=None)
@@ -937,6 +1045,33 @@ def main(argv: list[str] | None = None) -> int:
             _print_project_task_seed_result(entry, task_seeds, applied=args.apply)
         return 0
 
+    if args.command == "task-compile":
+        compile_store = _open_write_store(args.path) if args.apply else _open_read_store(args.path)
+        if compile_store is None:
+            return 1
+        try:
+            compile_report = compile_tasks_from_plan(
+                compile_store,
+                plan_id=args.plan_id,
+                allowed_paths=tuple(args.allowed_path),
+                verification_commands=tuple(args.verification_command),
+                status=args.status,
+                worker_backend=args.worker_backend,
+                review_required=args.review_required,
+            )
+            if args.apply:
+                compile_report = apply_compiled_tasks(compile_store, compile_report)
+        except (KeyError, ValueError, sqlite3.Error) as exc:
+            print(f"Could not compile task drafts: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            _print_json(compile_report)
+        else:
+            print(f"task_compile: {compile_report.status} {len(compile_report.tasks)} task(s)")
+            for compiled_task in compile_report.tasks:
+                print(f"- {compiled_task.task_id}\t{compiled_task.status}\t{compiled_task.title}")
+        return 0
+
     if args.command == "spawned-project-classify":
         recommendation = recommend_spawned_project_scaffold(_spawned_project_brief_from_args(args))
         if args.json:
@@ -976,6 +1111,53 @@ def main(argv: list[str] | None = None) -> int:
             _print_release_readiness_report(release_report)
         return 0 if release_report.ready else 1
 
+    if args.command == "release-evidence-refresh":
+        write_store = _open_write_store(args.path)
+        if write_store is None:
+            return 1
+        refresh_store = write_store
+        repo_root = (args.repo_root or Path.cwd()).resolve()
+        commit = args.commit or _git_head_or_report(repo_root)
+        if commit is None:
+            return 1
+        command_argv = tuple(shlex.split(args.verify_command))
+        completed = subprocess.run(
+            command_argv,
+            cwd=repo_root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        evidence = PlanProgressRecord(
+            progress_id=f"progress-publication-ready-{commit[:12]}",
+            plan_id=args.plan_id,
+            event_type=PUBLICATION_READY_EVENT_TYPE,
+            summary=(
+                "Recorded local publication-ready verification "
+                f"for {commit[:12]}: exit {completed.returncode}"
+            ),
+            details=json.dumps(
+                {
+                    "head_sha": commit,
+                    "status": "passed" if completed.returncode == 0 else "failed",
+                    "commands": [args.verify_command],
+                    "exit_code": completed.returncode,
+                    "stdout_tail": completed.stdout[-4000:],
+                    "stderr_tail": completed.stderr[-4000:],
+                },
+                sort_keys=True,
+            ),
+        )
+        if not _write_or_report(lambda: refresh_store.add_plan_progress(evidence)):
+            return 1
+        result = {"progress": evidence, "exit_code": completed.returncode}
+        if args.json:
+            _print_json(result)
+        else:
+            print(f"release_evidence_refresh: {evidence.progress_id}")
+            print(f"exit_code: {completed.returncode}")
+        return completed.returncode
+
     if args.command == "factory-loop-smoke":
         if args.keep_workspace and args.workspace is None:
             print("--keep-workspace requires --workspace", file=sys.stderr)
@@ -1000,15 +1182,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "codex-state-observations":
         inventory = inventory_codex_state(args.codex_home, observed_at=args.observed_at)
-        report = build_codex_state_observation_report(
+        observation_report = build_codex_state_observation_report(
             inventory,
             linked_plan_id=args.linked_plan_id,
             linked_task_id=args.linked_task_id,
         )
         if args.json:
-            _print_json(report)
+            _print_json(observation_report)
         else:
-            _print_codex_state_observation_report(report)
+            _print_codex_state_observation_report(observation_report)
         return 0
 
     if args.command == "codex-state-reconcile-dry-run":
@@ -1208,10 +1390,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             _print_json(tasks)
             return 0
-        for task in tasks:
+        for listed_task in tasks:
             print(
-                f"{task.task_id}\t{task.status}\t{task.task_type}\t"
-                f"plan={task.plan_id}({task.plan_status})\t{task.title}"
+                f"{listed_task.task_id}\t{listed_task.status}\t{listed_task.task_type}\t"
+                f"plan={listed_task.plan_id}({listed_task.plan_status})\t{listed_task.title}"
             )
         return 0
 
@@ -1381,11 +1563,11 @@ def main(argv: list[str] | None = None) -> int:
                 "to distinguish HITL, blocked, completed, and empty queue states."
             )
             print("Other ready tasks:")
-            for task in all_ready_tasks:
-                blocked = _task_claimability_reason(task, ready_all_tasks, worker_runs)
+            for ready_task in all_ready_tasks:
+                blocked = _task_claimability_reason(ready_task, ready_all_tasks, worker_runs)
                 print(
-                    f"{task.task_id}\t{task.task_type}\t{blocked}\t"
-                    f"plan={task.plan_id}({task.plan_status})\t{task.title}"
+                    f"{ready_task.task_id}\t{ready_task.task_type}\t{blocked}\t"
+                    f"plan={ready_task.plan_id}({ready_task.plan_status})\t{ready_task.title}"
                 )
             return 0
         print("No ready supervisor tasks found.")
@@ -1543,6 +1725,7 @@ def main(argv: list[str] | None = None) -> int:
                 service_tier=args.service_tier,
                 native_goal_mode=args.native_goal_mode,
                 ignore_user_config=args.ignore_user_config,
+                allow_degraded_jsonl=args.allow_degraded_jsonl,
                 environment=environment,
             )
         )
@@ -1560,6 +1743,61 @@ def main(argv: list[str] | None = None) -> int:
             if run_result.result_id:
                 print(f"result_id: {run_result.result_id}")
         return 0 if run_result.status == "completed" else 1
+
+    if args.command == "story-loop-advance":
+        write_store = _open_write_store(args.path)
+        if write_store is None:
+            return 1
+        advance_store = write_store
+        repo_root = args.repo_root or Path.cwd()
+        environment = {str(key): str(value) for key, value in args.environment_json.items()}
+        story_advance_result = _write_value_or_report(
+            lambda: advance_story_loop_once(
+                advance_store,
+                repo_root=repo_root,
+                worker_run_id=args.worker_run_id,
+                result_schema_path=args.result_schema_path,
+                sandbox_mode=args.sandbox_mode,
+                approval_policy=args.approval_policy,
+                codex_executable=args.codex_bin,
+                codex_home=args.codex_home,
+                codex_config_path=args.codex_config_path,
+                model=args.model,
+                reasoning_effort=args.reasoning_effort,
+                service_tier=args.service_tier,
+                native_goal_mode=args.native_goal_mode,
+                ignore_user_config=args.ignore_user_config,
+                allow_degraded_jsonl=args.allow_degraded_jsonl,
+                environment=environment,
+            )
+        )
+        if story_advance_result is None:
+            return 1
+        if args.json:
+            _print_json(story_advance_result)
+        else:
+            print(
+                f"story_loop_advance: {story_advance_result.transition} "
+                f"{story_advance_result.state_before}->{story_advance_result.state_after}"
+            )
+            if story_advance_result.task_id:
+                print(f"task_id: {story_advance_result.task_id}")
+            if story_advance_result.failure_class:
+                print(f"failure_class: {story_advance_result.failure_class}")
+        return 0 if story_advance_result.failure_class is None else 1
+
+    if args.command == "github-pr-lifecycle":
+        try:
+            lifecycle_result = _github_lifecycle_from_args(args)
+        except (OSError, ValueError, sqlite3.Error, json.JSONDecodeError) as exc:
+            print(f"GitHub lifecycle failed: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            _print_json(lifecycle_result)
+        else:
+            _print_json_section("github_pr_lifecycle", lifecycle_result)
+        lifecycle_status = lifecycle_result.get("status")
+        return 1 if lifecycle_status == "failed" else 0
 
     if args.command == "decision-add":
         write_store = _open_write_store(args.path)
@@ -2306,6 +2544,108 @@ def _write_story_loop_record_or_report(
     except (KeyError, ValueError, sqlite3.Error) as exc:
         print(f"Could not update planning database: {exc}", file=sys.stderr)
         return None
+
+
+def _github_lifecycle_from_args(args: argparse.Namespace) -> dict[str, object]:
+    if args.action in {"create", "update"}:
+        if args.action == "create" and (not args.head or not args.title):
+            raise ValueError("--head and --title are required for PR creation")
+        if args.action == "update" and (args.pr_number is None or not args.title):
+            raise ValueError("--pr-number and --title are required for PR update")
+        command_result = create_or_update_pr(
+            repository=args.repository,
+            head=args.head or "",
+            base=args.base,
+            title=args.title or "",
+            body=args.body,
+            pr_number=args.pr_number if args.action == "update" else None,
+            draft=args.draft,
+            execute=args.execute,
+            cwd=Path.cwd(),
+        )
+        return {"status": "completed", "command": command_result}
+    if args.action == "monitor":
+        if args.pr_number is None:
+            raise ValueError("--pr-number is required for PR monitoring")
+        command_result = monitor_pr_checks(
+            repository=args.repository,
+            pr_number=args.pr_number,
+            execute=args.execute,
+            cwd=Path.cwd(),
+        )
+        classification = (
+            classify_github_checks(command_result.stdout)
+            if command_result.executed and command_result.exit_code == 0
+            else None
+        )
+        return {
+            "status": "completed" if command_result.exit_code in {None, 0} else "failed",
+            "command": command_result,
+            "classification": classification,
+        }
+    if args.action in {"classify", "enqueue-repair", "merge"}:
+        if args.checks_json_path is None:
+            raise ValueError("--checks-json-path is required for this action")
+        classification = classify_github_checks(args.checks_json_path.read_text(encoding="utf-8"))
+        if args.action == "classify":
+            return {"status": "completed", "classification": classification}
+        if args.action == "enqueue-repair":
+            if not args.plan_id or not args.source_task_id:
+                raise ValueError("--plan-id and --source-task-id are required for repair tasks")
+            repair_tasks = repair_tasks_from_failed_checks(
+                plan_id=args.plan_id,
+                source_task_id=args.source_task_id,
+                failed_checks=classification.failed_checks,
+                allowed_paths=tuple(args.allowed_path),
+                verification_commands=tuple(args.verification_command),
+            )
+            applied_ids: tuple[str, ...] = ()
+            if args.apply_repair_tasks:
+                store = _open_write_store(args.path)
+                if store is None:
+                    raise ValueError("could not open planning database")
+                applied_ids = enqueue_repair_tasks(store, repair_tasks)
+            return {
+                "status": "completed",
+                "classification": classification,
+                "repair_tasks": repair_tasks,
+                "applied_task_ids": applied_ids,
+            }
+        if args.pr_number is None:
+            raise ValueError("--pr-number is required for merge")
+        decision = decide_merge_policy(
+            classification,
+            release_approved=args.release_approved,
+            method=args.merge_method,
+        )
+        command_result = merge_pr(
+            repository=args.repository,
+            pr_number=args.pr_number,
+            decision=decision,
+            execute=args.execute,
+            cwd=Path.cwd(),
+        )
+        return {
+            "status": "completed" if decision.allowed else "failed",
+            "classification": classification,
+            "decision": decision,
+            "command": command_result,
+        }
+    raise ValueError(f"unsupported GitHub lifecycle action: {args.action}")
+
+
+def _git_head_or_report(repo_root: Path) -> str | None:
+    completed = subprocess.run(
+        ("git", "rev-parse", "HEAD"),
+        cwd=repo_root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        print(f"Could not resolve HEAD: {completed.stderr.strip()}", file=sys.stderr)
+        return None
+    return completed.stdout.strip()
 
 
 def _load_review_result(path: Path) -> ReviewResult:

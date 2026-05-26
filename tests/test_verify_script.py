@@ -10,6 +10,7 @@ def test_verification_scripts_compile():
     scripts_root = Path(__file__).resolve().parents[1] / "scripts"
     script_paths = sorted(scripts_root.glob("check_*.py"))
     script_paths.append(scripts_root / "verify.py")
+    script_paths.append(scripts_root / "verify_codex_plugin_install.py")
 
     for script_path in script_paths:
         compile(script_path.read_text(encoding="utf-8"), str(script_path), "exec")
@@ -56,6 +57,9 @@ def test_verify_commands_can_enable_publication_ready_gate():
         command[-2:] == ("scripts/check_public_repo_hygiene.py", "--publication-ready")
         for command in publication_commands
     )
+    assert (python, "scripts/verify_codex_plugin_install.py") in publication_commands
+    assert ("uv", "build", "--wheel", "--sdist") in publication_commands
+    assert (python, "scripts/verify_codex_plugin_install.py") not in default_commands
 
 
 def test_verify_main_stops_at_first_failed_command(monkeypatch, tmp_path):

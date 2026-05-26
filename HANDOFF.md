@@ -1,25 +1,23 @@
 # HANDOFF.md
 
-Last updated: 2026-05-25
+Last updated: 2026-05-26
 
 This file is a compact handoff snapshot only. Canonical queue state, completion records, imported
 legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Current Snapshot
 
-- Current queue state: ready after the security/public-hygiene slice verification.
+- Current queue state: completed. `story-loop-status --json` reports no open AFK, HITL, running,
+  blocked, or pending tasks for `plan-v1-live-operational-hardening`.
 - Active plan: `plan-v1-live-operational-hardening`.
-- Current AFK task: `task-v1-final-completion-audit-live-smoke`.
-- Latest planning checkpoint: six-lane v1 hardening review digested in
-  `progress-v1-six-lane-review-digested-20260525`; live worker implementation completed in
-  `worker-run-v1-live-story-loop-inline-20260525`; default-on mutating MCP/plugin parity completed
-  in `worker-run-v1-mutating-mcp-inline-20260525`; real spawned-project bootstrap/adapters
-  completed in `worker-run-v1-real-bootstrap-inline-20260525`; live review integrity completed in
-  `worker-run-v1-live-review-inline-20260525`; release-readiness evidence hardening completed in
-  `worker-run-v1-release-current-inline-20260525`; security/public-hygiene hardening completed in
-  `worker-run-v1-security-hygiene-inline-20260525`.
-- Durable insights: `insights/v1-hardening-clarifications.md` and
-  `insights/v1-hardening-review.md`.
+- Current AFK task: none.
+- Latest release-readiness target: code commit
+  `15f86034c86e3991b15d3af7b72dfcdb48ef7efd`.
+- Latest release-readiness result: `ready: true`, 16/16 checks passing. Current evidence is recorded
+  in `plans/planning.sqlite3`, including live worker, live review, mutating MCP, real bootstrap,
+  Windows validation, publication-ready verification, and GitHub Actions CI for the target commit.
+- Durable insights: `insights/v1-hardening-clarifications.md`,
+  `insights/v1-hardening-review.md`, and `insights/release-readiness-evidence.md`.
 - Codex CLI smoke: npm `codex-cli 0.133.0` resolves in the current shell, and `codex exec --help`
   is available. Previous Windows executable resolution drift is not a current blocker for this
   process.
@@ -40,6 +38,7 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Next Action
 
-Run `task-v1-final-completion-audit-live-smoke`: prove every v1 requirement against current
-evidence, run bounded real Codex/API smoke checks for live worker/review/MCP/bootstrap behavior,
-record current CI/Windows/live evidence for the post-ACP commit, and only then mark v1 operational.
+Wait for the user's explicit release instruction. Until then, do not create a release tag or publish
+release artifacts. A fresh session should run
+`uv run --no-sync python -B -m codex_supervisor.cli release-readiness --json` before release action
+and confirm it remains `ready: true`.

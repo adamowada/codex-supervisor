@@ -114,3 +114,23 @@
 - `supersedes`: directory-only repo-local skill scaffolding.
 - `next action`: Keep scaffold verification and generated optional surfaces aligned: every optional
   directory that activates an inventory gate needs a real first artifact or should not be created.
+
+## V1 Live Release Evidence Bundle
+
+- `claim`: `codex-supervisor` v1 readiness depends on current repo-owned evidence for the audited
+  code commit: successful CI, Windows validation, publication-ready local verification, live worker,
+  live review, mutating MCP, and real spawned-project bootstrap.
+- `confidence`: confirmed
+- `evidence`: `uv run --no-sync python -B -m codex_supervisor.cli release-readiness --json`
+  returned `ready: true` with 16/16 checks passing for
+  `15f86034c86e3991b15d3af7b72dfcdb48ef7efd`; planning rows include
+  `progress-v1-live-worker-smoke-15f8603-20260526`,
+  `progress-v1-live-review-smoke-15f8603-20260526`,
+  `progress-v1-mutating-mcp-smoke-15f8603-20260526`,
+  `progress-v1-real-bootstrap-smoke-15f8603-20260526`,
+  `progress-v1-windows-validation-15f8603-20260526`, and
+  `progress-v1-ci-success-15f8603-20260526`.
+- `scope`: final release-readiness checks and future handoffs for v1.
+- `supersedes`: none
+- `next action`: Wait for the user's explicit release instruction, then rerun release-readiness
+  before tagging or publishing release artifacts.

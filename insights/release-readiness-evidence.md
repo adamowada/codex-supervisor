@@ -76,10 +76,27 @@
 - `confidence`: confirmed
 - `evidence`: `scripts/check_planning_integrity.py` rejected the collision between
   `worker-run-stage11b-mcp-stdio-transport-inline-20260525` and
-  `worker-run-v1-live-worker-smoke-trusted-20260525`; fixed in
-  `src/codex_supervisor/planning.py` and `tests/test_planning.py`.
+  `worker-run-v1-live-worker-smoke-trusted-20260525`; live review
+  `review-v1-live-smoke-f09681c-scopefix-20260525` found the follow-up long common-prefix collision
+  risk; fixed in `src/codex_supervisor/planning.py` and `tests/test_planning.py`.
 - `scope`: worker result ingestion, re-ingestion, and compatibility result records in
   `plans/planning.sqlite3`.
 - `supersedes`: filename-stem-only worker result IDs.
 - `next action`: Keep worker-result links single-owner per run unless a structured result explicitly
-  declares multiple worker runs, and replace stale links when a run is re-ingested.
+  declares multiple worker runs, replace stale links when a run is re-ingested, and include a
+  normalized source-path digest in generated result IDs.
+
+## Live Review Smoke Scope
+
+- `claim`: A live review smoke task that targets a real commit must include the full target
+  changed-file set in its contract, otherwise the reviewer can correctly classify omitted files as
+  source-of-truth drift even when the implementation is intentional.
+- `confidence`: confirmed
+- `evidence`: live review `review-v1-live-smoke-f09681c-20260525` recorded a P2 needs-HITL finding
+  because the smoke task omitted `src/codex_supervisor/planning.py`, `tests/test_planning.py`, and
+  `insights/release-readiness-evidence.md` from its allowed paths.
+- `scope`: live `review-run-live` smoke evidence that reviews a commit instead of a single-file or
+  single-feature target.
+- `supersedes`: none
+- `next action`: Expand the smoke task contract to match the reviewed commit scope before rerunning
+  live review evidence.

@@ -4057,10 +4057,11 @@ def _ensure_legacy_direct_worker_result_record(
 def _worker_result_id(source_path: str, source_sha256: str) -> str:
     normalized_path = source_path.replace("\\", "/").strip().strip("/")
     safe_key = re.sub(r"[^A-Za-z0-9_.:-]+", "-", normalized_path).strip("-")
-    hash_suffix = source_sha256[:16]
+    path_digest = hashlib.sha256(normalized_path.encode("utf-8")).hexdigest()[:12]
+    source_digest = source_sha256[:12]
     if not safe_key:
-        return f"worker-result-{hash_suffix}"
-    return f"worker-result-{safe_key[:72].rstrip('-')}-{hash_suffix}"
+        return f"worker-result-{path_digest}-{source_digest}"
+    return f"worker-result-{safe_key[:64].rstrip('-')}-{path_digest}-{source_digest}"
 
 
 def _replace_worker_result_run_link(

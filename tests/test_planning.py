@@ -3738,6 +3738,20 @@ def test_worker_result_ids_include_source_path_for_repeated_filenames(tmp_path):
     assert result_b.result_id.startswith("worker-result-artifacts-run-b-worker-result.raw.json-")
 
 
+def test_worker_result_ids_hash_long_source_paths_after_prefix_truncation():
+    source_hash = "a" * 64
+    first = planning_module._worker_result_id(
+        f"runs/reviews/{'x' * 80}/a/worker-result.raw.json",
+        source_hash,
+    )
+    second = planning_module._worker_result_id(
+        f"runs/reviews/{'x' * 80}/b/worker-result.raw.json",
+        source_hash,
+    )
+
+    assert first != second
+
+
 def test_worker_result_reingestion_replaces_stale_run_links(tmp_path):
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)

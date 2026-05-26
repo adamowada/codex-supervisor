@@ -57,6 +57,11 @@ new hashes.
 
 Operational planning state belongs in `plans/planning.sqlite3`. Use typed helpers in
 `codex_supervisor.planning`; do not scatter ad hoc SQL across the project.
+Before any non-read-only implementation, repair, ACP, scaffold, or workflow mutation in this repo,
+inspect `story-loop-status --json` and record intent in `plans/planning.sqlite3` before editing
+files. Ensure `HANDOFF.md` is current, accurate, and not stale. Use a progress event, task update,
+decision, or HITL/blocker record as appropriate. Do not wait until completion to make the planning
+database aware of the work unless the change is truly trivial and already covered by an active task.
 Do not mirror live queue state, stage progress, worker results, development logs, completion
 records, or imported legacy evidence into protected markdown or repo-local JSON artifacts. Protected
 docs define doctrine, schemas, contracts, and operating rules. `HANDOFF.md` can summarize what a new

@@ -9,6 +9,10 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Current queue state: hitl. `story-loop-status --json` reports current HITL task
   `task-local-todo-webapp-desktop-smoke-rerun`; there is no current AFK or running task.
+- Latest source-of-truth update: `AGENTS.md` now requires planning-first mutation discipline for
+  non-read-only implementation, repair, ACP, scaffold, and workflow changes in this repository.
+  Intent was recorded before edits as `progress-planning-first-rule-20260526`; verification was
+  recorded as `progress-planning-first-rule-verified-20260526`.
 - Latest implementation: hardened full-AFK supervisor execution after the `todo-list-test-4`
   diagnosis. MCP `story_loop_run_once` and `story_loop_advance` now accept explicit
   `planning_path` and `repo_root`; supervisor-managed full-AFK scaffolds initialize git and create a
@@ -18,7 +22,9 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   evidence plus an evidence manifest before planning ingestion; and `review_required=true` creates
   a separate HITL review task.
 - Planning progress recorded:
-  `progress-supervisor-full-afk-hardening-20260526`.
+  `progress-supervisor-full-afk-hardening-20260526` and
+  `progress-planning-first-rule-20260526` /
+  `progress-planning-first-rule-verified-20260526`.
 - Planning integrity repair recorded a HITL rerun task for `plan-local-todo-webapp` so the pending
   smoke criteria have an explicit current-queue action instead of orphaned criteria.
 - Completed repair plan: `plan-desktop-plugin-live-mcp-authority-20260526`
@@ -69,9 +75,9 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   version. The installed-cache verifier showed direct MCP `tools/list` includes
   `codex_supervisor.runtime_preflight`. The halted turn failed because `tool_search` returned
   queue/worker tools for a broad query, then returned no canary for name-only queries such as
-  `runtime_preflight codex_supervisor` and `preflight`. The repair in progress changes the packaged
-  skill to discover the canary with semantic query terms such as `canary`, ignores false
-  client-supplied startup diagnostics in the live MCP handler, and bumps the Desktop plugin
+  `runtime_preflight codex_supervisor` and `preflight`. The completed repair changed the packaged
+  skill to discover the canary with semantic query terms such as `canary`, ignored false
+  client-supplied startup diagnostics in the live MCP handler, and bumped the Desktop plugin
   manifest to `0.1.3`.
 - Previous v1 hardening plan: `plan-v1-live-operational-hardening` remains active but has no open
   work; `story-loop-status --json` reports it as completed within the current queue.
@@ -106,6 +112,5 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Next Action
 
-After ACP for the full-AFK hardening slice, rerun the Desktop smoke in a fresh folder and confirm
-the supervised path reaches a real project-local Story Loop run rather than a CLI/current-thread
-fallback.
+Rerun the Desktop smoke in a fresh folder and confirm the supervised path reaches a real
+project-local Story Loop run rather than a CLI/current-thread fallback.

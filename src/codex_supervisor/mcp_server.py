@@ -197,6 +197,9 @@ def _handle_runtime_preflight(arguments: JsonObject, context: McpServerContext) 
         if supervisor_backend == "mcp"
         else ()
     )
+    mcp_startup_diagnostic = _optional_string(arguments.get("mcp_startup_diagnostic"))
+    if supervisor_backend == "mcp" and live_mcp_tools:
+        mcp_startup_diagnostic = None
     return build_runtime_preflight_report(
         repo_root=context.resolved_repo_root(),
         planning_path=context.resolved_planning_path(),
@@ -222,7 +225,7 @@ def _handle_runtime_preflight(arguments: JsonObject, context: McpServerContext) 
             if isinstance(item, str) and item.strip()
         ),
         allow_setup_mutations=bool(arguments.get("allow_setup_mutations", False)),
-        mcp_startup_diagnostic=_optional_string(arguments.get("mcp_startup_diagnostic")),
+        mcp_startup_diagnostic=mcp_startup_diagnostic,
         preflight_surface="live_mcp",
     )
 
@@ -1096,8 +1099,9 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.runtime_preflight": McpToolDefinition(
         name="codex_supervisor.runtime_preflight",
         description=(
-            "Desktop full-AFK canary: build a fail-closed codex_supervisor.runtime_preflight "
-            "execution-mode ledger and verify the live Supervisor MCP tool surface."
+            "Desktop full-AFK canary and runtime preflight: build a fail-closed "
+            "codex_supervisor.runtime_preflight execution-mode ledger and verify the live "
+            "Supervisor MCP tool surface."
         ),
         input_schema={
             "type": "object",

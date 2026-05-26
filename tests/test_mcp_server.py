@@ -32,7 +32,7 @@ def test_list_mcp_tools_exposes_read_and_default_on_mutating_schemas(tmp_path: P
     runtime_preflight = next(
         tool for tool in tools if tool["name"] == "codex_supervisor.runtime_preflight"
     )
-    assert "Desktop full-AFK canary" in runtime_preflight["description"]
+    assert "Desktop full-AFK canary and runtime preflight" in runtime_preflight["description"]
     assert "codex_supervisor.runtime_preflight" in runtime_preflight["description"]
     read_tools = [tool for tool in tools if tool["name"] == "codex_supervisor.task_show"]
     assert all(tool["annotations"]["readOnlyHint"] is True for tool in read_tools)
@@ -162,6 +162,35 @@ def test_runtime_preflight_tool_uses_live_inventory_when_tool_search_snapshot_is
         "codex_supervisor.task_claim",
         "codex_supervisor.story_loop_run_once",
     } <= normalized_tools
+
+
+def test_runtime_preflight_tool_ignores_tool_search_as_startup_diagnostic(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    initialize_planning_database(db_path)
+    context = McpServerContext(repo_root=tmp_path, planning_path=db_path)
+
+    result = dispatch_mcp_tool(
+        "codex_supervisor.runtime_preflight",
+        {
+            "full_afk": True,
+            "plugin_invocation": True,
+            "plugin_full_afk": True,
+            "supervisor_backend": "mcp",
+            "worker_execution": "codex_exec",
+            "story_loop_status_checked": True,
+            "task_current_requested": True,
+            "mcp_startup_diagnostic": "runtime_preflight tool discovered via tool_search",
+        },
+        context=context,
+    )
+
+    assert result["ok"] is True
+    assert result["data"]["ok"] is True
+    issue_codes = {issue["code"] for issue in result["data"]["issues"]}
+    assert "mcp_startup_failed" not in issue_codes
+    assert result["data"]["diagnostics"].get("mcp_startup_diagnostic") is None
 
 
 def test_project_list_tool_delegates_to_project_registry(tmp_path: Path) -> None:

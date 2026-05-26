@@ -1,6 +1,6 @@
 {
   "name": "codex-supervisor",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Codex Desktop wiring for the codex-supervisor agentic engineering factory.",
   "author": {
     "name": "Adam Owada"

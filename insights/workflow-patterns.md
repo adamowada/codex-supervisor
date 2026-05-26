@@ -498,16 +498,23 @@ Evidence: In the `todo-list-test-4` smoke, the same Desktop session first discov
 `tool_search` returned no `runtime_preflight` result. The installed Desktop cache verifier and a
 direct MCP preflight both showed the canary and required tools are actually exposed.
 
+Follow-up evidence: after refreshing the Desktop cache to plugin manifest `0.1.2`, the halted
+`todo-list-test-4` rerun loaded the updated packaged skill and exposed queue/worker tools through
+`tool_search`, but name-only queries such as `runtime_preflight codex_supervisor` and `preflight`
+returned no canary. A semantic query matching the tool description, such as `canary` or
+`Desktop full-AFK canary fail-closed execution-mode ledger`, does discover the callable canary.
+
 Scope: Codex Desktop plugin full-AFK canaries, MCP runtime preflight, tool discovery, and any
 workflow that asks the model to pass a tool list back into a server-side guard.
 
 Implementation: the live MCP `runtime_preflight` handler now self-inventories `list_mcp_tools`
 before building the execution-mode ledger, and client-supplied `mcp_tools` values are supplemental
 diagnostics only. The packaged Desktop skill also records that `tool_search` is discovery, not
-inventory.
+inventory, prescribes `canary` as the discovery query, and forbids passing
+`mcp_startup_diagnostic` merely because discovery used `tool_search`.
 
 Next action: rerun a fresh Codex Desktop smoke after Desktop reloads plugin manifest version
-`0.1.2`.
+`0.1.3`.
 
 ## Execution Mode Ledgers Should Precede Full-AFK Work
 

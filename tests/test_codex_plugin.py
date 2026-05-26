@@ -12,7 +12,7 @@ from scripts.verify_codex_plugin_install import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = REPO_ROOT / "plugins" / "codex-supervisor"
-PLUGIN_VERSION = "0.1.2"
+PLUGIN_VERSION = "0.1.3"
 MANIFEST_PATH = PLUGIN_ROOT / ".codex-plugin" / "plugin.json"
 MCP_PATH = PLUGIN_ROOT / ".mcp.json"
 README_PATH = PLUGIN_ROOT / "README.md"
@@ -131,6 +131,10 @@ def test_plugin_skill_is_valid_and_maps_desktop_workflows() -> None:
         "Runtime canary",
         "canonical dotted MCP tool names",
         "Treat `tool_search` as discovery, not inventory",
+        "search for `canary`",
+        "name-only queries such as",
+        "Do not pass `tool_search` results as authoritative `mcp_tools`",
+        "`mcp_startup_diagnostic` merely because",
         "must not approve plugin full-AFK readiness",
         "fresh-thread-code-reviewer",
         "review-result-ingest",

@@ -50,10 +50,17 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   `tool_search` returned other supervisor tools without returning the canary. The live MCP
   `runtime_preflight` handler now self-inventories `list_mcp_tools(context)` and uses
   client-provided `mcp_tools` only as supplemental diagnostics. The runtime preflight tool metadata
-  now says `Desktop full-AFK canary`, and the Desktop plugin manifest version is bumped to `0.1.2`
-  so Desktop has a refresh boundary for the packaged skill. The MCP process already attached to
-  this thread still has the old handler, which confirms that a Desktop/plugin reload is required
-  before this repair can be smoke-tested from the app.
+  now says `Desktop full-AFK canary`, and the Desktop plugin manifest version was bumped to
+  `0.1.2` so Desktop had a refresh boundary for the packaged skill.
+- Latest rerun diagnosis: after Desktop reloaded cache `0.1.2`, the user-entered skill mention still
+  contained a stale `0.1.1` path, but the cache itself had only `0.1.2` and the agent read that
+  version. The installed-cache verifier showed direct MCP `tools/list` includes
+  `codex_supervisor.runtime_preflight`. The halted turn failed because `tool_search` returned
+  queue/worker tools for a broad query, then returned no canary for name-only queries such as
+  `runtime_preflight codex_supervisor` and `preflight`. The repair in progress changes the packaged
+  skill to discover the canary with semantic query terms such as `canary`, ignores false
+  client-supplied startup diagnostics in the live MCP handler, and bumps the Desktop plugin
+  manifest to `0.1.3`.
 - Previous v1 hardening plan: `plan-v1-live-operational-hardening` remains active but has no open
   work; `story-loop-status --json` reports it as completed within the current queue.
 - Latest release-readiness target checked during architecture-fix work: code commit
@@ -87,5 +94,5 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Next Action
 
-Verify and ACP the `todo-list-test-4` false-canary repair, then rerun the Desktop smoke in a fresh
-folder after Desktop reloads plugin manifest version `0.1.2`.
+Verify and ACP the `todo-list-test-4` discovery-query repair, then rerun the Desktop smoke in a
+fresh folder after Desktop reloads plugin manifest version `0.1.3`.

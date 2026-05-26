@@ -134,7 +134,11 @@ When the user has granted dangerous/full-auto operation, spend autonomy on throu
   failure, but it cannot approve plugin full-AFK readiness or override a successful live MCP canary.
 - `tool_search` is not MCP inventory. Use it to discover callable tools, but let the live MCP
   `runtime_preflight` handler inventory the server tool surface before deciding required tools are
-  missing.
+  missing. For Desktop plugin canary discovery, search for `canary` or
+  `Desktop full-AFK canary fail-closed execution-mode ledger`; name-only queries such as
+  `runtime_preflight` are not reliable. Do not pass `tool_search` results as authoritative
+  `mcp_tools`, and do not pass `mcp_startup_diagnostic` merely because discovery went through
+  `tool_search`.
 - Plugin full-AFK project bootstrap always uses the supervisor-managed scaffold tier.
 - Parallelize read-only exploration, independent workers, CI inspection, and review where safe.
 - Never run two writers against the same files or branch without an explicit coordination plan.

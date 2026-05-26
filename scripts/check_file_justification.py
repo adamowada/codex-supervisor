@@ -68,6 +68,11 @@ PURPOSE_RULES = (
         patterns=(".agents/skills/**",),
     ),
     PurposeRule(
+        name="repo-local-plugin-marketplace",
+        purpose="repo-local Codex plugin marketplace metadata",
+        patterns=(".agents/plugins/marketplace.json",),
+    ),
+    PurposeRule(
         name="github-actions-ci",
         purpose="GitHub Actions workflows for public CI verification",
         patterns=(".github/workflows/*.yaml", ".github/workflows/*.yml"),
@@ -284,6 +289,9 @@ FILE_PURPOSES = {
     ".agents/skills/worker-result-contract.md": FilePurpose(
         "shared worker-result contract for repo-local skills", "check_skill_inventory"
     ),
+    ".agents/plugins/marketplace.json": FilePurpose(
+        "repo-local Codex plugin marketplace metadata", "check_file_justification"
+    ),
     "src/codex_supervisor/__init__.py": FilePurpose("Python package marker", "mypy"),
     "src/codex_supervisor/cli.py": FilePurpose("codex-supervisor CLI", "pytest"),
     "src/codex_supervisor/codex_automation.py": FilePurpose(
@@ -479,6 +487,11 @@ FOLDER_PURPOSE_RULES = (
         name="repo-local-skills",
         purpose="Codex bootstrap workflows and small reusable operating procedures",
         patterns=(".agents", ".agents/skills", ".agents/skills/**"),
+    ),
+    FolderPurposeRule(
+        name="repo-local-plugin-marketplace",
+        purpose="repo-local Codex plugin marketplace metadata",
+        patterns=(".agents/plugins",),
     ),
     FolderPurposeRule(
         name="github-actions-ci",

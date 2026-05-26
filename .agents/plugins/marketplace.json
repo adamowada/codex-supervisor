@@ -1,0 +1,20 @@
+{
+  "name": "codex-supervisor-local",
+  "interface": {
+    "displayName": "Codex Supervisor Local"
+  },
+  "plugins": [
+    {
+      "name": "codex-supervisor",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codex-supervisor"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

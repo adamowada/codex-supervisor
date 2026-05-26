@@ -13,6 +13,7 @@ def test_file_justification_accepts_known_bootstrap_categories(tmp_path):
     _write(tmp_path / "README.md", "repo")
     _write(tmp_path / "src" / "codex_supervisor" / "cli.py", "def main():\n    return 0\n")
     _write(tmp_path / ".agents" / "skills" / "demo" / "SKILL.md", "---\nname: demo\n---\n")
+    _write(tmp_path / ".agents" / "plugins" / "marketplace.json", "{}\n")
 
     failures = module.check_file_justification(tmp_path)
 

@@ -132,6 +132,9 @@ When the user has granted dangerous/full-auto operation, spend autonomy on throu
 - Desktop plugin full-AFK work must be authorized by a live MCP `runtime_preflight` canary in the
   current Desktop session. CLI preflight can diagnose package/cache/startup problems after MCP
   failure, but it cannot approve plugin full-AFK readiness or override a successful live MCP canary.
+- `tool_search` is not MCP inventory. Use it to discover callable tools, but let the live MCP
+  `runtime_preflight` handler inventory the server tool surface before deciding required tools are
+  missing.
 - Plugin full-AFK project bootstrap always uses the supervisor-managed scaffold tier.
 - Parallelize read-only exploration, independent workers, CI inspection, and review where safe.
 - Never run two writers against the same files or branch without an explicit coordination plan.

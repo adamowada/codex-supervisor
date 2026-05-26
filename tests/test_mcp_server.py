@@ -29,6 +29,11 @@ def test_list_mcp_tools_exposes_read_and_default_on_mutating_schemas(tmp_path: P
     assert "codex_supervisor.progress_add" in names
     assert "codex_supervisor.artifact_link_add" in names
     assert "codex_supervisor.story_loop_run_once" in names
+    runtime_preflight = next(
+        tool for tool in tools if tool["name"] == "codex_supervisor.runtime_preflight"
+    )
+    assert "Desktop full-AFK canary" in runtime_preflight["description"]
+    assert "codex_supervisor.runtime_preflight" in runtime_preflight["description"]
     read_tools = [tool for tool in tools if tool["name"] == "codex_supervisor.task_show"]
     assert all(tool["annotations"]["readOnlyHint"] is True for tool in read_tools)
     mutating_tool = next(tool for tool in tools if tool["name"] == "codex_supervisor.task_upsert")
@@ -122,6 +127,41 @@ def test_runtime_preflight_tool_accepts_desktop_tool_name_aliases(tmp_path: Path
         result["data"]["diagnostics"]["mcp_tool_aliases"]["codex_supervisor_task_claim"]
         == "codex_supervisor.task_claim"
     )
+
+
+def test_runtime_preflight_tool_uses_live_inventory_when_tool_search_snapshot_is_partial(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    initialize_planning_database(db_path)
+    context = McpServerContext(repo_root=tmp_path, planning_path=db_path)
+
+    result = dispatch_mcp_tool(
+        "codex_supervisor.runtime_preflight",
+        {
+            "full_afk": True,
+            "plugin_invocation": True,
+            "plugin_full_afk": True,
+            "supervisor_backend": "mcp",
+            "mcp_tools": ["codex_supervisor.runtime_preflight"],
+            "worker_execution": "codex_exec",
+            "story_loop_status_checked": True,
+            "task_current_requested": True,
+        },
+        context=context,
+    )
+
+    assert result["ok"] is True
+    assert result["data"]["ok"] is True
+    assert result["data"]["diagnostics"]["missing_mcp_tools"] == []
+    normalized_tools = set(result["data"]["diagnostics"]["normalized_mcp_tools"])
+    assert {
+        "codex_supervisor.runtime_preflight",
+        "codex_supervisor.story_loop_status",
+        "codex_supervisor.task_current",
+        "codex_supervisor.task_claim",
+        "codex_supervisor.story_loop_run_once",
+    } <= normalized_tools
 
 
 def test_project_list_tool_delegates_to_project_registry(tmp_path: Path) -> None:

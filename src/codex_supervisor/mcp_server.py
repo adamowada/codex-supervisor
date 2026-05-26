@@ -184,18 +184,27 @@ def _handle_plan_list(arguments: JsonObject, context: McpServerContext) -> tuple
 
 
 def _handle_runtime_preflight(arguments: JsonObject, context: McpServerContext) -> object:
+    supervisor_backend = str(arguments.get("supervisor_backend") or "mcp")
+    supplied_mcp_tools = tuple(
+        item for item in arguments.get("mcp_tools", ()) if isinstance(item, str) and item.strip()
+    )
+    live_mcp_tools: tuple[str, ...] = (
+        tuple(
+            tool["name"]
+            for tool in list_mcp_tools(context=context)
+            if isinstance(tool.get("name"), str)
+        )
+        if supervisor_backend == "mcp"
+        else ()
+    )
     return build_runtime_preflight_report(
         repo_root=context.resolved_repo_root(),
         planning_path=context.resolved_planning_path(),
         full_afk=bool(arguments.get("full_afk", False)),
         plugin_invocation=bool(arguments.get("plugin_invocation", False)),
         plugin_full_afk=bool(arguments.get("plugin_full_afk", False)),
-        supervisor_backend=str(arguments.get("supervisor_backend") or "mcp"),
-        mcp_tools=tuple(
-            item
-            for item in arguments.get("mcp_tools", ())
-            if isinstance(item, str) and item.strip()
-        ),
+        supervisor_backend=supervisor_backend,
+        mcp_tools=tuple(dict.fromkeys((*supplied_mcp_tools, *live_mcp_tools))),
         cli_available=bool(arguments.get("cli_available", True)),
         worker_execution=str(arguments.get("worker_execution") or "codex_exec"),
         native_goal_mode=bool(arguments.get("native_goal_mode", False)),
@@ -1086,7 +1095,10 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     ),
     "codex_supervisor.runtime_preflight": McpToolDefinition(
         name="codex_supervisor.runtime_preflight",
-        description="Build a fail-closed supervisor runtime execution-mode ledger.",
+        description=(
+            "Desktop full-AFK canary: build a fail-closed codex_supervisor.runtime_preflight "
+            "execution-mode ledger and verify the live Supervisor MCP tool surface."
+        ),
         input_schema={
             "type": "object",
             "properties": {

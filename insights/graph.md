@@ -23,6 +23,8 @@ graph.
   exposes a diagnostic MCP fallback.
 - `ExecutionModeLedger`: visible preflight record of backend, planning, worker, goal, evidence, and
   infrastructure modes before supervised execution begins.
+- `ToolSearchDiscovery`: relevance-ranked Codex tool discovery surface; useful for finding tools,
+  but not authoritative MCP inventory.
 
 ## Edges
 
@@ -44,3 +46,4 @@ graph.
 | `PluginMcpLauncher` | guards | `DesktopPluginRuntime` | `insights/workflow-patterns.md` 2026-05-26 second Desktop smoke RCA | confirmed | 2026-05-26 | Delegate from cache to source repo or expose a blocked `runtime_preflight` diagnostic. |
 | `DesktopPluginRuntime` | requires refresh evidence for | `CodexSupervisor` | `insights/workflow-patterns.md` 2026-05-26 stale cache smoke | confirmed | 2026-05-26 | Version-bump or refresh cache before treating source skill changes as live. |
 | `DesktopPluginRuntime` | authorizes full-AFK through | `ExecutionModeLedger` | `insights/workflow-patterns.md` 2026-05-26 todo-list-test-3 false canary RCA | confirmed | 2026-05-26 | Treat CLI/package preflight as diagnostics-only after live MCP failure, never as plugin full-AFK authority. |
+| `ToolSearchDiscovery` | is not inventory for | `DesktopPluginRuntime` | `insights/workflow-patterns.md` 2026-05-26 todo-list-test-4 false canary RCA | confirmed | 2026-05-26 | Let live MCP preflight self-inventory `list_mcp_tools`; use `tool_search` only to find callable tools. |

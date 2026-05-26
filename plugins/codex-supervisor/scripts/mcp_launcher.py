@@ -266,8 +266,8 @@ def _runtime_preflight_tool_definition() -> JsonObject:
     return {
         "name": "codex_supervisor.runtime_preflight",
         "description": (
-            "Fail-closed runtime preflight diagnostic when the real Codex Supervisor MCP backend "
-            "cannot start."
+            "Desktop full-AFK canary diagnostic for codex_supervisor.runtime_preflight when the "
+            "real Codex Supervisor MCP backend cannot start."
         ),
         "inputSchema": {
             "type": "object",

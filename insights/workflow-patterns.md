@@ -485,6 +485,30 @@ Next action: normalize Desktop callable tool aliases before comparing required M
 preflight diagnostics-only for Desktop plugin full-AFK, and prevent secondary CLI checks from
 downgrading a successful live MCP canary.
 
+## Tool Search Is Not MCP Inventory
+
+Confidence: confirmed.
+
+Claim: `tool_search` results are a relevance-ranked discovery surface, not an authoritative
+`tools/list` inventory. A Desktop plugin can have a healthy MCP server while `tool_search` returns
+only a subset of its tools, or different subsets across turns.
+
+Evidence: In the `todo-list-test-4` smoke, the same Desktop session first discovered and called
+`codex_supervisor.runtime_preflight`, then later found `task_claim` and `story_loop_run_once` while
+`tool_search` returned no `runtime_preflight` result. The installed Desktop cache verifier and a
+direct MCP preflight both showed the canary and required tools are actually exposed.
+
+Scope: Codex Desktop plugin full-AFK canaries, MCP runtime preflight, tool discovery, and any
+workflow that asks the model to pass a tool list back into a server-side guard.
+
+Implementation: the live MCP `runtime_preflight` handler now self-inventories `list_mcp_tools`
+before building the execution-mode ledger, and client-supplied `mcp_tools` values are supplemental
+diagnostics only. The packaged Desktop skill also records that `tool_search` is discovery, not
+inventory.
+
+Next action: rerun a fresh Codex Desktop smoke after Desktop reloads plugin manifest version
+`0.1.2`.
+
 ## Execution Mode Ledgers Should Precede Full-AFK Work
 
 Confidence: confirmed.

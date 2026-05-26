@@ -25,10 +25,10 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 - Durable lesson recorded in `insights/workflow-patterns.md`: Desktop plugin full-AFK requires live
   MCP authority; CLI preflight is diagnostics-only for that entrypoint.
 - Previous completed fix: repaired the Desktop plugin cache/runtime boundary exposed by the second
-  `todo-list-test-2` smoke. Plugin/package version is now `0.1.1`; `.mcp.json` starts
-  `plugins/codex-supervisor/scripts/mcp_launcher.py` from the plugin root; the launcher delegates
-  from source or Desktop cache to the real MCP server and otherwise exposes a diagnostic
-  `codex_supervisor.runtime_preflight` fallback.
+  `todo-list-test-2` smoke. The Python package version remains `0.1.1`; the Desktop plugin
+  manifest is now `0.1.2`; `.mcp.json` starts `plugins/codex-supervisor/scripts/mcp_launcher.py`
+  from the plugin root; the launcher delegates from source or Desktop cache to the real MCP server
+  and otherwise exposes a diagnostic `codex_supervisor.runtime_preflight` fallback.
 - Previous completed plan: `plan-plugin-runtime-guardrails-20260526`
   (`Desktop Plugin Runtime Guardrails`).
 - Previous completed AFK task: `task-plugin-runtime-preflight-guardrails`.
@@ -45,6 +45,15 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   `v5` tag object to the peeled commit still failed. The workflow now avoids that extra action
   download and installs `uv==0.11.7` with `python -m pip install` after `actions/setup-python`, with
   a regression test and durable insight update.
+- Latest Desktop smoke diagnosis and repair: `todo-list-test-4` exposed that `tool_search` is not
+  an MCP inventory. The session could call `codex_supervisor.runtime_preflight`, but later
+  `tool_search` returned other supervisor tools without returning the canary. The live MCP
+  `runtime_preflight` handler now self-inventories `list_mcp_tools(context)` and uses
+  client-provided `mcp_tools` only as supplemental diagnostics. The runtime preflight tool metadata
+  now says `Desktop full-AFK canary`, and the Desktop plugin manifest version is bumped to `0.1.2`
+  so Desktop has a refresh boundary for the packaged skill. The MCP process already attached to
+  this thread still has the old handler, which confirms that a Desktop/plugin reload is required
+  before this repair can be smoke-tested from the app.
 - Previous v1 hardening plan: `plan-v1-live-operational-hardening` remains active but has no open
   work; `story-loop-status --json` reports it as completed within the current queue.
 - Latest release-readiness target checked during architecture-fix work: code commit
@@ -78,5 +87,5 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Next Action
 
-ACP the completed live-MCP authority repair, then rerun the Desktop smoke in a fresh folder after
-the updated plugin cache is available to Desktop.
+Verify and ACP the `todo-list-test-4` false-canary repair, then rerun the Desktop smoke in a fresh
+folder after Desktop reloads plugin manifest version `0.1.2`.

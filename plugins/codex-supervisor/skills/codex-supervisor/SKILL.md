@@ -17,6 +17,9 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
   `codex_supervisor.runtime_preflight` through MCP. Use canonical dotted MCP tool names in
   `mcp_tools`, for example `codex_supervisor.runtime_preflight`, not Desktop callable aliases such
   as `codex_supervisor_runtime_preflight`.
+- Treat `tool_search` as discovery, not inventory. It may return only a subset of exposed MCP
+  tools; do not block a plugin full-AFK run merely because `tool_search` omitted a required tool.
+  The live MCP `runtime_preflight` handler inventories the actual server tool surface.
 - Desktop plugin full-AFK readiness must be authorized by that live MCP canary in the current
   Desktop session. If MCP is unavailable, a CLI `runtime-preflight` run may be used only to diagnose
   package, cache, PATH, or launcher problems; it must not approve plugin full-AFK readiness and must

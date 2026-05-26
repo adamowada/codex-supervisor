@@ -4,7 +4,13 @@ import json
 import subprocess
 from pathlib import Path
 
-from scripts.verify_codex_plugin_install import verify_codex_plugin_install
+import pytest
+
+from scripts.verify_codex_plugin_install import (
+    PluginInstallVerificationError,
+    verify_codex_plugin_desktop_profile,
+    verify_codex_plugin_install,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = REPO_ROOT / "plugins" / "codex-supervisor"
@@ -163,6 +169,7 @@ def test_clean_plugin_install_verifier_discovers_skill_and_mcp_lifecycle() -> No
                             "tools": [
                                 {"name": "codex_supervisor.artifact_link_add"},
                                 {"name": "codex_supervisor.progress_add"},
+                                {"name": "codex_supervisor.runtime_preflight"},
                                 {"name": "codex_supervisor.story_loop_status"},
                                 {"name": "codex_supervisor.story_loop_run_once"},
                                 {"name": "codex_supervisor.task_claim"},
@@ -199,3 +206,153 @@ def test_clean_plugin_install_verifier_discovers_skill_and_mcp_lifecycle() -> No
     payload = str(captured["payload"])
     assert '"method": "initialize"' in payload
     assert '"method": "tools/list"' in payload
+
+
+def test_desktop_profile_smoke_discovers_installed_cache_and_tools(tmp_path: Path) -> None:
+    codex_home = tmp_path / "codex-home"
+    plugin_root = (
+        codex_home / "plugins" / "cache" / "codex-supervisor-local" / "codex-supervisor" / "0.1.0"
+    )
+    repo_root = tmp_path / "source-repo"
+    plugin_root.mkdir(parents=True)
+    repo_root.mkdir()
+    (repo_root / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
+    (repo_root / "src" / "codex_supervisor").mkdir(parents=True)
+    (repo_root / "src" / "codex_supervisor" / "__init__.py").write_text("", encoding="utf-8")
+    (codex_home / "config.toml").write_text(
+        '[plugins."codex-supervisor@codex-supervisor-local"]\nenabled = true\n',
+        encoding="utf-8",
+    )
+    (plugin_root / ".codex-plugin").mkdir()
+    (plugin_root / ".codex-plugin" / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "codex-supervisor",
+                "mcpServers": "./.mcp.json",
+                "skills": "./skills/",
+            }
+        ),
+        encoding="utf-8",
+    )
+    relative_repo = repo_root.relative_to(plugin_root, walk_up=True).as_posix()
+    (plugin_root / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "codex-supervisor": {
+                        "command": "uv",
+                        "args": [
+                            "run",
+                            "--no-sync",
+                            "python",
+                            "-B",
+                            "-m",
+                            "codex_supervisor.mcp_stdio",
+                        ],
+                        "cwd": relative_repo,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    skill_dir = plugin_root / "skills" / "codex-supervisor"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: codex-supervisor\ndescription: Desktop supervisor.\n---\n",
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_runner(
+        command: tuple[str, ...],
+        cwd: Path,
+        payload: str,
+        timeout_seconds: int,
+    ) -> subprocess.CompletedProcess[str]:
+        captured["cwd"] = cwd
+        stdout = "\n".join(
+            [
+                json.dumps({"jsonrpc": "2.0", "id": "install-init", "result": {}}),
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": "tools-list",
+                        "result": {
+                            "tools": [
+                                {"name": "codex_supervisor.artifact_link_add"},
+                                {"name": "codex_supervisor.progress_add"},
+                                {"name": "codex_supervisor.runtime_preflight"},
+                                {"name": "codex_supervisor.story_loop_status"},
+                                {"name": "codex_supervisor.story_loop_run_once"},
+                                {"name": "codex_supervisor.task_claim"},
+                                {"name": "codex_supervisor.task_show"},
+                                {"name": "codex_supervisor.task_upsert"},
+                                {"name": "codex_supervisor.review_result_ingest"},
+                            ]
+                        },
+                    }
+                ),
+            ]
+        )
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    summary = verify_codex_plugin_desktop_profile(codex_home=codex_home, runner=fake_runner)
+
+    assert summary["ok"] is True
+    assert summary["desktop_profile_smoke"] is True
+    assert summary["plugin_source"].startswith("plugins/cache/codex-supervisor-local")
+    assert "codex_supervisor.runtime_preflight" in summary["mcp_tools"]
+    assert captured["cwd"] == repo_root.resolve()
+
+
+def test_desktop_profile_smoke_reports_bad_cache_cwd_diagnostic(tmp_path: Path) -> None:
+    codex_home = tmp_path / "codex-home"
+    plugin_root = (
+        codex_home / "plugins" / "cache" / "codex-supervisor-local" / "codex-supervisor" / "0.1.0"
+    )
+    skill_dir = plugin_root / "skills" / "codex-supervisor"
+    skill_dir.mkdir(parents=True)
+    (codex_home / "config.toml").write_text(
+        '[plugins."codex-supervisor@codex-supervisor-local"]\nenabled = true\n',
+        encoding="utf-8",
+    )
+    (plugin_root / ".codex-plugin").mkdir()
+    (plugin_root / ".codex-plugin" / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "codex-supervisor",
+                "mcpServers": "./.mcp.json",
+                "skills": "./skills/",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (plugin_root / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "codex-supervisor": {
+                        "command": "uv",
+                        "args": [
+                            "run",
+                            "--no-sync",
+                            "python",
+                            "-B",
+                            "-m",
+                            "codex_supervisor.mcp_stdio",
+                        ],
+                        "cwd": "../..",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: codex-supervisor\ndescription: Desktop supervisor.\n---\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PluginInstallVerificationError, match="cwd does not contain"):
+        verify_codex_plugin_desktop_profile(codex_home=codex_home)

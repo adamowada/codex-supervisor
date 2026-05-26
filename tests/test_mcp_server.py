@@ -21,6 +21,7 @@ def test_list_mcp_tools_exposes_read_and_default_on_mutating_schemas(tmp_path: P
 
     names = {tool["name"] for tool in tools}
     assert "codex_supervisor.project_list" in names
+    assert "codex_supervisor.runtime_preflight" in names
     assert "codex_supervisor.story_loop_status" in names
     assert "codex_supervisor.task_show" in names
     assert "codex_supervisor.task_upsert" in names
@@ -51,6 +52,40 @@ def test_list_mcp_tools_exposes_read_and_default_on_mutating_schemas(tmp_path: P
     ]
     task_show = next(tool for tool in tools if tool["name"] == "codex_supervisor.task_show")
     assert task_show["inputSchema"]["required"] == ["task_id"]
+    task_current = next(tool for tool in tools if tool["name"] == "codex_supervisor.task_current")
+    assert task_current["inputSchema"]["required"] == ["story_loop_status_checked"]
+
+
+def test_runtime_preflight_tool_blocks_hidden_full_afk_mode_switch(tmp_path: Path) -> None:
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    initialize_planning_database(db_path)
+    context = McpServerContext(repo_root=tmp_path, planning_path=db_path)
+
+    result = dispatch_mcp_tool(
+        "codex_supervisor.runtime_preflight",
+        {
+            "full_afk": True,
+            "plugin_invocation": True,
+            "supervisor_backend": "skill_only",
+            "mcp_tools": [],
+            "cli_available": False,
+            "worker_execution": "current_thread",
+            "native_goal_mode": True,
+            "task_current_requested": True,
+            "database_mode": "memory_mongodb",
+        },
+        context=context,
+    )
+
+    assert result["ok"] is True
+    assert result["data"]["ok"] is False
+    issue_codes = {issue["code"] for issue in result["data"]["issues"]}
+    assert "supervisor_backend_unavailable" in issue_codes
+    assert "mcp_and_cli_unavailable" in issue_codes
+    assert "current_thread_fallback_blocked" in issue_codes
+    assert "native_goal_unlinked" in issue_codes
+    assert "memory_database_fallback_forbidden" in issue_codes
+    assert "story_loop_status_required" in issue_codes
 
 
 def test_project_list_tool_delegates_to_project_registry(tmp_path: Path) -> None:
@@ -144,7 +179,11 @@ def test_planning_read_tools_delegate_without_mutating_or_launching(tmp_path: Pa
 
     plans = dispatch_mcp_tool("codex_supervisor.plan_list", {"status": "active"}, context=context)
     status = dispatch_mcp_tool("codex_supervisor.story_loop_status", {}, context=context)
-    current = dispatch_mcp_tool("codex_supervisor.task_current", {}, context=context)
+    current = dispatch_mcp_tool(
+        "codex_supervisor.task_current",
+        {"story_loop_status_checked": True},
+        context=context,
+    )
     shown_task = dispatch_mcp_tool(
         "codex_supervisor.task_show",
         {"task_id": "task-mcp"},
@@ -187,6 +226,11 @@ def test_dispatch_reports_validation_unknown_and_missing_errors(tmp_path: Path) 
         {},
         context=context,
     )
+    current_without_status = dispatch_mcp_tool(
+        "codex_supervisor.task_current",
+        {"story_loop_status_checked": False},
+        context=context,
+    )
     not_found = dispatch_mcp_tool(
         "codex_supervisor.worker_run_show",
         {"worker_run_id": "missing"},
@@ -200,6 +244,7 @@ def test_dispatch_reports_validation_unknown_and_missing_errors(tmp_path: Path) 
 
     assert missing_argument["error"]["code"] == "validation_error"
     assert unknown_tool["error"]["code"] == "unknown_tool"
+    assert current_without_status["error"]["code"] == "story_loop_status_required"
     assert not_found["error"]["code"] == "not_found"
     assert invalid_status["error"]["code"] == "validation_error"
 

@@ -103,6 +103,21 @@ def test_spawned_project_classifier_warns_for_untrusted_full_auto() -> None:
     )
 
 
+def test_spawned_project_classifier_forces_supervisor_managed_for_plugin_full_afk() -> None:
+    recommendation = recommend_spawned_project_scaffold(
+        SpawnedProjectBrief(
+            name="plugin todo smoke",
+            complexity="prototype",
+            plugin_full_afk=True,
+        )
+    )
+
+    assert recommendation.tiers == ("base", "supervisor-managed")
+    assert "plans/planning.sqlite3" in recommendation.required_files
+    assert "plugin_full_afk" in recommendation.classification_reason
+    assert "Initialize planning SQLite" in recommendation.planning_guidance
+
+
 def test_spawned_project_proposal_for_prototype_avoids_optional_ceremony() -> None:
     proposal = build_spawned_project_scaffold_proposal(
         SpawnedProjectBrief(name="paint spike", complexity="prototype")
@@ -376,6 +391,28 @@ def test_cli_spawned_project_classify_emits_json_for_prototype(capsys) -> None:
     assert payload["project_name"] == "paint spike"
     assert payload["tiers"] == ["prototype-light"]
     assert "plans/planning.sqlite3" not in payload["required_files"]
+
+
+def test_cli_spawned_project_classify_emits_supervisor_scaffold_for_plugin_full_afk(capsys) -> None:
+    assert (
+        main(
+            [
+                "spawned-project-classify",
+                "--name",
+                "plugin todo smoke",
+                "--complexity",
+                "prototype",
+                "--plugin-full-afk",
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["tiers"] == ["base", "supervisor-managed"]
+    assert "plans/planning.sqlite3" in payload["required_files"]
 
 
 def test_cli_spawned_project_classify_emits_full_public_recommendation(capsys) -> None:

@@ -126,6 +126,7 @@ from codex_supervisor.review_repairs import (
     apply_repair_task_plan,
     plan_repair_tasks_from_review_result,
 )
+from codex_supervisor.runtime_preflight import build_runtime_preflight_report
 from codex_supervisor.skill_promotion import (
     SkillPromotionContractError,
     SkillPromotionProposal,
@@ -365,7 +366,84 @@ def main(argv: list[str] | None = None) -> int:
         help="Show the highest-priority unblocked ready AFK task attached to an active plan",
     )
     current_task_parser.add_argument("--path", type=Path, default=None)
+    current_task_parser.add_argument(
+        "--after-story-loop-status",
+        action="store_true",
+        default=False,
+        help="Acknowledge that story-loop-status was inspected first.",
+    )
     current_task_parser.add_argument("--json", action="store_true", default=False)
+
+    runtime_preflight_parser = subparsers.add_parser(
+        "runtime-preflight",
+        help="Build the supervisor runtime execution-mode ledger and fail-closed diagnostics",
+    )
+    runtime_preflight_parser.add_argument("--path", type=Path, default=None)
+    runtime_preflight_parser.add_argument("--repo-root", type=Path, default=None)
+    runtime_preflight_parser.add_argument("--full-afk", action="store_true", default=False)
+    runtime_preflight_parser.add_argument("--plugin-invocation", action="store_true", default=False)
+    runtime_preflight_parser.add_argument("--plugin-full-afk", action="store_true", default=False)
+    runtime_preflight_parser.add_argument(
+        "--supervisor-backend",
+        choices=("mcp", "cli", "unavailable", "skill_only"),
+        default="mcp",
+    )
+    runtime_preflight_parser.add_argument("--mcp-tool", action="append", default=[])
+    runtime_preflight_parser.add_argument(
+        "--cli-available",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
+    runtime_preflight_parser.add_argument(
+        "--worker-execution",
+        choices=("codex_exec", "current_thread", "blocked", "manual"),
+        default="codex_exec",
+    )
+    runtime_preflight_parser.add_argument("--native-goal-mode", action="store_true", default=False)
+    runtime_preflight_parser.add_argument("--supervisor-task-id", default=None)
+    runtime_preflight_parser.add_argument(
+        "--goal-contract-linked",
+        action="store_true",
+        default=False,
+    )
+    runtime_preflight_parser.add_argument(
+        "--story-loop-status-checked",
+        action="store_true",
+        default=False,
+    )
+    runtime_preflight_parser.add_argument(
+        "--task-current-requested",
+        action="store_true",
+        default=False,
+    )
+    runtime_preflight_parser.add_argument(
+        "--scaffold-tier",
+        choices=("supervisor_managed", "base", "prototype_light", "unknown"),
+        default="supervisor_managed",
+    )
+    runtime_preflight_parser.add_argument(
+        "--database-mode",
+        choices=("persistent_mongodb", "memory_mongodb", "none", "unknown"),
+        default="persistent_mongodb",
+    )
+    runtime_preflight_parser.add_argument(
+        "--evidence-mode",
+        choices=("strict_jsonl", "degraded_jsonl", "missing"),
+        default="strict_jsonl",
+    )
+    runtime_preflight_parser.add_argument(
+        "--mutation-policy",
+        choices=("allowed", "read_only"),
+        default="allowed",
+    )
+    runtime_preflight_parser.add_argument("--setup-mutation", action="append", default=[])
+    runtime_preflight_parser.add_argument(
+        "--allow-setup-mutations",
+        action="store_true",
+        default=False,
+    )
+    runtime_preflight_parser.add_argument("--mcp-startup-diagnostic", default=None)
+    runtime_preflight_parser.add_argument("--json", action="store_true", default=False)
 
     task_claim_parser = subparsers.add_parser(
         "task-claim",
@@ -1537,6 +1615,25 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "task-current":
+        if not args.after_story_loop_status:
+            message = (
+                "task-current requires prior story-loop-status inspection; run "
+                "`uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json` "
+                "first, then rerun task-current with --after-story-loop-status."
+            )
+            if args.json:
+                _print_json(
+                    {
+                        "ok": False,
+                        "error": {
+                            "code": "story_loop_status_required",
+                            "message": message,
+                        },
+                    }
+                )
+            else:
+                print(message, file=sys.stderr)
+            return 1
         read_store = _open_read_store(args.path)
         if read_store is None:
             return 1
@@ -1583,6 +1680,42 @@ def main(argv: list[str] | None = None) -> int:
             "whether the queue is blocked, completed, or empty."
         )
         return 0
+
+    if args.command == "runtime-preflight":
+        report = build_runtime_preflight_report(
+            repo_root=(args.repo_root or Path.cwd()),
+            planning_path=args.path,
+            full_afk=args.full_afk,
+            plugin_invocation=args.plugin_invocation,
+            plugin_full_afk=args.plugin_full_afk,
+            supervisor_backend=args.supervisor_backend,
+            mcp_tools=tuple(args.mcp_tool),
+            cli_available=args.cli_available,
+            worker_execution=args.worker_execution,
+            native_goal_mode=args.native_goal_mode,
+            supervisor_task_id=args.supervisor_task_id,
+            goal_contract_linked=args.goal_contract_linked,
+            story_loop_status_checked=args.story_loop_status_checked,
+            task_current_requested=args.task_current_requested,
+            scaffold_tier=args.scaffold_tier,
+            database_mode=args.database_mode,
+            evidence_mode=args.evidence_mode,
+            mutation_policy=args.mutation_policy,
+            setup_mutations=tuple(args.setup_mutation),
+            allow_setup_mutations=args.allow_setup_mutations,
+            mcp_startup_diagnostic=args.mcp_startup_diagnostic,
+        )
+        if args.json:
+            _print_json(report)
+        else:
+            print(f"runtime_preflight: {report.status}")
+            print(f"supervisor_backend: {report.ledger.supervisor_backend}")
+            print(f"worker_execution: {report.ledger.worker_execution}")
+            print(f"queue_discovery: {report.ledger.queue_discovery}")
+            for issue in report.issues:
+                print(f"blocked: {issue.code}: {issue.message}")
+                print(f"next_action: {issue.next_action}")
+        return 0 if report.ok else 1
 
     if args.command == "task-claim":
         write_store = _open_write_store(args.path)
@@ -3170,6 +3303,7 @@ def _add_spawned_project_brief_arguments(command_parser: argparse.ArgumentParser
     command_parser.add_argument("--production-intended", action="store_true", default=False)
     command_parser.add_argument("--public-or-shared", action="store_true", default=False)
     command_parser.add_argument("--unattended-workers", action="store_true", default=False)
+    command_parser.add_argument("--plugin-full-afk", action="store_true", default=False)
     command_parser.add_argument("--durable-queue", action="store_true", default=False)
     command_parser.add_argument("--protected-docs", action="store_true", default=False)
     command_parser.add_argument("--durable-learning", action="store_true", default=False)
@@ -3185,6 +3319,7 @@ def _spawned_project_brief_from_args(args: argparse.Namespace) -> SpawnedProject
         production_intended=args.production_intended,
         public_or_shared=args.public_or_shared,
         unattended_workers=args.unattended_workers,
+        plugin_full_afk=args.plugin_full_afk,
         durable_queue=args.durable_queue,
         protected_docs=args.protected_docs,
         durable_learning=args.durable_learning,

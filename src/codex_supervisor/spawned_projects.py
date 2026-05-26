@@ -94,6 +94,7 @@ class SpawnedProjectBrief:
     durable_learning: bool = False
     repo_local_skills: bool = False
     source_study: bool = False
+    plugin_full_afk: bool = False
     trust_policy: str = "local_trusted"
 
 
@@ -885,6 +886,7 @@ def _is_throwaway_prototype(brief: SpawnedProjectBrief) -> bool:
         and not brief.durable_learning
         and not brief.repo_local_skills
         and not brief.source_study
+        and not brief.plugin_full_afk
     )
 
 
@@ -892,6 +894,7 @@ def _needs_supervisor_managed_tier(brief: SpawnedProjectBrief) -> bool:
     return (
         brief.production_intended
         or brief.unattended_workers
+        or brief.plugin_full_afk
         or brief.durable_queue
         or brief.protected_docs
         or brief.complexity in {"standard", "production"}
@@ -916,6 +919,8 @@ def _classification_reason(brief: SpawnedProjectBrief, tiers: tuple[str, ...]) -
         reason_parts.append("public_or_shared")
     if brief.unattended_workers:
         reason_parts.append("unattended_workers")
+    if brief.plugin_full_afk:
+        reason_parts.append("plugin_full_afk")
     if brief.durable_queue:
         reason_parts.append("durable_queue")
     if brief.protected_docs:

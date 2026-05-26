@@ -13,6 +13,11 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
 - Use MCP tools for inspection and guarded mutation when available.
 - Use `uv run --no-sync python -B -m codex_supervisor.cli ...` as the reference queue mutation and
   evidence workflow when MCP is unavailable or an operation needs CLI-only flags.
+- Before full-AFK, project bootstrap, worker launch, or `task-current`, call
+  `codex_supervisor.runtime_preflight` through MCP. If MCP is unavailable, run
+  `uv run --no-sync python -B -m codex_supervisor.cli runtime-preflight --json` with equivalent
+  flags. If neither surface is available, stop and report that `codex-supervisor` is unavailable;
+  do not continue as a supervisor run.
 - Read `HANDOFF.md` only after `story-loop-status --json`; update it after planning SQLite changes.
 - Use `.agents/skills/skill-router/SKILL.md` to choose the detailed repo-local skill for the next
   workflow.
@@ -20,8 +25,10 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
 ## Workflow Map
 
 - Project bootstrap: route to `spawned-project-bootstrap` for full factory scaffolds or
-  `setup-agent-docs` for lightweight imported-skill prerequisites.
-- Queue inspection: start with `story-loop-status --json`, then `task-current --json`,
+  `setup-agent-docs` for lightweight imported-skill prerequisites. Plugin full-AFK requests always
+  use the supervisor-managed scaffold tier.
+- Queue inspection: start with `story-loop-status --json`, then
+  `task-current --after-story-loop-status --json`,
   `task-show <task-id> --json`, or `plan-summary --current-queue --json` as needed.
 - Worker launch: route to `story-loop-runner`; render `goal-contract-render --task-id <task-id>`;
   claim with `task-claim` only when the queue still selects that task.
@@ -36,9 +43,15 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
 
 - Do not write directly to Codex internal SQLite databases.
 - Do not treat MCP as the state owner.
+- Skill-only mode is not supervisor mode. If MCP tools and CLI fallback are both unavailable, stop,
+  ask for setup/repair, or explicitly downgrade to plain Codex only after the user chooses that.
 - Mutating MCP tools are enabled by default; use `--disable-mutations` only for an intentionally
   read-only Desktop session.
 - Do not launch live workers unless the selected backend, Codex executable, `CODEX_HOME`, and Goal
   Mode preflight support it.
+- Full-AFK work must not fall back to current-thread implementation. Record a blocker or HITL task
+  instead.
+- Native Codex Goals are allowed only when linked to a supervisor task and rendered Goal Contract.
+- Memory database fallback cannot satisfy supervised full-AFK acceptance.
 - Do not publish marketplace entries or install into a clean Desktop profile unless the current
   planning task explicitly includes that scope.

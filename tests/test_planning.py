@@ -305,16 +305,38 @@ def test_cli_read_commands_return_json_for_empty_results(tmp_path, capsys):
     assert main(["task-list", "--path", str(db_path), "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == []
 
-    assert main(["task-current", "--path", str(db_path), "--json"]) == 0
+    assert (
+        main(
+            [
+                "task-current",
+                "--path",
+                str(db_path),
+                "--after-story-loop-status",
+                "--json",
+            ]
+        )
+        == 0
+    )
     assert json.loads(capsys.readouterr().out) is None
 
 
-def test_cli_task_current_reports_empty_queue_in_text_mode(tmp_path, capsys):
+def test_cli_task_current_requires_story_loop_status_first(tmp_path, capsys):
     db_path = tmp_path / "plans" / "planning.sqlite3"
     assert main(["plan-init", "--path", str(db_path)]) == 0
     capsys.readouterr()
 
-    assert main(["task-current", "--path", str(db_path)]) == 0
+    assert main(["task-current", "--path", str(db_path)]) == 1
+
+    captured = capsys.readouterr()
+    assert "requires prior story-loop-status" in captured.err
+
+
+def test_cli_task_current_reports_empty_queue_in_text_mode_after_status(tmp_path, capsys):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    assert main(["plan-init", "--path", str(db_path)]) == 0
+    capsys.readouterr()
+
+    assert main(["task-current", "--path", str(db_path), "--after-story-loop-status"]) == 0
 
     captured = capsys.readouterr()
     assert "No ready supervisor tasks found." in captured.out
@@ -344,7 +366,7 @@ def test_cli_task_current_points_hitl_queues_to_story_loop_status(tmp_path, caps
         )
     )
 
-    assert main(["task-current", "--path", str(db_path)]) == 0
+    assert main(["task-current", "--path", str(db_path), "--after-story-loop-status"]) == 0
 
     captured = capsys.readouterr()
     assert "No unblocked ready AFK tasks" in captured.out
@@ -442,7 +464,18 @@ def test_cli_seed_bootstrap_plan_creates_current_task(tmp_path, capsys):
     assert main(["plan-init", "--path", str(db_path), "--seed-bootstrap-plan"]) == 0
     capsys.readouterr()
 
-    assert main(["task-current", "--path", str(db_path), "--json"]) == 0
+    assert (
+        main(
+            [
+                "task-current",
+                "--path",
+                str(db_path),
+                "--after-story-loop-status",
+                "--json",
+            ]
+        )
+        == 0
+    )
 
     current_task = json.loads(capsys.readouterr().out)
     assert current_task["task_id"] == "task-bootstrap-orient-and-plan"
@@ -554,7 +587,18 @@ def test_cli_seed_bootstrap_plan_repairs_missing_bootstrap_task(tmp_path, capsys
     assert main(["plan-init", "--path", str(db_path), "--seed-bootstrap-plan"]) == 0
     capsys.readouterr()
 
-    assert main(["task-current", "--path", str(db_path), "--json"]) == 0
+    assert (
+        main(
+            [
+                "task-current",
+                "--path",
+                str(db_path),
+                "--after-story-loop-status",
+                "--json",
+            ]
+        )
+        == 0
+    )
     current_task = json.loads(capsys.readouterr().out)
     assert current_task["task_id"] == "task-bootstrap-orient-and-plan"
 
@@ -577,7 +621,18 @@ def test_cli_seed_bootstrap_plan_repairs_stale_bootstrap_task_contract(tmp_path,
     assert main(["plan-init", "--path", str(db_path), "--seed-bootstrap-plan"]) == 0
     capsys.readouterr()
 
-    assert main(["task-current", "--path", str(db_path), "--json"]) == 0
+    assert (
+        main(
+            [
+                "task-current",
+                "--path",
+                str(db_path),
+                "--after-story-loop-status",
+                "--json",
+            ]
+        )
+        == 0
+    )
     current_task = json.loads(capsys.readouterr().out)
     assert current_task["task_id"] == "task-bootstrap-orient-and-plan"
     assert current_task["verification_commands"] == ["uv run --no-sync python -B scripts/verify.py"]
@@ -4372,7 +4427,7 @@ def test_cli_read_commands_report_validation_errors_without_traceback(tmp_path, 
             ('{"not":"array"}', "task-bad-json"),
         )
 
-    assert main(["task-current", "--path", str(db_path)]) == 1
+    assert main(["task-current", "--path", str(db_path), "--after-story-loop-status"]) == 1
 
     captured = capsys.readouterr()
     assert "Could not read planning database" in captured.err

@@ -68,8 +68,8 @@ Fresh-thread recipe:
 3. If `queue_state` is `hitl`, read `current_task_id` from that output and run
    `uv run --no-sync python -B -m codex_supervisor.cli task-show <current_task_id> --json`.
 4. If `queue_state` is `ready`, run
-   `uv run --no-sync python -B -m codex_supervisor.cli task-current --json`, report the selected
-   AFK task, and route execution to `story-loop-runner`.
+   `uv run --no-sync python -B -m codex_supervisor.cli task-current --after-story-loop-status
+   --json`, report the selected AFK task, and route execution to `story-loop-runner`.
 5. Use
    `uv run --no-sync python -B -m codex_supervisor.cli task-list --current-queue-plans-only --json`
    for current-queue task audits that include active and blocked plans.
@@ -90,8 +90,9 @@ If the user asks for all rows after queue-state discovery, separate the answer i
 and `Historical Rows`. Never phrase historical ready tasks as "one other ready task" without naming
 their terminal or non-current plan status. That wording caused fresh-thread confusion in this repo.
 
-`task-current --json` returning `null` means "no executable AFK task was selected." It does not mean
-"nothing is happening" until `story-loop-status` also reports `completed` or `empty`.
+`task-current --after-story-loop-status --json` returning `null` means "no executable AFK task was
+selected." It does not mean "nothing is happening" until `story-loop-status` also reports
+`completed` or `empty`.
 
 Strict read-only fallback SQL:
 
@@ -120,7 +121,7 @@ Read/orient:
 ```sh
 uv run --no-sync python -B -m codex_supervisor.cli story-loop-status
 uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
-uv run --no-sync python -B -m codex_supervisor.cli task-current --json
+uv run --no-sync python -B -m codex_supervisor.cli task-current --after-story-loop-status --json
 uv run --no-sync python -B -m codex_supervisor.cli task-show <task-id> --json
 uv run --no-sync python -B -m codex_supervisor.cli task-list --current-queue-plans-only --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue

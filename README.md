@@ -159,7 +159,7 @@ Inspect the live queue before interpreting `task-current` or running broad check
 
 ```sh
 uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
-uv run --no-sync python -B -m codex_supervisor.cli task-current --json
+uv run --no-sync python -B -m codex_supervisor.cli task-current --after-story-loop-status --json
 uv run --no-sync python -B -m codex_supervisor.cli task-list --current-queue-plans-only
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 uv run --no-sync python -B -m codex_supervisor.cli plan-list

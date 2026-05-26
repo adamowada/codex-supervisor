@@ -18,8 +18,8 @@ Every session working in this repo follows the same control flow:
 
 1. Use the `codex-supervisor` meta skill first.
 2. Inspect `story-loop-status --json` before choosing work.
-3. Inspect the selected task with `task-show <task_id> --json` or `task-current --json`, depending
-   on the queue state.
+3. Inspect the selected task with `task-show <task_id> --json` or
+   `task-current --after-story-loop-status --json`, depending on the queue state.
 4. Read only the source-of-truth files, insights, skills, and source snippets required by the task.
 5. Render or confirm a Goal Contract for the selected vertical slice.
 6. Use the smallest applicable skill, routed by `skill-router` when needed.
@@ -131,7 +131,8 @@ decisions, progress events, artifact links, commit links, supervisor tasks, and 
 - `plan-init` initializes or migrates only when explicitly invoked.
 - Orientation commands inspect existing state without mutation.
 - `story-loop-status` is the queue state machine.
-- `task-current` selects only executable AFK work.
+- `task-current --after-story-loop-status` selects only executable AFK work after queue state is
+  known.
 - Worker-run completion requires durable SQLite result evidence.
 - Planning integrity checks are part of the default gate.
 

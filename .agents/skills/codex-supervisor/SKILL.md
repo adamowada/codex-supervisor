@@ -75,8 +75,8 @@ When starting or resuming `codex-supervisor` in a fresh Codex thread:
    environment condition.
 7. Run `uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue` only when
    the environment is already synced or dependency setup is allowed.
-8. Run `uv run --no-sync python -B -m codex_supervisor.cli task-current --json` only to select an
-   executable AFK task.
+8. Run `uv run --no-sync python -B -m codex_supervisor.cli task-current --after-story-loop-status
+   --json` only to select an executable AFK task after step 6 has established queue state.
    In strict read-only mode with no synced environment, use existing command output, Git state, or
    the read-only SQLite fallback below and report that typed CLI orientation needs dependency setup.
 9. Treat top-level `queue_state` from `story-loop-status --json` as the queue state machine:
@@ -124,6 +124,12 @@ When the user has granted dangerous/full-auto operation, spend autonomy on throu
 
 - Queue many tasks, but execute each task against a clear contract.
 - Treat native Codex Goals as execution contracts, not as the canonical queue.
+- Treat native Codex Goals as allowed only when linked to a supervisor task and rendered Goal
+  Contract.
+- For full-AFK work, run the callable runtime preflight first. If it reports skill-only mode,
+  current-thread worker fallback, missing supervisor backend, memory database fallback, degraded
+  evidence, or unapproved setup mutations, record a blocker/HITL decision instead of implementing.
+- Plugin full-AFK project bootstrap always uses the supervisor-managed scaffold tier.
 - Parallelize read-only exploration, independent workers, CI inspection, and review where safe.
 - Never run two writers against the same files or branch without an explicit coordination plan.
 - Prefer worker outputs that are easy to review: diffs, test results, result summaries, issue/task ids, and handoff notes.

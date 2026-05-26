@@ -18,8 +18,8 @@ handoff artifact before transferring work.
 - current source-of-truth docs;
 - changed files and git status;
 - current-queue planning SQLite summary from `planning-sqlite-operator`, including
-  `story-loop-status --json`; use `task-current --json` only as the AFK selector after the
-  operator's fresh-thread and environment preflight rules are satisfied;
+  `story-loop-status --json`; use `task-current --after-story-loop-status --json` only as the AFK
+  selector after the operator's fresh-thread and environment preflight rules are satisfied;
 - any conflict between `HANDOFF.md` and planning SQLite, with the database treated as canonical;
 - last verification commands and results;
 - queue state: ready AFK, HITL, blocked, completed, or empty;

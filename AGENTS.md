@@ -116,7 +116,7 @@ Planning:
 
 ```sh
 uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
-uv run --no-sync python -B -m codex_supervisor.cli task-current --json
+uv run --no-sync python -B -m codex_supervisor.cli task-current --after-story-loop-status --json
 uv run --no-sync python -B -m codex_supervisor.cli task-list --current-queue-plans-only
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 uv run --no-sync python -B -m codex_supervisor.cli plan-list
@@ -127,9 +127,9 @@ machine for ready, running, HITL, blocked, completed, and empty states across ac
 current-queue plans by default; `--all` adds completed, abandoned, and superseded history.
 `task-current` selects only executable AFK work. Inspect `story-loop-status --json` first, then use
 `task-show <current_task_id> --json` whenever a current task ID is present. If
-`task-current --json` returns `null`, do not conclude there is no task until the JSON status reports
-`completed` or `empty`. Use `plan-init` only when intentionally creating or migrating the tracked
-database.
+`task-current --after-story-loop-status --json` returns `null`, do not conclude there is no task
+until the JSON status reports `completed` or `empty`. Use `plan-init` only when intentionally
+creating or migrating the tracked database.
 
 Use `--active-only` and `--active-plans-only` only for deliberately narrow audits of currently active
 plans. Fresh-thread orientation should prefer the current-queue flags so blocked successors remain

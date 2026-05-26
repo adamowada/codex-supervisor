@@ -37,8 +37,8 @@ orientation needs dependency setup.
    repair task.
 7. If `queue_state` is `completed` or `empty`, report that no executable AFK task remains.
 8. If `queue_state` is `ready`, run
-   `uv run --no-sync python -B -m codex_supervisor.cli task-current --json` and execute only the
-   returned task.
+   `uv run --no-sync python -B -m codex_supervisor.cli task-current --after-story-loop-status
+   --json` and execute only the returned task.
 9. Claim the task with
    `uv run --no-sync python -B -m codex_supervisor.cli task-claim --task-id <task_id> --worker-run-id <id> --json`
    before handing it to a worker, unless you are intentionally executing it inline in this

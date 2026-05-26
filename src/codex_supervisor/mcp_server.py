@@ -38,6 +38,7 @@ from codex_supervisor.review_repairs import (
     apply_repair_task_plan,
     plan_repair_tasks_from_review_result,
 )
+from codex_supervisor.runtime_preflight import build_runtime_preflight_report
 from codex_supervisor.story_loop import (
     advance_story_loop_once,
     build_story_loop_status,
@@ -182,8 +183,47 @@ def _handle_plan_list(arguments: JsonObject, context: McpServerContext) -> tuple
     return store.list_plans(status=_optional_string(arguments.get("status")))
 
 
+def _handle_runtime_preflight(arguments: JsonObject, context: McpServerContext) -> object:
+    return build_runtime_preflight_report(
+        repo_root=context.resolved_repo_root(),
+        planning_path=context.resolved_planning_path(),
+        full_afk=bool(arguments.get("full_afk", False)),
+        plugin_invocation=bool(arguments.get("plugin_invocation", False)),
+        plugin_full_afk=bool(arguments.get("plugin_full_afk", False)),
+        supervisor_backend=str(arguments.get("supervisor_backend") or "mcp"),
+        mcp_tools=tuple(
+            item
+            for item in arguments.get("mcp_tools", ())
+            if isinstance(item, str) and item.strip()
+        ),
+        cli_available=bool(arguments.get("cli_available", True)),
+        worker_execution=str(arguments.get("worker_execution") or "codex_exec"),
+        native_goal_mode=bool(arguments.get("native_goal_mode", False)),
+        supervisor_task_id=_optional_string(arguments.get("supervisor_task_id")),
+        goal_contract_linked=bool(arguments.get("goal_contract_linked", False)),
+        story_loop_status_checked=bool(arguments.get("story_loop_status_checked", False)),
+        task_current_requested=bool(arguments.get("task_current_requested", False)),
+        scaffold_tier=str(arguments.get("scaffold_tier") or "supervisor_managed"),
+        database_mode=str(arguments.get("database_mode") or "persistent_mongodb"),
+        evidence_mode=str(arguments.get("evidence_mode") or "strict_jsonl"),
+        mutation_policy=str(arguments.get("mutation_policy") or "allowed"),
+        setup_mutations=tuple(
+            item
+            for item in arguments.get("setup_mutations", ())
+            if isinstance(item, str) and item.strip()
+        ),
+        allow_setup_mutations=bool(arguments.get("allow_setup_mutations", False)),
+        mcp_startup_diagnostic=_optional_string(arguments.get("mcp_startup_diagnostic")),
+    )
+
+
 def _handle_task_current(arguments: JsonObject, context: McpServerContext) -> object | None:
-    _reject_unexpected_arguments(arguments)
+    if arguments.get("story_loop_status_checked") is not True:
+        raise McpDispatchError(
+            "story_loop_status_required",
+            "task_current requires story_loop_status_checked=true after inspecting "
+            "story_loop_status.",
+        )
     return _open_store(context).next_ready_afk_task()
 
 
@@ -718,7 +758,17 @@ def _validate_arguments(definition: McpToolDefinition, arguments: object | None)
                 f"Unexpected MCP tool argument(s): {', '.join(unknown)}",
             )
     for required_name in required_names:
-        if _optional_string(arguments.get(required_name)) is None:
+        property_schema = properties.get(required_name)
+        if required_name not in arguments:
+            raise McpDispatchError(
+                "validation_error",
+                f"Missing required MCP tool argument: {required_name}",
+            )
+        if (
+            isinstance(property_schema, dict)
+            and property_schema.get("type") == "string"
+            and _optional_string(arguments.get(required_name)) is None
+        ):
             raise McpDispatchError(
                 "validation_error",
                 f"Missing required MCP tool argument: {required_name}",
@@ -1033,10 +1083,59 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
             "additionalProperties": False,
         },
     ),
+    "codex_supervisor.runtime_preflight": McpToolDefinition(
+        name="codex_supervisor.runtime_preflight",
+        description="Build a fail-closed supervisor runtime execution-mode ledger.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "full_afk": {"type": "boolean"},
+                "plugin_invocation": {"type": "boolean"},
+                "plugin_full_afk": {"type": "boolean"},
+                "supervisor_backend": {
+                    "type": "string",
+                    "enum": ["mcp", "cli", "unavailable", "skill_only"],
+                },
+                "mcp_tools": {"type": "array", "items": {"type": "string"}},
+                "cli_available": {"type": "boolean"},
+                "worker_execution": {
+                    "type": "string",
+                    "enum": ["codex_exec", "current_thread", "blocked", "manual"],
+                },
+                "native_goal_mode": {"type": "boolean"},
+                "supervisor_task_id": {"type": "string"},
+                "goal_contract_linked": {"type": "boolean"},
+                "story_loop_status_checked": {"type": "boolean"},
+                "task_current_requested": {"type": "boolean"},
+                "scaffold_tier": {
+                    "type": "string",
+                    "enum": ["supervisor_managed", "base", "prototype_light", "unknown"],
+                },
+                "database_mode": {
+                    "type": "string",
+                    "enum": ["persistent_mongodb", "memory_mongodb", "none", "unknown"],
+                },
+                "evidence_mode": {
+                    "type": "string",
+                    "enum": ["strict_jsonl", "degraded_jsonl", "missing"],
+                },
+                "mutation_policy": {"type": "string", "enum": ["allowed", "read_only"]},
+                "setup_mutations": {"type": "array", "items": {"type": "string"}},
+                "allow_setup_mutations": {"type": "boolean"},
+                "mcp_startup_diagnostic": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    ),
     "codex_supervisor.task_current": McpToolDefinition(
         name="codex_supervisor.task_current",
-        description="Return the current executable ready AFK task, if any.",
-        input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+        description="Return the current executable ready AFK task after story_loop_status.",
+        input_schema={
+            "type": "object",
+            "properties": {"story_loop_status_checked": {"type": "boolean"}},
+            "required": ["story_loop_status_checked"],
+            "additionalProperties": False,
+        },
     ),
     "codex_supervisor.task_show": McpToolDefinition(
         name="codex_supervisor.task_show",
@@ -1476,6 +1575,7 @@ TOOL_HANDLERS: dict[str, McpHandler] = {
     "codex_supervisor.project_list": _handle_project_list,
     "codex_supervisor.story_loop_status": _handle_story_loop_status,
     "codex_supervisor.plan_list": _handle_plan_list,
+    "codex_supervisor.runtime_preflight": _handle_runtime_preflight,
     "codex_supervisor.task_current": _handle_task_current,
     "codex_supervisor.task_show": _handle_task_show,
     "codex_supervisor.worker_run_list": _handle_worker_run_list,

@@ -7,10 +7,21 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Current Snapshot
 
-- Current queue state: ready. `story-loop-status --json` selects
-  `task-plugin-runtime-preflight-guardrails`.
-- Active plan: `plan-plugin-runtime-guardrails-20260526` (`Desktop Plugin Runtime Guardrails`).
-- Current AFK task: `task-plugin-runtime-preflight-guardrails`.
+- Current queue state: completed after the plugin runtime guardrail slice.
+- Completed plan: `plan-plugin-runtime-guardrails-20260526` (`Desktop Plugin Runtime Guardrails`).
+- Completed AFK task: `task-plugin-runtime-preflight-guardrails`.
+- User-selected implementation posture: real Desktop/profile smoke that inspects exposed tools;
+  visible Desktop/plugin MCP startup diagnostics; callable preflight tool instead of prose-only
+  behavior; block current-thread fallback for full-AFK; allow native Goals only when linked to a
+  supervisor task/contract; always scaffold supervisor-managed for plugin full-AFK requests; forbid
+  memory database fallback for supervised full-AFK acceptance; require `story-loop-status` before
+  `task-current`.
+- Verification for the completed slice: focused runtime/MCP/plugin/planning tests passed, and
+  `uv run --no-sync python -B scripts/verify.py` passed.
+- Real Desktop profile smoke against the current `CODEX_HOME` now fails visibly with an installed
+  cache diagnostic: the cache cwd does not contain the `codex_supervisor` source package. Source
+  verification passes; refresh/reinstall the Desktop plugin cache before expecting that real-profile
+  smoke to pass.
 - Previous v1 hardening plan: `plan-v1-live-operational-hardening` remains active but has no open
   work; `story-loop-status --json` reports it as completed within the current queue.
 - Latest release-readiness target checked during architecture-fix work: code commit
@@ -44,6 +55,5 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Next Action
 
-Execute `task-plugin-runtime-preflight-guardrails` as one verified AFK slice: add fail-closed
-Desktop plugin runtime preflight, installed-cache MCP verification, and an execution-mode ledger for
-full-AFK kickoff. Do not create a release tag or publish release artifacts as part of this task.
+ACP the completed plugin runtime guardrail slice, then inspect `story-loop-status --json` before
+selecting any new work.

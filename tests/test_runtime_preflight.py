@@ -1,0 +1,102 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from codex_supervisor.cli import main
+from codex_supervisor.planning import initialize_planning_database
+from codex_supervisor.runtime_preflight import build_runtime_preflight_report
+
+
+def test_runtime_preflight_passes_for_linked_full_afk_supervisor_modes(tmp_path: Path) -> None:
+    initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+
+    report = build_runtime_preflight_report(
+        repo_root=tmp_path,
+        full_afk=True,
+        plugin_invocation=True,
+        plugin_full_afk=True,
+        supervisor_backend="mcp",
+        mcp_tools=(
+            "codex_supervisor.runtime_preflight",
+            "codex_supervisor.story_loop_status",
+            "codex_supervisor.task_current",
+            "codex_supervisor.task_claim",
+            "codex_supervisor.story_loop_run_once",
+        ),
+        worker_execution="codex_exec",
+        native_goal_mode=True,
+        supervisor_task_id="task-ready",
+        goal_contract_linked=True,
+        story_loop_status_checked=True,
+        task_current_requested=True,
+        scaffold_tier="supervisor_managed",
+        database_mode="persistent_mongodb",
+        evidence_mode="strict_jsonl",
+    )
+
+    assert report.ok is True
+    assert report.status == "passed"
+    assert report.ledger.goal_contract == "native_goal_linked_to_supervisor_contract"
+    assert report.ledger.queue_discovery == "story_loop_status_then_task_current"
+
+
+def test_runtime_preflight_blocks_memory_database_and_current_thread(tmp_path: Path) -> None:
+    initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+
+    report = build_runtime_preflight_report(
+        repo_root=tmp_path,
+        full_afk=True,
+        plugin_invocation=True,
+        supervisor_backend="skill_only",
+        mcp_tools=(),
+        cli_available=False,
+        worker_execution="current_thread",
+        database_mode="memory_mongodb",
+        task_current_requested=True,
+    )
+
+    assert report.ok is False
+    assert report.status == "blocked"
+    issue_codes = {issue.code for issue in report.issues}
+    assert "supervisor_backend_unavailable" in issue_codes
+    assert "current_thread_fallback_blocked" in issue_codes
+    assert "memory_database_fallback_forbidden" in issue_codes
+    assert "story_loop_status_required" in issue_codes
+
+
+def test_runtime_preflight_cli_returns_json_and_nonzero_on_blocker(tmp_path, capsys) -> None:
+    initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+
+    assert (
+        main(
+            [
+                "runtime-preflight",
+                "--repo-root",
+                str(tmp_path),
+                "--path",
+                str(tmp_path / "plans" / "planning.sqlite3"),
+                "--full-afk",
+                "--plugin-invocation",
+                "--supervisor-backend",
+                "skill_only",
+                "--no-cli-available",
+                "--worker-execution",
+                "current_thread",
+                "--database-mode",
+                "memory_mongodb",
+                "--task-current-requested",
+                "--json",
+            ]
+        )
+        == 1
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ok"] is False
+    assert payload["ledger"]["worker_execution"] == "current_thread"
+    assert {issue["code"] for issue in payload["issues"]} >= {
+        "supervisor_backend_unavailable",
+        "current_thread_fallback_blocked",
+        "memory_database_fallback_forbidden",
+    }

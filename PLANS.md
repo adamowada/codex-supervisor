@@ -63,10 +63,10 @@ fields to empty/default values.
 
 For current-work discovery, `story-loop-status` is the state machine. It distinguishes ready AFK,
 running, HITL, blocked, completed, and empty queues across active and blocked current-queue plans by
-default; `--all` adds completed, abandoned, and superseded history. `task-current` is only the
-executable AFK selector. A null `task-current` result is not enough to say "there is no task" until
-`story-loop-status` also reports `completed` or `empty`; in `running` or `hitl`, inspect the reported
-`current_task_id` with `task-show`.
+default; `--all` adds completed, abandoned, and superseded history. `task-current
+--after-story-loop-status` is only the executable AFK selector. A null `task-current` result is not
+enough to say "there is no task" until `story-loop-status` also reports `completed` or `empty`; in
+`running` or `hitl`, inspect the reported `current_task_id` with `task-show`.
 
 Use `plan-summary --current-queue` and `task-list --current-queue-plans-only` for fresh-thread
 orientation. Use `--active-only` or `--active-plans-only` only when the task explicitly excludes
@@ -233,5 +233,5 @@ Do not:
 The initial database seed should contain `plan-bootstrap-supervisor`, which covers the creation of
 this repo, source-of-truth documents, source clones, Python skeleton, and handoff for implementation.
 This is historical seed doctrine, not the live-work selector. Live work selection must always come
-from `story-loop-status`, then `task-show <current_task_id>` or `task-current` according to queue
-state.
+from `story-loop-status`, then `task-show <current_task_id>` or
+`task-current --after-story-loop-status` according to queue state.

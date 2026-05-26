@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import tempfile
+import tomllib
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -19,6 +21,7 @@ REQUIRED_MCP_TOOLS = frozenset(
     {
         "codex_supervisor.artifact_link_add",
         "codex_supervisor.progress_add",
+        "codex_supervisor.runtime_preflight",
         "codex_supervisor.story_loop_status",
         "codex_supervisor.story_loop_run_once",
         "codex_supervisor.task_claim",
@@ -70,11 +73,52 @@ def verify_codex_plugin_install(
         }
 
 
+def verify_codex_plugin_desktop_profile(
+    *,
+    codex_home: Path,
+    runner: Runner | None = None,
+    timeout_seconds: int = 30,
+) -> JsonObject:
+    """Verify the plugin as installed in a real Codex Desktop profile cache."""
+
+    profile = codex_home.resolve()
+    plugin_root = _discover_desktop_profile_plugin_root(profile)
+    manifest = _load_json_object(plugin_root / MANIFEST_RELATIVE_PATH)
+    mcp_path = _manifest_relative_path(plugin_root, manifest, "mcpServers")
+    skills_root = _manifest_relative_path(plugin_root, manifest, "skills")
+    skill_names = _discover_skills(skills_root)
+    mcp_tools = _verify_mcp_stdio(
+        plugin_root,
+        mcp_path,
+        None,
+        runner or _default_runner,
+        timeout_seconds,
+    )
+    return {
+        "ok": True,
+        "plugin": _require_string(manifest, "name"),
+        "plugin_source": _profile_relative(profile, plugin_root),
+        "desktop_profile_smoke": True,
+        "real_codex_home_mutated": False,
+        "skills": sorted(skill_names),
+        "mcp_tools": sorted(mcp_tools),
+    }
+
+
 def main() -> int:
     """Run the clean plugin install verifier."""
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--desktop-profile", action="store_true", default=False)
+    parser.add_argument("--codex-home", type=Path, default=None)
+    args = parser.parse_args()
     try:
-        summary = verify_codex_plugin_install()
+        if args.desktop_profile:
+            if args.codex_home is None:
+                raise PluginInstallVerificationError("--desktop-profile requires --codex-home")
+            summary = verify_codex_plugin_desktop_profile(codex_home=args.codex_home)
+        else:
+            summary = verify_codex_plugin_install()
     except PluginInstallVerificationError as exc:
         print(f"Plugin install verification failed: {exc}")
         return 1
@@ -162,7 +206,7 @@ def _frontmatter_value(frontmatter: str, key: str) -> str:
 def _verify_mcp_stdio(
     plugin_root: Path,
     mcp_path: Path,
-    repo_root: Path,
+    repo_root: Path | None,
     runner: Runner,
     timeout_seconds: int,
 ) -> tuple[str, ...]:
@@ -178,7 +222,15 @@ def _verify_mcp_stdio(
     cwd = _resolve_mcp_cwd(plugin_root, server, repo_root)
     payload = _mcp_lifecycle_payload()
 
-    completed = runner((command, *args), cwd, payload, timeout_seconds)
+    _raise_if_source_cwd_is_not_runnable(command, args, cwd)
+    try:
+        completed = runner((command, *args), cwd, payload, timeout_seconds)
+    except FileNotFoundError as exc:
+        raise PluginInstallVerificationError(
+            f"MCP startup failed: program not found: {command}"
+        ) from exc
+    except OSError as exc:
+        raise PluginInstallVerificationError(f"MCP startup failed: {exc}") from exc
     if completed.returncode != 0:
         stderr = completed.stderr.strip() or "no stderr"
         raise PluginInstallVerificationError(f"MCP stdio command failed: {stderr}")
@@ -204,15 +256,80 @@ def _verify_mcp_stdio(
     return tuple(tool_names)
 
 
-def _resolve_mcp_cwd(plugin_root: Path, server: JsonObject, repo_root: Path) -> Path:
+def _resolve_mcp_cwd(plugin_root: Path, server: JsonObject, repo_root: Path | None) -> Path:
     raw_cwd = _require_string(server, "cwd")
     relative = Path(raw_cwd)
     if relative.is_absolute():
         raise PluginInstallVerificationError("MCP cwd must be relative to the plugin root")
     resolved = (plugin_root / relative).resolve()
-    if resolved != repo_root:
+    if repo_root is not None and resolved != repo_root:
         raise PluginInstallVerificationError("MCP cwd must resolve to the repository root")
     return resolved
+
+
+def _raise_if_source_cwd_is_not_runnable(command: str, args: tuple[str, ...], cwd: Path) -> None:
+    if not _command_requires_codex_supervisor_source(command, args):
+        return
+    if (cwd / "pyproject.toml").exists() and (cwd / "src" / "codex_supervisor").is_dir():
+        return
+    raise PluginInstallVerificationError(
+        f"MCP startup failed: cwd does not contain the codex_supervisor source package: {cwd}"
+    )
+
+
+def _command_requires_codex_supervisor_source(command: str, args: tuple[str, ...]) -> bool:
+    return (
+        command == "uv" and "run" in args and "-m" in args and "codex_supervisor.mcp_stdio" in args
+    )
+
+
+def _discover_desktop_profile_plugin_root(codex_home: Path) -> Path:
+    if not codex_home.exists():
+        raise PluginInstallVerificationError(f"Codex home does not exist: {codex_home}")
+    marketplace_names = _enabled_marketplace_names(codex_home / "config.toml")
+    cache_root = codex_home / "plugins" / "cache"
+    candidates: list[Path] = []
+    for marketplace in marketplace_names:
+        candidates.extend(sorted((cache_root / marketplace / "codex-supervisor").glob("*")))
+    if not candidates:
+        candidates.extend(sorted(cache_root.glob("*/codex-supervisor/*")))
+    plugin_roots = tuple(
+        candidate for candidate in candidates if (candidate / MANIFEST_RELATIVE_PATH).exists()
+    )
+    if not plugin_roots:
+        raise PluginInstallVerificationError(
+            f"No installed codex-supervisor plugin cache found under {cache_root}"
+        )
+    return plugin_roots[-1].resolve()
+
+
+def _enabled_marketplace_names(config_path: Path) -> tuple[str, ...]:
+    if not config_path.exists():
+        return ()
+    try:
+        payload = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise PluginInstallVerificationError(f"invalid Codex config TOML: {exc}") from exc
+    plugins = payload.get("plugins")
+    if not isinstance(plugins, dict):
+        return ()
+    marketplaces = []
+    for key, value in plugins.items():
+        if (
+            isinstance(key, str)
+            and key.startswith("codex-supervisor@")
+            and isinstance(value, dict)
+            and value.get("enabled") is True
+        ):
+            marketplaces.append(key.split("@", 1)[1])
+    return tuple(marketplaces)
+
+
+def _profile_relative(profile: Path, path: Path) -> str:
+    try:
+        return path.relative_to(profile).as_posix()
+    except ValueError:
+        return "<outside-codex-home>"
 
 
 def _mcp_lifecycle_payload() -> str:

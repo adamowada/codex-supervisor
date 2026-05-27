@@ -16,8 +16,10 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 - Planning SQLite records `progress-worker-runner-reliability-start-20260527` and
   `progress-worker-runner-reliability-verified-20260527`; the acceptance criterion, milestone,
   task, and plan are completed.
+- Planning SQLite links implementation commit
+  `2b092a95fc5097ff4c9b161dd54c32079e1ab91a`.
 - Verification passed with `uv run --no-sync python -B scripts/verify.py`.
 
 ## Next Action
 
-ACP the completed worker-runner reliability changes.
+No current queue task. Watch remote CI after push.

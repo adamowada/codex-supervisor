@@ -7,8 +7,17 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Current Snapshot
 
-- Current queue state: hitl. `story-loop-status --json` reports current HITL task
-  `task-local-todo-webapp-desktop-smoke-rerun`; there is no current AFK or running task.
+- Current queue state: ready. `story-loop-status --json` reports current AFK task
+  `task-v1-review-required-hitl-gap-todo-list-test-4`; there is no current HITL or running task.
+- Latest Desktop smoke result: `todo-list-test-4` was accepted as a successful Desktop full-AFK
+  todo-list smoke. The spawned project built the local React/Vite, Express, and MongoDB/Mongoose
+  app, passed verification and browser smoke, completed its project queue, and committed
+  `127b2bbcbf7b082527a8b3f6c103bf73f5ebe655`. Main-repo plan
+  `plan-local-todo-webapp` is now completed.
+- New follow-up: the smoke also exposed a review-gating gap. The spawned project completed with
+  `review_required=true` tasks and worker metadata status `needs_review`, but no separate review
+  HITL remained open. `criterion-v1-live-review` is pending again, and
+  `task-v1-review-required-hitl-gap-todo-list-test-4` is ready to repair or explain that behavior.
 - Latest source-of-truth update: `AGENTS.md` now requires planning-first mutation discipline for
   non-read-only implementation, repair, ACP, scaffold, and workflow changes in this repository.
   Intent was recorded before edits as `progress-planning-first-rule-20260526`; verification was
@@ -19,14 +28,17 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   baseline commit; `codex_exec` maps supervisor reasoning effort through
   `model_reasoning_effort`; process evidence preserves raw bytes and decodes with UTF-8 replacement
   only at display boundaries; completed workers must have ignored `runs/` and `artifacts/`
-  evidence plus an evidence manifest before planning ingestion; and `review_required=true` creates
-  a separate HITL review task.
+  evidence plus an evidence manifest before planning ingestion; the intended review behavior is
+  that `review_required=true` creates a separate HITL review task.
 - Planning progress recorded:
   `progress-supervisor-full-afk-hardening-20260526` and
   `progress-planning-first-rule-20260526` /
-  `progress-planning-first-rule-verified-20260526`.
-- Planning integrity repair recorded a HITL rerun task for `plan-local-todo-webapp` so the pending
-  smoke criteria have an explicit current-queue action instead of orphaned criteria.
+  `progress-planning-first-rule-verified-20260526`, plus
+  `progress-todo-list-test-4-smoke-recording-started-20260526`,
+  `progress-todo-list-test-4-smoke-accepted-20260526`, and
+  `progress-review-required-hitl-gap-queued-20260526`.
+- Planning integrity repair previously recorded a HITL rerun task for `plan-local-todo-webapp`; that
+  task is now completed and the todo smoke criteria are completed.
 - Completed repair plan: `plan-desktop-plugin-live-mcp-authority-20260526`
   (`Desktop Plugin Live MCP Authority`).
 - Completed task: `task-desktop-plugin-live-mcp-authority`, with DB-backed worker result
@@ -79,8 +91,9 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
   skill to discover the canary with semantic query terms such as `canary`, ignored false
   client-supplied startup diagnostics in the live MCP handler, and bumped the Desktop plugin
   manifest to `0.1.3`.
-- Previous v1 hardening plan: `plan-v1-live-operational-hardening` remains active but has no open
-  work; `story-loop-status --json` reports it as completed within the current queue.
+- Current v1 hardening plan: `plan-v1-live-operational-hardening` remains active with
+  `criterion-v1-live-review` pending and ready AFK task
+  `task-v1-review-required-hitl-gap-todo-list-test-4`.
 - Latest release-readiness target checked during architecture-fix work: code commit
   `d88ddf4c277dc7625bd89b7fbf641b0639f49df8`.
 - Latest release-readiness result: `ready: false`, 10/16 checks passing. Real bootstrap smoke
@@ -112,5 +125,6 @@ legacy evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Next Action
 
-Rerun the Desktop smoke in a fresh folder and confirm the supervised path reaches a real
-project-local Story Loop run rather than a CLI/current-thread fallback.
+Run `task-v1-review-required-hitl-gap-todo-list-test-4`: diagnose and repair why the successful
+`todo-list-test-4` full-AFK run completed review-required project-local tasks without leaving a
+separate review HITL checkpoint open.

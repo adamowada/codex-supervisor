@@ -46,8 +46,9 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
 - Project bootstrap: route to `spawned-project-bootstrap` for full factory scaffolds or
   `setup-agent-docs` for lightweight imported-skill prerequisites. Plugin full-AFK requests always
   use the supervisor-managed scaffold tier. After `spawned-project-apply`, treat the scaffold task
-  as already completed by deterministic apply evidence; seed or compile the user's concrete
-  implementation request as a new project-local task before calling `story-loop-run-once`.
+  and bootstrap plan as already completed by deterministic apply evidence; seed or compile the
+  user's concrete implementation request as a new project-local plan/task before calling
+  `story-loop-run-once`.
 - Queue inspection: start with `story-loop-status --json`, then
   `task-current --after-story-loop-status --json`,
   `task-show <task-id> --json`, or `plan-summary --current-queue --json` as needed.
@@ -59,6 +60,15 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
   implementation. Plugin full-AFK implementation tasks must set scope flags such as `full_afk`,
   `publication_required`, and `final_commit_required`. Full-AFK completion requires the worker
   evidence manifest to be linked in planning SQLite and a final commit link or an explicit blocker.
+  Successful browser smoke must still be recorded as `browser_smoke_passed` progress, failed smoke
+  as `browser_smoke_failed`, with screenshots or logs linked when present and `HANDOFF.md` refreshed
+  so stale risks do not survive completion. Manual promotion bookkeeping may complete only with
+  `promotion_completed` progress that names both the promotion task and source task. Prefer
+  OS-neutral file-list copy/promotion steps over shell-specific patch pipelines when the main
+  checkout also has planning mutations. Run verification as separate command invocations instead
+  of relying on shell-specific chained command lines. For JSON-heavy queue mutations, prefer
+  repo-local input files, stdin, or typed `--*-json-file` surfaces when available instead of nested
+  shell-quoted JSON.
 - Review: for a separate review task with `worker_backend=codex_review`, run `review-run-live`
   against the source task target, then use `review-result-promote` when the structured result has
   no accepted or needs-HITL findings. Use `fresh-thread-code-reviewer` for ordinary manual reviews

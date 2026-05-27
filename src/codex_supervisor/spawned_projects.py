@@ -588,6 +588,7 @@ def _complete_spawned_scaffold_apply_task(
             linked_artifact_id=evidence_manifest_path,
         )
     )
+    store.update_plan_status(plan_id, "completed")
 
 
 def _run_spawned_scaffold_verification(root: Path) -> subprocess.CompletedProcess[str]:
@@ -690,8 +691,9 @@ def _initialize_spawned_planning_database(
             slug=f"{_slugify(proposal.project_name)}-bootstrap",
             title=f"{proposal.project_name} Bootstrap",
             goal=(
-                "Create and verify the selected codex-supervisor spawned-project scaffold, "
-                "then execute the first bounded implementation slice."
+                "Create and verify the selected codex-supervisor spawned-project scaffold. "
+                "The user's concrete implementation request belongs in a separate product plan "
+                "or task after scaffold apply completes."
             ),
             status="active",
             priority=100,
@@ -779,12 +781,18 @@ def _scaffold_file_content(
             "trailing slash forms such as `client/`. Review-required AFK work needs a separate "
             "review task and review result before completion. Post-worker browser smoke, "
             "promotion, or repair edits must be recorded as a separate supervisor task before "
-            "editing files. Full-AFK implementation tasks must set scope flags such as "
+            "editing files. Successful browser smoke still needs a `browser_smoke_passed` "
+            "planning progress event, and failed smoke needs `browser_smoke_failed`; link any "
+            "screenshot or smoke log artifact and update `HANDOFF.md` so residual risks do not "
+            "go stale. Full-AFK implementation tasks must set scope flags such as "
             "`full_afk`, `publication_required`, and `final_commit_required`; completion requires "
             "a planning commit link. The scaffold task is completed by `spawned-project-apply`; "
             "seed the user's concrete implementation request as a new task before running Story "
-            "Loop workers. Keep source-of-truth docs stable, run `python -B scripts/verify.py` "
-            "before publishing, and do not store secrets or local absolute roots in tracked "
+            "Loop workers. Run verification as separate command invocations instead of relying on "
+            "shell-specific chained command lines. For JSON-heavy queue mutations, prefer "
+            "repo-local input files, stdin, or typed `--*-json-file` surfaces when available. "
+            "Keep source-of-truth docs stable, run `python -B scripts/verify.py` before "
+            "publishing, and do not store secrets or local absolute roots in tracked "
             "state.\n"
         )
     if relative_path == "PLANS.md":
@@ -796,10 +804,13 @@ def _scaffold_file_content(
             "paths; express directories as `path/**`. After scaffold apply, do not run a worker on "
             "the scaffold completion record; compile or upsert the real product task first. If "
             "post-worker verification or browser smoke finds a repair, create a new supervisor "
-            "task and worker result instead of making controller edits. A full-AFK completed plan "
-            "must have the worker evidence manifest linked in planning SQLite and a commit link "
-            "for the final project state; it must not leave `HANDOFF.md` saying review is still "
-            "pending.\n"
+            "task and worker result instead of making controller edits. Even when browser smoke "
+            "passes, record a `browser_smoke_passed` progress event, link the screenshot or smoke "
+            "log artifact when present, and refresh `HANDOFF.md` before completion. Manual "
+            "promotion bookkeeping may close only after `promotion_completed` progress names the "
+            "promotion task and source task. A full-AFK completed plan must have the worker "
+            "evidence manifest linked in planning SQLite and a commit link for the final project "
+            "state; it must not leave `HANDOFF.md` saying review is still pending.\n"
         )
     if relative_path == "ARCHITECTURE.md":
         return (
@@ -840,7 +851,8 @@ def _scaffold_file_content(
             "1. Inspect the current queue in `plans/planning.sqlite3`.\n"
             "2. Work one vertical slice at a time.\n"
             "3. Run focused checks, then `python -B scripts/verify.py`.\n"
-            "4. Keep `HANDOFF.md` compact and current.\n"
+            "4. Record browser-smoke pass/fail progress and artifact links before completion.\n"
+            "5. Keep `HANDOFF.md` compact and current.\n"
         )
     if relative_path == "HANDOFF.md":
         return (
@@ -889,6 +901,7 @@ def _scaffold_file_content(
             "worktrees/\n"
             "sources/*\n"
             "!sources/README.md\n"
+            "*.tsbuildinfo\n"
         )
     if relative_path == ".gitattributes":
         return "* text=auto eol=lf\n*.sqlite3 binary\n*.db binary\n"
@@ -976,10 +989,17 @@ def _project_bootstrap_skill(proposal: SpawnedProjectScaffoldProposal) -> str:
         "3. Execute one bounded vertical slice and update planning SQLite with durable evidence.\n"
         "4. If post-worker verification or browser smoke finds an issue, create a new supervisor "
         "repair task before editing files.\n"
-        "5. Link the worker evidence manifest in planning SQLite and record a final commit link "
+        "5. Record browser-smoke pass/fail as planning progress and link screenshots or logs when "
+        "present.\n"
+        "6. Use OS-neutral promotion steps such as file-list copy from worker output; avoid "
+        "shell-specific pipeline promotion recipes when the main checkout also has planning "
+        "mutations.\n"
+        "7. Prefer repo-local input files, stdin, or typed `--*-json-file` surfaces for "
+        "JSON-heavy queue mutations.\n"
+        "8. Link the worker evidence manifest in planning SQLite and record a final commit link "
         "before declaring full-AFK work complete.\n"
-        "6. Run `uv run --no-sync python -B scripts/verify.py` before handoff or publication.\n"
-        "7. Keep reusable lessons in `insights/` and keep `HANDOFF.md` compact.\n"
+        "9. Run `uv run --no-sync python -B scripts/verify.py` before handoff or publication.\n"
+        "10. Keep reusable lessons in `insights/` and keep `HANDOFF.md` compact.\n"
     )
 
 
@@ -1061,13 +1081,15 @@ def _check_file_justification_script(proposal: SpawnedProjectScaffoldProposal) -
         f"KNOWN_FILES = set({known_literal})\n"
         "IGNORED_DIRS = {'.git', '.venv', '__pycache__', '.pytest_cache', '.ruff_cache', "
         "'.mypy_cache', 'artifacts', 'cache', 'runs', 'worker-results', 'worktrees', 'sources'}\n"
-        "IGNORED_FILES = {'.env'}\n\n"
+        "IGNORED_FILES = {'.env'}\n"
+        "IGNORED_SUFFIXES = {'.tsbuildinfo'}\n\n"
         "def main() -> int:\n"
         "    failures = []\n"
         "    for path in Path('.').rglob('*'):\n"
         "        if (\n"
         "            not path.is_file()\n"
         "            or path.name in IGNORED_FILES\n"
+        "            or path.suffix.lower() in IGNORED_SUFFIXES\n"
         "            or any(part in IGNORED_DIRS for part in path.parts)\n"
         "        ):\n"
         "            continue\n"

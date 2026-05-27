@@ -145,9 +145,18 @@ When the user has granted dangerous/full-auto operation, spend autonomy on throu
   `tool_search`.
 - Plugin full-AFK project bootstrap always uses the supervisor-managed scaffold tier.
 - After `spawned-project-apply`, treat the generated scaffold task as already completed by the
-  deterministic apply step. Seed or compile the user's concrete implementation request as a new
-  project-local task before calling `story-loop-run-once`; do not launch a Codex worker merely to
-  redo scaffold creation.
+  deterministic apply step and the bootstrap plan as complete. Seed or compile the user's concrete
+  implementation request as a new project-local plan/task before calling `story-loop-run-once`; do
+  not launch a Codex worker merely to redo scaffold creation.
+- Post-worker browser smoke is evidence even when it passes: record `browser_smoke_passed` or
+  `browser_smoke_failed` progress, link screenshots or logs when present, and refresh `HANDOFF.md`
+  before declaring completion. Manual promotion bookkeeping may complete only with
+  `promotion_completed` progress naming the promotion task and source task. Prefer OS-neutral
+  file-list copy/promotion steps over shell-specific patch pipelines when planning mutations are
+  already present in the main checkout. Run verification as separate command invocations instead of
+  relying on shell-specific chained command lines. For JSON-heavy queue mutations, prefer repo-local
+  input files, stdin, or typed `--*-json-file` surfaces when available instead of nested
+  shell-quoted JSON.
 - Full-AFK review-required work uses a separate AFK review task by default; use HITL only for
   findings or decisions that require human authority.
 - Parallelize read-only exploration, independent workers, CI inspection, and review where safe.

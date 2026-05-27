@@ -616,6 +616,60 @@ def test_planning_integrity_allows_completed_afk_review_task_with_review_evidenc
     )
 
 
+def test_planning_integrity_allows_completed_manual_promotion_task_with_progress_evidence(
+    tmp_path,
+):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-promotion",
+            slug="promotion",
+            title="Promotion Plan",
+            goal="Allow controller promotion bookkeeping with durable evidence.",
+            status="blocked",
+        )
+    )
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id="progress-promotion-completed",
+            plan_id="plan-promotion",
+            event_type="promotion_completed",
+            summary="Promotion copied worker output into the main checkout.",
+            details=json.dumps(
+                {
+                    "task_id": "task-promote",
+                    "source_task_id": "task-build",
+                    "commit_sha": FULL_COMMIT_SHA,
+                }
+            ),
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-promote",
+            plan_id="plan-promotion",
+            title="Promote worker output",
+            goal="Copy reviewed worker output into the main checkout.",
+            task_type="AFK",
+            status="completed",
+            acceptance_criteria=["promotion done"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["plans/planning.sqlite3"],
+            worker_backend="manual",
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert not any(
+        failure.check_name == "completed_afk_task_without_worker_evidence"
+        and "task-promote" in failure.reason
+        for failure in failures
+    )
+
+
 def test_planning_integrity_rejects_completed_review_required_task_without_review_result(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"

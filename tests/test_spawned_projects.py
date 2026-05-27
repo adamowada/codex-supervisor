@@ -244,10 +244,15 @@ def test_spawned_project_apply_writes_full_supervisor_scaffold(tmp_path: Path) -
     assert "client/**" in agents
     assert "separate review task" in agents
     assert "Post-worker browser smoke" in agents
+    assert "browser_smoke_passed" in agents
+    assert "JSON-heavy queue mutations" in agents
     assert "final_commit_required" in agents
     plans_text = (target / "PLANS.md").read_text(encoding="utf-8")
     assert "worker evidence manifest" in plans_text
     assert "commit link" in plans_text
+    assert "promotion_completed" in plans_text
+    gitignore_text = (target / ".gitignore").read_text(encoding="utf-8")
+    assert "*.tsbuildinfo" in gitignore_text
     integrity_text = (target / "scripts" / "check_planning_integrity.py").read_text(
         encoding="utf-8"
     )
@@ -264,6 +269,10 @@ def test_spawned_project_apply_writes_full_supervisor_scaffold(tmp_path: Path) -
 
     with sqlite3.connect(target / "plans" / "planning.sqlite3") as connection:
         plan_count = connection.execute("SELECT COUNT(*) FROM plans").fetchone()[0]
+        plan_status = connection.execute(
+            "SELECT status FROM plans WHERE plan_id = ?",
+            ("plan-ops-platform-bootstrap",),
+        ).fetchone()[0]
         task_count = connection.execute("SELECT COUNT(*) FROM supervisor_tasks").fetchone()[0]
         task_status = connection.execute(
             "SELECT status FROM supervisor_tasks WHERE task_id = ?",
@@ -278,6 +287,7 @@ def test_spawned_project_apply_writes_full_supervisor_scaffold(tmp_path: Path) -
         ]
         database_text = "\n".join(connection.iterdump())
     assert plan_count == 1
+    assert plan_status == "completed"
     assert task_count == 1
     assert task_status == "completed"
     assert tuple(worker_run[:2]) == ("scaffold_apply", "completed")
@@ -311,6 +321,8 @@ def test_spawned_project_apply_writes_full_supervisor_scaffold(tmp_path: Path) -
     )
     assert verify.returncode == 0, verify.stderr + verify.stdout
     (target / ".env").write_text("LOCAL_ONLY=true\n", encoding="utf-8")
+    (target / "client").mkdir()
+    (target / "client" / "tsconfig.tsbuildinfo").write_text("{}", encoding="utf-8")
     justification = subprocess.run(
         (sys.executable, "scripts/check_file_justification.py"),
         cwd=target,
@@ -369,7 +381,11 @@ def test_spawned_project_apply_with_repo_local_skills_writes_initial_skill(
     skill_path = target / ".agents" / "skills" / "project-bootstrap" / "SKILL.md"
     assert ".agents/skills/project-bootstrap/SKILL.md" in result.created_files
     assert skill_path.exists()
-    assert "plans/planning.sqlite3" in skill_path.read_text(encoding="utf-8")
+    skill_text = skill_path.read_text(encoding="utf-8")
+    assert "plans/planning.sqlite3" in skill_text
+    assert "browser-smoke pass/fail" in skill_text
+    assert "OS-neutral promotion" in skill_text
+    assert "JSON-heavy queue mutations" in skill_text
     verify = subprocess.run(
         (sys.executable, "scripts/verify.py"),
         cwd=target,

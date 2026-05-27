@@ -879,6 +879,13 @@ def _check_completed_afk_tasks_have_worker_evidence(
             worker_backend=str(worker_backend),
         ):
             continue
+        if _completed_afk_manual_task_has_progress_evidence(
+            connection,
+            plan_id=str(plan_id),
+            task_id=str(task_id),
+            worker_backend=str(worker_backend),
+        ):
+            continue
         failures.append(
             PlanningIntegrityFailure(
                 "completed_afk_task_without_worker_evidence",
@@ -909,6 +916,18 @@ def _completed_afk_review_task_has_review_evidence(
     if not isinstance(source_task_id, str) or not source_task_id.strip():
         return False
     return _review_progress_for_task(connection, plan_id, source_task_id) is not None
+
+
+def _completed_afk_manual_task_has_progress_evidence(
+    connection: sqlite3.Connection,
+    *,
+    plan_id: str,
+    task_id: str,
+    worker_backend: str,
+) -> bool:
+    if worker_backend != "manual":
+        return False
+    return _promotion_progress_for_task(connection, plan_id, task_id) is not None
 
 
 def _check_completed_review_required_tasks_have_review_evidence(
@@ -1007,6 +1026,43 @@ def _review_progress_for_task(
             continue
         if isinstance(details, dict) and details.get("target") == task_id:
             return str(progress_id), details
+    return None
+
+
+def _promotion_progress_for_task(
+    connection: sqlite3.Connection,
+    plan_id: str,
+    task_id: str,
+) -> tuple[str, dict[str, object]] | None:
+    rows = connection.execute(
+        """
+        SELECT progress_id, details
+        FROM plan_progress_events
+        WHERE plan_id = ?
+          AND event_type = 'promotion_completed'
+        ORDER BY occurred_at DESC, progress_id DESC
+        """,
+        (plan_id,),
+    ).fetchall()
+    for progress_id, details_json in rows:
+        try:
+            details = json.loads(str(details_json or "{}"))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(details, dict):
+            continue
+        scoped_task_id = _promotion_progress_task_id(details)
+        source_task_id = details.get("source_task_id")
+        if scoped_task_id == task_id and isinstance(source_task_id, str) and source_task_id.strip():
+            return str(progress_id), details
+    return None
+
+
+def _promotion_progress_task_id(details: dict[str, object]) -> str | None:
+    for key in ("task_id", "promotion_task_id", "target_task_id", "target"):
+        value = details.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
     return None
 
 

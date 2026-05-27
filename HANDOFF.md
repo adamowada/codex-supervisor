@@ -9,21 +9,22 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Current queue state: HITL. `story-loop-status --json` selects
   `task-review-review-required-hitl-gap-20260527`.
-- User asked to implement todo-list-test-7 smoke hardening fixes. Intent and completion are
-  recorded as `progress-smoke7-hardening-start-20260527` and
-  `progress-smoke7-hardening-verified-20260527`.
-- Implemented repair scope: Codex Exec now probes requested model/reasoning before live worker
-  spawn and fails closed for unknown probe failures; Story Loop links worker result and evidence
-  manifest artifacts into planning SQLite; worktree state expands untracked directory summaries into
-  concrete files; spawned-project scaffolds ignore local `.env`, steer post-worker repair into
-  separate supervisor tasks, and require final commit links for full-AFK completion; planning
-  integrity enforces commit links for completed final-commit-required AFK tasks.
+- Smoke-7 hardening was implemented, verified, committed, and pushed as
+  `fc07fb38dfb42ba308f137f78b2e4c39705df82f`.
+- User audited `todo-list-test-8`, then selected four surgical repairs for implementation:
+  manual promotion bookkeeping evidence, steering-only durable browser-smoke recording, bootstrap
+  plan completion steering, and OS-agnostic guidance for generated build artifacts / command
+  examples / promotion flow.
+- Smoke-8 surgical repairs are implemented and verified. Planning SQLite records the start and
+  verification as `progress-smoke8-surgical-repairs-start-20260527` and
+  `progress-smoke8-surgical-repairs-verified-20260527`.
 - Verification passed: `uv run --no-sync python -B scripts/verify.py`.
-- ACP requested for this change set. Publication intent is recorded as
-  `progress-smoke7-hardening-acp-start-20260527`.
+- ACP publication is in progress for this change set. Planning SQLite records the publication start
+  and publication-ready verification as `progress-smoke8-surgical-repairs-acp-start-20260527` and
+  `progress-smoke8-surgical-repairs-acp-verified-20260527`.
 
 ## Next Action
 
-Publish the completed smoke-7 hardening change set. The current queue remains HITL on
-`task-review-review-required-hitl-gap-20260527` unless the user explicitly resolves that review
-checkpoint.
+After publication, resume from the HITL checkpoint
+`task-review-review-required-hitl-gap-20260527` unless the user asks for a different next action.
+Do not resolve that checkpoint unless the user explicitly asks for the review outcome.

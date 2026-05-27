@@ -580,7 +580,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     story_run_parser.add_argument("--sandbox-mode", default="workspace-write")
     story_run_parser.add_argument("--approval-policy", default="never")
-    story_run_parser.add_argument("--codex-bin", default=None)
+    story_run_parser.add_argument(
+        "--codex-executable", "--codex-bin", dest="codex_executable", default=None
+    )
     story_run_parser.add_argument("--codex-home", default=None)
     story_run_parser.add_argument("--codex-config-path", default=None)
     story_run_parser.add_argument("--model", default=None)
@@ -602,7 +604,9 @@ def main(argv: list[str] | None = None) -> int:
     story_advance_parser.add_argument("--result-schema-path", default=None)
     story_advance_parser.add_argument("--sandbox-mode", default="workspace-write")
     story_advance_parser.add_argument("--approval-policy", default="never")
-    story_advance_parser.add_argument("--codex-bin", default=None)
+    story_advance_parser.add_argument(
+        "--codex-executable", "--codex-bin", dest="codex_executable", default=None
+    )
     story_advance_parser.add_argument("--codex-home", default=None)
     story_advance_parser.add_argument("--codex-config-path", default=None)
     story_advance_parser.add_argument("--model", default=None)
@@ -977,7 +981,9 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         default=None,
     )
-    review_live_parser.add_argument("--codex-bin", dest="codex_executable", default=None)
+    review_live_parser.add_argument(
+        "--codex-executable", "--codex-bin", dest="codex_executable", default=None
+    )
     review_live_parser.add_argument("--codex-home", default=None)
     review_live_parser.add_argument("--model", default=None)
     review_live_parser.add_argument("--sandbox-mode", default="workspace-write")
@@ -1959,7 +1965,7 @@ def main(argv: list[str] | None = None) -> int:
                 result_schema_path=args.result_schema_path,
                 sandbox_mode=args.sandbox_mode,
                 approval_policy=args.approval_policy,
-                codex_executable=args.codex_bin,
+                codex_executable=args.codex_executable,
                 codex_home=args.codex_home,
                 codex_config_path=args.codex_config_path,
                 model=args.model,
@@ -2001,7 +2007,7 @@ def main(argv: list[str] | None = None) -> int:
                 result_schema_path=args.result_schema_path,
                 sandbox_mode=args.sandbox_mode,
                 approval_policy=args.approval_policy,
-                codex_executable=args.codex_bin,
+                codex_executable=args.codex_executable,
                 codex_home=args.codex_home,
                 codex_config_path=args.codex_config_path,
                 model=args.model,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 from codex_supervisor.cli import main
 from codex_supervisor.planning import (
@@ -145,6 +146,77 @@ def test_story_loop_status_reports_empty_blocked_ready_and_completed_states(tmp_
     assert blocked_plan["blocked_task_ids"] == ["task-blocked"]
     hitl_plan = next(plan for plan in payload["plans"] if plan["plan_id"] == "plan-hitl")
     assert hitl_plan["hitl_task_ids"] == ["task-hitl"]
+
+
+def test_story_loop_cli_accepts_codex_executable_aliases(tmp_path, monkeypatch, capsys):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    initialize_planning_database(db_path)
+    captured_run: dict[str, object] = {}
+    captured_advance: dict[str, object] = {}
+
+    def fake_run_live_story_loop_once(store, **kwargs):
+        captured_run["store_path"] = store.path
+        captured_run.update(kwargs)
+        return SimpleNamespace(
+            status="completed",
+            task_id="task-live",
+            worker_run_id=kwargs["worker_run_id"],
+            failure_class=None,
+            result_id=None,
+        )
+
+    def fake_advance_story_loop_once(store, **kwargs):
+        captured_advance["store_path"] = store.path
+        captured_advance.update(kwargs)
+        return SimpleNamespace(
+            transition="run_live_worker",
+            state_before="ready",
+            state_after="completed",
+            task_id="task-live",
+            failure_class=None,
+        )
+
+    monkeypatch.setattr(
+        "codex_supervisor.cli.run_live_story_loop_once",
+        fake_run_live_story_loop_once,
+    )
+    monkeypatch.setattr(
+        "codex_supervisor.cli.advance_story_loop_once",
+        fake_advance_story_loop_once,
+    )
+
+    assert (
+        main(
+            [
+                "story-loop-run-once",
+                "--path",
+                str(db_path),
+                "--worker-run-id",
+                "run-live",
+                "--codex-executable",
+                "preferred-codex",
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                "story-loop-advance",
+                "--path",
+                str(db_path),
+                "--worker-run-id",
+                "run-live",
+                "--codex-bin",
+                "legacy-codex",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    assert captured_run["codex_executable"] == "preferred-codex"
+    assert captured_advance["codex_executable"] == "legacy-codex"
 
 
 def test_story_loop_status_blocks_failed_tasks_until_reconciled(tmp_path, capsys):

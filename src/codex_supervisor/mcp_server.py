@@ -619,7 +619,7 @@ def _handle_story_loop_run_once(arguments: JsonObject, context: McpServerContext
         worker_run_id=_required_string(arguments, "worker_run_id"),
         sandbox_mode=_optional_string(arguments.get("sandbox_mode")) or "workspace-write",
         approval_policy=_optional_string(arguments.get("approval_policy")) or "never",
-        codex_executable=_optional_string(arguments.get("codex_bin")),
+        codex_executable=_optional_codex_executable(arguments),
         codex_home=_optional_string(arguments.get("codex_home")),
         codex_config_path=_optional_string(arguments.get("codex_config_path")),
         model=_optional_string(arguments.get("model")),
@@ -640,7 +640,7 @@ def _handle_story_loop_advance(arguments: JsonObject, context: McpServerContext)
         worker_run_id=_required_string(arguments, "worker_run_id"),
         sandbox_mode=_optional_string(arguments.get("sandbox_mode")) or "workspace-write",
         approval_policy=_optional_string(arguments.get("approval_policy")) or "never",
-        codex_executable=_optional_string(arguments.get("codex_bin")),
+        codex_executable=_optional_codex_executable(arguments),
         codex_home=_optional_string(arguments.get("codex_home")),
         codex_config_path=_optional_string(arguments.get("codex_config_path")),
         model=_optional_string(arguments.get("model")),
@@ -882,6 +882,12 @@ def _optional_string(value: object) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def _optional_codex_executable(arguments: JsonObject) -> str | None:
+    return _optional_string(arguments.get("codex_executable")) or _optional_string(
+        arguments.get("codex_bin")
+    )
 
 
 def _optional_integer(value: object, *, default: int) -> int:
@@ -1601,6 +1607,7 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
                 "repo_root": {"type": "string"},
                 "sandbox_mode": {"type": "string"},
                 "approval_policy": {"type": "string"},
+                "codex_executable": {"type": "string"},
                 "codex_bin": {"type": "string"},
                 "codex_home": {"type": "string"},
                 "codex_config_path": {"type": "string"},
@@ -1628,6 +1635,7 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
                 "repo_root": {"type": "string"},
                 "sandbox_mode": {"type": "string"},
                 "approval_policy": {"type": "string"},
+                "codex_executable": {"type": "string"},
                 "codex_bin": {"type": "string"},
                 "codex_home": {"type": "string"},
                 "codex_config_path": {"type": "string"},

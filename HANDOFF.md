@@ -51,10 +51,16 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 - Planning SQLite records `progress-worker-run-event-cli-start-20260527` for this slice.
 - Planning SQLite also records `progress-worker-run-event-cli-verified-20260527`; focused
   registry/planning/MCP tests and full `scripts/verify.py` passed.
+- `task-codex-executable-alias-20260527` completed the second actionable naming fix: prefer
+  `codex_executable`/`--codex-executable` on live worker launch surfaces while preserving
+  `codex_bin`/`--codex-bin` compatibility.
+- Planning SQLite records `progress-codex-executable-alias-start-20260527` for this slice.
+- Planning SQLite also records `progress-codex-executable-alias-verified-20260527`; focused
+  launch-surface tests and full `scripts/verify.py` passed.
 - The previously cleared queue remains historical: `plan-v1-live-operational-hardening` was
   abandoned after the user requested clearing that checkpoint.
 
 ## Next Action
 
-ACP `task-worker-run-event-cli-20260527`; then seed and handle the next actionable naming
+ACP `task-codex-executable-alias-20260527`; then seed and handle the next actionable naming
 inconsistency one slice at a time.

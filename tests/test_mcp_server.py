@@ -61,6 +61,14 @@ def test_list_mcp_tools_exposes_read_and_default_on_mutating_schemas(tmp_path: P
     assert task_current["inputSchema"]["required"] == ["story_loop_status_checked"]
     task_next_afk = next(tool for tool in tools if tool["name"] == "codex_supervisor.task_next_afk")
     assert task_next_afk["inputSchema"]["required"] == ["story_loop_status_checked"]
+    story_run_once = next(
+        tool for tool in tools if tool["name"] == "codex_supervisor.story_loop_run_once"
+    )
+    story_advance = next(
+        tool for tool in tools if tool["name"] == "codex_supervisor.story_loop_advance"
+    )
+    assert {"codex_executable", "codex_bin"} <= set(story_run_once["inputSchema"]["properties"])
+    assert {"codex_executable", "codex_bin"} <= set(story_advance["inputSchema"]["properties"])
 
 
 def test_runtime_preflight_tool_blocks_hidden_full_afk_mode_switch(tmp_path: Path) -> None:
@@ -487,6 +495,39 @@ def test_story_loop_run_once_tool_routes_to_production_service(
     assert captured["worker_run_id"] == "worker-run-live"
     assert captured["codex_executable"] == "codex"
     assert captured["environment"] == {"CODEX_SUPERVISOR_TEST": "1"}
+
+
+def test_story_loop_run_once_tool_prefers_codex_executable_alias(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    initialize_planning_database(db_path)
+    captured: dict[str, object] = {}
+
+    def fake_run_live_story_loop_once(store, **kwargs):
+        captured["store_path"] = store.path
+        captured.update(kwargs)
+        return {"status": "completed", "worker_run_id": kwargs["worker_run_id"]}
+
+    monkeypatch.setattr(
+        "codex_supervisor.mcp_server.run_live_story_loop_once",
+        fake_run_live_story_loop_once,
+    )
+    context = McpServerContext(repo_root=tmp_path, planning_path=db_path)
+
+    result = dispatch_mcp_tool(
+        "codex_supervisor.story_loop_run_once",
+        {
+            "worker_run_id": "worker-run-live",
+            "codex_executable": "preferred-codex",
+            "codex_bin": "legacy-codex",
+        },
+        context=context,
+    )
+
+    assert result["ok"] is True
+    assert captured["codex_executable"] == "preferred-codex"
 
 
 def test_story_loop_run_once_tool_accepts_explicit_project_local_paths(

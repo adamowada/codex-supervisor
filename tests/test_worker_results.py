@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 import pytest
@@ -153,6 +154,42 @@ def test_worker_result_validation_requires_task_verification_command(tmp_path):
         )
 
 
+def test_worker_result_validation_accepts_browser_smoke_evidence_outside_tests_run(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
+    (tmp_path / "artifacts" / "browser").mkdir(parents=True)
+    (tmp_path / "artifacts" / "browser" / "signin.png").write_bytes(b"png")
+    (tmp_path / "artifacts" / "run-worker").mkdir(parents=True)
+    (tmp_path / "artifacts" / "run-worker" / "worker-result.raw.json").write_text(
+        "{}",
+        encoding="utf-8",
+    )
+    payload = _worker_result()
+    payload["browser_smoke_results"] = [
+        {
+            "status": "passed",
+            "summary": "Registered, signed in, edited a todo, and signed out.",
+            "tool": "playwright",
+            "command": "node --input-type=module -",
+            "exit_code": 0,
+            "artifact": "artifacts/browser/signin.png",
+            "url": "http://127.0.0.1:5173",
+        }
+    ]
+
+    result = validate_worker_result_payload(
+        payload,
+        repo_root=tmp_path,
+        result_path="artifacts/run-worker/worker-result.raw.json",
+        worker_run_id="run-worker",
+        allowed_paths=("src/**",),
+        verification_commands=("python -B -m pytest -p no:cacheprovider",),
+        acceptance_criteria=("Criterion passes.",),
+    )
+
+    assert result.payload["browser_smoke_results"][0]["command"] == "node --input-type=module -"
+
+
 def test_worker_result_validation_requires_changed_files_within_allowed_paths(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
@@ -253,12 +290,26 @@ def test_worker_result_ingestion_redacts_unknown_raw_payload_fields(tmp_path):
     result_file = tmp_path / result_path
     result_file.parent.mkdir(parents=True)
     result_file.write_text(json.dumps(payload), encoding="utf-8")
+    original_raw = result_file.read_bytes()
 
     record = store.ingest_worker_result("run-worker", result_path)
 
     assert "secret_notes" not in record.raw_payload
     assert "secret_notes" in record.metadata["redacted_raw_payload_keys"]
     assert "do-not-store-this" not in json.dumps(record.raw_payload, sort_keys=True)
+    assert result_file.read_bytes() == original_raw
+    assert record.source_sha256 == hashlib.sha256(original_raw).hexdigest()
+    normalized_path = record.metadata["normalized_result_path"]
+    normalized_file = tmp_path / normalized_path
+    assert normalized_path == "artifacts/run-worker/worker-result.normalized.json"
+    normalized_payload = json.loads(normalized_file.read_text(encoding="utf-8"))
+    assert normalized_payload["source_path"] == result_path
+    assert normalized_payload["source_sha256"] == record.source_sha256
+    assert normalized_payload["worker_result"] == record.raw_payload
+    assert (
+        record.metadata["normalized_result_sha256"]
+        == hashlib.sha256(normalized_file.read_bytes()).hexdigest()
+    )
 
 
 def _worker_result() -> dict[str, object]:

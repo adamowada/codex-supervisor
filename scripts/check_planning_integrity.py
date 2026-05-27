@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shlex
@@ -287,7 +288,7 @@ def check_planning_integrity(db_path: Path) -> tuple[PlanningIntegrityFailure, .
             failures.extend(_check_completed_afk_tasks_have_worker_evidence(connection))
             failures.extend(_check_completed_review_required_tasks_have_review_evidence(connection))
             failures.extend(_check_worker_result_records_have_run_links(connection))
-            failures.extend(_check_worker_result_records_have_valid_payloads(connection))
+            failures.extend(_check_worker_result_records_have_valid_payloads(connection, repo_root))
             failures.extend(_check_worker_result_records_align_with_runs(connection))
             failures.extend(_check_worker_results_not_stored_as_public_files(connection, repo_root))
             failures.extend(_check_handoff_snapshot_is_compact(repo_root))
@@ -840,6 +841,14 @@ def _check_completed_worker_runs_preserve_indexed_evidence(
                         f"{worker_run_id}: evidence manifest does not exist: {manifest_value}",
                     )
                 )
+            elif manifest_path is not None and manifest_path.is_file():
+                failures.extend(
+                    _worker_evidence_manifest_hash_failures(
+                        worker_run_id=str(worker_run_id),
+                        repo_root=repo_root,
+                        manifest_path=manifest_path,
+                    )
+                )
     return tuple(failures)
 
 
@@ -893,6 +902,93 @@ def _check_completed_afk_tasks_have_worker_evidence(
             )
         )
     return tuple(failures)
+
+
+def _worker_evidence_manifest_hash_failures(
+    *,
+    worker_run_id: str,
+    repo_root: Path,
+    manifest_path: Path,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return (
+            PlanningIntegrityFailure(
+                "completed_worker_run_evidence_manifest_invalid",
+                f"{worker_run_id}: evidence manifest is unreadable: {exc}",
+            ),
+        )
+    if not isinstance(manifest, dict):
+        return (
+            PlanningIntegrityFailure(
+                "completed_worker_run_evidence_manifest_invalid",
+                f"{worker_run_id}: evidence manifest must be an object",
+            ),
+        )
+    paths = manifest.get("paths")
+    if not isinstance(paths, dict):
+        return ()
+    failures: list[PlanningIntegrityFailure] = []
+    for evidence_key, record in sorted(paths.items()):
+        if not isinstance(record, dict) or record.get("exists") is not True:
+            continue
+        expected_sha = record.get("sha256")
+        expected_bytes = record.get("bytes")
+        if not isinstance(expected_sha, str) or not isinstance(expected_bytes, int):
+            continue
+        raw_evidence_paths = manifest.get("raw_evidence_paths")
+        relative_path = None
+        if isinstance(raw_evidence_paths, dict):
+            candidate = raw_evidence_paths.get(evidence_key)
+            if isinstance(candidate, str):
+                relative_path = candidate
+        if relative_path is None:
+            metadata_paths = manifest.get("paths_by_key")
+            if isinstance(metadata_paths, dict):
+                candidate = metadata_paths.get(evidence_key)
+                if isinstance(candidate, str):
+                    relative_path = candidate
+        if relative_path is None:
+            relative_path = _manifest_default_relative_path(
+                manifest_path,
+                evidence_key=str(evidence_key),
+            )
+        evidence_path = _artifact_path(repo_root, relative_path)
+        if evidence_path is None or not evidence_path.is_file():
+            continue
+        actual_bytes = evidence_path.stat().st_size
+        actual_sha = _sha256_file(evidence_path)
+        if actual_sha != expected_sha or actual_bytes != expected_bytes:
+            failures.append(
+                PlanningIntegrityFailure(
+                    "completed_worker_run_evidence_manifest_hash_drift",
+                    (
+                        f"{worker_run_id}: evidence manifest {evidence_key} hash/size drift "
+                        f"for {relative_path}"
+                    ),
+                )
+            )
+    return tuple(failures)
+
+
+def _manifest_default_relative_path(manifest_path: Path, *, evidence_key: str) -> str:
+    run_id = manifest_path.parent.name
+    if evidence_key == "raw_result":
+        return f"artifacts/{run_id}/worker-result.raw.json"
+    if evidence_key == "prompt":
+        return f"runs/{run_id}/prompt.md"
+    if evidence_key == "jsonl":
+        return f"runs/{run_id}/events.jsonl"
+    if evidence_key == "stdout":
+        return f"runs/{run_id}/stdout.txt"
+    if evidence_key == "stderr":
+        return f"runs/{run_id}/stderr.txt"
+    if evidence_key == "final_message":
+        return f"runs/{run_id}/final-message.txt"
+    if evidence_key == "diff_summary":
+        return f"runs/{run_id}/diff-summary.txt"
+    return ""
 
 
 def _completed_afk_review_task_has_review_evidence(
@@ -1121,6 +1217,7 @@ def _check_worker_result_records_have_run_links(
 
 def _check_worker_result_records_have_valid_payloads(
     connection: sqlite3.Connection,
+    repo_root: Path,
 ) -> tuple[PlanningIntegrityFailure, ...]:
     rows = connection.execute(
         """
@@ -1132,7 +1229,9 @@ def _check_worker_result_records_have_valid_payloads(
             result.acceptance_results_json,
             result.changed_files_json,
             result.artifacts_json,
-            result.completion_notes
+            result.completion_notes,
+            result.source_path,
+            result.source_sha256
         FROM worker_result_records result
         ORDER BY result.result_id
         """
@@ -1147,6 +1246,8 @@ def _check_worker_result_records_have_valid_payloads(
         changed_files_json,
         artifacts_json,
         completion_notes,
+        source_path,
+        source_sha256,
     ) in rows:
         try:
             payload = json.loads(str(raw_payload_json))
@@ -1197,6 +1298,15 @@ def _check_worker_result_records_have_valid_payloads(
         if status == "completed":
             failures.extend(_completed_worker_result_evidence_failures(str(result_id), payload))
         failures.extend(_completed_worker_result_test_run_failures(str(result_id), payload))
+        failures.extend(_completed_worker_result_browser_smoke_failures(str(result_id), payload))
+        failures.extend(
+            _worker_result_source_hash_failures(
+                str(result_id),
+                repo_root,
+                source_path,
+                source_sha256,
+            )
+        )
         failures.extend(
             _db_worker_result_path_array_failures(
                 str(result_id),
@@ -1701,6 +1811,7 @@ def _worker_result_type_failures(
         "worker_run_ids": list,
         "status": str,
         "summary": str,
+        "browser_smoke_results": list,
         "changed_files": list,
         "tests_run": list,
         "acceptance_results": dict,
@@ -1969,6 +2080,137 @@ def _completed_worker_result_test_run_failures(
                 )
             )
     return tuple(failures)
+
+
+def _completed_worker_result_browser_smoke_failures(
+    worker_run_id: str,
+    payload: dict[object, object],
+) -> tuple[PlanningIntegrityFailure, ...]:
+    browser_smoke_results = payload.get("browser_smoke_results")
+    if browser_smoke_results is None:
+        return ()
+    if not isinstance(browser_smoke_results, list):
+        return (
+            PlanningIntegrityFailure(
+                "completed_worker_run_invalid_result_schema",
+                f"{worker_run_id}: browser_smoke_results must be a list",
+            ),
+        )
+    failures: list[PlanningIntegrityFailure] = []
+    completed = payload.get("status") == "completed"
+    for index, value in enumerate(browser_smoke_results):
+        if not isinstance(value, dict):
+            failures.append(
+                PlanningIntegrityFailure(
+                    "completed_worker_run_invalid_result_schema",
+                    f"{worker_run_id}: browser_smoke_results[{index}] must be an object",
+                )
+            )
+            continue
+        status = value.get("status")
+        if status not in {"passed", "failed", "blocked"}:
+            failures.append(
+                PlanningIntegrityFailure(
+                    "completed_worker_run_invalid_result_schema",
+                    (
+                        f"{worker_run_id}: browser_smoke_results[{index}].status must be "
+                        "passed, failed, or blocked"
+                    ),
+                )
+            )
+        elif completed and status != "passed":
+            failures.append(
+                PlanningIntegrityFailure(
+                    "completed_worker_run_invalid_result_schema",
+                    f"{worker_run_id}: browser_smoke_results[{index}] did not pass",
+                )
+            )
+        summary = value.get("summary")
+        if not isinstance(summary, str) or not summary.strip():
+            failures.append(
+                PlanningIntegrityFailure(
+                    "completed_worker_run_invalid_result_schema",
+                    f"{worker_run_id}: browser_smoke_results[{index}].summary must be nonblank",
+                )
+            )
+        exit_code = value.get("exit_code")
+        if exit_code is not None and not isinstance(exit_code, int):
+            failures.append(
+                PlanningIntegrityFailure(
+                    "completed_worker_run_invalid_result_schema",
+                    f"{worker_run_id}: browser_smoke_results[{index}].exit_code must be an integer",
+                )
+            )
+        elif completed and isinstance(exit_code, int) and exit_code != 0:
+            failures.append(
+                PlanningIntegrityFailure(
+                    "completed_worker_run_invalid_result_schema",
+                    f"{worker_run_id}: browser_smoke_results[{index}] exit_code is {exit_code}",
+                )
+            )
+        for string_key in ("tool", "command", "url"):
+            string_value = value.get(string_key)
+            if string_value is not None and (
+                not isinstance(string_value, str) or not string_value.strip()
+            ):
+                failures.append(
+                    PlanningIntegrityFailure(
+                        "completed_worker_run_invalid_result_schema",
+                        (
+                            f"{worker_run_id}: browser_smoke_results[{index}].{string_key} "
+                            "must be nonblank"
+                        ),
+                    )
+                )
+        artifact = value.get("artifact")
+        if artifact is not None:
+            reason = _worker_result_entry_path_reason(artifact)
+            if reason is not None:
+                failures.append(
+                    PlanningIntegrityFailure(
+                        "completed_worker_run_invalid_result_schema",
+                        (
+                            f"{worker_run_id}: browser_smoke_results[{index}].artifact is "
+                            f"unsafe: {reason}"
+                        ),
+                    )
+                )
+    return tuple(failures)
+
+
+def _worker_result_source_hash_failures(
+    result_id: str,
+    repo_root: Path,
+    source_path: object,
+    source_sha256: object,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    if not isinstance(source_path, str) or not source_path.strip():
+        return ()
+    if not isinstance(source_sha256, str) or not source_sha256.strip():
+        return ()
+    source_file = _artifact_path(repo_root, source_path)
+    if source_file is None or not source_file.is_file():
+        return ()
+    actual_sha256 = _sha256_file(source_file)
+    if actual_sha256 == source_sha256:
+        return ()
+    return (
+        PlanningIntegrityFailure(
+            "worker_result_source_hash_drift",
+            (
+                f"{result_id}: source_path {source_path} hash is {actual_sha256}, "
+                f"expected {source_sha256}"
+            ),
+        ),
+    )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _contains_stale_test_summary_phrase(value: str) -> bool:

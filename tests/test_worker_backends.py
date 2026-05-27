@@ -561,6 +561,8 @@ def test_codex_exec_backend_launch_success_returns_result_path_and_preserves_fin
     assert schema["additionalProperties"] is False
     assert "worker_run_ids" not in schema["properties"]
     assert schema["properties"]["tests_run"]["items"]["additionalProperties"] is False
+    assert schema["properties"]["browser_smoke_results"]["items"]["additionalProperties"] is False
+    assert "browser_smoke_results" not in schema["required"]
     assert (
         schema["properties"]["acceptance_results"]["properties"]["Criterion passes."][
             "additionalProperties"

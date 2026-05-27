@@ -17,6 +17,10 @@ Required JSON fields:
 - `changed_files`: implementation or durable-documentation paths changed by the worker and covered
   by task `allowed_paths`.
 - `tests_run`: objects with `command`, integer `exit_code`, and nonblank current summary.
+- `browser_smoke_results` (optional): browser/UI smoke evidence objects with `status`, `summary`,
+  and optional `tool`, `command`, `exit_code`, `artifact`, and `url`. This is the place for
+  Playwright, Codex Browser, or similar UI smoke evidence that is not one of the task's safe
+  verification commands.
 - `acceptance_results`: exact task acceptance criteria mapped to passing evidence.
 - `risks`: residual risks, blockers, and test gaps.
 - `follow_up_tasks`: follow-up work that should be shaped separately.
@@ -41,5 +45,7 @@ Rules:
   file is itself the implementation or durable-documentation change under the task scope.
 - `tests_run[].command` must pass the safe verification parser; use `uv run --no-sync ...` when
   recording `uv run` verification evidence.
+- Do not edit raw worker result JSON to satisfy import validation. Preserve it as immutable
+  evidence and normalize/import into separate artifacts or SQLite records.
 - `tests_run[].summary` must be current and nonblank; avoid stale phrasing such as "previously
   passed" or "passed at the time".

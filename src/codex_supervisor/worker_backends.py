@@ -915,6 +915,7 @@ class ContractWorkerBackend:
                 {"command": command, "exit_code": 0, "summary": "passed"}
                 for command in request.verification_commands
             ],
+            "browser_smoke_results": [],
             "acceptance_results": {
                 criterion: {
                     "status": "passed",
@@ -1072,6 +1073,7 @@ def _write_evidence_manifest(
         "task_id": request.task_id,
         "status": status,
         "launch_decision": launch_decision,
+        "raw_evidence_paths": paths,
         "paths": path_records,
     }
     _write_text_artifact(
@@ -1195,6 +1197,23 @@ def _worker_result_output_schema(request: WorkerLaunchRequest) -> JsonObject:
                         "command": {"type": "string"},
                         "exit_code": {"type": "integer"},
                         "summary": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
+            },
+            "browser_smoke_results": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["status", "summary"],
+                    "properties": {
+                        "status": {"enum": ["passed", "failed", "blocked"]},
+                        "summary": {"type": "string"},
+                        "tool": {"type": "string"},
+                        "command": {"type": "string"},
+                        "exit_code": {"type": "integer"},
+                        "artifact": {"type": "string"},
+                        "url": {"type": "string"},
                     },
                     "additionalProperties": False,
                 },
@@ -1387,6 +1406,12 @@ def compose_worker_prompt(request: WorkerLaunchRequest) -> str:
         (
             "The JSON must include worker_run_id, status, summary, changed_files, tests_run, "
             "acceptance_results, risks, follow_up_tasks, artifacts, and completion_notes."
+        ),
+        (
+            "Put browser or UI smoke-test evidence in optional browser_smoke_results entries "
+            "with status, summary, and tool/command/exit_code/artifact/url as applicable. Do not "
+            "put ad hoc browser-smoke commands in tests_run unless they are listed verification "
+            "commands in the task contract."
         ),
         "# Acceptance Criteria",
         acceptance or "- none",

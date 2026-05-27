@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import sqlite3
@@ -875,6 +876,94 @@ def test_planning_integrity_rejects_completed_run_that_lost_indexed_evidence_pat
 
     assert any(
         failure.check_name == "completed_worker_run_indexed_evidence_drift" for failure in failures
+    )
+
+
+def test_planning_integrity_rejects_mutated_raw_worker_result_evidence(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker",
+            slug="worker",
+            title="Worker Plan",
+            goal="Preserve immutable worker result evidence.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-worker",
+            title="Worker task",
+            goal="Produce evidence.",
+            task_type="AFK",
+            status="running",
+            acceptance_criteria=["criterion"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+        )
+    )
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-worker",
+            task_id="task-worker",
+            backend="codex_exec",
+            status="running",
+        )
+    )
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
+    result_path = tmp_path / "artifacts" / "run-worker" / "worker-result.raw.json"
+    result_path.parent.mkdir(parents=True)
+    payload = json.loads(json_worker_result())
+    payload["changed_files"] = ["src/worker.py"]
+    payload["artifacts"] = ["artifacts/run-worker/worker-result.raw.json"]
+    result_path.write_text(json.dumps(payload), encoding="utf-8")
+    raw_bytes = result_path.read_bytes()
+    manifest_path = tmp_path / "artifacts" / "run-worker" / "evidence-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "worker_run_id": "run-worker",
+                "task_id": "task-worker",
+                "status": "completed",
+                "paths": {
+                    "raw_result": {
+                        "exists": True,
+                        "bytes": len(raw_bytes),
+                        "sha256": hashlib.sha256(raw_bytes).hexdigest(),
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    store.ingest_worker_result("run-worker", "artifacts/run-worker/worker-result.raw.json")
+    payload["summary"] = "Edited."
+    result_path.write_text(json.dumps(payload), encoding="utf-8")
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            UPDATE worker_runs
+            SET metadata_json = ?
+            WHERE worker_run_id = 'run-worker'
+            """,
+            (
+                json.dumps(
+                    {"evidence_manifest_path": "artifacts/run-worker/evidence-manifest.json"}
+                ),
+            ),
+        )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(failure.check_name == "worker_result_source_hash_drift" for failure in failures)
+    assert any(
+        failure.check_name == "completed_worker_run_evidence_manifest_hash_drift"
+        for failure in failures
     )
 
 

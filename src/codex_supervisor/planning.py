@@ -11,7 +11,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, cast
 from urllib.parse import quote, urlparse
 
@@ -2570,9 +2570,19 @@ class PlanningSQLiteStore:
         raw_bytes = source_file.read_bytes()
         source_sha256 = hashlib.sha256(raw_bytes).hexdigest()
         result_id = _worker_result_id(source_path, source_sha256)
+        normalized_path, normalized_sha256 = _write_normalized_worker_result_artifact(
+            repo_root,
+            source_path,
+            source_sha256=source_sha256,
+            payload=sanitize_worker_result_payload(result.payload),
+        )
         now = _format_datetime(_utc_now())
         completion_notes = _worker_result_completion_notes(result.payload)
-        metadata: JsonObject = {"primary_worker_run_id": worker_run_id}
+        metadata: JsonObject = {
+            "primary_worker_run_id": worker_run_id,
+            "normalized_result_path": normalized_path,
+            "normalized_result_sha256": normalized_sha256,
+        }
         if result.redacted_payload_keys:
             metadata["redacted_raw_payload_keys"] = list(result.redacted_payload_keys)
         record = WorkerResultRecord(
@@ -4776,6 +4786,37 @@ def _worker_result_id(source_path: str, source_sha256: str) -> str:
     if not safe_key:
         return f"worker-result-{path_digest}-{source_digest}"
     return f"worker-result-{safe_key[:64].rstrip('-')}-{path_digest}-{source_digest}"
+
+
+def _write_normalized_worker_result_artifact(
+    repo_root: Path,
+    source_path: str,
+    *,
+    source_sha256: str,
+    payload: JsonObject,
+) -> tuple[str, str]:
+    normalized_path = _normalized_worker_result_path(source_path)
+    normalized_payload = {
+        "source_path": source_path.replace("\\", "/"),
+        "source_sha256": source_sha256,
+        "worker_result": payload,
+    }
+    normalized_bytes = (
+        json.dumps(normalized_payload, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+    )
+    target = repo_root / normalized_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(normalized_bytes)
+    return normalized_path, hashlib.sha256(normalized_bytes).hexdigest()
+
+
+def _normalized_worker_result_path(source_path: str) -> str:
+    path = PurePosixPath(source_path.replace("\\", "/"))
+    if path.name == "worker-result.raw.json":
+        return path.with_name("worker-result.normalized.json").as_posix()
+    if path.suffix:
+        return path.with_name(f"{path.stem}.normalized{path.suffix}").as_posix()
+    return path.with_name(f"{path.name}.normalized.json").as_posix()
 
 
 def _replace_worker_result_run_link(

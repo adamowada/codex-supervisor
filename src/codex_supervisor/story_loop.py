@@ -393,6 +393,37 @@ def run_live_story_loop_once(
             changed_files_source=None,
             worktree_created=False,
         )
+    contract_state = _worker_contract_git_state(
+        git_command_runner or _default_git_command_runner,
+        repo_root,
+        git_executable=git_executable,
+    )
+    if contract_state.exit_code != 0:
+        return _record_preclaim_launch_failure(
+            store,
+            worker_run_id=worker_run_id,
+            task_id=task.task_id,
+            backend=task.worker_backend,
+            failure_class="worker_contract_status_failed",
+            details={
+                "task_id": task.task_id,
+                "stdout": contract_state.stdout,
+                "stderr": contract_state.stderr,
+            },
+        )
+    dirty_contract_paths = _dirty_worker_contract_paths(contract_state.stdout)
+    if dirty_contract_paths:
+        return _record_preclaim_launch_failure(
+            store,
+            worker_run_id=worker_run_id,
+            task_id=task.task_id,
+            backend=task.worker_backend,
+            failure_class="worker_contract_uncommitted",
+            details={
+                "task_id": task.task_id,
+                "dirty_contract_paths": list(dirty_contract_paths),
+            },
+        )
     layout = build_worktree_run_layout(task.task_id, worker_run_id)
     effective_result_schema_path = (
         result_schema_path or f"{layout.run_directory}/worker-result.schema.json"
@@ -557,6 +588,7 @@ def run_live_story_loop_once(
             store,
             plan_id=claim.task.plan_id,
             launch_result=launch_result,
+            worker_result=ingested,
         )
         _create_review_task_for_review_required_result(
             store,
@@ -668,6 +700,86 @@ def _git_single_line(
         return result
     stdout = result.stdout.strip().splitlines()[0].strip() if result.stdout.strip() else ""
     return CommandExecutionResult(exit_code=0, stdout=stdout, stderr=result.stderr)
+
+
+def _worker_contract_git_state(
+    command_runner: CommandRunner,
+    repo_root: Path,
+    *,
+    git_executable: str,
+) -> CommandExecutionResult:
+    return command_runner(
+        (
+            git_executable,
+            "status",
+            "--porcelain=v1",
+            "--",
+            "plans/planning.sqlite3",
+            "HANDOFF.md",
+        ),
+        repo_root,
+        {"GIT_OPTIONAL_LOCKS": "0"},
+    )
+
+
+def _dirty_worker_contract_paths(status_stdout: str) -> tuple[str, ...]:
+    dirty_paths: list[str] = []
+    for line in status_stdout.splitlines():
+        if not line.strip():
+            continue
+        path = line[3:] if len(line) > 3 else line.strip()
+        path = path.strip().strip('"').replace("\\", "/")
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1].strip().strip('"').replace("\\", "/")
+        if path in {"plans/planning.sqlite3", "HANDOFF.md"}:
+            dirty_paths.append(path)
+    return tuple(dict.fromkeys(dirty_paths))
+
+
+def _record_preclaim_launch_failure(
+    store: PlanningSQLiteStore,
+    *,
+    worker_run_id: str,
+    task_id: str,
+    backend: str,
+    failure_class: str,
+    details: dict[str, object],
+) -> LiveStoryLoopRunResult:
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id=worker_run_id,
+            task_id=task_id,
+            backend=backend,
+            status="failed",
+            failure_class=failure_class,
+            metadata={"launch_preflight": details},
+        )
+    )
+    store.update_supervisor_task_status(task_id, "ready")
+    store.add_worker_run_event(
+        WorkerRunEventRecord(
+            event_id=f"{worker_run_id}-preclaim-failed",
+            worker_run_id=worker_run_id,
+            event_type="worker_launch_preflight_failed",
+            summary=f"Story Loop worker launch failed before claim: {failure_class}",
+            details=details,
+            metadata={"failure_class": failure_class},
+        )
+    )
+    return LiveStoryLoopRunResult(
+        status="failed",
+        task_id=task_id,
+        worker_run_id=worker_run_id,
+        worktree_path=None,
+        prompt_path=None,
+        jsonl_path=None,
+        result_path=None,
+        result_id=None,
+        failure_class=failure_class,
+        changed_files=(),
+        changed_files_source=None,
+        worktree_created=False,
+    )
 
 
 def _fail_claimed_run(
@@ -834,6 +946,7 @@ def _link_completed_worker_evidence_artifacts(
     *,
     plan_id: str,
     launch_result: WorkerLaunchResult,
+    worker_result: WorkerResultRecord,
 ) -> None:
     manifest_path = launch_result.metadata.get("evidence_manifest_path")
     links: list[PlanArtifactLinkRecord] = []
@@ -851,6 +964,15 @@ def _link_completed_worker_evidence_artifacts(
                 plan_id=plan_id,
                 artifact_id=launch_result.result_path,
                 relationship="worker-result",
+            )
+        )
+    normalized_path = worker_result.metadata.get("normalized_result_path")
+    if isinstance(normalized_path, str) and normalized_path.strip():
+        links.append(
+            PlanArtifactLinkRecord(
+                plan_id=plan_id,
+                artifact_id=normalized_path,
+                relationship="worker-result-normalized",
             )
         )
     for link in links:

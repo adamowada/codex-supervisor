@@ -15,6 +15,7 @@ WORKER_RESULT_PAYLOAD_KEYS = frozenset(
     {
         "acceptance_results",
         "artifacts",
+        "browser_smoke_results",
         "changed_files",
         "completion_notes",
         "follow_up_tasks",
@@ -122,6 +123,7 @@ def validate_worker_result_payload(
     _require_list(payload, "risks")
     _require_nonempty_list(payload, "follow_up_tasks", allow_empty=True)
     _validate_tests_run(payload, verification_commands, require_success=completed)
+    _validate_browser_smoke_results(payload, repo_root, require_success=completed)
     _validate_acceptance_results(payload, acceptance_criteria, require_passed=completed)
     _validate_artifacts(repo_root, artifacts)
     _validate_changed_files(changed_files_root or repo_root, changed_files, allowed_paths)
@@ -252,6 +254,56 @@ def _validate_tests_run(
     if require_success and missing:
         msg = f"tests_run missing task verification command: {missing[0]}"
         raise WorkerResultError(msg)
+
+
+def _validate_browser_smoke_results(
+    payload: JsonObject,
+    repo_root: Path,
+    *,
+    require_success: bool,
+) -> None:
+    value = payload.get("browser_smoke_results")
+    if value is None:
+        return
+    if not isinstance(value, list):
+        msg = "browser_smoke_results must be a list"
+        raise WorkerResultError(msg)
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            msg = "browser_smoke_results entries must be objects"
+            raise WorkerResultError(msg)
+        status = item.get("status")
+        if status not in {"passed", "failed", "blocked"}:
+            msg = f"browser_smoke_results[{index}].status must be passed, failed, or blocked"
+            raise WorkerResultError(msg)
+        if require_success and status != "passed":
+            msg = f"browser_smoke_results[{index}] did not pass"
+            raise WorkerResultError(msg)
+        summary = item.get("summary")
+        if not isinstance(summary, str) or not summary.strip():
+            msg = f"browser_smoke_results[{index}].summary must be nonblank"
+            raise WorkerResultError(msg)
+        exit_code = item.get("exit_code")
+        if exit_code is not None:
+            if not isinstance(exit_code, int):
+                msg = f"browser_smoke_results[{index}].exit_code must be an integer"
+                raise WorkerResultError(msg)
+            if require_success and exit_code != 0:
+                msg = f"browser_smoke_results[{index}] exit_code is {exit_code}"
+                raise WorkerResultError(msg)
+        for string_key in ("tool", "command", "url"):
+            string_value = item.get(string_key)
+            if string_value is not None and (
+                not isinstance(string_value, str) or not string_value.strip()
+            ):
+                msg = f"browser_smoke_results[{index}].{string_key} must be nonblank"
+                raise WorkerResultError(msg)
+        artifact = item.get("artifact")
+        if artifact is not None:
+            if not isinstance(artifact, str) or not artifact.strip():
+                msg = f"browser_smoke_results[{index}].artifact must be nonblank"
+                raise WorkerResultError(msg)
+            _validate_repo_relative_path(repo_root, _normalize(artifact), "browser_smoke_results")
 
 
 def _validate_acceptance_results(

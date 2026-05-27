@@ -769,6 +769,15 @@ def test_live_story_loop_run_claims_worktree_launches_and_ingests_result(tmp_pat
     def git_runner(argv, cwd, environment):
         git_calls.append(argv)
         assert environment == {"GIT_OPTIONAL_LOCKS": "0"}
+        if argv == (
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--",
+            "plans/planning.sqlite3",
+            "HANDOFF.md",
+        ):
+            return CommandExecutionResult(exit_code=0, stdout="")
         if argv == ("git", "rev-parse", "HEAD") and cwd == tmp_path:
             return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
         if argv == (
@@ -833,6 +842,7 @@ def test_live_story_loop_run_claims_worktree_launches_and_ingests_result(tmp_pat
     assert {(link.artifact_id, link.relationship) for link in artifact_links} == {
         ("artifacts/run-live/evidence-manifest.json", "worker-evidence-manifest"),
         ("artifacts/run-live/worker-result.raw.json", "worker-result"),
+        ("artifacts/run-live/worker-result.normalized.json", "worker-result-normalized"),
     }
     task = next(task for task in read_store.list_supervisor_tasks() if task.task_id == "task-live")
     assert task.status == "completed"
@@ -849,6 +859,15 @@ def test_live_story_loop_creates_separate_review_task_when_review_required(tmp_p
         return CommandExecutionResult(exit_code=0, stdout='{"event":"done"}\n')
 
     def git_runner(argv, cwd, environment):
+        if argv == (
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--",
+            "plans/planning.sqlite3",
+            "HANDOFF.md",
+        ):
+            return CommandExecutionResult(exit_code=0, stdout="")
         if argv == ("git", "rev-parse", "HEAD") and cwd == tmp_path:
             return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
         if argv == (
@@ -922,6 +941,15 @@ def test_live_story_loop_refuses_completion_when_evidence_paths_are_missing(tmp_
             )
 
     def git_runner(argv, cwd, environment):
+        if argv == (
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--",
+            "plans/planning.sqlite3",
+            "HANDOFF.md",
+        ):
+            return CommandExecutionResult(exit_code=0, stdout="")
         if argv == ("git", "rev-parse", "HEAD") and cwd == tmp_path:
             return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
         if argv == (
@@ -980,6 +1008,15 @@ def test_story_loop_advance_runs_one_ready_transition(tmp_path):
         return CommandExecutionResult(exit_code=0, stdout='{"event":"done"}\n')
 
     def git_runner(argv, cwd, environment):
+        if argv == (
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--",
+            "plans/planning.sqlite3",
+            "HANDOFF.md",
+        ):
+            return CommandExecutionResult(exit_code=0, stdout="")
         if argv == ("git", "rev-parse", "HEAD") and cwd == tmp_path:
             return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
         if argv == (
@@ -1029,6 +1066,15 @@ def test_live_story_loop_run_fails_claimed_run_when_worktree_creation_fails(tmp_
         return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
 
     def git_runner(argv, cwd, environment):
+        if argv == (
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--",
+            "plans/planning.sqlite3",
+            "HANDOFF.md",
+        ):
+            return CommandExecutionResult(exit_code=0, stdout="")
         if argv == ("git", "rev-parse", "HEAD"):
             return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
         if argv[:4] == ("git", "worktree", "add", "--detach"):
@@ -1055,6 +1101,53 @@ def test_live_story_loop_run_fails_claimed_run_when_worktree_creation_fails(tmp_
     assert worker.failure_class == "worktree_create_failed"
     events = read_store.list_worker_run_events(worker_run_id="run-live")
     assert events[0].event_type == "worker_launch_failed"
+
+
+def test_live_story_loop_refuses_uncommitted_worker_contract_before_claim(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = _live_story_loop_store(db_path)
+    codex_calls: list[tuple[str, ...]] = []
+
+    def codex_runner(argv, cwd, environment):
+        codex_calls.append(argv)
+        return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+
+    def git_runner(argv, cwd, environment):
+        if argv == (
+            "git",
+            "status",
+            "--porcelain=v1",
+            "--",
+            "plans/planning.sqlite3",
+            "HANDOFF.md",
+        ):
+            return CommandExecutionResult(exit_code=0, stdout=" M plans/planning.sqlite3\n")
+        raise AssertionError(f"unexpected git argv: {argv}")
+
+    result = run_live_story_loop_once(
+        store,
+        repo_root=tmp_path,
+        worker_run_id="run-dirty-contract",
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=codex_runner,
+        git_command_runner=git_runner,
+    )
+
+    assert result.status == "failed"
+    assert result.failure_class == "worker_contract_uncommitted"
+    assert result.worktree_created is False
+    assert codex_calls == []
+
+    read_store = open_existing_planning_database(db_path)
+    task = next(task for task in read_store.list_supervisor_tasks() if task.task_id == "task-live")
+    worker = next(
+        run for run in read_store.list_worker_runs() if run.worker_run_id == "run-dirty-contract"
+    )
+    assert task.status == "ready"
+    assert worker.status == "failed"
+    assert worker.metadata["launch_preflight"]["dirty_contract_paths"] == ["plans/planning.sqlite3"]
+    events = read_store.list_worker_run_events(worker_run_id="run-dirty-contract")
+    assert events[0].event_type == "worker_launch_preflight_failed"
 
 
 def _live_story_loop_store(db_path, *, review_required=False):

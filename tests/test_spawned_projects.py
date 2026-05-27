@@ -242,7 +242,7 @@ def test_spawned_project_apply_writes_full_supervisor_scaffold(tmp_path: Path) -
     assert "TODO" not in readme
     agents = (target / "AGENTS.md").read_text(encoding="utf-8")
     assert "client/**" in agents
-    assert "separate review task" in agents
+    assert "separate AFK review task" in agents
     assert "Post-worker browser smoke" in agents
     assert "browser_smoke_passed" in agents
     assert "JSON-heavy queue mutations" in agents

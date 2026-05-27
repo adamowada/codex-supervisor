@@ -562,7 +562,16 @@ def test_codex_exec_backend_launch_success_returns_result_path_and_preserves_fin
     assert "worker_run_ids" not in schema["properties"]
     assert schema["properties"]["tests_run"]["items"]["additionalProperties"] is False
     assert schema["properties"]["browser_smoke_results"]["items"]["additionalProperties"] is False
-    assert "browser_smoke_results" not in schema["required"]
+    assert "browser_smoke_results" in schema["required"]
+    assert set(schema["properties"]["browser_smoke_results"]["items"]["required"]) == {
+        "artifact",
+        "command",
+        "exit_code",
+        "status",
+        "summary",
+        "tool",
+        "url",
+    }
     assert (
         schema["properties"]["acceptance_results"]["properties"]["Criterion passes."][
             "additionalProperties"
@@ -578,6 +587,60 @@ def test_codex_exec_backend_launch_success_returns_result_path_and_preserves_fin
     jsonl = (tmp_path / "runs" / "run-worker" / "events.jsonl").read_text()
     assert "assistant.step" in jsonl
     assert "codex_exec.completed" in jsonl
+
+
+def test_codex_exec_backend_copies_worker_support_artifacts_from_worktree(tmp_path):
+    worktree = tmp_path / "worktrees" / "run-worker"
+
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        if argv == ("C:/Tools/codex.exe", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+        assert cwd == worktree
+        (worktree / "src").mkdir(parents=True)
+        (worktree / "src" / "success.py").write_text("print('ok')\n", encoding="utf-8")
+        smoke_path = worktree / "artifacts" / "browser" / "smoke.png"
+        smoke_path.parent.mkdir(parents=True)
+        smoke_path.write_bytes(b"png")
+        payload = _worker_result_payload(worker_run_id="run-worker", changed_file="src/success.py")
+        payload["artifacts"] = ["artifacts/browser/smoke.png"]
+        payload["browser_smoke_results"] = [
+            {
+                "artifact": "artifacts/browser/smoke.png",
+                "command": "node tests/browser-smoke.mjs",
+                "exit_code": 0,
+                "status": "passed",
+                "summary": "Smoke passed.",
+                "tool": "playwright",
+                "url": "http://127.0.0.1:5173",
+            }
+        ]
+        final_file = tmp_path / "runs" / "run-worker" / "final-message.txt"
+        final_file.parent.mkdir(parents=True, exist_ok=True)
+        final_file.write_text(json.dumps(payload), encoding="utf-8")
+        (tmp_path / "runs" / "run-worker" / "events.jsonl").write_text(
+            '{"event":"assistant.step"}\n',
+            encoding="utf-8",
+        )
+        (tmp_path / "runs" / "run-worker" / "diff-summary.txt").write_text(
+            "src/success.py\n",
+            encoding="utf-8",
+        )
+        return CommandExecutionResult(exit_code=0, stdout='{"event":"done"}\n')
+
+    request = _codex_exec_request(tmp_path, worktree_path=worktree)
+
+    result = CodexExecBackend(
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=runner,
+        launch_enabled=True,
+    ).run(request)
+
+    assert result.status == "completed"
+    assert (tmp_path / "artifacts" / "browser" / "smoke.png").read_bytes() == b"png"
 
 
 def test_codex_exec_backend_fails_closed_when_custom_result_schema_is_missing(tmp_path):
@@ -977,7 +1040,16 @@ def _write_valid_worker_result(tmp_path, *, worker_run_id: str, changed_file: st
     result_path = f"artifacts/{worker_run_id}/worker-result.raw.json"
     result_file = tmp_path / result_path
     result_file.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
+    payload = _worker_result_payload(worker_run_id=worker_run_id, changed_file=changed_file)
+    result_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    final_file = tmp_path / "runs" / worker_run_id / "final-message.txt"
+    final_file.parent.mkdir(parents=True, exist_ok=True)
+    final_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def _worker_result_payload(*, worker_run_id: str, changed_file: str) -> dict[str, object]:
+    result_path = f"artifacts/{worker_run_id}/worker-result.raw.json"
+    return {
         "worker_run_id": worker_run_id,
         "status": "completed",
         "summary": "Worker completed.",
@@ -1000,7 +1072,3 @@ def _write_valid_worker_result(tmp_path, *, worker_run_id: str, changed_file: st
         "artifacts": [result_path],
         "completion_notes": "Ready.",
     }
-    result_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    final_file = tmp_path / "runs" / worker_run_id / "final-message.txt"
-    final_file.parent.mkdir(parents=True, exist_ok=True)
-    final_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

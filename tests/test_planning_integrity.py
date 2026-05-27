@@ -400,6 +400,54 @@ def test_planning_integrity_accepts_completed_full_afk_task_with_commit_link(tmp
     )
 
 
+def test_planning_integrity_requires_final_state_commit_relationship(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-full-afk",
+            slug="full-afk",
+            title="Full AFK Plan",
+            goal="Do unattended work.",
+            status="completed",
+        )
+    )
+    store.upsert_plan_acceptance_criterion(
+        PlanAcceptanceCriterionRecord(
+            criterion_id="criterion-full-afk",
+            plan_id="plan-full-afk",
+            description="Implementation completed.",
+            status="completed",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-full-afk",
+            plan_id="plan-full-afk",
+            title="Build app",
+            goal="Finish the app.",
+            task_type="AFK",
+            status="completed",
+            scope={"final_commit_required": True},
+        )
+    )
+    store.add_plan_commit_link(
+        PlanCommitLinkRecord(
+            plan_id="plan-full-afk",
+            commit_sha=FULL_COMMIT_SHA,
+            relationship="implementation",
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "completed_final_commit_required_task_without_final_state_commit_link"
+        for failure in failures
+    )
+
+
 def test_planning_integrity_detects_invalid_status_and_queue_drift(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
@@ -522,6 +570,50 @@ def test_planning_integrity_requires_completed_worker_run_result_record(tmp_path
 
     assert any(
         failure.check_name == "completed_worker_run_without_result_record" for failure in failures
+    )
+
+
+def test_planning_integrity_requires_full_afk_codex_exec_raw_evidence_paths(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker",
+            slug="worker",
+            title="Worker Plan",
+            goal="Validate worker evidence.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-worker",
+            title="Worker task",
+            goal="Run.",
+            task_type="AFK",
+            status="completed",
+            scope={"full_afk": True},
+        )
+    )
+    result_id = _upsert_db_worker_result(store)
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-worker",
+            task_id="task-worker",
+            backend="codex_exec",
+            status="completed",
+            result_id=result_id,
+            metadata={},
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "completed_codex_exec_run_without_raw_evidence_paths"
+        for failure in failures
     )
 
 
@@ -713,6 +805,84 @@ def test_planning_integrity_rejects_completed_review_required_task_without_revie
 
     assert any(
         failure.check_name == "completed_review_required_task_without_review_result"
+        for failure in failures
+    )
+
+
+def test_planning_integrity_requires_full_afk_review_required_task_to_use_afk_review(
+    tmp_path,
+):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-review-required",
+            slug="review-required",
+            title="Review Required Plan",
+            goal="Do not hide full-AFK review behind manual bookkeeping.",
+            status="active",
+        )
+    )
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id="progress-review-enforcement",
+            plan_id="plan-review-required",
+            event_type="review_enforcement_enabled",
+            summary="Review enforcement is active.",
+        )
+    )
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id="progress-review-result",
+            plan_id="plan-review-required",
+            event_type="review_result_recorded",
+            summary="Review recorded.",
+            details=json.dumps(
+                {
+                    "review_id": "review-worker",
+                    "target": "task-worker",
+                    "accepted_findings": [],
+                }
+            ),
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-review-required",
+            title="Completed task",
+            goal="Should have an AFK review lane.",
+            task_type="AFK",
+            status="completed",
+            scope={"full_afk": True},
+            acceptance_criteria=["criterion"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["runs/**"],
+            review_required=True,
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-review-worker",
+            plan_id="plan-review-required",
+            title="Manual review task",
+            goal="This should not satisfy full-AFK review by default.",
+            task_type="HITL",
+            status="completed",
+            scope={
+                "review_gate": "separate_review_required_task",
+                "source_task_id": "task-worker",
+            },
+            worker_backend="manual",
+            review_required=False,
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "completed_full_afk_review_required_task_without_afk_review_task"
         for failure in failures
     )
 

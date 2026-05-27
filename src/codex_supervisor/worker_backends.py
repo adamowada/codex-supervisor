@@ -693,6 +693,7 @@ class CodexExecBackend:
                 result_file,
                 repo_root=request.repo_root,
                 changed_files_root=request.worktree_path,
+                artifact_root=request.worktree_path,
                 result_path=request.final_message_path,
                 worker_run_id=request.worker_run_id,
                 allowed_paths=request.allowed_paths,
@@ -764,6 +765,7 @@ class CodexExecBackend:
                 failure_class=jsonl_failure["failure_class"],
                 metadata=metadata,
             )
+        _copy_worker_result_support_artifacts(request, worker_result)
         _copy_canonical_worker_result(request)
         metadata = _codex_exec_launch_metadata(
             preflight,
@@ -1027,6 +1029,7 @@ def _load_canonical_worker_result(request: WorkerLaunchRequest) -> WorkerResult 
             result_file,
             repo_root=request.repo_root,
             changed_files_root=request.worktree_path,
+            artifact_root=request.worktree_path,
             result_path=request.final_message_path,
             worker_run_id=request.worker_run_id,
             allowed_paths=request.allowed_paths,
@@ -1042,6 +1045,39 @@ def _copy_canonical_worker_result(request: WorkerLaunchRequest) -> None:
     target = request.repo_root / request.result_path
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def _copy_worker_result_support_artifacts(
+    request: WorkerLaunchRequest,
+    worker_result: WorkerResult,
+) -> None:
+    for relative_path in _worker_result_support_artifact_paths(worker_result, request.result_path):
+        source = request.worktree_path / relative_path
+        target = request.repo_root / relative_path
+        if target.exists() or not source.is_file():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(source.read_bytes())
+
+
+def _worker_result_support_artifact_paths(
+    worker_result: WorkerResult,
+    result_path: str,
+) -> tuple[str, ...]:
+    paths: list[str] = list(worker_result.artifacts)
+    for item in worker_result.payload.get("browser_smoke_results", []):
+        if isinstance(item, dict):
+            artifact = item.get("artifact")
+            if isinstance(artifact, str) and artifact.strip():
+                paths.append(artifact)
+    normalized_result_path = result_path.strip().replace("\\", "/")
+    return tuple(
+        dict.fromkeys(
+            path.strip().replace("\\", "/")
+            for path in paths
+            if path.strip().replace("\\", "/") != normalized_result_path
+        )
+    )
 
 
 def _write_evidence_manifest(
@@ -1178,6 +1214,7 @@ def _worker_result_output_schema(request: WorkerLaunchRequest) -> JsonObject:
             "changed_files",
             "tests_run",
             "acceptance_results",
+            "browser_smoke_results",
             "risks",
             "follow_up_tasks",
             "artifacts",
@@ -1205,7 +1242,15 @@ def _worker_result_output_schema(request: WorkerLaunchRequest) -> JsonObject:
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "required": ["status", "summary"],
+                    "required": [
+                        "artifact",
+                        "command",
+                        "exit_code",
+                        "status",
+                        "summary",
+                        "tool",
+                        "url",
+                    ],
                     "properties": {
                         "status": {"enum": ["passed", "failed", "blocked"]},
                         "summary": {"type": "string"},
@@ -1408,10 +1453,10 @@ def compose_worker_prompt(request: WorkerLaunchRequest) -> str:
             "acceptance_results, risks, follow_up_tasks, artifacts, and completion_notes."
         ),
         (
-            "Put browser or UI smoke-test evidence in optional browser_smoke_results entries "
-            "with status, summary, and tool/command/exit_code/artifact/url as applicable. Do not "
-            "put ad hoc browser-smoke commands in tests_run unless they are listed verification "
-            "commands in the task contract."
+            "Always include browser_smoke_results as an array. Use [] when no browser or UI "
+            "smoke was run. When entries are present, include status, summary, tool, command, "
+            "exit_code, artifact, and url. Do not put ad hoc browser-smoke commands in tests_run "
+            "unless they are listed verification commands in the task contract."
         ),
         "# Acceptance Criteria",
         acceptance or "- none",

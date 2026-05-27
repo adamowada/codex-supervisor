@@ -652,3 +652,24 @@ planning integrity, and Desktop full-AFK queue advancement.
 Next action: any future completion path that accepts reviewed `needs_review` output should call the
 typed promotion surface and preserve the original status in metadata instead of mutating rows ad
 hoc.
+
+## Worker Result Validation Must Use The Worker Artifact Root
+
+Confidence: confirmed.
+
+Claim: A fresh-context worker result must be validated against the worker worktree for supporting
+artifacts before the controller checkout has promoted those files. Otherwise a valid worker can be
+misclassified as `worker_result_invalid` merely because screenshots, manifests, or other evidence
+exist only in the isolated worktree at validation time.
+
+Evidence: The `todo-list-test-10` smoke produced a valid final Worker Result JSON and committed the
+implementation in the worker worktree, but the controller path still classified the launch as
+`worker_result_invalid`. Revalidating the same final message against the worker worktree succeeded.
+
+Scope: `codex_exec` backend validation, Story Loop ingestion, browser-smoke artifacts, evidence
+manifests, and supervisor-managed spawned projects.
+
+Next action: keep raw/normalized result ingestion as the durable source of worker completion
+truth, copy declared support artifacts from the worktree before ingestion, and make planning
+integrity fail closed when full-AFK `codex_exec` completions lack raw evidence paths or only link an
+implementation commit without a final project-state commit.

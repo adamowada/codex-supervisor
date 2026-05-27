@@ -622,17 +622,38 @@ def _check_completed_publication_required_tasks_have_commit_links(
         context = _json_object(context_json)
         if not _requires_final_commit(scope, context):
             continue
-        commit_link = connection.execute(
+        final_commit_link = connection.execute(
+            """
+            SELECT 1
+            FROM plan_commit_links
+            WHERE plan_id = ?
+              AND relationship IN ('final-project-state', 'final-state', 'completion')
+            LIMIT 1
+            """,
+            (plan_id,),
+        ).fetchone()
+        if final_commit_link is not None:
+            continue
+        any_commit_link = connection.execute(
             "SELECT 1 FROM plan_commit_links WHERE plan_id = ? LIMIT 1",
             (plan_id,),
         ).fetchone()
-        if commit_link is None:
-            failures.append(
-                PlanningIntegrityFailure(
-                    "completed_publication_required_task_without_commit_link",
-                    f"{task_id} on {plan_id} requires a final commit link",
-                )
+        check_name = (
+            "completed_final_commit_required_task_without_final_state_commit_link"
+            if any_commit_link is not None
+            else "completed_publication_required_task_without_commit_link"
+        )
+        reason = (
+            f"{task_id} on {plan_id} requires a final-state commit link"
+            if any_commit_link is not None
+            else f"{task_id} on {plan_id} requires a final commit link"
+        )
+        failures.append(
+            PlanningIntegrityFailure(
+                check_name,
+                reason,
             )
+        )
     return tuple(failures)
 
 
@@ -779,14 +800,25 @@ def _check_completed_worker_runs_preserve_indexed_evidence(
 ) -> tuple[PlanningIntegrityFailure, ...]:
     rows = connection.execute(
         """
-        SELECT worker_run_id, prompt_path, jsonl_path, metadata_json
-        FROM worker_runs
-        WHERE status = 'completed'
+        SELECT wr.worker_run_id, wr.backend, wr.prompt_path, wr.jsonl_path, wr.metadata_json,
+               st.scope_json, p.context_json
+        FROM worker_runs wr
+        LEFT JOIN supervisor_tasks st ON st.task_id = wr.task_id
+        LEFT JOIN plans p ON p.plan_id = st.plan_id
+        WHERE wr.status = 'completed'
         ORDER BY worker_run_id
         """
     ).fetchall()
     failures: list[PlanningIntegrityFailure] = []
-    for worker_run_id, prompt_path, jsonl_path, metadata_json in rows:
+    for (
+        worker_run_id,
+        backend,
+        prompt_path,
+        jsonl_path,
+        metadata_json,
+        scope_json,
+        context_json,
+    ) in rows:
         try:
             metadata = json.loads(str(metadata_json))
         except json.JSONDecodeError:
@@ -794,6 +826,18 @@ def _check_completed_worker_runs_preserve_indexed_evidence(
         if not isinstance(metadata, dict):
             continue
         raw_evidence_paths = metadata.get("raw_evidence_paths")
+        if (
+            str(backend) == "codex_exec"
+            and _requires_final_commit(_json_object(scope_json), _json_object(context_json))
+            and not isinstance(raw_evidence_paths, dict)
+        ):
+            failures.append(
+                PlanningIntegrityFailure(
+                    "completed_codex_exec_run_without_raw_evidence_paths",
+                    f"{worker_run_id}: full-AFK codex_exec completion lacks raw_evidence_paths",
+                )
+            )
+            continue
         if isinstance(raw_evidence_paths, dict):
             indexed_paths = {
                 "prompt": ("prompt_path", prompt_path),
@@ -1031,8 +1075,9 @@ def _check_completed_review_required_tasks_have_review_evidence(
 ) -> tuple[PlanningIntegrityFailure, ...]:
     rows = connection.execute(
         """
-        SELECT st.task_id, st.plan_id
+        SELECT st.task_id, st.plan_id, st.task_type, st.scope_json, p.context_json
         FROM supervisor_tasks st
+        JOIN plans p ON p.plan_id = st.plan_id
         JOIN (
             SELECT plan_id, MIN(occurred_at) AS enabled_at
             FROM plan_progress_events
@@ -1046,7 +1091,7 @@ def _check_completed_review_required_tasks_have_review_evidence(
         """
     ).fetchall()
     failures: list[PlanningIntegrityFailure] = []
-    for task_id, plan_id in rows:
+    for task_id, plan_id, task_type, scope_json, context_json in rows:
         review_progress = _review_progress_for_task(connection, str(plan_id), str(task_id))
         if review_progress is None:
             failures.append(
@@ -1057,6 +1102,19 @@ def _check_completed_review_required_tasks_have_review_evidence(
             )
             continue
         progress_id, details = review_progress
+        if (
+            task_type == "AFK"
+            and _requires_final_commit(_json_object(scope_json), _json_object(context_json))
+            and not details.get("hitl_authority_required")
+            and not _has_afk_review_task_for_source(connection, str(plan_id), str(task_id))
+        ):
+            failures.append(
+                PlanningIntegrityFailure(
+                    "completed_full_afk_review_required_task_without_afk_review_task",
+                    f"{task_id} completed with review progress but no separate AFK review task",
+                )
+            )
+            continue
         accepted_findings = details.get("accepted_findings", [])
         if not isinstance(accepted_findings, list):
             failures.append(
@@ -1098,6 +1156,36 @@ def _check_completed_review_required_tasks_have_review_evidence(
                     )
                 )
     return tuple(failures)
+
+
+def _has_afk_review_task_for_source(
+    connection: sqlite3.Connection,
+    plan_id: str,
+    source_task_id: str,
+) -> bool:
+    rows = connection.execute(
+        """
+        SELECT task_type, worker_backend, scope_json
+        FROM supervisor_tasks
+        WHERE plan_id = ?
+        """,
+        (plan_id,),
+    ).fetchall()
+    for task_type, worker_backend, scope_json in rows:
+        if task_type != "AFK" or worker_backend != "codex_review":
+            continue
+        try:
+            scope = json.loads(str(scope_json))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(scope, dict):
+            continue
+        if (
+            scope.get("review_gate") == "separate_review_required_task"
+            and scope.get("source_task_id") == source_task_id
+        ):
+            return True
+    return False
 
 
 def _review_progress_for_task(

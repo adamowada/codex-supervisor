@@ -78,6 +78,7 @@ def validate_worker_result_file(
     *,
     repo_root: Path,
     changed_files_root: Path | None = None,
+    artifact_root: Path | None = None,
     result_path: str,
     worker_run_id: str,
     allowed_paths: tuple[str, ...],
@@ -90,6 +91,7 @@ def validate_worker_result_file(
         load_worker_result(path),
         repo_root=repo_root,
         changed_files_root=changed_files_root,
+        artifact_root=artifact_root,
         result_path=result_path,
         worker_run_id=worker_run_id,
         allowed_paths=allowed_paths,
@@ -103,6 +105,7 @@ def validate_worker_result_payload(
     *,
     repo_root: Path,
     changed_files_root: Path | None = None,
+    artifact_root: Path | None = None,
     result_path: str,
     worker_run_id: str,
     allowed_paths: tuple[str, ...],
@@ -123,9 +126,15 @@ def validate_worker_result_payload(
     _require_list(payload, "risks")
     _require_nonempty_list(payload, "follow_up_tasks", allow_empty=True)
     _validate_tests_run(payload, verification_commands, require_success=completed)
-    _validate_browser_smoke_results(payload, repo_root, require_success=completed)
+    support_root = artifact_root or repo_root
+    _validate_browser_smoke_results(
+        payload,
+        repo_root,
+        support_root,
+        require_success=completed,
+    )
     _validate_acceptance_results(payload, acceptance_criteria, require_passed=completed)
-    _validate_artifacts(repo_root, artifacts)
+    _validate_artifacts(repo_root, support_root, artifacts, result_path=result_path)
     _validate_changed_files(changed_files_root or repo_root, changed_files, allowed_paths)
     return WorkerResult(
         payload=payload,
@@ -259,6 +268,7 @@ def _validate_tests_run(
 def _validate_browser_smoke_results(
     payload: JsonObject,
     repo_root: Path,
+    artifact_root: Path,
     *,
     require_success: bool,
 ) -> None:
@@ -303,7 +313,11 @@ def _validate_browser_smoke_results(
             if not isinstance(artifact, str) or not artifact.strip():
                 msg = f"browser_smoke_results[{index}].artifact must be nonblank"
                 raise WorkerResultError(msg)
-            _validate_repo_relative_path(repo_root, _normalize(artifact), "browser_smoke_results")
+            _validate_existing_repo_relative_path(
+                (artifact_root, repo_root),
+                _normalize(artifact),
+                "browser_smoke_results",
+            )
 
 
 def _validate_acceptance_results(
@@ -331,11 +345,18 @@ def _validate_acceptance_results(
 
 def _validate_artifacts(
     repo_root: Path,
+    artifact_root: Path,
     artifacts: tuple[str, ...],
+    *,
+    result_path: str,
 ) -> None:
     normalized_artifacts = tuple(_normalize(path) for path in artifacts)
+    normalized_result_path = _normalize(result_path)
     for artifact in normalized_artifacts:
-        _validate_repo_relative_path(repo_root, artifact, "artifacts")
+        if artifact == normalized_result_path:
+            _validate_repo_relative_path_shape(artifact, "artifacts")
+            continue
+        _validate_existing_repo_relative_path((artifact_root, repo_root), artifact, "artifacts")
 
 
 def _validate_changed_files(
@@ -365,14 +386,29 @@ def _changed_path_violation_message(violation: ChangedPathViolation) -> str:
 
 
 def _validate_repo_relative_path(repo_root: Path, value: str, field_name: str) -> None:
+    _validate_repo_relative_path_shape(value, field_name)
+    if not (repo_root / value).exists():
+        msg = f"{field_name} entry does not exist: {value}"
+        raise WorkerResultError(msg)
+
+
+def _validate_existing_repo_relative_path(
+    roots: tuple[Path, ...],
+    value: str,
+    field_name: str,
+) -> None:
+    _validate_repo_relative_path_shape(value, field_name)
+    if not any((root / value).exists() for root in roots):
+        msg = f"{field_name} entry does not exist: {value}"
+        raise WorkerResultError(msg)
+
+
+def _validate_repo_relative_path_shape(value: str, field_name: str) -> None:
     if Path(value).is_absolute() or ":" in Path(value).parts[0]:
         msg = f"{field_name} entry is not repo-relative: {value}"
         raise WorkerResultError(msg)
     if ".." in Path(value).parts:
         msg = f"{field_name} entry uses parent traversal: {value}"
-        raise WorkerResultError(msg)
-    if not (repo_root / value).exists():
-        msg = f"{field_name} entry does not exist: {value}"
         raise WorkerResultError(msg)
 
 

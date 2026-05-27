@@ -9,31 +9,22 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Current queue state: HITL. `story-loop-status --json` selects
   `task-review-review-required-hitl-gap-20260527`.
-- Smoke-9 audit found three surgical gaps: worker launches could start from a committed worktree
-  base that lacked uncommitted planning/task-contract state, raw worker result evidence could be
-  edited during import cleanup, and browser-smoke evidence lacked a first-class lane outside
-  allowlisted verification commands.
-- Smoke-9 surgical repairs are implemented and verified. Planning SQLite records the repair task as
-  `task-smoke9-worker-evidence-surgical-repairs-20260527` and the progress events
-  `progress-smoke9-surgical-repairs-start-20260527` and
-  `progress-smoke9-surgical-repairs-verified-20260527`.
-- Verification passed: `uv run --no-sync python -B scripts/verify.py`.
-- Smoke-7 hardening was implemented, verified, committed, and pushed as
-  `fc07fb38dfb42ba308f137f78b2e4c39705df82f`.
-- User audited `todo-list-test-8`, then selected four surgical repairs for implementation:
-  manual promotion bookkeeping evidence, steering-only durable browser-smoke recording, bootstrap
-  plan completion steering, and OS-agnostic guidance for generated build artifacts / command
-  examples / promotion flow.
-- Smoke-8 surgical repairs are implemented and verified. Planning SQLite records the start and
-  verification as `progress-smoke8-surgical-repairs-start-20260527` and
-  `progress-smoke8-surgical-repairs-verified-20260527`.
-- ACP publication is in progress for the smoke-9 surgical repairs. Planning SQLite records
-  publication start and publication-ready verification as
-  `progress-smoke9-surgical-repairs-acp-start-20260527` and
-  `progress-smoke9-surgical-repairs-acp-verified-20260527`.
+- Smoke-10 surgical repairs are implemented and focused tests pass. Planning SQLite records
+  `task-smoke10-worker-result-evidence-repairs-20260527`,
+  `progress-smoke10-repairs-start-20260527`, and
+  `progress-smoke10-repairs-verified-20260527`.
+- The smoke-10 repair makes worker-result schemas strict for `browser_smoke_results`, validates and
+  copies support artifacts from the worker worktree before ingestion, strengthens full-AFK evidence
+  and final-state commit integrity checks, tightens generated spawned-project guidance, and records
+  the durable lesson in `insights/workflow-patterns.md`.
+- Focused verification passed:
+  `uv run --no-sync python -B -m pytest tests/test_worker_backends.py tests/test_worker_results.py tests/test_story_loop.py tests/test_planning_integrity.py tests/test_spawned_projects.py -q -p no:cacheprovider`
+  and `uv run --no-sync python -B scripts/check_planning_integrity.py`.
+- Full verification passed with `uv run --no-sync python -B scripts/verify.py`. ACP publication
+  for the smoke-10 repair is in progress in the current turn.
 
 ## Next Action
 
-After publication, resume from the HITL checkpoint
-`task-review-review-required-hitl-gap-20260527` unless the user asks for a different next action. Do
-not resolve that checkpoint unless the user explicitly asks for the review outcome.
+ACP the smoke-10 repair, then resume from the HITL checkpoint
+`task-review-review-required-hitl-gap-20260527` unless the user asks for a different next action.
+Do not resolve that checkpoint unless the user explicitly asks for the review outcome.

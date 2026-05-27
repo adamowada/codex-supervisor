@@ -65,6 +65,45 @@ def test_worker_result_validation_checks_changed_files_in_worktree_root(tmp_path
     assert result.changed_files == ("src/worker.py",)
 
 
+def test_worker_result_validation_checks_support_artifacts_in_worktree_root(tmp_path):
+    worktree = tmp_path / "worktrees" / "run-worker"
+    (worktree / "src").mkdir(parents=True)
+    (worktree / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
+    (worktree / "artifacts" / "browser").mkdir(parents=True)
+    (worktree / "artifacts" / "browser" / "smoke.png").write_bytes(b"png")
+    result_path = "artifacts/run-worker/worker-result.raw.json"
+    result_file = tmp_path / result_path
+    result_file.parent.mkdir(parents=True)
+    payload = _worker_result()
+    payload["artifacts"] = ["artifacts/browser/smoke.png"]
+    payload["browser_smoke_results"] = [
+        {
+            "artifact": "artifacts/browser/smoke.png",
+            "command": "node tests/browser-smoke.mjs",
+            "exit_code": 0,
+            "status": "passed",
+            "summary": "Browser smoke passed.",
+            "tool": "playwright",
+            "url": "http://127.0.0.1:5173",
+        }
+    ]
+    result_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = validate_worker_result_file(
+        result_file,
+        repo_root=tmp_path,
+        changed_files_root=worktree,
+        artifact_root=worktree,
+        result_path=result_path,
+        worker_run_id="run-worker",
+        allowed_paths=("src/**",),
+        verification_commands=("python -B -m pytest -p no:cacheprovider",),
+        acceptance_criteria=("Criterion passes.",),
+    )
+
+    assert result.artifacts == ("artifacts/browser/smoke.png",)
+
+
 @pytest.mark.parametrize("status", ["blocked", "failed", "needs_review"])
 def test_worker_result_validation_accepts_noncompleted_contract_without_success_evidence(
     tmp_path,

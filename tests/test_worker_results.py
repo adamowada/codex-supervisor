@@ -229,6 +229,67 @@ def test_worker_result_validation_accepts_browser_smoke_evidence_outside_tests_r
     assert result.payload["browser_smoke_results"][0]["command"] == "node --input-type=module -"
 
 
+def test_worker_result_validation_rejects_unbounded_browser_smoke_dev_server(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
+    (tmp_path / "artifacts" / "browser").mkdir(parents=True)
+    (tmp_path / "artifacts" / "browser" / "signin.png").write_bytes(b"png")
+    payload = _worker_result()
+    payload["browser_smoke_results"] = [
+        {
+            "status": "passed",
+            "summary": "Browser smoke passed.",
+            "tool": "manual",
+            "command": "npm run dev",
+            "exit_code": 0,
+            "artifact": "artifacts/browser/signin.png",
+            "url": "http://127.0.0.1:5173",
+        }
+    ]
+
+    with pytest.raises(WorkerResultError, match="unbounded dev server"):
+        validate_worker_result_payload(
+            payload,
+            repo_root=tmp_path,
+            result_path="artifacts/run-worker/worker-result.raw.json",
+            worker_run_id="run-worker",
+            allowed_paths=("src/**",),
+            verification_commands=("python -B -m pytest -p no:cacheprovider",),
+            acceptance_criteria=("Criterion passes.",),
+        )
+
+
+def test_worker_result_validation_accepts_bounded_browser_smoke_harness(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
+    (tmp_path / "artifacts" / "browser").mkdir(parents=True)
+    (tmp_path / "artifacts" / "browser" / "signin.png").write_bytes(b"png")
+    payload = _worker_result()
+    payload["browser_smoke_results"] = [
+        {
+            "status": "passed",
+            "summary": "Browser smoke passed.",
+            "tool": "playwright",
+            "command": "node scripts/smoke-browser.mjs",
+            "exit_code": 0,
+            "artifact": "artifacts/browser/signin.png",
+            "url": "http://127.0.0.1:5173",
+        }
+    ]
+
+    result = validate_worker_result_payload(
+        payload,
+        repo_root=tmp_path,
+        result_path="artifacts/run-worker/worker-result.raw.json",
+        worker_run_id="run-worker",
+        allowed_paths=("src/**",),
+        verification_commands=("python -B -m pytest -p no:cacheprovider",),
+        acceptance_criteria=("Criterion passes.",),
+    )
+
+    assert result.payload["browser_smoke_results"][0]["command"] == "node scripts/smoke-browser.mjs"
+
+
 def test_worker_result_validation_requires_changed_files_within_allowed_paths(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")

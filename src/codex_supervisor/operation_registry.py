@@ -122,6 +122,20 @@ OPERATIONS: tuple[SupervisorOperation, ...] = (
         surface_groups=(FULL_AFK_MCP_SURFACE, PLUGIN_INSTALL_MCP_SURFACE),
     ),
     SupervisorOperation(
+        "story_loop_start",
+        "story-loop-start",
+        _mcp("story_loop_start"),
+        read_only=False,
+        long_running=True,
+        surface_groups=(FULL_AFK_MCP_SURFACE,),
+    ),
+    SupervisorOperation(
+        "story_loop_poll",
+        "story-loop-poll",
+        _mcp("story_loop_poll"),
+        surface_groups=(FULL_AFK_MCP_SURFACE,),
+    ),
+    SupervisorOperation(
         "story_loop_status",
         "story-loop-status",
         _mcp("story_loop_status"),

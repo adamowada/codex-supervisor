@@ -43,6 +43,7 @@ class WorktreeRunLayout:
             "run_directory": self.run_directory,
             "artifact_directory": self.artifact_directory,
             "prompt": self.prompt_path,
+            "liveness_probe": f"{self.run_directory}/liveness.json",
             "jsonl": self.jsonl_path,
             "stdout": self.stdout_path,
             "stderr": self.stderr_path,

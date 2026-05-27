@@ -46,8 +46,10 @@ from codex_supervisor.runtime_preflight import build_runtime_preflight_report
 from codex_supervisor.story_loop import (
     advance_story_loop_once,
     build_story_loop_status,
+    poll_story_loop_run_async,
     record_story_loop_progress,
     run_live_story_loop_once,
+    start_story_loop_run_async,
 )
 from codex_supervisor.task_compiler import apply_compiled_tasks, compile_tasks_from_plan
 from codex_supervisor.worker_result_ingestion import ingest_worker_result_path
@@ -611,6 +613,39 @@ def _handle_worker_result_ingest(arguments: JsonObject, context: McpServerContex
     )
 
 
+def _handle_story_loop_start(arguments: JsonObject, context: McpServerContext) -> object:
+    planning_path, repo_root = _story_loop_paths_context(arguments, context)
+    return start_story_loop_run_async(
+        planning_path=planning_path,
+        repo_root=repo_root,
+        worker_run_id=_required_string(arguments, "worker_run_id"),
+        result_schema_path=_optional_string(arguments.get("result_schema_path")),
+        sandbox_mode=_optional_string(arguments.get("sandbox_mode")) or "workspace-write",
+        approval_policy=_optional_string(arguments.get("approval_policy")) or "never",
+        codex_executable=_optional_codex_executable(arguments),
+        codex_home=_optional_string(arguments.get("codex_home")),
+        codex_config_path=_optional_string(arguments.get("codex_config_path")),
+        model=_optional_string(arguments.get("model")),
+        reasoning_effort=_optional_string(arguments.get("reasoning_effort")),
+        service_tier=_optional_string(arguments.get("service_tier")),
+        native_goal_mode=bool(arguments.get("native_goal_mode", False)),
+        ignore_user_config=bool(arguments.get("ignore_user_config", False)),
+        allow_degraded_jsonl=bool(arguments.get("allow_degraded_jsonl", False)),
+        environment=_string_object(arguments.get("environment")),
+    )
+
+
+def _handle_story_loop_poll(arguments: JsonObject, context: McpServerContext) -> object:
+    planning_path, repo_root = _story_loop_paths_context(arguments, context)
+    return poll_story_loop_run_async(
+        planning_path=planning_path,
+        repo_root=repo_root,
+        worker_run_id=_required_string(arguments, "worker_run_id"),
+        controller_pid=_optional_integer_or_none(arguments.get("controller_pid")),
+        max_events=_optional_integer(arguments.get("max_events"), default=5),
+    )
+
+
 def _handle_story_loop_run_once(arguments: JsonObject, context: McpServerContext) -> object:
     store, repo_root = _story_loop_execution_context(arguments, context)
     return run_live_story_loop_once(
@@ -707,6 +742,14 @@ def _story_loop_execution_context(
     arguments: JsonObject,
     context: McpServerContext,
 ) -> tuple[PlanningSQLiteStore, Path]:
+    planning_path, repo_root = _story_loop_paths_context(arguments, context)
+    return open_existing_planning_database(planning_path, read_only=False), repo_root
+
+
+def _story_loop_paths_context(
+    arguments: JsonObject,
+    context: McpServerContext,
+) -> tuple[Path, Path]:
     repo_root = (
         _optional_path_argument(
             arguments.get("repo_root"),
@@ -723,7 +766,7 @@ def _story_loop_execution_context(
         )
         or context.resolved_planning_path()
     )
-    return open_existing_planning_database(planning_path, read_only=False), repo_root
+    return planning_path, repo_root
 
 
 def _require_plan_visible(
@@ -893,6 +936,12 @@ def _optional_codex_executable(arguments: JsonObject) -> str | None:
 def _optional_integer(value: object, *, default: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         return default
+    return value
+
+
+def _optional_integer_or_none(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
     return value
 
 
@@ -1595,6 +1644,55 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
             "additionalProperties": False,
         },
     ),
+    "codex_supervisor.story_loop_start": McpToolDefinition(
+        name="codex_supervisor.story_loop_start",
+        description=(
+            "Start one ready AFK task through the live Story Loop controller and return "
+            "immediately with poll metadata."
+        ),
+        read_only=False,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "worker_run_id": {"type": "string"},
+                "planning_path": {"type": "string"},
+                "repo_root": {"type": "string"},
+                "result_schema_path": {"type": "string"},
+                "sandbox_mode": {"type": "string"},
+                "approval_policy": {"type": "string"},
+                "codex_executable": {"type": "string"},
+                "codex_bin": {"type": "string"},
+                "codex_home": {"type": "string"},
+                "codex_config_path": {"type": "string"},
+                "model": {"type": "string"},
+                "reasoning_effort": {"type": "string"},
+                "service_tier": {"type": "string"},
+                "native_goal_mode": {"type": "boolean"},
+                "ignore_user_config": {"type": "boolean"},
+                "allow_degraded_jsonl": {"type": "boolean"},
+                "environment": {"type": "object"},
+            },
+            "required": ["worker_run_id"],
+            "additionalProperties": False,
+        },
+    ),
+    "codex_supervisor.story_loop_poll": McpToolDefinition(
+        name="codex_supervisor.story_loop_poll",
+        description="Poll one async Story Loop controller and worker run without relaunching it.",
+        read_only=True,
+        input_schema={
+            "type": "object",
+            "properties": {
+                "worker_run_id": {"type": "string"},
+                "planning_path": {"type": "string"},
+                "repo_root": {"type": "string"},
+                "controller_pid": {"type": "integer"},
+                "max_events": {"type": "integer"},
+            },
+            "required": ["worker_run_id"],
+            "additionalProperties": False,
+        },
+    ),
     "codex_supervisor.story_loop_run_once": McpToolDefinition(
         name="codex_supervisor.story_loop_run_once",
         description="Run one ready AFK task through the production live Story Loop service.",
@@ -1703,6 +1801,8 @@ TOOL_HANDLERS: dict[str, McpHandler] = {
     "codex_supervisor.worker_run_upsert": _handle_worker_run_upsert,
     "codex_supervisor.worker_run_status": _handle_worker_run_status,
     "codex_supervisor.worker_result_ingest": _handle_worker_result_ingest,
+    "codex_supervisor.story_loop_start": _handle_story_loop_start,
+    "codex_supervisor.story_loop_poll": _handle_story_loop_poll,
     "codex_supervisor.story_loop_run_once": _handle_story_loop_run_once,
     "codex_supervisor.story_loop_advance": _handle_story_loop_advance,
     "codex_supervisor.review_result_ingest": _handle_review_result_ingest,

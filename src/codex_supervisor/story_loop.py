@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+import sys
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -126,6 +132,47 @@ class StoryLoopAdvanceResult:
     worker_run_id: str | None
     failure_class: str | None = None
     live_run: LiveStoryLoopRunResult | None = None
+
+
+@dataclass(frozen=True)
+class StoryLoopAsyncStartResult:
+    """Nonblocking Story Loop controller launch details."""
+
+    status: str
+    worker_run_id: str
+    controller_pid: int
+    planning_path: str
+    repo_root: str
+    controller_stdout_path: str
+    controller_stderr_path: str
+    controller_metadata_path: str
+    liveness_probe_path: str
+    poll_tool: str
+    poll_command: tuple[str, ...]
+    argv: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class StoryLoopAsyncPollResult:
+    """Current observable state for a nonblocking Story Loop controller."""
+
+    status: str
+    worker_run_id: str
+    done: bool
+    planning_path: str
+    repo_root: str
+    controller_pid: int | None
+    controller_running: bool | None
+    worker_run_status: str | None
+    task_id: str | None
+    failure_class: str | None
+    result_path: str | None
+    result_id: str | None
+    liveness_probe_path: str
+    liveness_probe: dict[str, object] | None
+    latest_events: tuple[dict[str, object], ...]
+    controller_stdout_path: str
+    controller_stderr_path: str
 
 
 def build_story_loop_status(
@@ -318,6 +365,176 @@ def record_story_loop_progress(
         )
     store.add_plan_progress_with_artifact_links(progress, artifact_links)
     return StoryLoopRecordResult(progress=progress, artifact_links=artifact_links)
+
+
+def start_story_loop_run_async(
+    *,
+    planning_path: Path,
+    repo_root: Path,
+    worker_run_id: str,
+    result_schema_path: str | None = None,
+    sandbox_mode: str = "workspace-write",
+    approval_policy: str = "never",
+    codex_executable: str | None = None,
+    codex_home: str | None = None,
+    codex_config_path: str | None = None,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
+    service_tier: str | None = None,
+    native_goal_mode: bool = False,
+    ignore_user_config: bool = False,
+    allow_degraded_jsonl: bool = False,
+    environment: Mapping[str, str] | None = None,
+    python_executable: str | None = None,
+) -> StoryLoopAsyncStartResult:
+    """Start the live Story Loop controller in a child process and return immediately."""
+
+    resolved_repo_root = repo_root.resolve()
+    resolved_planning_path = planning_path.resolve()
+    if not resolved_repo_root.is_dir():
+        raise ValueError(f"repo_root does not exist or is not a directory: {repo_root}")
+    if not resolved_planning_path.exists():
+        raise ValueError(f"planning database is not initialized: {planning_path}")
+    layout = build_worktree_run_layout("story-loop-controller", worker_run_id)
+    controller_stdout_path = f"{layout.run_directory}/controller.stdout.json"
+    controller_stderr_path = f"{layout.run_directory}/controller.stderr.txt"
+    controller_metadata_path = f"{layout.run_directory}/controller.json"
+    liveness_probe_path = f"{layout.run_directory}/liveness.json"
+    (resolved_repo_root / layout.run_directory).mkdir(parents=True, exist_ok=True)
+
+    argv = _story_loop_run_once_controller_argv(
+        planning_path=resolved_planning_path,
+        repo_root=resolved_repo_root,
+        worker_run_id=worker_run_id,
+        result_schema_path=result_schema_path,
+        sandbox_mode=sandbox_mode,
+        approval_policy=approval_policy,
+        codex_executable=codex_executable,
+        codex_home=codex_home,
+        codex_config_path=codex_config_path,
+        model=model,
+        reasoning_effort=reasoning_effort,
+        service_tier=service_tier,
+        native_goal_mode=native_goal_mode,
+        ignore_user_config=ignore_user_config,
+        allow_degraded_jsonl=allow_degraded_jsonl,
+        environment=environment,
+        python_executable=python_executable,
+    )
+    controller_environment = dict(os.environ)
+    controller_environment.update(
+        {str(key): str(value) for key, value in (environment or {}).items()}
+    )
+    stdout_file = (resolved_repo_root / controller_stdout_path).open("ab")
+    stderr_file = (resolved_repo_root / controller_stderr_path).open("ab")
+    creationflags = (
+        int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
+    )
+    try:
+        process = subprocess.Popen(
+            argv,
+            cwd=resolved_repo_root,
+            env=controller_environment,
+            stdin=subprocess.DEVNULL,
+            stdout=stdout_file,
+            stderr=stderr_file,
+            text=False,
+            creationflags=creationflags,
+            start_new_session=os.name != "nt",
+        )
+    finally:
+        stdout_file.close()
+        stderr_file.close()
+
+    poll_command = (
+        python_executable or sys.executable,
+        "-B",
+        "-m",
+        "codex_supervisor.cli",
+        "story-loop-poll",
+        "--path",
+        str(resolved_planning_path),
+        "--repo-root",
+        str(resolved_repo_root),
+        "--worker-run-id",
+        worker_run_id,
+        "--controller-pid",
+        str(process.pid),
+        "--json",
+    )
+    result = StoryLoopAsyncStartResult(
+        status="started",
+        worker_run_id=worker_run_id,
+        controller_pid=process.pid,
+        planning_path=str(resolved_planning_path),
+        repo_root=str(resolved_repo_root),
+        controller_stdout_path=controller_stdout_path,
+        controller_stderr_path=controller_stderr_path,
+        controller_metadata_path=controller_metadata_path,
+        liveness_probe_path=liveness_probe_path,
+        poll_tool="codex_supervisor.story_loop_poll",
+        poll_command=poll_command,
+        argv=_redact_async_argv(argv),
+    )
+    (resolved_repo_root / controller_metadata_path).write_text(
+        json.dumps(_async_start_payload(result), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return result
+
+
+def poll_story_loop_run_async(
+    *,
+    planning_path: Path,
+    repo_root: Path,
+    worker_run_id: str,
+    controller_pid: int | None = None,
+    max_events: int = 5,
+    process_probe: Callable[[int], bool] | None = None,
+) -> StoryLoopAsyncPollResult:
+    """Poll planning SQLite, controller artifacts, and the liveness probe for one run."""
+
+    resolved_repo_root = repo_root.resolve()
+    resolved_planning_path = planning_path.resolve()
+    max_events = max(0, max_events)
+    store = PlanningSQLiteStore(resolved_planning_path, read_only=True)
+    worker_run = next(
+        (run for run in store.list_worker_runs() if run.worker_run_id == worker_run_id),
+        None,
+    )
+    events = store.list_worker_run_events(worker_run_id=worker_run_id)
+    layout = build_worktree_run_layout("story-loop-controller", worker_run_id)
+    controller_stdout_path = f"{layout.run_directory}/controller.stdout.json"
+    controller_stderr_path = f"{layout.run_directory}/controller.stderr.txt"
+    liveness_probe_path = f"{layout.run_directory}/liveness.json"
+    controller_running = (
+        None if controller_pid is None else (process_probe or _process_is_running)(controller_pid)
+    )
+    worker_run_status = worker_run.status if worker_run is not None else None
+    done = bool(
+        worker_run_status in {"completed", "failed", "cancelled", "blocked", "needs_review"}
+        or (controller_running is False and worker_run_status not in {"queued", "running"})
+    )
+    status = _async_poll_status(worker_run_status, controller_running, done)
+    return StoryLoopAsyncPollResult(
+        status=status,
+        worker_run_id=worker_run_id,
+        done=done,
+        planning_path=str(resolved_planning_path),
+        repo_root=str(resolved_repo_root),
+        controller_pid=controller_pid,
+        controller_running=controller_running,
+        worker_run_status=worker_run_status,
+        task_id=worker_run.task_id if worker_run is not None else None,
+        failure_class=worker_run.failure_class if worker_run is not None else None,
+        result_path=worker_run.result_path if worker_run is not None else None,
+        result_id=worker_run.result_id if worker_run is not None else None,
+        liveness_probe_path=liveness_probe_path,
+        liveness_probe=_read_liveness_probe(resolved_repo_root / liveness_probe_path),
+        latest_events=tuple(_worker_run_event_payload(event) for event in events[-max_events:]),
+        controller_stdout_path=controller_stdout_path,
+        controller_stderr_path=controller_stderr_path,
+    )
 
 
 def run_live_story_loop_once(
@@ -832,6 +1049,176 @@ def _default_live_worker_prompt() -> str:
         "Keep edits within the allowed paths, run the required verification commands, "
         "write the required Worker Result JSON, and stop."
     )
+
+
+def _story_loop_run_once_controller_argv(
+    *,
+    planning_path: Path,
+    repo_root: Path,
+    worker_run_id: str,
+    result_schema_path: str | None,
+    sandbox_mode: str,
+    approval_policy: str,
+    codex_executable: str | None,
+    codex_home: str | None,
+    codex_config_path: str | None,
+    model: str | None,
+    reasoning_effort: str | None,
+    service_tier: str | None,
+    native_goal_mode: bool,
+    ignore_user_config: bool,
+    allow_degraded_jsonl: bool,
+    environment: Mapping[str, str] | None,
+    python_executable: str | None,
+) -> tuple[str, ...]:
+    argv: list[str] = [
+        python_executable or sys.executable,
+        "-B",
+        "-m",
+        "codex_supervisor.cli",
+        "story-loop-run-once",
+        "--path",
+        str(planning_path),
+        "--repo-root",
+        str(repo_root),
+        "--worker-run-id",
+        worker_run_id,
+        "--sandbox-mode",
+        sandbox_mode,
+        "--approval-policy",
+        approval_policy,
+        "--json",
+    ]
+    _append_optional_arg(argv, "--result-schema-path", result_schema_path)
+    _append_optional_arg(argv, "--codex-executable", codex_executable)
+    _append_optional_arg(argv, "--codex-home", codex_home)
+    _append_optional_arg(argv, "--codex-config-path", codex_config_path)
+    _append_optional_arg(argv, "--model", model)
+    _append_optional_arg(argv, "--reasoning-effort", reasoning_effort)
+    _append_optional_arg(argv, "--service-tier", service_tier)
+    if native_goal_mode:
+        argv.append("--native-goal-mode")
+    if ignore_user_config:
+        argv.append("--ignore-user-config")
+    if allow_degraded_jsonl:
+        argv.append("--allow-degraded-jsonl")
+    if environment:
+        argv.extend(
+            [
+                "--environment-json",
+                json.dumps(
+                    {str(key): str(value) for key, value in environment.items()},
+                    sort_keys=True,
+                ),
+            ]
+        )
+    return tuple(argv)
+
+
+def _append_optional_arg(argv: list[str], flag: str, value: str | None) -> None:
+    if value is not None:
+        argv.extend([flag, value])
+
+
+def _redact_async_argv(argv: tuple[str, ...]) -> tuple[str, ...]:
+    redacted: list[str] = []
+    skip_next = False
+    for index, item in enumerate(argv):
+        if skip_next:
+            skip_next = False
+            continue
+        redacted.append(item)
+        if item == "--environment-json" and index + 1 < len(argv):
+            redacted.append("<environment-json>")
+            skip_next = True
+    return tuple(redacted)
+
+
+def _async_start_payload(result: StoryLoopAsyncStartResult) -> dict[str, object]:
+    return {
+        "status": result.status,
+        "worker_run_id": result.worker_run_id,
+        "controller_pid": result.controller_pid,
+        "planning_path": result.planning_path,
+        "repo_root": result.repo_root,
+        "controller_stdout_path": result.controller_stdout_path,
+        "controller_stderr_path": result.controller_stderr_path,
+        "controller_metadata_path": result.controller_metadata_path,
+        "liveness_probe_path": result.liveness_probe_path,
+        "poll_tool": result.poll_tool,
+        "poll_command": list(result.poll_command),
+        "argv": list(result.argv),
+        "started_at": _utc_now(),
+    }
+
+
+def _async_poll_status(
+    worker_run_status: str | None,
+    controller_running: bool | None,
+    done: bool,
+) -> str:
+    if worker_run_status in {"completed", "needs_review"}:
+        return worker_run_status
+    if worker_run_status in {"failed", "cancelled", "blocked"}:
+        return worker_run_status
+    if worker_run_status in {"queued", "running"}:
+        return "running"
+    if controller_running:
+        return "controller_running"
+    return "controller_exited" if done else "not_started"
+
+
+def _process_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        return _windows_process_is_running(pid)
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _windows_process_is_running(pid: int) -> bool:
+    try:
+        import ctypes
+    except ImportError:
+        return False
+    process_query_limited_information = 0x1000
+    handle = ctypes.windll.kernel32.OpenProcess(
+        process_query_limited_information,
+        False,
+        pid,
+    )
+    if not handle:
+        return False
+    ctypes.windll.kernel32.CloseHandle(handle)
+    return True
+
+
+def _read_liveness_probe(path: Path) -> dict[str, object] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError, json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _worker_run_event_payload(event: WorkerRunEventRecord) -> dict[str, object]:
+    return {
+        "event_id": event.event_id,
+        "event_type": event.event_type,
+        "summary": event.summary,
+        "details": event.details,
+        "artifact_path": event.artifact_path,
+        "occurred_at": str(event.occurred_at) if event.occurred_at is not None else None,
+        "metadata": event.metadata,
+    }
+
+
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _record_worker_launch_event(

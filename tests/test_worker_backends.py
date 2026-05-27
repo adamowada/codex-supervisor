@@ -187,6 +187,7 @@ def test_codex_exec_backend_preflight_builds_list_argv_without_launching(tmp_pat
     assert preflight.metadata["environment_keys"] == ["CODEX_HOME"]
     assert preflight.metadata["raw_evidence_paths"] == {
         "prompt": "runs/run-worker/prompt.md",
+        "liveness_probe": "runs/run-worker/liveness.json",
         "jsonl": "runs/run-worker/events.jsonl",
         "stdout": "runs/run-worker/stdout.txt",
         "stderr": "runs/run-worker/stderr.txt",
@@ -553,6 +554,12 @@ def test_codex_exec_backend_launch_success_returns_result_path_and_preserves_fin
     assert (
         result.metadata["raw_evidence_paths"]["result"]
         == "artifacts/run-worker/worker-result.raw.json"
+    )
+    liveness = json.loads((tmp_path / "runs" / "run-worker" / "liveness.json").read_text())
+    assert liveness["stage"] == "exec_exited"
+    assert liveness["exit_code"] == 0
+    assert (
+        result.metadata["raw_evidence_paths"]["liveness_probe"] == "runs/run-worker/liveness.json"
     )
     assert (tmp_path / "runs" / "run-worker" / "stdout.txt").read_text() == ('{"event":"done"}\n')
     schema = json.loads(

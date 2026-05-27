@@ -8,6 +8,7 @@ from codex_supervisor.planning import (
     PlanAcceptanceCriterionRecord,
     PlanRecord,
     SupervisorTaskRecord,
+    WorkerRunEventRecord,
     WorkerRunRecord,
     initialize_planning_database,
     open_existing_planning_database,
@@ -15,6 +16,7 @@ from codex_supervisor.planning import (
 from codex_supervisor.story_loop import (
     advance_story_loop_once,
     build_story_loop_status,
+    poll_story_loop_run_async,
     run_live_story_loop_once,
 )
 from codex_supervisor.worker_backends import CommandExecutionResult, WorkerLaunchResult
@@ -217,6 +219,149 @@ def test_story_loop_cli_accepts_codex_executable_aliases(tmp_path, monkeypatch, 
 
     assert captured_run["codex_executable"] == "preferred-codex"
     assert captured_advance["codex_executable"] == "legacy-codex"
+
+
+def test_story_loop_cli_start_and_poll_route_to_async_controller(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    initialize_planning_database(db_path)
+    captured_start: dict[str, object] = {}
+    captured_poll: dict[str, object] = {}
+
+    def fake_start_story_loop_run_async(**kwargs):
+        captured_start.update(kwargs)
+        return SimpleNamespace(
+            status="started",
+            worker_run_id=kwargs["worker_run_id"],
+            controller_pid=123,
+            poll_tool="codex_supervisor.story_loop_poll",
+            liveness_probe_path="runs/run-async/liveness.json",
+        )
+
+    def fake_poll_story_loop_run_async(**kwargs):
+        captured_poll.update(kwargs)
+        return SimpleNamespace(
+            status="running",
+            worker_run_id=kwargs["worker_run_id"],
+            done=False,
+            worker_run_status="running",
+            controller_running=True,
+        )
+
+    monkeypatch.setattr(
+        "codex_supervisor.cli.start_story_loop_run_async",
+        fake_start_story_loop_run_async,
+    )
+    monkeypatch.setattr(
+        "codex_supervisor.cli.poll_story_loop_run_async",
+        fake_poll_story_loop_run_async,
+    )
+
+    assert (
+        main(
+            [
+                "story-loop-start",
+                "--path",
+                str(db_path),
+                "--repo-root",
+                str(tmp_path),
+                "--worker-run-id",
+                "run-async",
+                "--codex-bin",
+                "codex",
+                "--environment-json",
+                '{"CODEX_SUPERVISOR_TEST":"1"}',
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                "story-loop-poll",
+                "--path",
+                str(db_path),
+                "--repo-root",
+                str(tmp_path),
+                "--worker-run-id",
+                "run-async",
+                "--controller-pid",
+                "123",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    assert captured_start["planning_path"] == db_path
+    assert captured_start["repo_root"] == tmp_path
+    assert captured_start["worker_run_id"] == "run-async"
+    assert captured_start["codex_executable"] == "codex"
+    assert captured_start["environment"] == {"CODEX_SUPERVISOR_TEST": "1"}
+    assert captured_poll["controller_pid"] == 123
+
+
+def test_story_loop_async_poll_reports_liveness_probe_and_latest_events(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-async",
+            slug="async",
+            title="Async",
+            goal="Poll a running controller.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-async",
+            plan_id="plan-async",
+            title="Async task",
+            goal="Run async.",
+            task_type="AFK",
+            status="running",
+        )
+    )
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-async",
+            task_id="task-async",
+            backend="codex_exec",
+            status="running",
+            metadata={"raw_evidence_paths": {"liveness_probe": "runs/run-async/liveness.json"}},
+        )
+    )
+    store.add_worker_run_event(
+        WorkerRunEventRecord(
+            event_id="run-async-event",
+            worker_run_id="run-async",
+            event_type="codex_exec_liveness_probe",
+            summary="Worker process is still alive.",
+        )
+    )
+    (tmp_path / "runs" / "run-async").mkdir(parents=True)
+    (tmp_path / "runs" / "run-async" / "liveness.json").write_text(
+        json.dumps({"stage": "exec_started", "pid": 456}) + "\n",
+        encoding="utf-8",
+    )
+
+    result = poll_story_loop_run_async(
+        planning_path=db_path,
+        repo_root=tmp_path,
+        worker_run_id="run-async",
+        controller_pid=456,
+        process_probe=lambda pid: pid == 456,
+    )
+
+    assert result.status == "running"
+    assert result.done is False
+    assert result.controller_running is True
+    assert result.liveness_probe == {"stage": "exec_started", "pid": 456}
+    assert result.latest_events[0]["event_type"] == "codex_exec_liveness_probe"
 
 
 def test_story_loop_status_blocks_failed_tasks_until_reconciled(tmp_path, capsys):

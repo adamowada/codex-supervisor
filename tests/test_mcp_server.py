@@ -29,6 +29,8 @@ def test_list_mcp_tools_exposes_read_and_default_on_mutating_schemas(tmp_path: P
     assert "codex_supervisor.progress_add" in names
     assert "codex_supervisor.artifact_link_add" in names
     assert "codex_supervisor.story_loop_run_once" in names
+    assert "codex_supervisor.story_loop_start" in names
+    assert "codex_supervisor.story_loop_poll" in names
     runtime_preflight = next(
         tool for tool in tools if tool["name"] == "codex_supervisor.runtime_preflight"
     )
@@ -64,10 +66,14 @@ def test_list_mcp_tools_exposes_read_and_default_on_mutating_schemas(tmp_path: P
     story_run_once = next(
         tool for tool in tools if tool["name"] == "codex_supervisor.story_loop_run_once"
     )
+    story_start = next(
+        tool for tool in tools if tool["name"] == "codex_supervisor.story_loop_start"
+    )
     story_advance = next(
         tool for tool in tools if tool["name"] == "codex_supervisor.story_loop_advance"
     )
     assert {"codex_executable", "codex_bin"} <= set(story_run_once["inputSchema"]["properties"])
+    assert {"codex_executable", "codex_bin"} <= set(story_start["inputSchema"]["properties"])
     assert {"codex_executable", "codex_bin"} <= set(story_advance["inputSchema"]["properties"])
 
 
@@ -565,6 +571,80 @@ def test_story_loop_run_once_tool_accepts_explicit_project_local_paths(
     assert result["ok"] is True
     assert captured["store_path"] == db_path.resolve()
     assert captured["repo_root"] == project_root.resolve()
+
+
+def test_story_loop_start_tool_routes_to_async_controller(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    initialize_planning_database(db_path)
+    captured: dict[str, object] = {}
+
+    def fake_start_story_loop_run_async(**kwargs):
+        captured.update(kwargs)
+        return {"status": "started", "worker_run_id": kwargs["worker_run_id"]}
+
+    monkeypatch.setattr(
+        "codex_supervisor.mcp_server.start_story_loop_run_async",
+        fake_start_story_loop_run_async,
+    )
+    context = McpServerContext(repo_root=tmp_path, planning_path=db_path)
+
+    result = dispatch_mcp_tool(
+        "codex_supervisor.story_loop_start",
+        {
+            "worker_run_id": "worker-run-async",
+            "codex_bin": "codex",
+            "environment": {"CODEX_SUPERVISOR_TEST": "1"},
+        },
+        context=context,
+    )
+
+    assert result["ok"] is True
+    assert result["data"] == {"status": "started", "worker_run_id": "worker-run-async"}
+    assert captured["planning_path"] == db_path.resolve()
+    assert captured["repo_root"] == tmp_path.resolve()
+    assert captured["worker_run_id"] == "worker-run-async"
+    assert captured["codex_executable"] == "codex"
+    assert captured["environment"] == {"CODEX_SUPERVISOR_TEST": "1"}
+
+
+def test_story_loop_poll_tool_routes_to_async_status(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    initialize_planning_database(db_path)
+    captured: dict[str, object] = {}
+
+    def fake_poll_story_loop_run_async(**kwargs):
+        captured.update(kwargs)
+        return {"status": "running", "worker_run_id": kwargs["worker_run_id"]}
+
+    monkeypatch.setattr(
+        "codex_supervisor.mcp_server.poll_story_loop_run_async",
+        fake_poll_story_loop_run_async,
+    )
+    context = McpServerContext(repo_root=tmp_path, planning_path=db_path)
+
+    result = dispatch_mcp_tool(
+        "codex_supervisor.story_loop_poll",
+        {
+            "worker_run_id": "worker-run-async",
+            "controller_pid": 123,
+            "max_events": 2,
+        },
+        context=context,
+    )
+
+    assert result["ok"] is True
+    assert result["data"] == {"status": "running", "worker_run_id": "worker-run-async"}
+    assert captured["planning_path"] == db_path.resolve()
+    assert captured["repo_root"] == tmp_path.resolve()
+    assert captured["worker_run_id"] == "worker-run-async"
+    assert captured["controller_pid"] == 123
+    assert captured["max_events"] == 2
 
 
 def test_disabled_mcp_context_hides_tools_and_rejects_dispatch(tmp_path: Path) -> None:

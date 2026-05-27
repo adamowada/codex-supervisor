@@ -156,8 +156,10 @@ from codex_supervisor.spawned_projects import (
 from codex_supervisor.story_loop import (
     advance_story_loop_once,
     build_story_loop_status,
+    poll_story_loop_run_async,
     record_story_loop_progress,
     run_live_story_loop_once,
+    start_story_loop_run_async,
 )
 from codex_supervisor.task_compiler import apply_compiled_tasks, compile_tasks_from_plan
 from codex_supervisor.worker_result_ingestion import (
@@ -593,6 +595,45 @@ def main(argv: list[str] | None = None) -> int:
     story_run_parser.add_argument("--allow-degraded-jsonl", action="store_true", default=False)
     story_run_parser.add_argument("--environment-json", type=_json_object_arg, default={})
     story_run_parser.add_argument("--json", action="store_true", default=False)
+
+    story_start_parser = subparsers.add_parser(
+        "story-loop-start",
+        help="Start the live Story Loop controller and return poll metadata immediately",
+    )
+    story_start_parser.add_argument("--path", type=Path, default=None)
+    story_start_parser.add_argument("--repo-root", type=Path, default=None)
+    story_start_parser.add_argument("--worker-run-id", required=True)
+    story_start_parser.add_argument(
+        "--result-schema-path",
+        default=None,
+        help="Override the generated ignored run-local Worker Result schema path.",
+    )
+    story_start_parser.add_argument("--sandbox-mode", default="workspace-write")
+    story_start_parser.add_argument("--approval-policy", default="never")
+    story_start_parser.add_argument(
+        "--codex-executable", "--codex-bin", dest="codex_executable", default=None
+    )
+    story_start_parser.add_argument("--codex-home", default=None)
+    story_start_parser.add_argument("--codex-config-path", default=None)
+    story_start_parser.add_argument("--model", default=None)
+    story_start_parser.add_argument("--reasoning-effort", default=None)
+    story_start_parser.add_argument("--service-tier", default=None)
+    story_start_parser.add_argument("--native-goal-mode", action="store_true", default=False)
+    story_start_parser.add_argument("--ignore-user-config", action="store_true", default=False)
+    story_start_parser.add_argument("--allow-degraded-jsonl", action="store_true", default=False)
+    story_start_parser.add_argument("--environment-json", type=_json_object_arg, default={})
+    story_start_parser.add_argument("--json", action="store_true", default=False)
+
+    story_poll_parser = subparsers.add_parser(
+        "story-loop-poll",
+        help="Poll one async Story Loop controller and worker run",
+    )
+    story_poll_parser.add_argument("--path", type=Path, default=None)
+    story_poll_parser.add_argument("--repo-root", type=Path, default=None)
+    story_poll_parser.add_argument("--worker-run-id", required=True)
+    story_poll_parser.add_argument("--controller-pid", type=int, default=None)
+    story_poll_parser.add_argument("--max-events", type=int, default=5)
+    story_poll_parser.add_argument("--json", action="store_true", default=False)
 
     story_advance_parser = subparsers.add_parser(
         "story-loop-advance",
@@ -1991,6 +2032,79 @@ def main(argv: list[str] | None = None) -> int:
             if run_result.result_id:
                 print(f"result_id: {run_result.result_id}")
         return 0 if run_result.status == "completed" else 1
+
+    if args.command == "story-loop-start":
+        planning_path = _planning_path_or_report(args.path)
+        if planning_path is None:
+            return 1
+        if not planning_path.exists():
+            print(f"Planning database is not initialized: {planning_path}", file=sys.stderr)
+            return 1
+        repo_root = args.repo_root or Path.cwd()
+        environment = {str(key): str(value) for key, value in args.environment_json.items()}
+        try:
+            start_result = start_story_loop_run_async(
+                planning_path=planning_path,
+                repo_root=repo_root,
+                worker_run_id=args.worker_run_id,
+                result_schema_path=args.result_schema_path,
+                sandbox_mode=args.sandbox_mode,
+                approval_policy=args.approval_policy,
+                codex_executable=args.codex_executable,
+                codex_home=args.codex_home,
+                codex_config_path=args.codex_config_path,
+                model=args.model,
+                reasoning_effort=args.reasoning_effort,
+                service_tier=args.service_tier,
+                native_goal_mode=args.native_goal_mode,
+                ignore_user_config=args.ignore_user_config,
+                allow_degraded_jsonl=args.allow_degraded_jsonl,
+                environment=environment,
+            )
+        except (OSError, ValueError) as exc:
+            print(f"story-loop-start failed: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            _print_json(start_result)
+        else:
+            print(
+                f"story_loop_start: {start_result.status} "
+                f"{start_result.worker_run_id} pid={start_result.controller_pid}"
+            )
+            print(f"poll_tool: {start_result.poll_tool}")
+            print(f"liveness_probe: {start_result.liveness_probe_path}")
+        return 0
+
+    if args.command == "story-loop-poll":
+        planning_path = _planning_path_or_report(args.path)
+        if planning_path is None:
+            return 1
+        if not planning_path.exists():
+            print(f"Planning database is not initialized: {planning_path}", file=sys.stderr)
+            return 1
+        try:
+            poll_result = poll_story_loop_run_async(
+                planning_path=planning_path,
+                repo_root=args.repo_root or Path.cwd(),
+                worker_run_id=args.worker_run_id,
+                controller_pid=args.controller_pid,
+                max_events=args.max_events,
+            )
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            print(f"story-loop-poll failed: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            _print_json(poll_result)
+        else:
+            print(
+                f"story_loop_poll: {poll_result.status} "
+                f"{poll_result.worker_run_id} done={poll_result.done}"
+            )
+            if poll_result.worker_run_status:
+                print(f"worker_run_status: {poll_result.worker_run_status}")
+            if poll_result.controller_running is not None:
+                print(f"controller_running: {poll_result.controller_running}")
+        return 0
 
     if args.command == "story-loop-advance":
         write_store = _open_write_store(args.path)

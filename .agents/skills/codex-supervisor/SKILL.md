@@ -148,6 +148,10 @@ When the user has granted dangerous/full-auto operation, spend autonomy on throu
   deterministic apply step and the bootstrap plan as complete. Seed or compile the user's concrete
   implementation request as a new project-local plan/task before calling `story-loop-run-once`; do
   not launch a Codex worker merely to redo scaffold creation.
+- For Desktop full-AFK Story Loop execution, prefer `story-loop-start` plus `story-loop-poll` over
+  a blocking `story-loop-run-once` MCP call. Poll the controller, worker-run state, and
+  `runs/<worker_run_id>/liveness.json`; do not launch a duplicate writer while the controller or
+  worker run is still alive.
 - Post-worker browser smoke is evidence even when it passes: record `browser_smoke_passed` or
   `browser_smoke_failed` progress, link screenshots or logs when present, and refresh `HANDOFF.md`
   before declaring completion. Manual promotion bookkeeping may complete only with

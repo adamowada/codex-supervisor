@@ -65,6 +65,10 @@ orientation needs dependency setup.
     - Keep `tests_run` to the task's official repo-owned verification commands. Do not use
       placeholder angle brackets such as `<validator>` in command strings; planning integrity treats
       them as unsafe shell metacharacters.
+    - Record browser/UI smoke in `browser_smoke_results` using a bounded harness that starts any
+      dev servers as child processes, applies a timeout, and cleans them up. Never leave foreground
+      `npm run dev`, `vite`, `node server`, or non-detached `docker compose up` commands as worker
+      result evidence.
     - In worker-result `artifacts`, list only existing repo-relative paths. Markdown anchors such as
       `HANDOFF.md#summary` belong in planning artifact links or handoff prose, not worker-result
       artifact paths.

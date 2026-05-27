@@ -11,8 +11,9 @@ import time
 import tomllib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from hashlib import sha256
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from codex_supervisor.execution_surface import (
@@ -102,6 +103,7 @@ class CommandExecutionResult:
 
 
 type CommandRunner = Callable[[tuple[str, ...], Path, dict[str, str]], CommandExecutionResult]
+type CommandStartCallback = Callable[[int | None], None]
 
 
 @dataclass(frozen=True)
@@ -388,9 +390,25 @@ class CodexExecBackend:
                 environment_result.environment,
                 stdin=composed_prompt,
                 timeout_seconds=request.launch_timeout_seconds,
+                on_start=_liveness_start_callback(
+                    request,
+                    preflight,
+                    "exec_started",
+                ),
+            )
+            _write_liveness_probe(
+                request,
+                preflight=preflight,
+                stage="exec_exited",
+                exit_code=exec_result.exit_code,
             )
         except KeyboardInterrupt:
             duration_seconds = time.perf_counter() - started_at
+            _write_liveness_probe(
+                request,
+                preflight=preflight,
+                stage="exec_interrupted",
+            )
             metadata = _codex_exec_launch_metadata(
                 preflight,
                 launch_decision="exec_interrupted",
@@ -425,6 +443,11 @@ class CodexExecBackend:
             )
         except OSError as exc:
             duration_seconds = time.perf_counter() - started_at
+            _write_liveness_probe(
+                request,
+                preflight=preflight,
+                stage="exec_failed_to_start",
+            )
             metadata = _codex_exec_launch_metadata(
                 preflight,
                 launch_decision="exec_raised",
@@ -459,6 +482,12 @@ class CodexExecBackend:
             )
         except subprocess.TimeoutExpired as exc:
             duration_seconds = time.perf_counter() - started_at
+            _write_liveness_probe(
+                request,
+                preflight=preflight,
+                stage="exec_timeout",
+                exit_code=124,
+            )
             metadata = _codex_exec_launch_metadata(
                 preflight,
                 launch_decision="exec_timeout",
@@ -512,10 +541,21 @@ class CodexExecBackend:
                         environment_result.environment,
                         stdin=composed_prompt,
                         timeout_seconds=retry_request.launch_timeout_seconds,
+                        on_start=_liveness_start_callback(
+                            retry_request,
+                            retry_preflight,
+                            "exec_retry_started",
+                        ),
                     )
                 except OSError, subprocess.TimeoutExpired, KeyboardInterrupt:
                     pass
                 else:
+                    _write_liveness_probe(
+                        retry_request,
+                        preflight=retry_preflight,
+                        stage="exec_retry_exited",
+                        exit_code=retry_exec_result.exit_code,
+                    )
                     if retry_exec_result.exit_code == 0:
                         request = retry_request
                         preflight = replace(
@@ -858,6 +898,7 @@ class ContractWorkerBackend:
         """Emit deterministic worker evidence without launching Codex."""
 
         _write_text_artifact(request.repo_root, request.prompt_path, request.prompt)
+        _write_liveness_probe(request, stage="contract_worker_started")
         if self.failure_class is not None:
             _write_text_artifact(request.repo_root, request.stdout_path, "")
             _write_text_artifact(
@@ -883,6 +924,7 @@ class ContractWorkerBackend:
                 )
                 + "\n",
             )
+            _write_liveness_probe(request, stage="contract_worker_failed", exit_code=1)
             return WorkerLaunchResult(
                 worker_run_id=request.worker_run_id,
                 task_id=request.task_id,
@@ -937,6 +979,7 @@ class ContractWorkerBackend:
             "handoff_notes": ("Contract backend result is ready for shared ingestion validation."),
         }
         result_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        _write_liveness_probe(request, stage="contract_worker_completed", exit_code=0)
         missing_evidence = _write_evidence_manifest(
             request,
             status="completed",
@@ -1086,6 +1129,58 @@ def _worker_result_support_artifact_paths(
     )
 
 
+def _liveness_probe_relative_path(request: WorkerLaunchRequest) -> str:
+    run_directory = PurePosixPath(request.jsonl_path.replace("\\", "/")).parent
+    return (run_directory / "liveness.json").as_posix()
+
+
+def _liveness_start_callback(
+    request: WorkerLaunchRequest,
+    preflight: CodexExecPreflightResult,
+    stage: str,
+) -> CommandStartCallback:
+    def callback(pid: int | None) -> None:
+        _write_liveness_probe(request, preflight=preflight, stage=stage, pid=pid)
+
+    return callback
+
+
+def _write_liveness_probe(
+    request: WorkerLaunchRequest,
+    *,
+    stage: str,
+    preflight: CodexExecPreflightResult | None = None,
+    pid: int | None = None,
+    exit_code: int | None = None,
+) -> str:
+    payload: JsonObject = {
+        "worker_run_id": request.worker_run_id,
+        "task_id": request.task_id,
+        "backend": (
+            CODEX_EXEC_BACKEND if preflight is not None else request.metadata.get("backend")
+        ),
+        "stage": stage,
+        "pid": pid,
+        "exit_code": exit_code,
+        "updated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "worktree_path": _repo_relative_or_placeholder(request.worktree_path, request.repo_root),
+        "prompt_path": request.prompt_path,
+        "jsonl_path": request.jsonl_path,
+        "result_path": request.result_path,
+    }
+    if preflight is not None:
+        payload["argv"] = preflight.metadata.get("argv", [])
+        payload["resolved_executable"] = preflight.metadata.get("resolved_executable")
+        payload["resolution_method"] = preflight.metadata.get("resolution_method")
+    relative_path = _liveness_probe_relative_path(request)
+    _write_text_artifact(
+        request.repo_root,
+        relative_path,
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+    )
+    return relative_path
+
+
 def _write_evidence_manifest(
     request: WorkerLaunchRequest,
     *,
@@ -1094,6 +1189,7 @@ def _write_evidence_manifest(
 ) -> tuple[str, ...]:
     paths = {
         "prompt": request.prompt_path,
+        "liveness_probe": _liveness_probe_relative_path(request),
         "jsonl": request.jsonl_path,
         "stdout": request.stdout_path,
         "stderr": request.stderr_path,
@@ -1292,6 +1388,7 @@ def _run_command(
     *,
     stdin: str | None = None,
     timeout_seconds: float | None = None,
+    on_start: CommandStartCallback | None = None,
 ) -> CommandExecutionResult:
     if command_runner is None:
         return _default_command_runner(
@@ -1300,7 +1397,10 @@ def _run_command(
             environment,
             stdin=stdin,
             timeout_seconds=timeout_seconds,
+            on_start=on_start,
         )
+    if on_start is not None:
+        on_start(None)
     return command_runner(argv, cwd, environment)
 
 
@@ -1311,6 +1411,7 @@ def _default_command_runner(
     *,
     stdin: str | None = None,
     timeout_seconds: float | None = None,
+    on_start: CommandStartCallback | None = None,
 ) -> CommandExecutionResult:
     process_environment = _minimal_process_environment(os.environ)
     process_environment.update(environment)
@@ -1329,6 +1430,8 @@ def _default_command_runner(
         creationflags=creationflags,
         start_new_session=os.name != "nt",
     )
+    if on_start is not None:
+        on_start(process.pid)
     try:
         stdout, stderr = process.communicate(encoded_stdin, timeout=timeout_seconds)
     except subprocess.TimeoutExpired as exc:
@@ -1465,6 +1568,12 @@ def compose_worker_prompt(request: WorkerLaunchRequest) -> str:
             "smoke was run. When entries are present, include status, summary, tool, command, "
             "exit_code, artifact, and url. Do not put ad hoc browser-smoke commands in tests_run "
             "unless they are listed verification commands in the task contract."
+        ),
+        (
+            "Browser or UI smoke must be bounded: use a harness that starts any API/client "
+            "servers as child processes, applies a timeout, captures artifacts, and always "
+            "terminates those children. Never leave foreground `npm run dev`, `vite`, "
+            "`node server`, or non-detached `docker compose up` commands as worker evidence."
         ),
         "# Acceptance Criteria",
         acceptance or "- none",
@@ -1892,6 +2001,7 @@ def _codex_exec_metadata(
 def _raw_evidence_paths(request: WorkerLaunchRequest) -> JsonObject:
     return {
         "prompt": request.prompt_path,
+        "liveness_probe": _liveness_probe_relative_path(request),
         "jsonl": request.jsonl_path,
         "stdout": request.stdout_path,
         "stderr": request.stderr_path,

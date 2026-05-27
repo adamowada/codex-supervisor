@@ -53,7 +53,10 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
   `task-next-afk --after-story-loop-status --json`,
   `task-show <task-id> --json`, or `plan-summary --current-queue --json` as needed.
 - Worker launch: route to `story-loop-runner`; render `goal-contract-render --task-id <task-id>`;
-  claim with `task-claim` only when the queue still selects that task.
+  claim with `task-claim` only when the queue still selects that task. For Desktop full-AFK, prefer
+  `story-loop-start` plus `story-loop-poll` over a blocking `story-loop-run-once` MCP call. Poll
+  the controller, worker-run state, and `runs/<worker_run_id>/liveness.json`; do not launch a
+  duplicate writer while the controller or worker run is still alive.
 - Post-worker verification, browser smoke, promotion, and publication are supervisor work. If a
   post-worker check finds a defect or requires code/test/doc edits, first create a new
   project-local supervisor task and run/record that task; do not quietly switch into controller

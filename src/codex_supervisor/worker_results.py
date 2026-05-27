@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,15 @@ WORKER_RESULT_PAYLOAD_KEYS = frozenset(
         "worker_run_id",
         "worker_run_ids",
     }
+)
+UNBOUNDED_BROWSER_SMOKE_COMMAND_PATTERNS = (
+    re.compile(r"(^|[;&|]\s*)(npm|pnpm|yarn)\s+(run\s+)?dev\b", re.IGNORECASE),
+    re.compile(r"(^|[;&|]\s*)vite\b", re.IGNORECASE),
+    re.compile(r"(^|[;&|]\s*)docker\s+compose\s+up\b(?!.*\s(-d|--detach)\b)", re.IGNORECASE),
+    re.compile(r"(^|[;&|]\s*)docker-compose\s+up\b(?!.*\s(-d|--detach)\b)", re.IGNORECASE),
+    re.compile(r"(^|[;&|]\s*)flask\s+run\b", re.IGNORECASE),
+    re.compile(r"(^|[;&|]\s*)uvicorn\s+\S+", re.IGNORECASE),
+    re.compile(r"(^|[;&|]\s*)node\s+(.*/)?(server|index|app)(\.[cm]?[jt]s)?\b", re.IGNORECASE),
 )
 
 
@@ -252,6 +262,7 @@ def _validate_tests_run(
         if not isinstance(command, str) or not command.strip():
             msg = "tests_run command must be nonblank"
             raise WorkerResultError(msg)
+        _validate_bounded_smoke_command(command, field_name="tests_run command")
         if require_success and exit_code != 0:
             msg = f"tests_run command {command!r} did not pass"
             raise WorkerResultError(msg)
@@ -308,6 +319,11 @@ def _validate_browser_smoke_results(
             ):
                 msg = f"browser_smoke_results[{index}].{string_key} must be nonblank"
                 raise WorkerResultError(msg)
+            if string_key == "command" and isinstance(string_value, str):
+                _validate_bounded_smoke_command(
+                    string_value,
+                    field_name=f"browser_smoke_results[{index}].command",
+                )
         artifact = item.get("artifact")
         if artifact is not None:
             if not isinstance(artifact, str) or not artifact.strip():
@@ -318,6 +334,17 @@ def _validate_browser_smoke_results(
                 _normalize(artifact),
                 "browser_smoke_results",
             )
+
+
+def _validate_bounded_smoke_command(command: str, *, field_name: str) -> None:
+    normalized = command.strip()
+    for pattern in UNBOUNDED_BROWSER_SMOKE_COMMAND_PATTERNS:
+        if pattern.search(normalized):
+            msg = (
+                f"{field_name} starts an unbounded dev server; use a bounded smoke harness "
+                "that starts child servers with a timeout and always cleans them up"
+            )
+            raise WorkerResultError(msg)
 
 
 def _validate_acceptance_results(

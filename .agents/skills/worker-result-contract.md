@@ -45,6 +45,10 @@ Rules:
   file is itself the implementation or durable-documentation change under the task scope.
 - `tests_run[].command` must pass the safe verification parser; use `uv run --no-sync ...` when
   recording `uv run` verification evidence.
+- Browser/UI smoke commands must be bounded harnesses. Do not record foreground dev-server commands
+  such as `npm run dev`, `vite`, `node server`, or non-detached `docker compose up`; start child
+  servers with a timeout and guaranteed cleanup, then record that harness command in
+  `browser_smoke_results`.
 - Do not edit raw worker result JSON to satisfy import validation. Preserve it as immutable
   evidence and normalize/import into separate artifacts or SQLite records.
 - `tests_run[].summary` must be current and nonblank; avoid stale phrasing such as "previously

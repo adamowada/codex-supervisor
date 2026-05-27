@@ -24,6 +24,8 @@ def test_runtime_preflight_passes_for_linked_full_afk_supervisor_modes(tmp_path:
             "codex_supervisor.task_next_afk",
             "codex_supervisor.task_claim",
             "codex_supervisor.story_loop_run_once",
+            "codex_supervisor.story_loop_start",
+            "codex_supervisor.story_loop_poll",
         ),
         worker_execution="codex_exec",
         native_goal_mode=True,
@@ -61,6 +63,8 @@ def test_runtime_preflight_normalizes_desktop_callable_mcp_tool_names(tmp_path: 
             "codex_supervisor_task_next_afk",
             "codex_supervisor_task_claim",
             "codex_supervisor_story_loop_run_once",
+            "codex_supervisor_story_loop_start",
+            "codex_supervisor_story_loop_poll",
         ),
         worker_execution="codex_exec",
         story_loop_status_checked=True,
@@ -71,7 +75,9 @@ def test_runtime_preflight_normalizes_desktop_callable_mcp_tool_names(tmp_path: 
     assert report.diagnostics["missing_mcp_tools"] == []
     assert report.diagnostics["normalized_mcp_tools"] == [
         "codex_supervisor.runtime_preflight",
+        "codex_supervisor.story_loop_poll",
         "codex_supervisor.story_loop_run_once",
+        "codex_supervisor.story_loop_start",
         "codex_supervisor.story_loop_status",
         "codex_supervisor.task_claim",
         "codex_supervisor.task_current",
@@ -138,6 +144,10 @@ def test_runtime_preflight_cli_is_diagnostic_only_for_plugin_full_afk(
                 "codex_supervisor.task_claim",
                 "--mcp-tool",
                 "codex_supervisor.story_loop_run_once",
+                "--mcp-tool",
+                "codex_supervisor.story_loop_start",
+                "--mcp-tool",
+                "codex_supervisor.story_loop_poll",
                 "--json",
             ]
         )

@@ -7,9 +7,8 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Current Snapshot
 
-- Current queue state: completed. `story-loop-status --json` reports no current AFK, HITL, or
-  running task; `plan-operation-naming-surface-deepening-20260527` remains active with its first two
-  slices completed.
+- Current queue state: completed for the currently recorded slice. `story-loop-status --json`
+  reports no open work under `plan-operation-naming-surface-deepening-20260527`.
 - The user asked to fix all architecture deepening candidates one by one with ACP after each, then
   fix all actionable naming inconsistencies one by one with ACP after each.
 - `task-operation-registry-deepening-20260527` completed the first slice: a central operation
@@ -24,10 +23,18 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
   second slice.
 - Planning SQLite also records `progress-worker-result-ingestion-deepening-verified-20260527`;
   focused ingestion/registry/planning/MCP tests and full `scripts/verify.py` passed.
+- `task-execution-surface-deepening-20260527` completed the third slice: `execution_surface`
+  now owns codex_exec status, native-goal fallback posture, and capability mapping vocabulary used
+  by Goal Contracts and worker backends.
+- Planning SQLite records `progress-execution-surface-deepening-start-20260527` for the third
+  slice.
+- Planning SQLite also records `progress-execution-surface-deepening-verified-20260527`; focused
+  execution-surface/goal-contract/worker-backend/runtime-preflight tests and full
+  `scripts/verify.py` passed.
 - The previously cleared queue remains historical: `plan-v1-live-operational-hardening` was
   abandoned after the user requested clearing that checkpoint.
 
 ## Next Action
 
-ACP `task-worker-result-ingestion-deepening-20260527`; then create and execute the next deepening
-candidate task under the same plan.
+ACP `task-execution-surface-deepening-20260527`; then record and implement the next architecture
+deepening candidate under the same plan.

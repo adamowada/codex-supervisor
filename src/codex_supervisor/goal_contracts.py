@@ -8,6 +8,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from codex_supervisor.execution_surface import worker_backend_execution_surface
 from codex_supervisor.planning import JsonObject, SupervisorTaskSummaryRecord
 
 STABLE_CONTEXT_DOCUMENTS = (
@@ -150,19 +151,7 @@ def render_goal_contract(
                     "worker prompt."
                 ),
             },
-            "worker_backend": {
-                "name": task.worker_backend,
-                "backend_status": (
-                    "planned_not_implemented"
-                    if task.worker_backend == "codex_exec"
-                    else "backend_specific_preflight_required"
-                ),
-                "execution_mode": (
-                    "current_thread_or_manual_prompt_until_stage6_backend"
-                    if task.worker_backend == "codex_exec"
-                    else "use_backend_only_after_preflight"
-                ),
-            },
+            "worker_backend": worker_backend_execution_surface(task.worker_backend).as_json(),
         },
     )
 

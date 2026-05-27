@@ -60,8 +60,10 @@ def test_goal_contract_renderer_produces_required_sections():
     )
     assert contract.execution_surface["worker_backend"] == {
         "name": "codex_exec",
-        "backend_status": "planned_not_implemented",
-        "execution_mode": "current_thread_or_manual_prompt_until_stage6_backend",
+        "backend_status": "available",
+        "execution_mode": "codex_exec_worker_backend",
+        "native_goal_support": "prompt_rendered_fallback_only",
+        "official_noninteractive_native_goal_path": False,
     }
     goal_mode_preflight = contract.execution_surface["native_goal_mode"]["preflight"]
     assert "[features] goals = true" in goal_mode_preflight[1]

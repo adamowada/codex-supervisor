@@ -15,6 +15,12 @@ from hashlib import sha256
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
+from codex_supervisor.execution_surface import (
+    CODEX_EXEC_BACKEND,
+    CODEX_REASONING_EFFORT_CONFIG_KEY,
+    codex_exec_capability_mappings,
+    goal_mode_decision,
+)
 from codex_supervisor.worker_results import (
     WorkerResult,
     WorkerResultError,
@@ -1513,28 +1519,17 @@ def _build_codex_exec_argv(
 def _codex_exec_config_overrides(request: WorkerLaunchRequest) -> dict[str, str]:
     overrides: dict[str, str] = {}
     if request.reasoning_effort is not None:
-        overrides["model_reasoning_effort"] = request.reasoning_effort
+        overrides[CODEX_REASONING_EFFORT_CONFIG_KEY] = request.reasoning_effort
     if request.approval_policy:
         overrides["approval_policy"] = request.approval_policy
     return overrides
 
 
 def _codex_exec_capability_mappings(request: WorkerLaunchRequest) -> JsonObject:
-    mappings: JsonObject = {}
-    if request.reasoning_effort is not None:
-        mappings["reasoning_effort"] = {
-            "requested": request.reasoning_effort,
-            "transport": "config_override",
-            "codex_config_key": "model_reasoning_effort",
-            "fallback": "retry_without_reasoning_effort_when_cli_rejects_mapping",
-        }
-    if request.model is not None:
-        mappings["model"] = {
-            "requested": request.model,
-            "transport": "cli_model_flag",
-            "fallback": "retry_with_cli_default_when_account_rejects_model_before_work",
-        }
-    return mappings
+    return codex_exec_capability_mappings(
+        model=request.model,
+        reasoning_effort=request.reasoning_effort,
+    )
 
 
 def _probe_codex_launch_capabilities(
@@ -1798,7 +1793,7 @@ def _looks_like_unsupported_model_failure(result: CommandExecutionResult) -> boo
 
 def _looks_like_unsupported_reasoning_failure(result: CommandExecutionResult) -> bool:
     text = f"{result.stdout}\n{result.stderr}".casefold()
-    if "reasoning" not in text and "model_reasoning_effort" not in text:
+    if "reasoning" not in text and CODEX_REASONING_EFFORT_CONFIG_KEY not in text:
         return False
     return any(
         phrase in text
@@ -1856,7 +1851,7 @@ def _codex_exec_metadata(
     composed_prompt = compose_worker_prompt(request)
     goal_mode_preflight = _goal_mode_preflight_metadata(request)
     return {
-        "backend": "codex_exec",
+        "backend": CODEX_EXEC_BACKEND,
         "resolved_executable": _redact_executable(executable_path),
         "resolution_method": resolution_method,
         "version_command": _redact_argv(version_command, request),
@@ -1869,11 +1864,7 @@ def _codex_exec_metadata(
         "sandbox_mode": request.sandbox_mode,
         "approval_policy": request.approval_policy,
         "native_goal_mode": request.native_goal_mode,
-        "goal_mode_decision": (
-            "native_goal_requested_but_prompt_rendered_fallback"
-            if request.native_goal_mode
-            else "prompt_rendered_fallback"
-        ),
+        "goal_mode_decision": goal_mode_decision(native_goal_mode=request.native_goal_mode),
         "goal_mode_preflight": goal_mode_preflight,
         "official_noninteractive_native_goal_path": False,
         "ignore_user_config": request.ignore_user_config,

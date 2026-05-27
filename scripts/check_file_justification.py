@@ -310,6 +310,10 @@ FILE_PURPOSES = {
         "reviewed Codex local-state reconciliation apply helpers",
         "pytest",
     ),
+    "src/codex_supervisor/execution_surface.py": FilePurpose(
+        "worker execution surface vocabulary and capability mapping helpers",
+        "pytest",
+    ),
     "src/codex_supervisor/factory_smoke.py": FilePurpose(
         "deterministic release factory-loop smoke runner",
         "pytest",
@@ -444,6 +448,9 @@ FILE_PURPOSES = {
     "tests/test_codex_state_reconciliation.py": FilePurpose(
         "reviewed Codex local-state reconciliation apply tests",
         "pytest",
+    ),
+    "tests/test_execution_surface.py": FilePurpose(
+        "worker execution surface vocabulary tests", "pytest"
     ),
     "tests/test_story_loop.py": FilePurpose("Story Loop tests", "pytest"),
     "tests/test_task_compiler.py": FilePurpose("plan-to-task compiler tests", "pytest"),

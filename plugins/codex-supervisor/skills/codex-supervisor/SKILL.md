@@ -53,6 +53,12 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
   `task-show <task-id> --json`, or `plan-summary --current-queue --json` as needed.
 - Worker launch: route to `story-loop-runner`; render `goal-contract-render --task-id <task-id>`;
   claim with `task-claim` only when the queue still selects that task.
+- Post-worker verification, browser smoke, promotion, and publication are supervisor work. If a
+  post-worker check finds a defect or requires code/test/doc edits, first create a new
+  project-local supervisor task and run/record that task; do not quietly switch into controller
+  implementation. Plugin full-AFK implementation tasks must set scope flags such as `full_afk`,
+  `publication_required`, and `final_commit_required`. Full-AFK completion requires the worker
+  evidence manifest to be linked in planning SQLite and a final commit link or an explicit blocker.
 - Review: for a separate review task with `worker_backend=codex_review`, run `review-run-live`
   against the source task target, then use `review-result-promote` when the structured result has
   no accepted or needs-HITL findings. Use `fresh-thread-code-reviewer` for ordinary manual reviews

@@ -271,6 +271,9 @@ def check_planning_integrity(db_path: Path) -> tuple[PlanningIntegrityFailure, .
             failures.extend(_check_plan_artifact_paths_are_repo_local(connection, repo_root))
             failures.extend(_check_plan_commit_links_are_full_shas(connection))
             failures.extend(_check_plan_commit_links_exist_in_git(connection, repo_root))
+            failures.extend(
+                _check_completed_publication_required_tasks_have_commit_links(connection)
+            )
             failures.extend(_check_current_queue_plans_have_operational_structure(connection))
             failures.extend(_check_completed_plans_have_completed_criteria(connection))
             failures.extend(_check_completed_plans_have_no_open_tasks(connection))
@@ -597,6 +600,58 @@ def _check_plan_commit_links_exist_in_git(
                 )
             )
     return tuple(failures)
+
+
+def _check_completed_publication_required_tasks_have_commit_links(
+    connection: sqlite3.Connection,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    rows = connection.execute(
+        """
+        SELECT st.task_id, st.plan_id, st.scope_json, p.context_json
+        FROM supervisor_tasks st
+        JOIN plans p ON p.plan_id = st.plan_id
+        WHERE st.task_type = 'AFK'
+          AND st.status = 'completed'
+        ORDER BY st.plan_id, st.task_id
+        """
+    ).fetchall()
+    failures: list[PlanningIntegrityFailure] = []
+    for task_id, plan_id, scope_json, context_json in rows:
+        scope = _json_object(scope_json)
+        context = _json_object(context_json)
+        if not _requires_final_commit(scope, context):
+            continue
+        commit_link = connection.execute(
+            "SELECT 1 FROM plan_commit_links WHERE plan_id = ? LIMIT 1",
+            (plan_id,),
+        ).fetchone()
+        if commit_link is None:
+            failures.append(
+                PlanningIntegrityFailure(
+                    "completed_publication_required_task_without_commit_link",
+                    f"{task_id} on {plan_id} requires a final commit link",
+                )
+            )
+    return tuple(failures)
+
+
+def _json_object(raw_value: object) -> dict[object, object]:
+    try:
+        value = json.loads(str(raw_value))
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _requires_final_commit(scope: dict[object, object], context: dict[object, object]) -> bool:
+    keys = (
+        "final_commit_required",
+        "publication_required",
+        "full_afk_completion_requires_commit",
+        "plugin_full_afk",
+        "full_afk",
+    )
+    return any(scope.get(key) is True or context.get(key) is True for key in keys)
 
 
 def _repo_has_git_metadata(repo_root: Path) -> bool:

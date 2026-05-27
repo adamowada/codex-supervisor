@@ -553,6 +553,11 @@ def run_live_story_loop_once(
                 launch_result=launch_result,
             )
         ingested = store.ingest_worker_result(worker_run_id, launch_result.result_path)
+        _link_completed_worker_evidence_artifacts(
+            store,
+            plan_id=claim.task.plan_id,
+            launch_result=launch_result,
+        )
         _create_review_task_for_review_required_result(
             store,
             source_task=claim.task,
@@ -822,6 +827,34 @@ def _create_review_task_for_review_required_result(
         ),
         validate_current_queue_contract=False,
     )
+
+
+def _link_completed_worker_evidence_artifacts(
+    store: PlanningSQLiteStore,
+    *,
+    plan_id: str,
+    launch_result: WorkerLaunchResult,
+) -> None:
+    manifest_path = launch_result.metadata.get("evidence_manifest_path")
+    links: list[PlanArtifactLinkRecord] = []
+    if isinstance(manifest_path, str) and manifest_path.strip():
+        links.append(
+            PlanArtifactLinkRecord(
+                plan_id=plan_id,
+                artifact_id=manifest_path,
+                relationship="worker-evidence-manifest",
+            )
+        )
+    if launch_result.result_path is not None:
+        links.append(
+            PlanArtifactLinkRecord(
+                plan_id=plan_id,
+                artifact_id=launch_result.result_path,
+                relationship="worker-result",
+            )
+        )
+    for link in links:
+        store.add_plan_artifact_link(link)
 
 
 def _review_task_id(source_task_id: str, worker_run_id: str) -> str:

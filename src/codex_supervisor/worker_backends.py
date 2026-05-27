@@ -123,6 +123,16 @@ class CodexExecPreflightResult:
 
 
 @dataclass(frozen=True)
+class CodexCapabilityProbeResult:
+    """Resolved model/reasoning launch capabilities before the worker prompt runs."""
+
+    request: WorkerLaunchRequest
+    failure_class: str | None
+    stderr: str
+    metadata: JsonObject
+
+
+@dataclass(frozen=True)
 class CodexExecutableResolution:
     """Resolved Codex executable path plus fail-closed launch diagnostics."""
 
@@ -152,7 +162,14 @@ class CodexExecBackend:
         resolution_method = executable_resolution.resolution_method
         environment_result = _build_launch_environment(request)
         option_failure = _unsupported_launch_option_failure(request)
-        argv = _build_codex_exec_argv(request, executable_path) if executable_path else ()
+        effective_request = request
+        capability_probe = CodexCapabilityProbeResult(
+            request=request,
+            failure_class=None,
+            stderr="",
+            metadata={"status": "skipped", "reason": "no_requested_model_or_reasoning"},
+        )
+        argv: tuple[str, ...] = ()
         version_command = (executable_path, "--version") if executable_path else ()
         version_exit_code: int | None = None
         version_stdout = ""
@@ -196,8 +213,21 @@ class CodexExecBackend:
                         executable_path,
                         version_result.stderr,
                     )
+        if failure_class is None and executable_path is not None:
+            capability_probe = _probe_codex_launch_capabilities(
+                request,
+                executable_path=executable_path,
+                environment=environment_result.environment,
+                command_runner=self.command_runner,
+                probe_enabled=self.launch_enabled,
+            )
+            effective_request = capability_probe.request
+            if capability_probe.failure_class is not None:
+                failure_class = capability_probe.failure_class
+                version_stderr = capability_probe.stderr
+        argv = _build_codex_exec_argv(effective_request, executable_path) if executable_path else ()
         metadata = _codex_exec_metadata(
-            request,
+            effective_request,
             executable_path=executable_path,
             resolution_method=resolution_method,
             version_command=version_command,
@@ -208,6 +238,15 @@ class CodexExecBackend:
             argv=argv,
             environment=environment_result.environment,
         )
+        metadata["requested_capabilities"] = {
+            "model": request.model,
+            "reasoning_effort": request.reasoning_effort,
+        }
+        metadata["resolved_capabilities"] = {
+            "model": effective_request.model,
+            "reasoning_effort": effective_request.reasoning_effort,
+        }
+        metadata["capability_preflight"] = capability_probe.metadata
         return CodexExecPreflightResult(
             executable_path=executable_path,
             resolution_method=resolution_method,
@@ -1424,6 +1463,213 @@ def _codex_exec_capability_mappings(request: WorkerLaunchRequest) -> JsonObject:
             "fallback": "retry_with_cli_default_when_account_rejects_model_before_work",
         }
     return mappings
+
+
+def _probe_codex_launch_capabilities(
+    request: WorkerLaunchRequest,
+    *,
+    executable_path: str,
+    environment: dict[str, str],
+    command_runner: CommandRunner | None,
+    probe_enabled: bool,
+) -> CodexCapabilityProbeResult:
+    if request.model is None and request.reasoning_effort is None:
+        return CodexCapabilityProbeResult(
+            request=request,
+            failure_class=None,
+            stderr="",
+            metadata={"status": "skipped", "reason": "no_requested_model_or_reasoning"},
+        )
+    if not probe_enabled:
+        return CodexCapabilityProbeResult(
+            request=request,
+            failure_class=None,
+            stderr="",
+            metadata={"status": "skipped", "reason": "launch_disabled"},
+        )
+
+    effective_model = request.model
+    effective_reasoning_effort = request.reasoning_effort
+    attempts: list[JsonObject] = []
+    removed_options: list[str] = []
+    metadata: JsonObject
+    for _ in range(3):
+        probe_request = replace(
+            request,
+            model=effective_model,
+            reasoning_effort=effective_reasoning_effort,
+        )
+        argv = _build_codex_capability_probe_argv(probe_request, executable_path)
+        try:
+            result = _run_command(
+                command_runner,
+                argv,
+                probe_request.worktree_path,
+                environment,
+                stdin=_capability_probe_prompt(),
+                timeout_seconds=probe_request.preflight_timeout_seconds,
+            )
+        except KeyboardInterrupt:
+            metadata = {
+                "status": "failed",
+                "failure_class": "codex_capability_probe_interrupted",
+                "attempts": attempts,
+                "removed_options": removed_options,
+            }
+            return CodexCapabilityProbeResult(
+                request=probe_request,
+                failure_class="codex_capability_probe_interrupted",
+                stderr="Codex capability probe was interrupted.",
+                metadata=metadata,
+            )
+        except subprocess.TimeoutExpired as exc:
+            attempts.append(
+                {
+                    "argv": _redact_argv(argv, probe_request),
+                    "exit_code": 124,
+                    "stdout": _truncate_diagnostic(_timeout_text(exc.stdout)),
+                    "stderr": f"capability probe timed out after {exc.timeout} seconds",
+                }
+            )
+            metadata = {
+                "status": "failed",
+                "failure_class": "codex_capability_probe_timeout",
+                "attempts": attempts,
+                "removed_options": removed_options,
+            }
+            return CodexCapabilityProbeResult(
+                request=probe_request,
+                failure_class="codex_capability_probe_timeout",
+                stderr=str(attempts[-1]["stderr"]),
+                metadata=metadata,
+            )
+        except OSError as exc:
+            attempts.append(
+                {
+                    "argv": _redact_argv(argv, probe_request),
+                    "exit_code": None,
+                    "stdout": "",
+                    "stderr": _truncate_diagnostic(str(exc)),
+                }
+            )
+            metadata = {
+                "status": "failed",
+                "failure_class": "codex_capability_probe_failed",
+                "attempts": attempts,
+                "removed_options": removed_options,
+            }
+            return CodexCapabilityProbeResult(
+                request=probe_request,
+                failure_class="codex_capability_probe_failed",
+                stderr=str(exc),
+                metadata=metadata,
+            )
+
+        attempts.append(
+            {
+                "argv": _redact_argv(argv, probe_request),
+                "exit_code": result.exit_code,
+                "stdout": _truncate_diagnostic(result.stdout),
+                "stderr": _truncate_diagnostic(result.stderr),
+            }
+        )
+        if result.exit_code == 0:
+            status = "passed" if not removed_options else "fallback_resolved"
+            return CodexCapabilityProbeResult(
+                request=probe_request,
+                failure_class=None,
+                stderr="",
+                metadata={
+                    "status": status,
+                    "requested_model": request.model,
+                    "requested_reasoning_effort": request.reasoning_effort,
+                    "resolved_model": probe_request.model,
+                    "resolved_reasoning_effort": probe_request.reasoning_effort,
+                    "removed_options": removed_options,
+                    "attempts": attempts,
+                },
+            )
+
+        removed_this_attempt: list[str] = []
+        if effective_model is not None and _looks_like_unsupported_model_failure(result):
+            effective_model = None
+            removed_this_attempt.append("model")
+        if effective_reasoning_effort is not None and _looks_like_unsupported_reasoning_failure(
+            result
+        ):
+            effective_reasoning_effort = None
+            removed_this_attempt.append("reasoning_effort")
+        if not removed_this_attempt:
+            metadata = {
+                "status": "failed",
+                "failure_class": "codex_capability_probe_failed",
+                "requested_model": request.model,
+                "requested_reasoning_effort": request.reasoning_effort,
+                "resolved_model": effective_model,
+                "resolved_reasoning_effort": effective_reasoning_effort,
+                "removed_options": removed_options,
+                "attempts": attempts,
+            }
+            return CodexCapabilityProbeResult(
+                request=probe_request,
+                failure_class="codex_capability_probe_failed",
+                stderr=result.stderr or result.stdout,
+                metadata=metadata,
+            )
+        removed_options.extend(removed_this_attempt)
+
+    fallback_request = replace(
+        request,
+        model=effective_model,
+        reasoning_effort=effective_reasoning_effort,
+    )
+    metadata = {
+        "status": "failed",
+        "failure_class": "codex_capability_probe_exhausted",
+        "requested_model": request.model,
+        "requested_reasoning_effort": request.reasoning_effort,
+        "resolved_model": effective_model,
+        "resolved_reasoning_effort": effective_reasoning_effort,
+        "removed_options": removed_options,
+        "attempts": attempts,
+    }
+    return CodexCapabilityProbeResult(
+        request=fallback_request,
+        failure_class="codex_capability_probe_exhausted",
+        stderr="Codex capability probe exhausted fallback attempts.",
+        metadata=metadata,
+    )
+
+
+def _build_codex_capability_probe_argv(
+    request: WorkerLaunchRequest,
+    executable_path: str,
+) -> tuple[str, ...]:
+    worktree_path = request.worktree_path.resolve(strict=False)
+    argv = [
+        executable_path,
+        "exec",
+        "--json",
+        "--sandbox",
+        "read-only",
+        "--cd",
+        str(worktree_path),
+    ]
+    if request.model is not None:
+        argv.extend(("--model", request.model))
+    for key, value in _codex_exec_config_overrides(request).items():
+        argv.extend(("-c", f"{key}={json.dumps(value)}"))
+    if request.ignore_user_config:
+        argv.append("--ignore-user-config")
+    argv.append("-")
+    return tuple(argv)
+
+
+def _capability_probe_prompt() -> str:
+    return (
+        "Supervisor runtime capability probe. Reply with exactly OK. "
+        "Do not inspect or modify files.\n"
+    )
 
 
 def _codex_exec_capability_retry(

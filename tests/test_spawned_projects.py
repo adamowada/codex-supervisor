@@ -243,6 +243,11 @@ def test_spawned_project_apply_writes_full_supervisor_scaffold(tmp_path: Path) -
     agents = (target / "AGENTS.md").read_text(encoding="utf-8")
     assert "client/**" in agents
     assert "separate review task" in agents
+    assert "Post-worker browser smoke" in agents
+    assert "final_commit_required" in agents
+    plans_text = (target / "PLANS.md").read_text(encoding="utf-8")
+    assert "worker evidence manifest" in plans_text
+    assert "commit link" in plans_text
     integrity_text = (target / "scripts" / "check_planning_integrity.py").read_text(
         encoding="utf-8"
     )
@@ -305,6 +310,15 @@ def test_spawned_project_apply_writes_full_supervisor_scaffold(tmp_path: Path) -
         check=False,
     )
     assert verify.returncode == 0, verify.stderr + verify.stdout
+    (target / ".env").write_text("LOCAL_ONLY=true\n", encoding="utf-8")
+    justification = subprocess.run(
+        (sys.executable, "scripts/check_file_justification.py"),
+        cwd=target,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert justification.returncode == 0, justification.stderr + justification.stdout
     git_log = subprocess.run(
         ("git", "log", "--oneline", "-1"),
         cwd=target,

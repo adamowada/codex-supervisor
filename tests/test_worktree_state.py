@@ -126,6 +126,51 @@ def test_inspect_worktree_state_reports_dirty_out_of_scope_changes(tmp_path: Pat
     assert snapshot.changed_path_violations[0].reason == "outside_allowed_paths"
 
 
+def test_inspect_worktree_state_expands_untracked_directory_summaries(tmp_path: Path) -> None:
+    worktree = tmp_path / "worktrees" / "run-stage7d"
+    (worktree / "client" / "src").mkdir(parents=True)
+    (worktree / "client" / "src" / "main.jsx").write_text("app\n", encoding="utf-8")
+    (worktree / "server" / "src").mkdir(parents=True)
+    (worktree / "server" / "src" / "app.js").write_text("api\n", encoding="utf-8")
+    responses = {
+        ("git", "rev-parse", "--abbrev-ref", "HEAD"): CommandExecutionResult(
+            exit_code=0,
+            stdout="HEAD\n",
+        ),
+        ("git", "rev-parse", "base-sha"): CommandExecutionResult(
+            exit_code=0,
+            stdout="abc123\n",
+        ),
+        ("git", "rev-parse", "HEAD"): CommandExecutionResult(exit_code=0, stdout="def456\n"),
+        ("git", "status", "--porcelain=v1"): CommandExecutionResult(
+            exit_code=0,
+            stdout="?? client/\n?? server/\n",
+        ),
+        ("git", "diff", "--name-only", "abc123...def456"): CommandExecutionResult(
+            exit_code=0,
+            stdout="",
+        ),
+    }
+
+    def runner(
+        argv: tuple[str, ...],
+        cwd: Path,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        return responses[argv]
+
+    snapshot = inspect_worktree_state(
+        workspace_root=tmp_path,
+        worktree_path="worktrees/run-stage7d",
+        allowed_paths=("client/**", "server/**"),
+        command_runner=runner,
+        base_ref="base-sha",
+    )
+
+    assert snapshot.changed_files == ("client/src/main.jsx", "server/src/app.js")
+    assert snapshot.changed_path_violations == ()
+
+
 def test_inspect_worktree_state_classifies_git_command_failure(tmp_path: Path) -> None:
     def runner(
         argv: tuple[str, ...],

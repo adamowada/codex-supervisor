@@ -770,6 +770,8 @@ def test_codex_exec_backend_retries_with_cli_defaults_when_model_is_rejected(tmp
                 exit_code=1,
                 stderr="invalid_request_error: model gpt-5 is not supported\n",
             )
+        if "--output-schema" not in argv:
+            return CommandExecutionResult(exit_code=0, stdout='{"event":"probe.ok"}\n')
         _write_valid_worker_result(
             tmp_path,
             worker_run_id="run-worker",
@@ -794,12 +796,16 @@ def test_codex_exec_backend_retries_with_cli_defaults_when_model_is_rejected(tmp
     ).run(request)
 
     exec_calls = [argv for argv in calls if len(argv) > 1 and argv[1] == "exec"]
-    assert len(exec_calls) == 2
+    assert len(exec_calls) == 3
     assert "--model" in exec_calls[0]
     assert "--model" not in exec_calls[1]
+    assert "--model" not in exec_calls[2]
     assert result.status == "completed"
-    assert result.metadata["capability_retry"]["removed_options"] == ["model"]
-    assert result.metadata["capability_retry"]["retry_exit_code"] == 0
+    assert result.metadata["capability_preflight"]["status"] == "fallback_resolved"
+    assert result.metadata["capability_preflight"]["removed_options"] == ["model"]
+    assert result.metadata["requested_capabilities"]["model"] == "gpt-5"
+    assert result.metadata["resolved_capabilities"]["model"] is None
+    assert "capability_retry" not in result.metadata
 
 
 def test_codex_exec_backend_retries_without_reasoning_mapping_when_cli_rejects_it(tmp_path):
@@ -818,6 +824,8 @@ def test_codex_exec_backend_retries_without_reasoning_mapping_when_cli_rejects_i
                 exit_code=1,
                 stderr="unsupported config key model_reasoning_effort\n",
             )
+        if "--output-schema" not in argv:
+            return CommandExecutionResult(exit_code=0, stdout='{"event":"probe.ok"}\n')
         _write_valid_worker_result(
             tmp_path,
             worker_run_id="run-worker",
@@ -842,11 +850,46 @@ def test_codex_exec_backend_retries_without_reasoning_mapping_when_cli_rejects_i
     ).run(request)
 
     exec_calls = [argv for argv in calls if len(argv) > 1 and argv[1] == "exec"]
-    assert len(exec_calls) == 2
+    assert len(exec_calls) == 3
     assert any("model_reasoning_effort" in item for item in exec_calls[0])
     assert not any("model_reasoning_effort" in item for item in exec_calls[1])
+    assert not any("model_reasoning_effort" in item for item in exec_calls[2])
     assert result.status == "completed"
-    assert result.metadata["capability_retry"]["removed_options"] == ["reasoning_effort"]
+    assert result.metadata["capability_preflight"]["status"] == "fallback_resolved"
+    assert result.metadata["capability_preflight"]["removed_options"] == ["reasoning_effort"]
+    assert result.metadata["requested_capabilities"]["reasoning_effort"] == "high"
+    assert result.metadata["resolved_capabilities"]["reasoning_effort"] is None
+    assert "capability_retry" not in result.metadata
+
+
+def test_codex_exec_backend_blocks_on_unknown_capability_probe_failure(tmp_path):
+    calls: list[tuple[str, ...]] = []
+
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        calls.append(argv)
+        if argv == ("C:/Tools/codex.exe", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+        return CommandExecutionResult(exit_code=1, stderr="authentication failed\n")
+
+    request = _codex_exec_request(tmp_path, model="gpt-5")
+
+    result = CodexExecBackend(
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=runner,
+        launch_enabled=True,
+    ).run(request)
+
+    exec_calls = [argv for argv in calls if len(argv) > 1 and argv[1] == "exec"]
+    assert len(exec_calls) == 1
+    assert result.status == "failed"
+    assert result.failure_class == "codex_capability_probe_failed"
+    assert result.metadata["capability_preflight"]["status"] == "failed"
+    assert result.metadata["resolved_capabilities"]["model"] == "gpt-5"
+    assert "authentication failed" in (tmp_path / "runs" / "run-worker" / "stderr.txt").read_text()
 
 
 def test_codex_exec_backend_launch_missing_result_preserves_evidence(tmp_path):

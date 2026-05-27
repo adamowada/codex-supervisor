@@ -829,6 +829,11 @@ def test_live_story_loop_run_claims_worktree_launches_and_ingests_result(tmp_pat
     events = read_store.list_worker_run_events(worker_run_id="run-live")
     assert events[0].event_type == "codex_exec_launch_result"
     assert events[0].details["changed_files"] == ["src/live_story.py"]
+    artifact_links = read_store.list_plan_artifact_links(plan_id="plan-live")
+    assert {(link.artifact_id, link.relationship) for link in artifact_links} == {
+        ("artifacts/run-live/evidence-manifest.json", "worker-evidence-manifest"),
+        ("artifacts/run-live/worker-result.raw.json", "worker-result"),
+    }
     task = next(task for task in read_store.list_supervisor_tasks() if task.task_id == "task-live")
     assert task.status == "completed"
 

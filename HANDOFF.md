@@ -9,25 +9,21 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 
 - Current queue state: HITL. `story-loop-status --json` selects
   `task-review-review-required-hitl-gap-20260527`.
-- User asked to implement the todo-list-test-6 launch-hardening recommendations and ACP the result.
-  Intent is recorded as `decision-todo-test-6-launch-hardening-20260527` and
-  `progress-todo-test-6-launch-hardening-start-20260527`.
-- Target repair scope: Windows Codex executable resolution, CLI model/reasoning capability mapping,
-  honest/degraded worker execution labeling, evidence parity for completed worker runs,
-  deterministic spawned-project bootstrap-to-implementation flow, and worker process cancellation
-  diagnostics.
-- Implementation completed. The worker backend now prefers launchable Windows `codex.cmd`/`.exe`
-  over `.ps1` shims, records interruption cleanup, retries once with CLI defaults when model or
-  reasoning transport is rejected before work starts, and preserves that capability decision in
-  metadata. Spawned project apply now completes the scaffold task with deterministic evidence and
-  generated steering says to seed the real implementation task before Story Loop.
-- Verification passed. `uv run --no-sync python -B scripts/verify.py` completed successfully with
-  582 tests plus Ruff, formatting, mypy, CLI help, planning integrity, public hygiene, source/skill
-  inventory, protected-file checks, and `uv lock --check`.
-- Planning progress `progress-todo-test-6-launch-hardening-verified-20260527` records the
-  verification result.
+- User asked to implement todo-list-test-7 smoke hardening fixes. Intent and completion are
+  recorded as `progress-smoke7-hardening-start-20260527` and
+  `progress-smoke7-hardening-verified-20260527`.
+- Implemented repair scope: Codex Exec now probes requested model/reasoning before live worker
+  spawn and fails closed for unknown probe failures; Story Loop links worker result and evidence
+  manifest artifacts into planning SQLite; worktree state expands untracked directory summaries into
+  concrete files; spawned-project scaffolds ignore local `.env`, steer post-worker repair into
+  separate supervisor tasks, and require final commit links for full-AFK completion; planning
+  integrity enforces commit links for completed final-commit-required AFK tasks.
+- Verification passed: `uv run --no-sync python -B scripts/verify.py`.
+- ACP requested for this change set. Publication intent is recorded as
+  `progress-smoke7-hardening-acp-start-20260527`.
 
 ## Next Action
 
-ACP all unstaged changes as requested. The current queue remains HITL on
-`task-review-review-required-hitl-gap-20260527`.
+Publish the completed smoke-7 hardening change set. The current queue remains HITL on
+`task-review-review-required-hitl-gap-20260527` unless the user explicitly resolves that review
+checkpoint.

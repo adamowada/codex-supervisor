@@ -275,6 +275,130 @@ def test_planning_integrity_rejects_commit_links_missing_from_git(tmp_path):
     assert any(failure.check_name == "plan_commit_link_missing_git_commit" for failure in failures)
 
 
+def test_planning_integrity_requires_completed_full_afk_task_commit_link(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-full-afk",
+            slug="full-afk",
+            title="Full AFK Plan",
+            goal="Do unattended work.",
+            status="completed",
+        )
+    )
+    store.upsert_plan_acceptance_criterion(
+        PlanAcceptanceCriterionRecord(
+            criterion_id="criterion-full-afk",
+            plan_id="plan-full-afk",
+            description="Implementation completed.",
+            status="completed",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-full-afk",
+            plan_id="plan-full-afk",
+            title="Build app",
+            goal="Finish the app.",
+            task_type="AFK",
+            status="completed",
+            scope={"full_afk": True, "publication_required": True, "final_commit_required": True},
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "completed_publication_required_task_without_commit_link"
+        and "task-full-afk" in failure.reason
+        for failure in failures
+    )
+
+
+def test_planning_integrity_accepts_completed_full_afk_task_with_commit_link(tmp_path):
+    module = _load_planning_integrity_module()
+    subprocess.run(("git", "init"), cwd=tmp_path, check=True, stdout=subprocess.DEVNULL)
+    subprocess.run(
+        ("git", "config", "user.email", "test@example.com"),
+        cwd=tmp_path,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    subprocess.run(
+        ("git", "config", "user.name", "Test User"),
+        cwd=tmp_path,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    subprocess.run(
+        ("git", "config", "commit.gpgsign", "false"),
+        cwd=tmp_path,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    (tmp_path / "README.md").write_text("# Test\n", encoding="utf-8")
+    subprocess.run(("git", "add", "README.md"), cwd=tmp_path, check=True)
+    subprocess.run(
+        ("git", "commit", "-m", "Initial"),
+        cwd=tmp_path,
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    commit_sha = subprocess.run(
+        ("git", "rev-parse", "HEAD"),
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout.strip()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-full-afk",
+            slug="full-afk",
+            title="Full AFK Plan",
+            goal="Do unattended work.",
+            status="completed",
+        )
+    )
+    store.upsert_plan_acceptance_criterion(
+        PlanAcceptanceCriterionRecord(
+            criterion_id="criterion-full-afk",
+            plan_id="plan-full-afk",
+            description="Implementation completed.",
+            status="completed",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-full-afk",
+            plan_id="plan-full-afk",
+            title="Build app",
+            goal="Finish the app.",
+            task_type="AFK",
+            status="completed",
+            scope={"final_commit_required": True},
+        )
+    )
+    store.add_plan_commit_link(
+        PlanCommitLinkRecord(
+            plan_id="plan-full-afk",
+            commit_sha=commit_sha,
+            relationship="final-project-state",
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert not any(
+        failure.check_name == "completed_publication_required_task_without_commit_link"
+        for failure in failures
+    )
+
+
 def test_planning_integrity_detects_invalid_status_and_queue_drift(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"

@@ -120,7 +120,7 @@ def inspect_worktree_state(
     if diff.exit_code != 0:
         return _failed_snapshot(worktree_label, commands, diff, "diff_summary")
 
-    status_files = _parse_porcelain_status(status.stdout)
+    status_files = _parse_porcelain_status(status.stdout, worktree_root=target)
     diff_files = _parse_name_only(diff.stdout)
     changed_files = _ordered_unique((*status_files, *diff_files))
     violations = validate_changed_files(changed_files, allowed_paths)
@@ -204,7 +204,7 @@ def _parse_name_only(value: str) -> tuple[str, ...]:
     return tuple(line.strip() for line in value.splitlines() if line.strip())
 
 
-def _parse_porcelain_status(value: str) -> tuple[str, ...]:
+def _parse_porcelain_status(value: str, *, worktree_root: Path) -> tuple[str, ...]:
     paths: list[str] = []
     for line in value.splitlines():
         if len(line) < 4:
@@ -212,9 +212,27 @@ def _parse_porcelain_status(value: str) -> tuple[str, ...]:
         path = line[3:].strip()
         if " -> " in path:
             path = path.rsplit(" -> ", 1)[1].strip()
-        if path:
-            paths.append(path.strip('"'))
+        if not path:
+            continue
+        normalized = path.strip('"').replace("\\", "/")
+        paths.extend(_expand_status_path(worktree_root, normalized))
     return tuple(paths)
+
+
+def _expand_status_path(worktree_root: Path, path: str) -> tuple[str, ...]:
+    """Expand untracked directory summaries from git status into concrete files."""
+
+    if not path.endswith("/"):
+        return (path,)
+    directory = worktree_root / path.rstrip("/")
+    if not directory.is_dir():
+        return (path.rstrip("/"),)
+    files = sorted(
+        child.relative_to(worktree_root).as_posix()
+        for child in directory.rglob("*")
+        if child.is_file() and ".git" not in child.parts
+    )
+    return tuple(files) if files else (path.rstrip("/"),)
 
 
 def _ordered_unique(paths: tuple[str, ...]) -> tuple[str, ...]:

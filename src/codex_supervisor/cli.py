@@ -360,6 +360,14 @@ def main(argv: list[str] | None = None) -> int:
     worker_show_parser.add_argument("--path", type=Path, default=None)
     worker_show_parser.add_argument("--json", action="store_true", default=False)
 
+    worker_event_list_parser = subparsers.add_parser(
+        "worker-run-event-list",
+        help="List worker run events",
+    )
+    worker_event_list_parser.add_argument("--path", type=Path, default=None)
+    worker_event_list_parser.add_argument("--worker-run-id", default=None)
+    worker_event_list_parser.add_argument("--json", action="store_true", default=False)
+
     worker_result_list_parser = subparsers.add_parser(
         "worker-result-list",
         help="List DB-backed worker result records",
@@ -1620,6 +1628,29 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"result_id: {run.result_id}")
             if run.result_path:
                 print(f"result_path: {run.result_path}")
+        return 0
+
+    if args.command == "worker-run-event-list":
+        read_store = _open_read_store(args.path)
+        if read_store is None:
+            return 1
+        worker_event_store = read_store
+        events = _read_or_report(
+            lambda: worker_event_store.list_worker_run_events(worker_run_id=args.worker_run_id)
+        )
+        if events is None:
+            return 1
+        if args.json:
+            _print_json(events)
+            return 0
+        if not events:
+            print("No worker run events found.")
+            return 0
+        for event in events:
+            print(
+                f"{event.event_id}\t{event.event_type}\t"
+                f"worker_run={event.worker_run_id}\t{event.summary}"
+            )
         return 0
 
     if args.command == "worker-result-list":

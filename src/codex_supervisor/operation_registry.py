@@ -170,7 +170,11 @@ OPERATIONS: tuple[SupervisorOperation, ...] = (
     ),
     SupervisorOperation("worker_result_list", "worker-result-list", _mcp("worker_result_list")),
     SupervisorOperation("worker_result_show", "worker-result-show", _mcp("worker_result_show")),
-    SupervisorOperation("worker_run_event_list", mcp_tool=_mcp("worker_run_event_list")),
+    SupervisorOperation(
+        "worker_run_event_list",
+        "worker-run-event-list",
+        _mcp("worker_run_event_list"),
+    ),
     SupervisorOperation("worker_run_list", "worker-run-list", _mcp("worker_run_list")),
     SupervisorOperation("worker_run_show", "worker-run-show", _mcp("worker_run_show")),
     SupervisorOperation(

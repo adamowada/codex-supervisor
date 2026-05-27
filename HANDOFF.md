@@ -7,8 +7,8 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Current Snapshot
 
-- Current queue state: completed for the currently recorded slice. `story-loop-status --json`
-  reports no open work under `plan-operation-naming-surface-deepening-20260527`.
+- Current queue state: completed for the latest slice. `story-loop-status --json` reports no open
+  work on `plan-operation-naming-surface-deepening-20260527`.
 - The user asked to fix all architecture deepening candidates one by one with ACP after each, then
   fix all actionable naming inconsistencies one by one with ACP after each.
 - `task-operation-registry-deepening-20260527` completed the first slice: a central operation
@@ -45,10 +45,16 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 - Planning SQLite records `progress-evidence-vocabulary-start-20260527` for the fifth slice.
 - Planning SQLite also records `progress-evidence-vocabulary-verified-20260527`; focused
   evidence/planning/integrity tests and full `scripts/verify.py` passed.
+- `task-worker-run-event-cli-20260527` completed the first actionable naming fix:
+  `worker-run-event-list` now mirrors `codex_supervisor.worker_run_event_list` as a DB-backed CLI
+  read surface.
+- Planning SQLite records `progress-worker-run-event-cli-start-20260527` for this slice.
+- Planning SQLite also records `progress-worker-run-event-cli-verified-20260527`; focused
+  registry/planning/MCP tests and full `scripts/verify.py` passed.
 - The previously cleared queue remains historical: `plan-v1-live-operational-hardening` was
   abandoned after the user requested clearing that checkpoint.
 
 ## Next Action
 
-ACP `task-evidence-vocabulary-deepening-20260527`; then record and implement the actionable naming
-inconsistency fixes one by one.
+ACP `task-worker-run-event-cli-20260527`; then seed and handle the next actionable naming
+inconsistency one slice at a time.

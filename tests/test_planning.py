@@ -4049,8 +4049,9 @@ def test_worker_run_upsert_clears_preserved_terminal_evidence_on_rerun(tmp_path)
     assert run.failure_class is None
 
 
-def test_worker_run_events_are_append_only_and_filterable(tmp_path):
-    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+def test_worker_run_events_are_append_only_and_filterable(tmp_path, capsys):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
     store.upsert_plan(
         PlanRecord(
             plan_id="plan-worker-events",
@@ -4100,6 +4101,23 @@ def test_worker_run_events_are_append_only_and_filterable(tmp_path):
     assert [item.event_id for item in events] == ["event-worker-events-launch"]
     assert events[0].details == {"status": "completed"}
     assert events[0].artifact_path == "runs/run-worker-events/events.jsonl"
+
+    assert (
+        main(
+            [
+                "worker-run-event-list",
+                "--path",
+                str(db_path),
+                "--worker-run-id",
+                "run-worker-events",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    cli_events = json.loads(capsys.readouterr().out)
+    assert cli_events[0]["event_id"] == "event-worker-events-launch"
+    assert cli_events[0]["event_type"] == "codex_exec_launch_result"
 
 
 def test_worker_run_completion_can_complete_non_review_task(tmp_path):

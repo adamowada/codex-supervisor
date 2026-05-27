@@ -7,6 +7,7 @@ import os
 import platform
 import shutil
 import subprocess
+import threading
 import time
 import tomllib
 from collections.abc import Callable, Mapping
@@ -22,6 +23,7 @@ from codex_supervisor.execution_surface import (
     codex_exec_capability_mappings,
     goal_mode_decision,
 )
+from codex_supervisor.planning import PlanningSQLiteStore, WorkerRunEventRecord
 from codex_supervisor.worker_results import (
     WorkerResult,
     WorkerResultError,
@@ -104,6 +106,7 @@ class CommandExecutionResult:
 
 type CommandRunner = Callable[[tuple[str, ...], Path, dict[str, str]], CommandExecutionResult]
 type CommandStartCallback = Callable[[int | None], None]
+type CommandOutputCallback = Callable[[bytes], None]
 
 
 @dataclass(frozen=True)
@@ -382,6 +385,7 @@ class CodexExecBackend:
                 metadata=preflight.metadata,
             )
         started_at = time.perf_counter()
+        stream_observer = _CodexExecStreamObserver(request=request, preflight=preflight)
         try:
             exec_result = _run_command(
                 self.command_runner,
@@ -390,24 +394,33 @@ class CodexExecBackend:
                 environment_result.environment,
                 stdin=composed_prompt,
                 timeout_seconds=request.launch_timeout_seconds,
-                on_start=_liveness_start_callback(
-                    request,
-                    preflight,
-                    "exec_started",
+                on_start=_combine_start_callbacks(
+                    _liveness_start_callback(
+                        request,
+                        preflight,
+                        "exec_started",
+                    ),
+                    stream_observer.on_start,
                 ),
+                on_stdout_chunk=stream_observer.on_stdout_chunk,
+                on_stderr_chunk=stream_observer.on_stderr_chunk,
             )
+            stream_observer.flush_stdout_remainder()
             _write_liveness_probe(
                 request,
                 preflight=preflight,
                 stage="exec_exited",
                 exit_code=exec_result.exit_code,
+                extra={"streamed_event_count": stream_observer.event_count},
             )
         except KeyboardInterrupt:
+            stream_observer.flush_stdout_remainder()
             duration_seconds = time.perf_counter() - started_at
             _write_liveness_probe(
                 request,
                 preflight=preflight,
                 stage="exec_interrupted",
+                extra={"streamed_event_count": stream_observer.event_count},
             )
             metadata = _codex_exec_launch_metadata(
                 preflight,
@@ -442,11 +455,13 @@ class CodexExecBackend:
                 metadata=metadata,
             )
         except OSError as exc:
+            stream_observer.flush_stdout_remainder()
             duration_seconds = time.perf_counter() - started_at
             _write_liveness_probe(
                 request,
                 preflight=preflight,
                 stage="exec_failed_to_start",
+                extra={"streamed_event_count": stream_observer.event_count},
             )
             metadata = _codex_exec_launch_metadata(
                 preflight,
@@ -481,12 +496,14 @@ class CodexExecBackend:
                 metadata=metadata,
             )
         except subprocess.TimeoutExpired as exc:
+            stream_observer.flush_stdout_remainder()
             duration_seconds = time.perf_counter() - started_at
             _write_liveness_probe(
                 request,
                 preflight=preflight,
                 stage="exec_timeout",
                 exit_code=124,
+                extra={"streamed_event_count": stream_observer.event_count},
             )
             metadata = _codex_exec_launch_metadata(
                 preflight,
@@ -532,6 +549,10 @@ class CodexExecBackend:
             )
             if retry is not None:
                 retry_request, retry_preflight, retry_metadata = retry
+                retry_stream_observer = _CodexExecStreamObserver(
+                    request=retry_request,
+                    preflight=retry_preflight,
+                )
                 retry_started_at = time.perf_counter()
                 try:
                     retry_exec_result = _run_command(
@@ -541,20 +562,30 @@ class CodexExecBackend:
                         environment_result.environment,
                         stdin=composed_prompt,
                         timeout_seconds=retry_request.launch_timeout_seconds,
-                        on_start=_liveness_start_callback(
-                            retry_request,
-                            retry_preflight,
-                            "exec_retry_started",
+                        on_start=_combine_start_callbacks(
+                            _liveness_start_callback(
+                                retry_request,
+                                retry_preflight,
+                                "exec_retry_started",
+                            ),
+                            retry_stream_observer.on_start,
                         ),
+                        on_stdout_chunk=retry_stream_observer.on_stdout_chunk,
+                        on_stderr_chunk=retry_stream_observer.on_stderr_chunk,
                     )
                 except OSError, subprocess.TimeoutExpired, KeyboardInterrupt:
+                    retry_stream_observer.flush_stdout_remainder()
                     pass
                 else:
+                    retry_stream_observer.flush_stdout_remainder()
                     _write_liveness_probe(
                         retry_request,
                         preflight=retry_preflight,
                         stage="exec_retry_exited",
                         exit_code=retry_exec_result.exit_code,
+                        extra={
+                            "streamed_event_count": retry_stream_observer.event_count,
+                        },
                     )
                     if retry_exec_result.exit_code == 0:
                         request = retry_request
@@ -1031,6 +1062,13 @@ def _write_text_artifact(repo_root: Path, relative_path: str, content: str) -> N
     path.write_text(content, encoding="utf-8")
 
 
+def _append_bytes_artifact(repo_root: Path, relative_path: str, content: bytes) -> None:
+    path = repo_root / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("ab") as file:
+        file.write(content)
+
+
 def _write_process_output_artifact(
     repo_root: Path,
     relative_path: str,
@@ -1145,6 +1183,14 @@ def _liveness_start_callback(
     return callback
 
 
+def _combine_start_callbacks(*callbacks: CommandStartCallback) -> CommandStartCallback:
+    def callback(pid: int | None) -> None:
+        for item in callbacks:
+            item(pid)
+
+    return callback
+
+
 def _write_liveness_probe(
     request: WorkerLaunchRequest,
     *,
@@ -1152,6 +1198,7 @@ def _write_liveness_probe(
     preflight: CodexExecPreflightResult | None = None,
     pid: int | None = None,
     exit_code: int | None = None,
+    extra: JsonObject | None = None,
 ) -> str:
     payload: JsonObject = {
         "worker_run_id": request.worker_run_id,
@@ -1172,6 +1219,8 @@ def _write_liveness_probe(
         payload["argv"] = preflight.metadata.get("argv", [])
         payload["resolved_executable"] = preflight.metadata.get("resolved_executable")
         payload["resolution_method"] = preflight.metadata.get("resolution_method")
+    if extra:
+        payload.update(extra)
     relative_path = _liveness_probe_relative_path(request)
     _write_text_artifact(
         request.repo_root,
@@ -1179,6 +1228,271 @@ def _write_liveness_probe(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
     )
     return relative_path
+
+
+class _CodexExecStreamObserver:
+    """Persist and summarize live codex exec JSONL stdout while the process runs."""
+
+    def __init__(
+        self,
+        *,
+        request: WorkerLaunchRequest,
+        preflight: CodexExecPreflightResult,
+    ) -> None:
+        self.request = request
+        self.preflight = preflight
+        self.pid: int | None = None
+        self._stdout_remainder = b""
+        self._event_index = 0
+        planning_path = request.metadata.get("planning_path")
+        self._store = (
+            PlanningSQLiteStore(Path(planning_path))
+            if isinstance(planning_path, str) and planning_path.strip()
+            else None
+        )
+
+    @property
+    def event_count(self) -> int:
+        return self._event_index
+
+    def on_start(self, pid: int | None) -> None:
+        self.pid = pid
+
+    def on_stdout_chunk(self, chunk: bytes) -> None:
+        if not chunk:
+            return
+        _safe_observer_call(
+            lambda: _append_bytes_artifact(
+                self.request.repo_root,
+                self.request.stdout_path,
+                chunk,
+            )
+        )
+        _safe_observer_call(
+            lambda: _append_bytes_artifact(
+                self.request.repo_root,
+                self.request.jsonl_path,
+                chunk,
+            )
+        )
+        self._consume_stdout_for_events(chunk)
+
+    def on_stderr_chunk(self, chunk: bytes) -> None:
+        if not chunk:
+            return
+        _safe_observer_call(
+            lambda: _append_bytes_artifact(
+                self.request.repo_root,
+                self.request.stderr_path,
+                chunk,
+            )
+        )
+
+    def flush_stdout_remainder(self) -> None:
+        if not self._stdout_remainder.strip():
+            self._stdout_remainder = b""
+            return
+        line = self._stdout_remainder
+        self._stdout_remainder = b""
+        self._record_stdout_line(line)
+
+    def _consume_stdout_for_events(self, chunk: bytes) -> None:
+        data = self._stdout_remainder + chunk
+        lines = data.split(b"\n")
+        self._stdout_remainder = lines.pop() if not data.endswith(b"\n") else b""
+        for line in lines:
+            self._record_stdout_line(line)
+
+    def _record_stdout_line(self, line: bytes) -> None:
+        text = line.decode("utf-8", errors="replace").strip()
+        if not text:
+            return
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(payload, dict):
+            return
+        event = _summarize_codex_exec_stream_event(payload)
+        if event is None:
+            return
+        self._event_index += 1
+        event_type, summary, details = event
+        self._write_semantic_liveness(event_type=event_type, summary=summary, details=details)
+        store = self._store
+        if store is None:
+            return
+        record = WorkerRunEventRecord(
+            event_id=f"{self.request.worker_run_id}-codex-stream-{self._event_index:06d}",
+            worker_run_id=self.request.worker_run_id,
+            event_type=event_type,
+            summary=summary,
+            details=details,
+            artifact_path=self.request.jsonl_path,
+            metadata={"source": "codex_exec_stdout_stream"},
+        )
+        _safe_observer_call(lambda: store.add_worker_run_event(record))
+
+    def _write_semantic_liveness(
+        self,
+        *,
+        event_type: str,
+        summary: str,
+        details: JsonObject,
+    ) -> None:
+        extra: JsonObject = {
+            "last_event_type": event_type,
+            "last_event_summary": summary,
+            "last_event_index": self._event_index,
+            "last_event_details": details,
+        }
+        item_type = details.get("item_type")
+        if isinstance(item_type, str):
+            extra["last_item_type"] = item_type
+        command = details.get("command")
+        if isinstance(command, str):
+            extra["active_command"] = command
+        _safe_observer_call(
+            lambda: _write_liveness_probe(
+                self.request,
+                preflight=self.preflight,
+                stage="exec_running",
+                pid=self.pid,
+                extra=extra,
+            )
+        )
+
+
+def _safe_observer_call(callback: Callable[[], object]) -> None:
+    try:
+        callback()
+    except Exception:
+        # Worker observability must never crash or perturb the worker process.
+        return
+
+
+def _summarize_codex_exec_stream_event(payload: JsonObject) -> tuple[str, str, JsonObject] | None:
+    raw_type = payload.get("type")
+    if not isinstance(raw_type, str) or not raw_type:
+        return None
+    event_type = f"codex_exec_{raw_type.replace('.', '_')}"
+    details: JsonObject = {"codex_event_type": raw_type}
+    if raw_type in {"thread.started", "turn.started"}:
+        return event_type, f"Codex Exec {raw_type.replace('.', ' ')}.", details
+    if raw_type == "turn.completed":
+        usage = payload.get("usage")
+        if isinstance(usage, dict):
+            details["usage"] = _compact_json_object(usage)
+        return event_type, "Codex Exec turn completed.", details
+    if raw_type == "turn.failed":
+        error = payload.get("error")
+        if isinstance(error, dict):
+            details["error"] = _compact_json_object(error)
+        return event_type, "Codex Exec turn failed.", details
+    if raw_type == "error":
+        details["error"] = _compact_json_object(payload)
+        return event_type, "Codex Exec emitted an error event.", details
+    item = payload.get("item")
+    if raw_type in {"item.started", "item.updated", "item.completed"} and isinstance(item, dict):
+        return _summarize_codex_exec_item_event(raw_type, item)
+    return event_type, f"Codex Exec emitted {raw_type}.", details
+
+
+def _summarize_codex_exec_item_event(
+    raw_type: str,
+    item: JsonObject,
+) -> tuple[str, str, JsonObject]:
+    item_type = item.get("type") if isinstance(item.get("type"), str) else "unknown"
+    event_type = f"codex_exec_{raw_type.replace('.', '_')}_{item_type}"
+    details: JsonObject = {
+        "codex_event_type": raw_type,
+        "item_id": item.get("id"),
+        "item_type": item_type,
+    }
+    verb = {
+        "item.started": "started",
+        "item.updated": "updated",
+        "item.completed": "completed",
+    }.get(raw_type, "reported")
+    if item_type == "command_execution":
+        command = _truncate_event_text(item.get("command"), limit=300)
+        details.update(
+            {
+                "command": command,
+                "status": item.get("status"),
+                "exit_code": item.get("exit_code"),
+            }
+        )
+        output = _truncate_event_text(item.get("aggregated_output"), limit=500)
+        if output:
+            details["aggregated_output_preview"] = output
+        return event_type, f"Codex Exec {verb} command: {command}", details
+    if item_type == "file_change":
+        raw_changes = item.get("changes")
+        changes = raw_changes if isinstance(raw_changes, list) else []
+        compact_changes = [
+            _compact_json_object(change) for change in changes[:20] if isinstance(change, dict)
+        ]
+        details.update(
+            {
+                "change_count": len(changes),
+                "changes": compact_changes,
+                "status": item.get("status"),
+            }
+        )
+        return event_type, f"Codex Exec reported {len(changes)} file change(s).", details
+    if item_type == "mcp_tool_call":
+        server = _truncate_event_text(item.get("server"), limit=120)
+        tool = _truncate_event_text(item.get("tool"), limit=120)
+        details.update({"server": server, "tool": tool, "status": item.get("status")})
+        return event_type, f"Codex Exec {verb} MCP tool call: {server}.{tool}", details
+    if item_type == "todo_list":
+        raw_items = item.get("items")
+        items = raw_items if isinstance(raw_items, list) else []
+        details["item_count"] = len(items)
+        details["items"] = [
+            _compact_json_object(value) for value in items[:20] if isinstance(value, dict)
+        ]
+        return event_type, f"Codex Exec {verb} plan/todo list with {len(items)} item(s).", details
+    if item_type == "reasoning":
+        text = _truncate_event_text(item.get("text"), limit=500)
+        details["text_preview"] = text
+        return event_type, f"Codex Exec reasoning summary: {text}", details
+    if item_type == "agent_message":
+        text = _truncate_event_text(item.get("text"), limit=500)
+        details["text_preview"] = text
+        return event_type, f"Codex Exec agent message: {text}", details
+    details["item"] = _compact_json_object(item)
+    return event_type, f"Codex Exec {verb} {item_type} item.", details
+
+
+def _compact_json_object(value: Mapping[str, object]) -> JsonObject:
+    compact: JsonObject = {}
+    for key, item in value.items():
+        if isinstance(item, str):
+            compact[str(key)] = _truncate_event_text(item, limit=500)
+        elif isinstance(item, (int, float, bool)) or item is None:
+            compact[str(key)] = item
+        elif isinstance(item, list):
+            compact[str(key)] = [
+                _compact_json_object(child)
+                if isinstance(child, dict)
+                else _truncate_event_text(child)
+                for child in item[:20]
+            ]
+        elif isinstance(item, dict):
+            compact[str(key)] = _compact_json_object(item)
+        else:
+            compact[str(key)] = _truncate_event_text(item)
+    return compact
+
+
+def _truncate_event_text(value: object, *, limit: int = 200) -> str:
+    text = "" if value is None else str(value)
+    text = text.replace("\r\n", "\n").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 1]}..."
 
 
 def _write_evidence_manifest(
@@ -1389,6 +1703,8 @@ def _run_command(
     stdin: str | None = None,
     timeout_seconds: float | None = None,
     on_start: CommandStartCallback | None = None,
+    on_stdout_chunk: CommandOutputCallback | None = None,
+    on_stderr_chunk: CommandOutputCallback | None = None,
 ) -> CommandExecutionResult:
     if command_runner is None:
         return _default_command_runner(
@@ -1398,6 +1714,8 @@ def _run_command(
             stdin=stdin,
             timeout_seconds=timeout_seconds,
             on_start=on_start,
+            on_stdout_chunk=on_stdout_chunk,
+            on_stderr_chunk=on_stderr_chunk,
         )
     if on_start is not None:
         on_start(None)
@@ -1412,6 +1730,8 @@ def _default_command_runner(
     stdin: str | None = None,
     timeout_seconds: float | None = None,
     on_start: CommandStartCallback | None = None,
+    on_stdout_chunk: CommandOutputCallback | None = None,
+    on_stderr_chunk: CommandOutputCallback | None = None,
 ) -> CommandExecutionResult:
     process_environment = _minimal_process_environment(os.environ)
     process_environment.update(environment)
@@ -1432,11 +1752,38 @@ def _default_command_runner(
     )
     if on_start is not None:
         on_start(process.pid)
+    stdout_parts: list[bytes] = []
+    stderr_parts: list[bytes] = []
+    stdout_thread = threading.Thread(
+        target=_collect_process_pipe,
+        args=(process.stdout, stdout_parts, on_stdout_chunk),
+        daemon=True,
+    )
+    stderr_thread = threading.Thread(
+        target=_collect_process_pipe,
+        args=(process.stderr, stderr_parts, on_stderr_chunk),
+        daemon=True,
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+    if process.stdin is not None:
+        try:
+            if encoded_stdin is not None:
+                process.stdin.write(encoded_stdin)
+                process.stdin.flush()
+        except BrokenPipeError:
+            pass
+        finally:
+            process.stdin.close()
     try:
-        stdout, stderr = process.communicate(encoded_stdin, timeout=timeout_seconds)
+        process.wait(timeout=timeout_seconds)
     except subprocess.TimeoutExpired as exc:
         _terminate_process_tree(process)
-        stdout, stderr = process.communicate()
+        process.wait()
+        stdout_thread.join(timeout=5)
+        stderr_thread.join(timeout=5)
+        stdout = b"".join(stdout_parts)
+        stderr = b"".join(stderr_parts)
         raise subprocess.TimeoutExpired(
             exc.cmd,
             exc.timeout,
@@ -1446,7 +1793,13 @@ def _default_command_runner(
     except KeyboardInterrupt:
         _terminate_process_tree(process)
         process.wait()
+        stdout_thread.join(timeout=5)
+        stderr_thread.join(timeout=5)
         raise
+    stdout_thread.join(timeout=5)
+    stderr_thread.join(timeout=5)
+    stdout = b"".join(stdout_parts)
+    stderr = b"".join(stderr_parts)
     return CommandExecutionResult(
         exit_code=process.returncode,
         stdout=_decode_process_output(stdout),
@@ -1454,6 +1807,25 @@ def _default_command_runner(
         stdout_bytes=stdout or b"",
         stderr_bytes=stderr or b"",
     )
+
+
+def _collect_process_pipe(
+    pipe: Any,
+    output_parts: list[bytes],
+    callback: CommandOutputCallback | None,
+) -> None:
+    if pipe is None:
+        return
+    try:
+        while True:
+            chunk = pipe.readline()
+            if not chunk:
+                break
+            output_parts.append(chunk)
+            if callback is not None:
+                callback(chunk)
+    finally:
+        pipe.close()
 
 
 def _resolve_codex_executable(configured_executable: str | None) -> CodexExecutableResolution:

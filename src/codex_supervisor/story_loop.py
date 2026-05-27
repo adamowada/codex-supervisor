@@ -745,7 +745,10 @@ def run_live_story_loop_once(
         ignore_user_config=ignore_user_config,
         allow_degraded_jsonl=allow_degraded_jsonl,
         environment=environment,
-        metadata={"launch_mode": "live_story_loop_run"},
+        metadata={
+            "launch_mode": "live_story_loop_run",
+            "planning_path": str(store.path),
+        },
         require_git_changed_files=True,
         git_command_runner=git_command_runner,
         git_base_ref=base_commit.stdout,

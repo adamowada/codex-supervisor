@@ -6,6 +6,13 @@ import sys
 from pathlib import Path
 
 import codex_supervisor.worker_backends as worker_backends
+from codex_supervisor.planning import (
+    PlanRecord,
+    SupervisorTaskRecord,
+    WorkerRunRecord,
+    initialize_planning_database,
+    open_existing_planning_database,
+)
 from codex_supervisor.worker_backends import (
     CodexExecBackend,
     CommandExecutionResult,
@@ -313,6 +320,110 @@ def test_default_command_runner_preserves_raw_bytes_and_decodes_for_display(tmp_
     assert result.stderr == "err\ufffd"
     assert result.stdout_bytes == b"hello\xff"
     assert result.stderr_bytes == b"err\xfe"
+
+
+def test_default_command_runner_streams_stdout_before_process_exit(tmp_path):
+    marker = tmp_path / "stdout-callback-seen"
+    script = (
+        "import pathlib, sys, time\n"
+        "marker = pathlib.Path(sys.argv[1])\n"
+        'print(\'{"type":"turn.started"}\', flush=True)\n'
+        "deadline = time.time() + 5\n"
+        "while not marker.exists() and time.time() < deadline:\n"
+        "    time.sleep(0.05)\n"
+        'print(\'{"type":"turn.completed"}\', flush=True)\n'
+    )
+
+    def on_stdout_chunk(chunk: bytes) -> None:
+        if b"turn.started" in chunk:
+            marker.write_text("seen\n", encoding="utf-8")
+
+    result = _default_command_runner(
+        (sys.executable, "-c", script, str(marker)),
+        tmp_path,
+        {},
+        timeout_seconds=10,
+        on_stdout_chunk=on_stdout_chunk,
+    )
+
+    assert result.exit_code == 0
+    assert marker.exists()
+    assert "turn.started" in result.stdout
+    assert "turn.completed" in result.stdout
+
+
+def test_codex_exec_stream_observer_records_live_jsonl_liveness_and_events(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-stream",
+            slug="stream",
+            title="Stream",
+            goal="Observe a running worker.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-stream",
+            title="Worker",
+            goal="Run worker.",
+            task_type="AFK",
+            status="running",
+        )
+    )
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-worker",
+            task_id="task-worker",
+            backend="codex_exec",
+            status="running",
+        )
+    )
+    request = _codex_exec_request(tmp_path, metadata={"planning_path": str(db_path)})
+    preflight = worker_backends.CodexExecPreflightResult(
+        executable_path="C:/Tools/codex.exe",
+        resolution_method="configured",
+        version_command=("C:/Tools/codex.exe", "--version"),
+        version_exit_code=0,
+        version_stdout="codex 1.2.3\n",
+        version_stderr="",
+        failure_class=None,
+        argv=("C:/Tools/codex.exe", "exec", "--json"),
+        metadata={"argv": ["<local-path:codex.exe>", "exec", "--json"]},
+    )
+    observer = worker_backends._CodexExecStreamObserver(request=request, preflight=preflight)
+
+    observer.on_start(123)
+    observer.on_stdout_chunk(b'{"type":"turn.started"}\n')
+    observer.on_stdout_chunk(
+        b'{"type":"item.started","item":{"id":"item_1","type":"command_execution",'
+        b'"command":"npm test --workspaces","aggregated_output":"","exit_code":null,'
+        b'"status":"in_progress"}}\n'
+    )
+    observer.on_stdout_chunk(
+        b'{"type":"item.completed","item":{"id":"item_2","type":"reasoning",'
+        b'"text":"Checking the bounded test harness."}}\n'
+    )
+
+    events_path = tmp_path / "runs" / "run-worker" / "events.jsonl"
+    assert "turn.started" in events_path.read_text(encoding="utf-8")
+    liveness = json.loads((tmp_path / "runs" / "run-worker" / "liveness.json").read_text())
+    assert liveness["stage"] == "exec_running"
+    assert liveness["pid"] == 123
+    assert liveness["last_event_type"] == "codex_exec_item_completed_reasoning"
+    assert liveness["last_event_summary"].startswith("Codex Exec reasoning summary")
+    read_store = open_existing_planning_database(db_path, read_only=True)
+    events = read_store.list_worker_run_events(worker_run_id="run-worker")
+    assert [event.event_type for event in events] == [
+        "codex_exec_turn_started",
+        "codex_exec_item_started_command_execution",
+        "codex_exec_item_completed_reasoning",
+    ]
+    assert events[1].summary == "Codex Exec started command: npm test --workspaces"
+    assert events[1].artifact_path == "runs/run-worker/events.jsonl"
 
 
 def test_codex_exec_backend_fails_closed_for_unapplied_config_path(tmp_path):

@@ -11,25 +11,18 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
+from codex_supervisor.operation_registry import (
+    PLUGIN_INSTALL_MCP_SURFACE,
+    required_mcp_tool_names,
+)
+
 JsonObject = dict[str, Any]
 Runner = Callable[[Sequence[str], Path, str, int], subprocess.CompletedProcess[str]]
 
 PLUGIN_RELATIVE_PATH = Path("plugins") / "codex-supervisor"
 MANIFEST_RELATIVE_PATH = Path(".codex-plugin") / "plugin.json"
 MCP_PROTOCOL_VERSION = "2025-11-25"
-REQUIRED_MCP_TOOLS = frozenset(
-    {
-        "codex_supervisor.artifact_link_add",
-        "codex_supervisor.progress_add",
-        "codex_supervisor.runtime_preflight",
-        "codex_supervisor.story_loop_status",
-        "codex_supervisor.story_loop_run_once",
-        "codex_supervisor.task_claim",
-        "codex_supervisor.task_show",
-        "codex_supervisor.task_upsert",
-        "codex_supervisor.review_result_ingest",
-    }
-)
+REQUIRED_MCP_TOOLS = required_mcp_tool_names(PLUGIN_INSTALL_MCP_SURFACE)
 
 
 class PluginInstallVerificationError(RuntimeError):

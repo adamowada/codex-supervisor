@@ -336,6 +336,10 @@ FILE_PURPOSES = {
         "stdio JSON-RPC transport for read-only MCP tools",
         "pytest",
     ),
+    "src/codex_supervisor/operation_registry.py": FilePurpose(
+        "canonical supervisor operation naming registry",
+        "pytest",
+    ),
     "src/codex_supervisor/paths.py": FilePurpose("repo/planning path discovery", "pytest"),
     "src/codex_supervisor/planning.py": FilePurpose("SQLite planning store", "pytest"),
     "src/codex_supervisor/projects.py": FilePurpose(
@@ -396,6 +400,9 @@ FILE_PURPOSES = {
     "tests/test_locks.py": FilePurpose("protected lock helper tests", "pytest"),
     "tests/test_mcp_server.py": FilePurpose("read-only MCP tool registry tests", "pytest"),
     "tests/test_mcp_stdio.py": FilePurpose("MCP stdio JSON-RPC transport tests", "pytest"),
+    "tests/test_operation_registry.py": FilePurpose(
+        "canonical supervisor operation naming registry tests", "pytest"
+    ),
     "tests/test_codex_plugin.py": FilePurpose(
         "Codex Desktop plugin scaffold contract tests", "pytest"
     ),

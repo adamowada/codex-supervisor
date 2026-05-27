@@ -6,19 +6,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from codex_supervisor.operation_registry import (
+    FULL_AFK_MCP_SURFACE,
+    required_mcp_tool_names,
+)
 from codex_supervisor.paths import default_planning_database_path
 
 JsonObject = dict[str, Any]
 
-REQUIRED_SUPERVISOR_MCP_TOOLS = frozenset(
-    {
-        "codex_supervisor.runtime_preflight",
-        "codex_supervisor.story_loop_status",
-        "codex_supervisor.task_current",
-        "codex_supervisor.task_claim",
-        "codex_supervisor.story_loop_run_once",
-    }
-)
+REQUIRED_SUPERVISOR_MCP_TOOLS = required_mcp_tool_names(FULL_AFK_MCP_SURFACE)
 
 
 @dataclass(frozen=True)

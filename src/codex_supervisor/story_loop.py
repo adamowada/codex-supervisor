@@ -37,6 +37,7 @@ from codex_supervisor.worker_orchestration import (
     _default_git_command_runner,
     orchestrate_worker_launch,
 )
+from codex_supervisor.worker_result_ingestion import ingest_worker_result_path
 from codex_supervisor.worktree_artifacts import (
     WorktreeRunLayout,
     build_worktree_run_layout,
@@ -583,7 +584,7 @@ def run_live_story_loop_once(
                 worktree_created=True,
                 launch_result=launch_result,
             )
-        ingested = store.ingest_worker_result(worker_run_id, launch_result.result_path)
+        ingested = ingest_worker_result_path(store, worker_run_id, launch_result.result_path)
         _link_completed_worker_evidence_artifacts(
             store,
             plan_id=claim.task.plan_id,

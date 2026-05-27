@@ -46,6 +46,7 @@ from codex_supervisor.story_loop import (
     run_live_story_loop_once,
 )
 from codex_supervisor.task_compiler import apply_compiled_tasks, compile_tasks_from_plan
+from codex_supervisor.worker_result_ingestion import ingest_worker_result_path
 
 JsonObject = dict[str, Any]
 McpHandler = Callable[[JsonObject, "McpServerContext"], Any]
@@ -588,7 +589,8 @@ def _handle_worker_run_status(arguments: JsonObject, context: McpServerContext) 
 
 
 def _handle_worker_result_ingest(arguments: JsonObject, context: McpServerContext) -> object:
-    return _open_write_store(context).ingest_worker_result(
+    return ingest_worker_result_path(
+        _open_write_store(context),
         _required_string(arguments, "worker_run_id"),
         _required_string(arguments, "result_path"),
     )

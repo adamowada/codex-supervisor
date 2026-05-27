@@ -92,6 +92,7 @@ from codex_supervisor.planning import (
     ReviewPromotionRecord,
     SupervisorTaskRecord,
     SupervisorTaskSummaryRecord,
+    WorkerResultRecord,
     WorkerRunRecord,
     has_nonterminal_worker_run,
     initialize_planning_database,
@@ -151,6 +152,10 @@ from codex_supervisor.story_loop import (
     run_live_story_loop_once,
 )
 from codex_supervisor.task_compiler import apply_compiled_tasks, compile_tasks_from_plan
+from codex_supervisor.worker_result_ingestion import (
+    complete_worker_run_with_existing_result_id,
+    ingest_worker_result_path,
+)
 from codex_supervisor.worktree_artifacts import WorktreeArtifactError
 from codex_supervisor.worktree_cleanup import CleanupPlan, plan_cleanup_targets
 
@@ -361,6 +366,15 @@ def main(argv: list[str] | None = None) -> int:
     worker_result_show_parser.add_argument("result_id")
     worker_result_show_parser.add_argument("--path", type=Path, default=None)
     worker_result_show_parser.add_argument("--json", action="store_true", default=False)
+
+    worker_result_ingest_parser = subparsers.add_parser(
+        "worker-result-ingest",
+        help="Validate and ingest one Worker Result JSON for a worker run",
+    )
+    worker_result_ingest_parser.add_argument("--path", type=Path, default=None)
+    worker_result_ingest_parser.add_argument("--worker-run-id", required=True)
+    worker_result_ingest_parser.add_argument("--result-path", required=True)
+    worker_result_ingest_parser.add_argument("--json", action="store_true", default=False)
 
     current_task_parser = subparsers.add_parser(
         "task-current",
@@ -1618,12 +1632,27 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             _print_json(results[0])
         else:
-            worker_result = results[0]
-            print(f"result_id: {worker_result.result_id}")
-            print(f"status: {worker_result.status}")
-            print(f"summary: {worker_result.summary}")
-            if worker_result.source_path:
-                print(f"source_path: {worker_result.source_path}")
+            _print_worker_result_record(results[0])
+        return 0
+
+    if args.command == "worker-result-ingest":
+        write_store = _open_write_store(args.path)
+        if write_store is None:
+            return 1
+        worker_store = write_store
+        worker_result = _write_value_or_report(
+            lambda: ingest_worker_result_path(
+                worker_store,
+                args.worker_run_id,
+                args.result_path,
+            )
+        )
+        if worker_result is None:
+            return 1
+        if args.json:
+            _print_json(worker_result)
+        else:
+            _print_worker_result_record(worker_result)
         return 0
 
     if args.command == "task-current":
@@ -2556,7 +2585,8 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             if args.result_path is not None:
                 ingested_worker_result = _write_value_or_report(
-                    lambda: worker_store.ingest_worker_result(
+                    lambda: ingest_worker_result_path(
+                        worker_store,
                         args.worker_run_id,
                         args.result_path,
                     )
@@ -2565,6 +2595,16 @@ def main(argv: list[str] | None = None) -> int:
                     return 1
                 print(f"Updated worker_run {args.worker_run_id} -> {ingested_worker_result.status}")
                 return 0
+            if not _write_or_report(
+                lambda: complete_worker_run_with_existing_result_id(
+                    worker_store,
+                    args.worker_run_id,
+                    cast(str, args.result_id),
+                )
+            ):
+                return 1
+            print(f"Updated worker_run {args.worker_run_id} -> completed")
+            return 0
         if not _write_or_report(
             lambda: worker_store.update_worker_run_status(
                 args.worker_run_id,
@@ -3364,6 +3404,14 @@ def _spawned_project_brief_from_args(args: argparse.Namespace) -> SpawnedProject
 
 def _print_json(value: object) -> None:
     print(json.dumps(_to_jsonable(value), indent=2, sort_keys=True, default=str))
+
+
+def _print_worker_result_record(worker_result: WorkerResultRecord) -> None:
+    print(f"result_id: {worker_result.result_id}")
+    print(f"status: {worker_result.status}")
+    print(f"summary: {worker_result.summary}")
+    if worker_result.source_path:
+        print(f"source_path: {worker_result.source_path}")
 
 
 def _print_cleanup_plan(plan: CleanupPlan) -> None:

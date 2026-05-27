@@ -40,10 +40,7 @@ def test_operation_registry_names_intentional_mcp_only_tools() -> None:
         if operation_by_mcp_tool(tool_name).cli_command is None
     }
 
-    assert mcp_only_tools == {
-        "codex_supervisor.worker_result_ingest",
-        "codex_supervisor.worker_run_event_list",
-    }
+    assert mcp_only_tools == {"codex_supervisor.worker_run_event_list"}
 
 
 def _cli_commands_from_parser_source() -> frozenset[str]:

@@ -155,7 +155,11 @@ OPERATIONS: tuple[SupervisorOperation, ...] = (
         surface_groups=(PLUGIN_INSTALL_MCP_SURFACE,),
     ),
     SupervisorOperation(
-        "worker_result_ingest", mcp_tool=_mcp("worker_result_ingest"), read_only=False
+        "worker_result_ingest",
+        "worker-result-ingest",
+        _mcp("worker_result_ingest"),
+        read_only=False,
+        aliases=("worker-run-status --status completed --result-path",),
     ),
     SupervisorOperation("worker_result_list", "worker-result-list", _mcp("worker_result_list")),
     SupervisorOperation("worker_result_show", "worker-result-show", _mcp("worker_result_show")),

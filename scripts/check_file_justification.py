@@ -377,6 +377,10 @@ FILE_PURPOSES = {
     "src/codex_supervisor/worker_orchestration.py": FilePurpose(
         "worker launch orchestration and changed-path acceptance gates", "pytest"
     ),
+    "src/codex_supervisor/worker_result_ingestion.py": FilePurpose(
+        "worker result ingestion interface shared by CLI, MCP, and Story Loop callers",
+        "pytest",
+    ),
     "src/codex_supervisor/worker_results.py": FilePurpose(
         "Worker Result Contract validation", "pytest"
     ),
@@ -448,6 +452,9 @@ FILE_PURPOSES = {
         "worker launch request preparation tests", "pytest"
     ),
     "tests/test_worker_orchestration.py": FilePurpose("worker orchestration tests", "pytest"),
+    "tests/test_worker_result_ingestion.py": FilePurpose(
+        "worker result ingestion interface tests", "pytest"
+    ),
     "tests/test_worker_results.py": FilePurpose("worker result validation tests", "pytest"),
     "tests/test_worktree_artifacts.py": FilePurpose(
         "worktree and run-artifact guard tests", "pytest"

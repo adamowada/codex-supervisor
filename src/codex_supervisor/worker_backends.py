@@ -1309,7 +1309,9 @@ def _default_command_runner(
     process_environment = _minimal_process_environment(os.environ)
     process_environment.update(environment)
     encoded_stdin = stdin.encode("utf-8") if stdin is not None else None
-    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+    creationflags = (
+        int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
+    )
     process = subprocess.Popen(
         argv,
         cwd=cwd,

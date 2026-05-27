@@ -7,8 +7,8 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 
 ## Current Snapshot
 
-- Current queue state: completed for the latest slice. `story-loop-status --json` reports no open
-  work on `plan-operation-naming-surface-deepening-20260527`.
+- Current queue state: empty. `story-loop-status --json` reports no active or blocked
+  current-queue plans.
 - The user asked to fix all architecture deepening candidates one by one with ACP after each, then
   fix all actionable naming inconsistencies one by one with ACP after each.
 - `task-operation-registry-deepening-20260527` completed the first slice: a central operation
@@ -69,10 +69,11 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 - Planning SQLite records `progress-execution-mode-name-start-20260527` for this slice.
 - Planning SQLite also records `progress-execution-mode-name-verified-20260527`; focused
   execution-surface tests and full `scripts/verify.py` passed.
+- Planning SQLite records `progress-operation-naming-completion-audit-20260527`; the
+  `plan-operation-naming-surface-deepening-20260527` plan is completed.
 - The previously cleared queue remains historical: `plan-v1-live-operational-hardening` was
   abandoned after the user requested clearing that checkpoint.
 
 ## Next Action
 
-ACP `task-execution-mode-name-20260527`; then seed and handle the next actionable naming
-inconsistency one slice at a time.
+No current supervisor task is open. Start with `story-loop-status --json` before taking new work.

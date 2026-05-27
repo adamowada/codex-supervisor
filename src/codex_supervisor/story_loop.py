@@ -37,7 +37,11 @@ from codex_supervisor.worker_orchestration import (
     _default_git_command_runner,
     orchestrate_worker_launch,
 )
-from codex_supervisor.worktree_artifacts import WorktreeRunLayout, build_worktree_run_layout
+from codex_supervisor.worktree_artifacts import (
+    WorktreeRunLayout,
+    build_worktree_run_layout,
+    validate_changed_files,
+)
 
 
 class WorkerBackend(Protocol):
@@ -350,6 +354,41 @@ def run_live_story_loop_once(
             result_path=None,
             result_id=None,
             failure_class="no_ready_afk_task",
+            changed_files=(),
+            changed_files_source=None,
+            worktree_created=False,
+        )
+    if task.worker_backend == "codex_review":
+        return LiveStoryLoopRunResult(
+            status="review_task_ready",
+            task_id=task.task_id,
+            worker_run_id=worker_run_id,
+            worktree_path=None,
+            prompt_path=None,
+            jsonl_path=None,
+            result_path=None,
+            result_id=None,
+            failure_class="review_task_requires_review_run_live",
+            changed_files=(),
+            changed_files_source=None,
+            worktree_created=False,
+        )
+    unsafe_allowed_paths = tuple(
+        violation
+        for violation in validate_changed_files((), tuple(task.allowed_paths))
+        if violation.reason.startswith("unsafe_allowed_path:")
+    )
+    if unsafe_allowed_paths:
+        return LiveStoryLoopRunResult(
+            status="failed",
+            task_id=task.task_id,
+            worker_run_id=worker_run_id,
+            worktree_path=None,
+            prompt_path=None,
+            jsonl_path=None,
+            result_path=None,
+            result_id=None,
+            failure_class="task_allowed_paths_invalid",
             changed_files=(),
             changed_files_source=None,
             worktree_created=False,
@@ -759,7 +798,7 @@ def _create_review_task_for_review_required_result(
                 f"Review worker run {worker_run_id} for source task {source_task.task_id} "
                 "before the source task can be closed."
             ),
-            task_type="HITL",
+            task_type="AFK",
             status="ready",
             scope={
                 "source_task_id": source_task.task_id,
@@ -767,17 +806,18 @@ def _create_review_task_for_review_required_result(
                 "worker_result_id": worker_result.result_id,
                 "worker_result_path": worker_result.source_path,
                 "review_gate": "separate_review_required_task",
+                "review_execution": "codex_review",
             },
             out_of_scope={
                 "implementation": "Do not make code changes from the review task itself.",
             },
             acceptance_criteria=[
-                "A separate review verdict is recorded for the worker result.",
+                "A separate Codex review verdict is recorded for the worker result.",
                 "Accepted findings are routed into repair tasks before the source task is closed.",
             ],
             verification_commands=list(source_task.verification_commands),
             allowed_paths=["plans/planning.sqlite3", "runs/**", "artifacts/**"],
-            worker_backend="human_review",
+            worker_backend="codex_review",
             review_required=False,
         ),
         validate_current_queue_contract=False,

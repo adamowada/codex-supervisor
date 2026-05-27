@@ -89,6 +89,7 @@ from codex_supervisor.planning import (
     PlanProgressRecord,
     PlanRecord,
     PullRequestEvidenceRecord,
+    ReviewPromotionRecord,
     SupervisorTaskRecord,
     SupervisorTaskSummaryRecord,
     WorkerRunRecord,
@@ -878,6 +879,17 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
     )
     review_ingest_parser.add_argument("--json", action="store_true", default=False)
+
+    review_promote_parser = subparsers.add_parser(
+        "review-result-promote",
+        help="Promote a review-accepted worker result and close its source task",
+    )
+    review_promote_parser.add_argument("--path", type=Path, default=None)
+    review_promote_parser.add_argument("--source-task-id", required=True)
+    review_promote_parser.add_argument("--review-task-id", default=None)
+    review_promote_parser.add_argument("--worker-run-id", default=None)
+    review_promote_parser.add_argument("--review-progress-id", default=None)
+    review_promote_parser.add_argument("--json", action="store_true", default=False)
 
     review_live_parser = subparsers.add_parser(
         "review-run-live",
@@ -2290,6 +2302,26 @@ def main(argv: list[str] | None = None) -> int:
             _print_review_result_ingestion(output)
         return 0
 
+    if args.command == "review-result-promote":
+        write_store = _open_write_store(args.path)
+        if write_store is None:
+            return 1
+        try:
+            promotion = write_store.promote_reviewed_task_completion(
+                source_task_id=args.source_task_id,
+                review_task_id=args.review_task_id,
+                worker_run_id=args.worker_run_id,
+                review_progress_id=args.review_progress_id,
+            )
+        except (ValueError, sqlite3.Error) as exc:
+            print(f"Could not promote review result: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            _print_json(promotion)
+        else:
+            _print_review_promotion(promotion)
+        return 0
+
     if args.command == "review-run-live":
         write_store = _open_write_store(args.path)
         if write_store is None:
@@ -3397,6 +3429,16 @@ def _print_review_result_ingestion(output: dict[str, object]) -> None:
                 )
     else:
         print("- none")
+
+
+def _print_review_promotion(promotion: ReviewPromotionRecord) -> None:
+    print(f"source_task: {promotion.source_task_id}")
+    if promotion.review_task_id is not None:
+        print(f"review_task: {promotion.review_task_id}")
+    print(f"worker_run: {promotion.worker_run_id}")
+    print(f"result: {promotion.result_id}")
+    print(f"review_progress: {promotion.review_progress_id}")
+    print(f"promoted_from_status: {promotion.promoted_from_status}")
 
 
 def _print_live_review_run_result(result: LiveReviewRunResult) -> None:

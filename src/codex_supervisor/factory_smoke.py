@@ -195,7 +195,14 @@ def _run_factory_loop_smoke_in_workspace(
                     "Recorded zero-finding local review marker for factory-loop smoke; "
                     "not v1 release readiness evidence."
                 ),
-                details=json.dumps({"finding_counts": {"total": 0}}),
+                details=json.dumps(
+                    {
+                        "target": SMOKE_TASK_ID,
+                        "worker_run_id": SMOKE_WORKER_RUN_ID,
+                        "finding_counts": {"total": 0},
+                    },
+                    sort_keys=True,
+                ),
             )
         )
         stages.append(

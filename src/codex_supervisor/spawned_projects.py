@@ -541,7 +541,11 @@ def _scaffold_file_content(
         return (
             "# AGENTS.md\n\n"
             "Use `plans/planning.sqlite3` as the queue authority. Read `README.md`, this file, "
-            "`PLANS.md`, and `HANDOFF.md` before selecting work. Keep source-of-truth docs stable, "
+            "`PLANS.md`, and `HANDOFF.md` before selecting work. Run "
+            "`python -B scripts/check_planning_integrity.py` before declaring a queue complete. "
+            "Directory allowed paths must use explicit glob patterns such as `client/**`, not "
+            "trailing slash forms such as `client/`. Review-required AFK work needs a separate "
+            "review task and review result before completion. Keep source-of-truth docs stable, "
             "run `python -B scripts/verify.py` before publishing, and do not store secrets or "
             "local absolute roots in tracked state.\n"
         )
@@ -550,7 +554,9 @@ def _scaffold_file_content(
             "# PLANS.md\n\n"
             "Planning state lives in `plans/planning.sqlite3`. Tasks need a clear goal, "
             "acceptance criteria, verification commands, allowed paths, and review posture before "
-            "unattended work begins.\n"
+            "unattended work begins. Use repo-relative file paths or glob patterns for allowed "
+            "paths; express directories as `path/**`. A completed plan must not leave `HANDOFF.md` "
+            "saying review is still pending.\n"
         )
     if relative_path == "ARCHITECTURE.md":
         return (
@@ -831,30 +837,8 @@ def _check_file_justification_script(proposal: SpawnedProjectScaffoldProposal) -
 
 
 def _check_planning_integrity_script() -> str:
-    return (
-        "#!/usr/bin/env python3\n"
-        '"""Check spawned-project planning SQLite integrity."""\n\n'
-        "from __future__ import annotations\n\n"
-        "import sqlite3\n"
-        "from pathlib import Path\n\n"
-        "def main() -> int:\n"
-        "    db = Path('plans/planning.sqlite3')\n"
-        "    if not db.exists():\n"
-        "        print('missing plans/planning.sqlite3')\n"
-        "        return 1\n"
-        "    with sqlite3.connect(db) as connection:\n"
-        "        plan_count = connection.execute('SELECT COUNT(*) FROM plans').fetchone()[0]\n"
-        "        task_count = connection.execute(\n"
-        "            'SELECT COUNT(*) FROM supervisor_tasks'\n"
-        "        ).fetchone()[0]\n"
-        "    if plan_count < 1 or task_count < 1:\n"
-        "        print('planning database requires at least one plan and one task')\n"
-        "        return 1\n"
-        "    print('Planning integrity checks passed.')\n"
-        "    return 0\n\n"
-        "if __name__ == '__main__':\n"
-        "    raise SystemExit(main())\n"
-    )
+    repo_root = Path(__file__).resolve().parents[2]
+    return (repo_root / "scripts" / "check_planning_integrity.py").read_text(encoding="utf-8")
 
 
 def _check_public_repo_hygiene_script() -> str:

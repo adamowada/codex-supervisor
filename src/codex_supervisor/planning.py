@@ -9,7 +9,7 @@ import shlex
 import sqlite3
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -78,6 +78,7 @@ DRIVE_PATH_PATTERN = re.compile(r"^[A-Za-z]:")
 FULL_COMMIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 CLI_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]+$")
 GITHUB_REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+NPM_WORKSPACE_VALUE_PATTERN = re.compile(r"^[A-Za-z0-9_.@/-]+$")
 SHELL_METACHARACTERS = (
     "|",
     "&",
@@ -709,6 +710,16 @@ class WorkerResultRunLinkRecord:
 
 
 @dataclass(frozen=True)
+class ReviewPromotionRecord:
+    source_task_id: str
+    worker_run_id: str
+    result_id: str
+    promoted_from_status: str
+    review_progress_id: str
+    review_task_id: str | None = None
+
+
+@dataclass(frozen=True)
 class DevelopmentLogEntryRecord:
     entry_id: str
     entry_type: str
@@ -1237,7 +1248,9 @@ class PlanningSQLiteStore:
         _validate_string_array(record.acceptance_criteria, "acceptance_criteria")
         _validate_string_array(record.verification_commands, "verification_commands")
         _validate_string_array(record.allowed_paths, "allowed_paths")
-        _validate_repo_relative_path_patterns(record.allowed_paths, "allowed_paths")
+        canonical_allowed_paths = canonicalize_repo_relative_path_patterns(record.allowed_paths)
+        _validate_repo_relative_path_patterns(canonical_allowed_paths, "allowed_paths")
+        stored_record = replace(record, allowed_paths=canonical_allowed_paths)
         _validate_string_array(record.blocked_by, "blocked_by")
         now = _format_datetime(_utc_now())
         with self.connect() as connection:
@@ -1267,7 +1280,7 @@ class PlanningSQLiteStore:
                     )
                     raise ValueError(msg)
             if validate_current_queue_contract:
-                _validate_task_contract_for_current_queue_plan(connection, record)
+                _validate_task_contract_for_current_queue_plan(connection, stored_record)
             connection.execute(
                 """
                 INSERT INTO supervisor_tasks (
@@ -1304,7 +1317,7 @@ class PlanningSQLiteStore:
                     _dump_json(record.out_of_scope),
                     _dump_json(record.acceptance_criteria),
                     _dump_json(record.verification_commands),
-                    _dump_json(record.allowed_paths),
+                    _dump_json(canonical_allowed_paths),
                     _dump_json(record.blocked_by),
                     record.worker_backend,
                     int(record.review_required),
@@ -1343,6 +1356,12 @@ class PlanningSQLiteStore:
                         f"{active_run['worker_run_id']} is {active_run['status']}"
                     )
                     raise ValueError(msg)
+            if status == "completed" and bool(row["review_required"]):
+                _validate_task_review_completion_evidence(
+                    connection,
+                    plan_id=str(row["plan_id"]),
+                    task_id=task_id,
+                )
             connection.execute(
                 "UPDATE supervisor_tasks SET status = ?, updated_at = ? WHERE task_id = ?",
                 (status, now, task_id),
@@ -2046,6 +2065,12 @@ class PlanningSQLiteStore:
                 raise ValueError(msg)
             task_status_row = _task_status_row(connection, record.task_id)
             _raise_missing(0 if task_status_row is None else 1, "task", record.task_id)
+            if (
+                record.status == "completed"
+                and result_id is not None
+                and legacy_result_source_path is None
+            ):
+                _validate_completed_worker_run_result_status(connection, str(result_id))
             if record.status == "completed" and legacy_result_source_path is not None:
                 _ensure_legacy_direct_worker_result_record(
                     connection,
@@ -2284,6 +2309,8 @@ class PlanningSQLiteStore:
                     repo_root=self.path.parent.parent,
                     imported_at=now,
                 )
+            if status == "completed" and effective_result_id is not None:
+                _validate_completed_worker_run_result_status(connection, str(effective_result_id))
             cursor = connection.execute(
                 """
                 UPDATE worker_runs
@@ -2613,6 +2640,160 @@ class PlanningSQLiteStore:
                     now,
                 )
         return record
+
+    def promote_reviewed_task_completion(
+        self,
+        *,
+        source_task_id: str,
+        review_task_id: str | None = None,
+        worker_run_id: str | None = None,
+        review_progress_id: str | None = None,
+    ) -> ReviewPromotionRecord:
+        """Promote a needs-review worker result after a separate review task accepts it."""
+
+        _validate_required(source_task_id, "source_task_id")
+        if review_task_id is not None:
+            _validate_required(review_task_id, "review_task_id")
+        if worker_run_id is not None:
+            _validate_required(worker_run_id, "worker_run_id")
+        if review_progress_id is not None:
+            _validate_required(review_progress_id, "review_progress_id")
+        now = _format_datetime(_utc_now())
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            source_task = connection.execute(
+                "SELECT * FROM supervisor_tasks WHERE task_id = ?",
+                (source_task_id,),
+            ).fetchone()
+            _raise_missing(0 if source_task is None else 1, "task", source_task_id)
+            if not bool(source_task["review_required"]):
+                msg = f"task {source_task_id} is not review_required"
+                raise ValueError(msg)
+            review_progress = _review_progress_for_task(
+                connection,
+                source_task_id=source_task_id,
+                progress_id=review_progress_id,
+            )
+            _validate_review_progress_is_promotable(review_progress, source_task_id)
+            effective_review_progress_id = str(review_progress["progress_id"])
+            if review_task_id is not None:
+                review_task = connection.execute(
+                    "SELECT * FROM supervisor_tasks WHERE task_id = ?",
+                    (review_task_id,),
+                ).fetchone()
+                _raise_missing(0 if review_task is None else 1, "task", review_task_id)
+                _validate_review_task_scope(
+                    review_task,
+                    source_task_id=source_task_id,
+                    worker_run_id=worker_run_id,
+                )
+            worker_run = _reviewed_worker_run_row(
+                connection,
+                source_task_id=source_task_id,
+                worker_run_id=worker_run_id,
+            )
+            effective_worker_run_id = str(worker_run["worker_run_id"])
+            result_id = worker_run["result_id"]
+            if result_id is None:
+                msg = f"worker run {effective_worker_run_id} has no worker result"
+                raise ValueError(msg)
+            result_row = connection.execute(
+                "SELECT * FROM worker_result_records WHERE result_id = ?",
+                (str(result_id),),
+            ).fetchone()
+            _raise_missing(0 if result_row is None else 1, "worker_result", str(result_id))
+            promoted_from_status = str(result_row["status"])
+            if promoted_from_status != "needs_review":
+                msg = (
+                    f"worker result {result_id} status is {promoted_from_status}, not needs_review"
+                )
+                raise ValueError(msg)
+            promotion = ReviewPromotionRecord(
+                source_task_id=source_task_id,
+                review_task_id=review_task_id,
+                worker_run_id=effective_worker_run_id,
+                result_id=str(result_id),
+                review_progress_id=effective_review_progress_id,
+                promoted_from_status=promoted_from_status,
+            )
+            promoted_payload = _promoted_worker_result_payload(result_row, promotion)
+            promoted_metadata = _promoted_worker_result_metadata(result_row, promotion)
+            connection.execute(
+                """
+                UPDATE worker_result_records
+                SET status = 'completed',
+                    raw_payload_json = ?,
+                    metadata_json = ?
+                WHERE result_id = ?
+                """,
+                (
+                    _dump_json(promoted_payload),
+                    _dump_json(promoted_metadata),
+                    str(result_id),
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE worker_runs
+                SET status = 'completed',
+                    completed_at = COALESCE(completed_at, ?),
+                    failure_class = NULL,
+                    result_path = NULL,
+                    result_id = ?
+                WHERE worker_run_id = ?
+                """,
+                (now, str(result_id), effective_worker_run_id),
+            )
+            _replace_worker_result_run_link(
+                connection,
+                result_id=str(result_id),
+                worker_run_id=effective_worker_run_id,
+            )
+            connection.execute(
+                """
+                UPDATE supervisor_tasks
+                SET status = 'completed',
+                    updated_at = ?
+                WHERE task_id = ?
+                """,
+                (now, source_task_id),
+            )
+            if review_task_id is not None:
+                connection.execute(
+                    """
+                    UPDATE supervisor_tasks
+                    SET status = 'completed',
+                        updated_at = ?
+                    WHERE task_id = ?
+                    """,
+                    (now, review_task_id),
+                )
+            connection.execute(
+                """
+                INSERT INTO worker_run_events (
+                    event_id, worker_run_id, event_type, summary, details_json,
+                    artifact_path, occurred_at, metadata_json
+                )
+                VALUES (?, ?, ?, ?, ?, NULL, ?, ?)
+                ON CONFLICT(event_id) DO UPDATE SET
+                    event_type = excluded.event_type,
+                    summary = excluded.summary,
+                    details_json = excluded.details_json,
+                    occurred_at = excluded.occurred_at,
+                    metadata_json = excluded.metadata_json
+                """,
+                (
+                    f"event-{effective_worker_run_id}-review-promoted",
+                    effective_worker_run_id,
+                    "worker_result_review_promoted",
+                    "Promoted reviewed worker result to completed.",
+                    _dump_json(_review_promotion_to_json(promotion)),
+                    now,
+                    _dump_json({"review_progress_id": effective_review_progress_id}),
+                ),
+            )
+            _touch_plan(connection, str(source_task["plan_id"]), now)
+        return promotion
 
     def list_worker_results(self) -> tuple[WorkerResultRecord, ...]:
         with self.connect(read_only=True) as connection:
@@ -3040,6 +3221,20 @@ def _contains_nonblank_string(values: Iterable[object]) -> bool:
     return any(isinstance(value, str) and value.strip() for value in values)
 
 
+def canonicalize_repo_relative_path_patterns(values: Iterable[str]) -> list[str]:
+    """Return repo-relative path patterns with directory shorthand expanded."""
+
+    canonical: list[str] = []
+    for value in values:
+        raw_value = value.strip()
+        normalized = raw_value.replace("\\", "/")
+        if normalized.endswith("/") and not normalized.endswith("//") and normalized != "/":
+            canonical.append(f"{normalized[:-1]}/**")
+        else:
+            canonical.append(normalized)
+    return canonical
+
+
 def unsafe_repo_relative_path_patterns(values: Iterable[object]) -> tuple[str, ...]:
     """Return allowed-path contract values that are not safe repo-relative patterns."""
 
@@ -3060,8 +3255,17 @@ def unsafe_repo_relative_path_patterns(values: Iterable[object]) -> tuple[str, .
         if DRIVE_PATH_PATTERN.match(raw_value):
             failures.append(f"{raw_value}: drive-qualified paths are not allowed")
             continue
-        parts = tuple(part for part in normalized.split("/") if part)
-        if ".." in parts:
+        if ":" in normalized:
+            failures.append(f"{raw_value}: colons are not allowed")
+            continue
+        parts = tuple(normalized.split("/"))
+        if any(part == "" for part in parts):
+            failures.append(f"{raw_value}: empty path segments are not allowed")
+            continue
+        if any(part == "." for part in parts):
+            failures.append(f"{raw_value}: current-directory segments are not allowed")
+            continue
+        if any(part == ".." for part in parts):
             failures.append(f"{raw_value}: parent traversal is not allowed")
     return tuple(failures)
 
@@ -3117,9 +3321,13 @@ def unsafe_verification_command_reason(command: object) -> str | None:
             return _mypy_command_reason(uv_tokens)
         if uv_tokens[0] in {"python", "python3"}:
             return _safe_python_command_reason(uv_tokens[1:])
+        if uv_tokens[0] == "npm":
+            return _npm_command_reason(uv_tokens)
         if uv_tokens[0] == "codex-supervisor":
             return _codex_supervisor_cli_command_reason(uv_tokens[1:])
         return "uv run --no-sync verification is limited to approved read-only commands"
+    if tokens[0] == "npm":
+        return _npm_command_reason(tokens)
     if tokens[0] == "ruff":
         return _ruff_command_reason(tokens)
     if tokens[0] == "mypy":
@@ -3156,6 +3364,116 @@ def _safe_python_script_reason(script: str, args: tuple[str, ...]) -> str | None
     if args in allowed_args:
         return None
     return f"{script} verification uses unsupported arguments"
+
+
+def _npm_command_reason(tokens: tuple[str, ...]) -> str | None:
+    if not tokens or tokens[0] != "npm":
+        return "npm verification must invoke npm directly"
+    if len(tokens) < 2:
+        return "npm verification is missing a subcommand"
+    command = tokens[1]
+    args = tokens[2:]
+    if command == "test":
+        return _npm_flags_reason(
+            "npm test",
+            args,
+            allowed_flags=frozenset({"--workspaces", "--if-present"}),
+            required_flags=frozenset({"--workspaces", "--if-present"}),
+        )
+    if command == "audit":
+        return _npm_flags_reason(
+            "npm audit",
+            args,
+            allowed_flags=frozenset({"--omit=dev"}),
+            required_flags=frozenset({"--omit=dev"}),
+        )
+    if command == "run":
+        if not args or args[0] != "build":
+            return "npm run verification is limited to build"
+        return _npm_flags_reason(
+            "npm run build",
+            args[1:],
+            value_options={"--workspace": None},
+            required_value_options=frozenset({"--workspace"}),
+        )
+    return "npm verification is limited to test, run build, or audit"
+
+
+def _npm_flags_reason(
+    command: str,
+    args: tuple[str, ...],
+    *,
+    allowed_flags: frozenset[str] = frozenset(),
+    required_flags: frozenset[str] = frozenset(),
+    value_options: dict[str, frozenset[str] | None] | None = None,
+    required_value_options: frozenset[str] = frozenset(),
+) -> str | None:
+    seen_flags: set[str] = set()
+    seen_value_options: set[str] = set()
+    value_options = value_options or {}
+    index = 0
+    while index < len(args):
+        token = args[index]
+        matched_inline_option = next(
+            (option for option in value_options if token.startswith(option + "=")),
+            None,
+        )
+        if matched_inline_option is not None:
+            value = token.split("=", 1)[1]
+            reason = _npm_option_value_reason(
+                matched_inline_option,
+                value,
+                value_options[matched_inline_option],
+            )
+            if reason:
+                return reason
+            seen_value_options.add(matched_inline_option)
+            index += 1
+            continue
+        if token in value_options:
+            if index + 1 >= len(args):
+                return f"{command} {token} verification is missing a value"
+            reason = _npm_option_value_reason(token, args[index + 1], value_options[token])
+            if reason:
+                return reason
+            seen_value_options.add(token)
+            index += 2
+            continue
+        if token in allowed_flags:
+            seen_flags.add(token)
+            index += 1
+            continue
+        if token.startswith("-"):
+            return f"{command} verification uses unsupported option {token}"
+        return f"{command} verification does not accept positional argument {token}"
+    missing_flags = required_flags - seen_flags
+    if missing_flags:
+        return f"{command} verification is missing {' '.join(sorted(missing_flags))}"
+    missing_value_options = required_value_options - seen_value_options
+    if missing_value_options:
+        return f"{command} verification is missing {' '.join(sorted(missing_value_options))}"
+    return None
+
+
+def _npm_option_value_reason(
+    option: str,
+    value: str,
+    allowed_values: frozenset[str] | None,
+) -> str | None:
+    if not value or value.startswith("-"):
+        return f"{option} verification value must be nonblank"
+    if allowed_values is not None and value not in allowed_values:
+        return f"{option} verification value must be one of: {', '.join(sorted(allowed_values))}"
+    normalized = value.replace("\\", "/")
+    if (
+        normalized.startswith("/")
+        or DRIVE_PATH_PATTERN.match(value)
+        or ".." in normalized.split("/")
+    ):
+        return f"{option} verification value must be a repo-local workspace name"
+    if not NPM_WORKSPACE_VALUE_PATTERN.match(normalized):
+        return f"{option} verification value must be a plain workspace name"
+    return None
 
 
 def _pytest_command_reason(tokens: tuple[str, ...]) -> str | None:
@@ -3761,6 +4079,16 @@ def _validate_plan_can_enter_status(
                 f"{incomplete_criterion['criterion_id']} is {incomplete_criterion['status']}"
             )
             raise ValueError(msg)
+        missing_review_task = _first_completed_review_required_task_without_review_evidence(
+            connection,
+            plan_id,
+        )
+        if missing_review_task is not None:
+            msg = (
+                f"cannot set plan {plan_id} to completed while review-required task "
+                f"{missing_review_task['task_id']} has no review result"
+            )
+            raise ValueError(msg)
 
 
 def _first_open_task_for_plan(connection: sqlite3.Connection, plan_id: str) -> sqlite3.Row | None:
@@ -3841,6 +4169,114 @@ def _first_not_completed_criterion_for_plan(
             (plan_id,),
         ).fetchone(),
     )
+
+
+def _first_completed_review_required_task_without_review_evidence(
+    connection: sqlite3.Connection,
+    plan_id: str,
+) -> sqlite3.Row | None:
+    rows = connection.execute(
+        """
+        SELECT task_id
+        FROM supervisor_tasks
+        WHERE plan_id = ?
+          AND status = 'completed'
+          AND review_required = 1
+          AND EXISTS (
+              SELECT 1
+              FROM worker_runs wr
+              WHERE wr.task_id = supervisor_tasks.task_id
+                AND wr.status = 'completed'
+                AND wr.result_id IS NOT NULL
+                AND trim(wr.result_id) != ''
+          )
+        ORDER BY task_id
+        """,
+        (plan_id,),
+    ).fetchall()
+    for row in rows:
+        has_review = _has_review_result_for_task(
+            connection,
+            plan_id=plan_id,
+            task_id=str(row["task_id"]),
+        )
+        if not has_review:
+            return cast(sqlite3.Row, row)
+    return None
+
+
+def _validate_task_review_completion_evidence(
+    connection: sqlite3.Connection,
+    *,
+    plan_id: str,
+    task_id: str,
+) -> None:
+    if not _task_has_completed_worker_result(connection, task_id):
+        return
+    if _has_review_result_for_task(connection, plan_id=plan_id, task_id=task_id):
+        return
+    msg = f"review result is required before completing review-required task {task_id}"
+    raise ValueError(msg)
+
+
+def _task_has_completed_worker_result(connection: sqlite3.Connection, task_id: str) -> bool:
+    row = connection.execute(
+        """
+        SELECT 1
+        FROM worker_runs
+        WHERE task_id = ?
+          AND status = 'completed'
+          AND result_id IS NOT NULL
+          AND trim(result_id) != ''
+        LIMIT 1
+        """,
+        (task_id,),
+    ).fetchone()
+    return row is not None
+
+
+def _has_review_result_for_task(
+    connection: sqlite3.Connection,
+    *,
+    plan_id: str,
+    task_id: str,
+) -> bool:
+    rows = connection.execute(
+        """
+        SELECT * FROM plan_progress_events
+        WHERE plan_id = ?
+          AND event_type = 'review_result_recorded'
+        ORDER BY occurred_at DESC, progress_id DESC
+        """,
+        (plan_id,),
+    ).fetchall()
+    for row in rows:
+        try:
+            details = _load_review_progress_details(row)
+        except ValueError:
+            continue
+        if details.get("target") == task_id:
+            return True
+    return False
+
+
+def _validate_completed_worker_run_result_status(
+    connection: sqlite3.Connection,
+    result_id: str,
+) -> None:
+    row = connection.execute(
+        "SELECT status FROM worker_result_records WHERE result_id = ?",
+        (result_id,),
+    ).fetchone()
+    _raise_missing(0 if row is None else 1, "worker_result", result_id)
+    result_status = str(row["status"])
+    if result_status == "completed":
+        return
+    msg = (
+        f"worker result {result_id} has status {result_status}; "
+        "completed worker runs require completed result records"
+    )
+    raise ValueError(msg)
 
 
 def _task_status_row(connection: sqlite3.Connection, task_id: str) -> sqlite3.Row | None:
@@ -4679,6 +5115,157 @@ def _sync_task_and_plan_for_worker_run(
             (task_status, updated_at, task_id),
         )
     _touch_plan(connection, plan_id, updated_at)
+
+
+def _review_progress_for_task(
+    connection: sqlite3.Connection,
+    *,
+    source_task_id: str,
+    progress_id: str | None,
+) -> sqlite3.Row:
+    if progress_id is not None:
+        row = connection.execute(
+            """
+            SELECT * FROM plan_progress_events
+            WHERE progress_id = ?
+              AND event_type = 'review_result_recorded'
+            """,
+            (progress_id,),
+        ).fetchone()
+        _raise_missing(0 if row is None else 1, "review progress", progress_id)
+        return cast(sqlite3.Row, row)
+    rows = connection.execute(
+        """
+        SELECT * FROM plan_progress_events
+        WHERE event_type = 'review_result_recorded'
+        ORDER BY occurred_at DESC, progress_id DESC
+        """
+    ).fetchall()
+    for row in rows:
+        details = _load_review_progress_details(row)
+        if details.get("target") == source_task_id:
+            return cast(sqlite3.Row, row)
+    msg = f"No review_result_recorded progress found for task {source_task_id}"
+    raise ValueError(msg)
+
+
+def _load_review_progress_details(row: sqlite3.Row) -> JsonObject:
+    try:
+        details = _load_json_object(str(row["details"]))
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        msg = f"review progress {row['progress_id']} details must be a JSON object"
+        raise ValueError(msg) from exc
+    return details
+
+
+def _validate_review_progress_is_promotable(
+    row: sqlite3.Row,
+    source_task_id: str,
+) -> None:
+    details = _load_review_progress_details(row)
+    if details.get("target") != source_task_id:
+        msg = (
+            f"review progress {row['progress_id']} targets {details.get('target')}, "
+            f"not {source_task_id}"
+        )
+        raise ValueError(msg)
+    counts = details.get("finding_counts")
+    if not isinstance(counts, dict):
+        msg = f"review progress {row['progress_id']} is missing finding_counts"
+        raise ValueError(msg)
+    accepted = int(counts.get("accepted", 0))
+    needs_hitl = int(counts.get("needs_hitl", 0))
+    if accepted != 0 or needs_hitl != 0:
+        msg = (
+            f"review progress {row['progress_id']} is not promotable: "
+            f"{accepted} accepted, {needs_hitl} needs HITL"
+        )
+        raise ValueError(msg)
+
+
+def _validate_review_task_scope(
+    row: sqlite3.Row,
+    *,
+    source_task_id: str,
+    worker_run_id: str | None,
+) -> None:
+    scope = _load_json_object(str(row["scope_json"]))
+    if scope.get("review_gate") != "separate_review_required_task":
+        msg = f"review task {row['task_id']} is not a separate review-required task"
+        raise ValueError(msg)
+    if scope.get("source_task_id") != source_task_id:
+        msg = (
+            f"review task {row['task_id']} targets {scope.get('source_task_id')}, "
+            f"not {source_task_id}"
+        )
+        raise ValueError(msg)
+    scoped_worker_run_id = scope.get("worker_run_id")
+    if worker_run_id is not None and scoped_worker_run_id not in {None, worker_run_id}:
+        msg = (
+            f"review task {row['task_id']} targets worker run {scoped_worker_run_id}, "
+            f"not {worker_run_id}"
+        )
+        raise ValueError(msg)
+
+
+def _reviewed_worker_run_row(
+    connection: sqlite3.Connection,
+    *,
+    source_task_id: str,
+    worker_run_id: str | None,
+) -> sqlite3.Row:
+    if worker_run_id is not None:
+        row = connection.execute(
+            "SELECT * FROM worker_runs WHERE worker_run_id = ?",
+            (worker_run_id,),
+        ).fetchone()
+        _raise_missing(0 if row is None else 1, "worker_run", worker_run_id)
+        if str(row["task_id"]) != source_task_id:
+            msg = f"worker run {worker_run_id} belongs to {row['task_id']}, not {source_task_id}"
+            raise ValueError(msg)
+        return cast(sqlite3.Row, row)
+    row = connection.execute(
+        """
+        SELECT * FROM worker_runs
+        WHERE task_id = ?
+          AND status = 'needs_review'
+        ORDER BY started_at DESC, worker_run_id DESC
+        LIMIT 1
+        """,
+        (source_task_id,),
+    ).fetchone()
+    _raise_missing(0 if row is None else 1, "needs-review worker_run", source_task_id)
+    return cast(sqlite3.Row, row)
+
+
+def _promoted_worker_result_payload(
+    row: sqlite3.Row,
+    promotion: ReviewPromotionRecord,
+) -> JsonObject:
+    payload = _load_json_object(str(row["raw_payload_json"]))
+    payload["status"] = "completed"
+    payload["review_promotion"] = _review_promotion_to_json(promotion)
+    return payload
+
+
+def _promoted_worker_result_metadata(
+    row: sqlite3.Row,
+    promotion: ReviewPromotionRecord,
+) -> JsonObject:
+    metadata = _load_json_object(str(row["metadata_json"]))
+    metadata["review_promotion"] = _review_promotion_to_json(promotion)
+    return metadata
+
+
+def _review_promotion_to_json(promotion: ReviewPromotionRecord) -> JsonObject:
+    return {
+        "source_task_id": promotion.source_task_id,
+        "review_task_id": promotion.review_task_id,
+        "worker_run_id": promotion.worker_run_id,
+        "result_id": promotion.result_id,
+        "review_progress_id": promotion.review_progress_id,
+        "promoted_from_status": promotion.promoted_from_status,
+    }
 
 
 def _link_worker_result_artifact(

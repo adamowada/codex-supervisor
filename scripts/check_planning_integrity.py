@@ -6,12 +6,15 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shlex
 import sqlite3
 import subprocess
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -19,22 +22,148 @@ SRC = REPO_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from codex_supervisor.paths import default_planning_database_path  # noqa: E402
-from codex_supervisor.planning import (  # noqa: E402
-    CRITERION_STATUSES,
-    CURRENT_QUEUE_PLAN_STATUSES,
-    MILESTONE_STATUSES,
-    NONTERMINAL_WORKER_RUN_STATUSES,
-    OPEN_TASK_STATUSES,
-    PLAN_STATUSES,
-    TASK_STATUSES,
-    TASK_STATUSES_ALLOWED_WITH_NONTERMINAL_WORKER_RUN,
-    WORKER_RUN_STATUSES,
-    open_existing_planning_database,
-    unsafe_repo_relative_path_patterns,
-    unsafe_verification_command_reason,
-    unsafe_worker_result_path_reason,
-)
+try:
+    from codex_supervisor.paths import default_planning_database_path  # noqa: E402
+    from codex_supervisor.planning import (  # noqa: E402
+        CRITERION_STATUSES,
+        CURRENT_QUEUE_PLAN_STATUSES,
+        MILESTONE_STATUSES,
+        NONTERMINAL_WORKER_RUN_STATUSES,
+        OPEN_TASK_STATUSES,
+        PLAN_STATUSES,
+        TASK_STATUSES,
+        TASK_STATUSES_ALLOWED_WITH_NONTERMINAL_WORKER_RUN,
+        WORKER_RUN_STATUSES,
+        open_existing_planning_database,
+        unsafe_repo_relative_path_patterns,
+        unsafe_verification_command_reason,
+        unsafe_worker_result_path_reason,
+    )
+except ModuleNotFoundError:
+    PLAN_STATUSES = frozenset({"active", "blocked", "completed", "abandoned", "superseded"})
+    CURRENT_QUEUE_PLAN_STATUSES = frozenset({"active", "blocked"})
+    MILESTONE_STATUSES = frozenset({"pending", "active", "blocked", "completed", "cancelled"})
+    CRITERION_STATUSES = frozenset({"pending", "blocked", "completed", "failed", "cancelled"})
+    TASK_STATUSES = frozenset(
+        {"pending", "ready", "running", "blocked", "reviewing", "completed", "failed", "cancelled"}
+    )
+    OPEN_TASK_STATUSES = TASK_STATUSES - {"completed", "failed", "cancelled"}
+    TASK_STATUSES_ALLOWED_WITH_NONTERMINAL_WORKER_RUN = frozenset(
+        {"running", "blocked", "reviewing"}
+    )
+    WORKER_RUN_STATUSES = frozenset(
+        {"queued", "running", "blocked", "completed", "failed", "cancelled", "needs_review"}
+    )
+    NONTERMINAL_WORKER_RUN_STATUSES = WORKER_RUN_STATUSES - {
+        "completed",
+        "failed",
+        "cancelled",
+    }
+    DRIVE_PATH_PATTERN = re.compile(r"^[A-Za-z]:")
+    NPM_WORKSPACE_VALUE_PATTERN = re.compile(r"^[A-Za-z0-9_.@/-]+$")
+    UV_RUN_READONLY_PREFIX = ("uv", "run", "--no-sync")
+    SHELL_METACHARACTERS = ("|", "&", ";", "<", ">", "`", "$(")
+
+    def default_planning_database_path(repo_root: Path | None = None) -> Path:
+        root = repo_root or REPO_ROOT
+        return root / "plans" / "planning.sqlite3"
+
+    def open_existing_planning_database(  # type: ignore[misc]
+        path: Path,
+        *,
+        read_only: bool = False,
+        validate: bool = False,
+    ) -> Any:
+        if not path.exists():
+            msg = f"missing database: {path}"
+            raise ValueError(msg)
+        return None
+
+    def unsafe_repo_relative_path_patterns(values: Iterable[object]) -> tuple[str, ...]:
+        failures: list[str] = []
+        for value in values:
+            if not isinstance(value, str) or not value.strip():
+                continue
+            raw_value = value.strip()
+            normalized = raw_value.replace("\\", "/")
+            if re.match(r"^[a-z][a-z0-9+.-]*://", normalized, flags=re.IGNORECASE):
+                failures.append(f"{raw_value}: URLs are not repo-local paths")
+                continue
+            if normalized.startswith("/") or normalized.startswith("//"):
+                failures.append(f"{raw_value}: absolute paths are not allowed")
+                continue
+            if DRIVE_PATH_PATTERN.match(raw_value):
+                failures.append(f"{raw_value}: drive-qualified paths are not allowed")
+                continue
+            if ":" in normalized:
+                failures.append(f"{raw_value}: colons are not allowed")
+                continue
+            parts = tuple(normalized.split("/"))
+            if any(part == "" for part in parts):
+                failures.append(f"{raw_value}: empty path segments are not allowed")
+                continue
+            if any(part == "." for part in parts):
+                failures.append(f"{raw_value}: current-directory segments are not allowed")
+                continue
+            if any(part == ".." for part in parts):
+                failures.append(f"{raw_value}: parent traversal is not allowed")
+        return tuple(failures)
+
+    def unsafe_worker_result_path_reason(value: object) -> str | None:
+        if not isinstance(value, str) or not value.strip():
+            return "result_path must be a nonblank string"
+        raw_value = value.strip()
+        failures = unsafe_repo_relative_path_patterns((raw_value,))
+        if failures:
+            return failures[0]
+        if Path(raw_value.replace("\\", "/")).suffix.lower() != ".json":
+            return "completed worker result_path must end with .json"
+        return None
+
+    def unsafe_verification_command_reason(command: object) -> str | None:
+        if not isinstance(command, str):
+            return "verification command must be a string"
+        raw_command = command.strip()
+        if any(fragment in raw_command for fragment in SHELL_METACHARACTERS):
+            return "shell metacharacters and redirection are not allowed"
+        try:
+            tokens = tuple(shlex.split(raw_command))
+        except ValueError as exc:
+            return f"could not parse command: {exc}"
+        if not tokens:
+            return "empty command"
+        if tokens[:3] == UV_RUN_READONLY_PREFIX:
+            tokens = tokens[3:]
+        if not tokens:
+            return "verification is missing a command"
+        if tokens[0] == "npm":
+            return _fallback_npm_command_reason(tokens)
+        if tokens[0] in {"python", "python3"}:
+            return None if "-B" in tokens else "python verification must use -B"
+        if tokens[0] in {"pytest", "ruff", "mypy"}:
+            return None
+        if tokens[:2] == ("git", "status") or tokens == ("git", "diff", "--check"):
+            return None
+        return "unsupported verification command shape"
+
+    def _fallback_npm_command_reason(tokens: tuple[str, ...]) -> str | None:
+        if tokens == ("npm", "test", "--workspaces", "--if-present"):
+            return None
+        if tokens == ("npm", "audit", "--omit=dev"):
+            return None
+        if (
+            len(tokens) == 5
+            and tokens[:3] == ("npm", "run", "build")
+            and tokens[3] == "--workspace"
+        ):
+            workspace = tokens[4].replace("\\", "/")
+            if workspace.startswith("/") or ".." in workspace.split("/"):
+                return "npm workspace must be repo-local"
+            if not NPM_WORKSPACE_VALUE_PATTERN.match(workspace):
+                return "npm workspace must be a plain workspace name"
+            return None
+        return "npm verification is limited to approved read-only commands"
+
 
 CONTRACT_PLAN_STATUSES = CURRENT_QUEUE_PLAN_STATUSES
 CONTRACT_TASK_STATUSES = ("ready", "running", "blocked", "reviewing")
@@ -149,6 +278,9 @@ def check_planning_integrity(db_path: Path) -> tuple[PlanningIntegrityFailure, .
             failures.extend(_check_open_afk_tasks_have_execution_contracts(connection))
             failures.extend(_check_open_afk_task_contract_values(connection))
             failures.extend(_check_completed_worker_runs_have_result_records(connection))
+            failures.extend(
+                _check_completed_worker_runs_preserve_indexed_evidence(connection, repo_root)
+            )
             failures.extend(_check_completed_afk_tasks_have_worker_evidence(connection))
             failures.extend(_check_completed_review_required_tasks_have_review_evidence(connection))
             failures.extend(_check_worker_result_records_have_run_links(connection))
@@ -156,6 +288,7 @@ def check_planning_integrity(db_path: Path) -> tuple[PlanningIntegrityFailure, .
             failures.extend(_check_worker_result_records_align_with_runs(connection))
             failures.extend(_check_worker_results_not_stored_as_public_files(connection, repo_root))
             failures.extend(_check_handoff_snapshot_is_compact(repo_root))
+            failures.extend(_check_handoff_snapshot_matches_queue_state(connection, repo_root))
             failures.extend(_check_progress_links_are_declared(connection))
             failures.extend(_check_plan_timestamps_cover_progress(connection))
         except sqlite3.Error as exc:
@@ -584,12 +717,71 @@ def _check_completed_worker_runs_have_result_records(
     return tuple(failures)
 
 
+def _check_completed_worker_runs_preserve_indexed_evidence(
+    connection: sqlite3.Connection,
+    repo_root: Path,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    rows = connection.execute(
+        """
+        SELECT worker_run_id, prompt_path, jsonl_path, metadata_json
+        FROM worker_runs
+        WHERE status = 'completed'
+        ORDER BY worker_run_id
+        """
+    ).fetchall()
+    failures: list[PlanningIntegrityFailure] = []
+    for worker_run_id, prompt_path, jsonl_path, metadata_json in rows:
+        try:
+            metadata = json.loads(str(metadata_json))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(metadata, dict):
+            continue
+        raw_evidence_paths = metadata.get("raw_evidence_paths")
+        if isinstance(raw_evidence_paths, dict):
+            indexed_paths = {
+                "prompt_path": prompt_path,
+                "jsonl_path": jsonl_path,
+            }
+            for key, indexed_value in indexed_paths.items():
+                raw_value = raw_evidence_paths.get(key)
+                if not isinstance(raw_value, str) or not raw_value.strip():
+                    continue
+                if indexed_value != raw_value:
+                    failures.append(
+                        PlanningIntegrityFailure(
+                            "completed_worker_run_indexed_evidence_drift",
+                            f"{worker_run_id}: indexed {key}={indexed_value!r}, "
+                            f"raw evidence records {raw_value!r}",
+                        )
+                    )
+                evidence_path = _artifact_path(repo_root, raw_value)
+                if evidence_path is not None and not evidence_path.exists():
+                    failures.append(
+                        PlanningIntegrityFailure(
+                            "completed_worker_run_indexed_evidence_missing",
+                            f"{worker_run_id}: {key} path does not exist: {raw_value}",
+                        )
+                    )
+        manifest_value = metadata.get("evidence_manifest")
+        if isinstance(manifest_value, str) and manifest_value.strip():
+            manifest_path = _artifact_path(repo_root, manifest_value)
+            if manifest_path is not None and not manifest_path.exists():
+                failures.append(
+                    PlanningIntegrityFailure(
+                        "completed_worker_run_evidence_manifest_missing",
+                        f"{worker_run_id}: evidence manifest does not exist: {manifest_value}",
+                    )
+                )
+    return tuple(failures)
+
+
 def _check_completed_afk_tasks_have_worker_evidence(
     connection: sqlite3.Connection,
 ) -> tuple[PlanningIntegrityFailure, ...]:
     rows = connection.execute(
         """
-        SELECT st.task_id, st.plan_id
+        SELECT st.task_id, st.plan_id, st.scope_json, st.worker_backend
         FROM supervisor_tasks st
         JOIN plans p ON p.plan_id = st.plan_id
         WHERE st.task_type = 'AFK'
@@ -611,13 +803,45 @@ def _check_completed_afk_tasks_have_worker_evidence(
         ORDER BY st.task_id
         """
     ).fetchall()
-    return tuple(
-        PlanningIntegrityFailure(
-            "completed_afk_task_without_worker_evidence",
-            f"{task_id} on plan {plan_id}",
+    failures: list[PlanningIntegrityFailure] = []
+    for task_id, plan_id, scope_json, worker_backend in rows:
+        if _completed_afk_review_task_has_review_evidence(
+            connection,
+            plan_id=str(plan_id),
+            scope_json=str(scope_json),
+            worker_backend=str(worker_backend),
+        ):
+            continue
+        failures.append(
+            PlanningIntegrityFailure(
+                "completed_afk_task_without_worker_evidence",
+                f"{task_id} on plan {plan_id}",
+            )
         )
-        for task_id, plan_id in rows
-    )
+    return tuple(failures)
+
+
+def _completed_afk_review_task_has_review_evidence(
+    connection: sqlite3.Connection,
+    *,
+    plan_id: str,
+    scope_json: str,
+    worker_backend: str,
+) -> bool:
+    if worker_backend != "codex_review":
+        return False
+    try:
+        scope = json.loads(scope_json)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(scope, dict):
+        return False
+    if scope.get("review_gate") != "separate_review_required_task":
+        return False
+    source_task_id = scope.get("source_task_id")
+    if not isinstance(source_task_id, str) or not source_task_id.strip():
+        return False
+    return _review_progress_for_task(connection, plan_id, source_task_id) is not None
 
 
 def _check_completed_review_required_tasks_have_review_evidence(
@@ -1149,6 +1373,42 @@ def _check_handoff_snapshot_is_compact(repo_root: Path) -> tuple[PlanningIntegri
             )
             break
     return tuple(failures)
+
+
+def _check_handoff_snapshot_matches_queue_state(
+    connection: sqlite3.Connection,
+    repo_root: Path,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    handoff_path = repo_root / "HANDOFF.md"
+    if not handoff_path.exists():
+        return ()
+    active_queue_count = int(
+        connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM plans
+            WHERE status IN ('active', 'blocked')
+            """
+        ).fetchone()[0]
+    )
+    if active_queue_count:
+        return ()
+    text = handoff_path.read_text(encoding="utf-8").lower()
+    stale_review_phrases = (
+        "ready for required review",
+        "review pending",
+        "awaiting review",
+        "needs review before completion",
+    )
+    for phrase in stale_review_phrases:
+        if phrase in text:
+            return (
+                PlanningIntegrityFailure(
+                    "handoff_snapshot_stale_review_state",
+                    f"HANDOFF.md says {phrase!r}, but no active or blocked queue plan remains",
+                ),
+            )
+    return ()
 
 
 def _check_completed_worker_run_results_exist(

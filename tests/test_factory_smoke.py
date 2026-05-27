@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -45,6 +46,13 @@ def test_factory_loop_smoke_can_keep_workspace_for_inspection(tmp_path: Path) ->
     assert (project_root / "plans" / "planning.sqlite3").exists()
     assert (project_root / "artifacts").exists()
     assert (project_root / "runs").exists()
+    with sqlite3.connect(project_root / "plans" / "planning.sqlite3") as connection:
+        details_json = connection.execute(
+            "SELECT details FROM plan_progress_events WHERE progress_id = ?",
+            ("progress-smoke-review",),
+        ).fetchone()[0]
+    details = json.loads(str(details_json))
+    assert details["target"] == "task-smoke-update-readme"
 
 
 def test_factory_loop_smoke_requires_workspace_when_retaining() -> None:

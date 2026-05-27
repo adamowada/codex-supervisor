@@ -882,13 +882,14 @@ def test_live_story_loop_creates_separate_review_task_when_review_required(tmp_p
     source = next(task for task in tasks if task.task_id == "task-live")
     review = next(task for task in tasks if task.task_id == "task-review-task-live-run-review")
     assert source.status == "reviewing"
-    assert review.task_type == "HITL"
+    assert review.task_type == "AFK"
     assert review.status == "ready"
+    assert review.worker_backend == "codex_review"
     assert review.review_required is False
     assert review.scope["source_task_id"] == "task-live"
     assert review.scope["worker_run_id"] == "run-review"
     status = build_story_loop_status(read_store)
-    assert status.queue_state == "hitl"
+    assert status.queue_state == "ready"
     assert status.current_task_id == review.task_id
 
 

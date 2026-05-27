@@ -44,6 +44,64 @@ def test_initialize_planning_database_is_idempotent(tmp_path):
     assert second.schema_version() == CURRENT_PLANNING_SCHEMA_VERSION
 
 
+def test_task_upsert_canonicalizes_directory_allowed_paths(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Normalize task contracts.",
+            status="active",
+        )
+    )
+
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-test",
+            plan_id="plan-test",
+            title="Task",
+            goal="Use directory scopes.",
+            task_type="AFK",
+            status="ready",
+            acceptance_criteria=["done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["client/", "server\\"],
+        )
+    )
+
+    task = store.list_supervisor_tasks()[0]
+    assert task.allowed_paths == ["client/**", "server/**"]
+
+
+def test_task_upsert_rejects_noncanonical_allowed_paths(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Reject unsafe task contracts.",
+            status="active",
+        )
+    )
+
+    with pytest.raises(ValueError, match="unsafe repo-relative path"):
+        store.upsert_supervisor_task(
+            SupervisorTaskRecord(
+                task_id="task-test",
+                plan_id="plan-test",
+                title="Task",
+                goal="Use a bad path.",
+                task_type="AFK",
+                status="ready",
+                acceptance_criteria=["done"],
+                verification_commands=["python -B -m pytest -p no:cacheprovider"],
+                allowed_paths=["client//"],
+            )
+        )
+
+
 def test_plan_round_trip_and_append_only_logs(tmp_path):
     store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
 
@@ -794,6 +852,53 @@ def test_plan_status_rejects_completed_state_with_failed_criterion(tmp_path):
         store.update_plan_status("plan-terminal", "completed")
 
     store.update_plan_status("plan-terminal", "abandoned")
+
+
+def test_plan_status_rejects_completed_review_required_task_without_review_result(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-review-required",
+            slug="review-required",
+            title="Review Required Plan",
+            goal="Do not close before review.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-review-required",
+            plan_id="plan-review-required",
+            title="Review required task",
+            goal="Needs review before completion.",
+            task_type="AFK",
+            status="completed",
+            acceptance_criteria=["Criterion"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            review_required=True,
+        )
+    )
+    _upsert_worker_result_record(store, "result-review-required")
+    with sqlite3.connect(store.path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute(
+            """
+            INSERT INTO worker_runs(worker_run_id, task_id, backend, status, result_id)
+            VALUES ('run-review-required', 'task-review-required', 'codex_exec', 'completed', ?)
+            """,
+            ("result-review-required",),
+        )
+        connection.execute(
+            """
+            INSERT INTO worker_result_run_links(result_id, worker_run_id)
+            VALUES (?, 'run-review-required')
+            """,
+            ("result-review-required",),
+        )
+
+    with pytest.raises(ValueError, match="task-review-required"):
+        store.update_plan_status("plan-review-required", "completed")
 
 
 def test_planning_schema_rejects_invalid_status_and_review_values(tmp_path):
@@ -2708,6 +2813,18 @@ def test_release_readiness_cli_is_safe_verification_command() -> None:
     assert reason is None
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "npm test --workspaces --if-present",
+        "npm run build --workspace client",
+        "npm audit --omit=dev",
+    ],
+)
+def test_common_node_verification_commands_are_safe(command) -> None:
+    assert planning_module.unsafe_verification_command_reason(command) is None
+
+
 def test_plan_artifact_links_reject_unsafe_repo_relative_paths(tmp_path):
     store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
     store.upsert_plan(
@@ -3018,6 +3135,67 @@ def test_task_status_cannot_hide_active_worker_run(tmp_path):
 
     with pytest.raises(ValueError, match="cannot set task task-test to completed"):
         store.update_supervisor_task_status("task-test", "completed")
+
+
+def test_task_status_requires_review_evidence_for_review_required_completion(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Reject hidden review work.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-test",
+            plan_id="plan-test",
+            title="Task",
+            goal="Do the task.",
+            task_type="AFK",
+            status="reviewing",
+            acceptance_criteria=["Criterion"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            review_required=True,
+        )
+    )
+    _upsert_worker_result_record(store, "result-review")
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-review",
+            task_id="task-test",
+            backend="codex_exec",
+            status="completed",
+            result_id="result-review",
+        )
+    )
+
+    with pytest.raises(ValueError, match="review result"):
+        store.update_supervisor_task_status("task-test", "completed")
+
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id="progress-review",
+            plan_id="plan-test",
+            event_type="review_result_recorded",
+            summary="Review passed.",
+            details=json.dumps(
+                {
+                    "review_id": "review-test",
+                    "target": "task-test",
+                    "accepted_findings": [],
+                    "waived_findings": [],
+                    "needs_hitl_findings": [],
+                }
+            ),
+        )
+    )
+
+    store.update_supervisor_task_status("task-test", "completed")
+    assert store.list_supervisor_tasks()[0].status == "completed"
 
 
 @pytest.mark.parametrize("status", ["ready", "running", "blocked", "reviewing"])
@@ -3444,6 +3622,178 @@ def test_worker_run_status_reports_worker_result_status_when_not_completed(tmp_p
     assert "Updated worker_run run-test -> failed" in capsys.readouterr().out
     run = open_existing_planning_database(db_path).list_worker_runs(task_id="task-test")[0]
     assert run.status == "failed"
+
+
+def test_worker_run_status_rejects_completed_status_with_needs_review_result_id(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Keep worker run status aligned with worker result status.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-test",
+            plan_id="plan-test",
+            title="Task",
+            goal="Do the task.",
+            task_type="AFK",
+            status="ready",
+            acceptance_criteria=["Criterion passes."],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            review_required=True,
+        )
+    )
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-test",
+            task_id="task-test",
+            backend="codex_exec",
+            status="running",
+        )
+    )
+    _upsert_worker_result_record(store, "result-needs-review", status="needs_review")
+
+    with pytest.raises(ValueError, match="status needs_review"):
+        store.update_worker_run_status(
+            "run-test",
+            "completed",
+            result_id="result-needs-review",
+        )
+
+
+def test_review_promotion_promotes_needs_review_result_and_closes_tasks(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Review before completion.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-source",
+            plan_id="plan-test",
+            title="Source Task",
+            goal="Do the work.",
+            task_type="AFK",
+            status="reviewing",
+            acceptance_criteria=["done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            review_required=True,
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-review",
+            plan_id="plan-test",
+            title="Review Source Task",
+            goal="Review the work.",
+            task_type="AFK",
+            status="ready",
+            scope={
+                "review_gate": "separate_review_required_task",
+                "source_task_id": "task-source",
+                "worker_run_id": "run-source",
+            },
+            acceptance_criteria=["review done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["plans/planning.sqlite3"],
+            worker_backend="codex_review",
+            review_required=False,
+        )
+    )
+    store.upsert_worker_result_record(
+        WorkerResultRecord(
+            result_id="result-source",
+            status="needs_review",
+            summary="Worker needs review.",
+            raw_payload={
+                "worker_run_id": "run-source",
+                "status": "needs_review",
+                "summary": "Worker needs review.",
+                "changed_files": ["src/worker.py"],
+                "tests_run": [
+                    {
+                        "command": "python -B -m pytest -p no:cacheprovider",
+                        "exit_code": 0,
+                        "summary": "passed",
+                    }
+                ],
+                "acceptance_results": {"done": {"status": "passed", "evidence": "ok"}},
+                "risks": [],
+                "follow_up_tasks": [],
+                "artifacts": [],
+                "completion_notes": "Review requested.",
+            },
+            tests_run=[
+                {
+                    "command": "python -B -m pytest -p no:cacheprovider",
+                    "exit_code": 0,
+                    "summary": "passed",
+                }
+            ],
+            acceptance_results={"done": {"status": "passed", "evidence": "ok"}},
+            changed_files=["src/worker.py"],
+            completion_notes="Review requested.",
+        )
+    )
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-source",
+            task_id="task-source",
+            backend="codex_exec",
+            status="needs_review",
+            result_id="result-source",
+        )
+    )
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id="progress-review",
+            plan_id="plan-test",
+            event_type="review_result_recorded",
+            summary="Review passed.",
+            details=json.dumps(
+                {
+                    "target": "task-source",
+                    "finding_counts": {"accepted": 0, "waived": 0, "needs_hitl": 0},
+                }
+            ),
+        )
+    )
+
+    promotion = store.promote_reviewed_task_completion(
+        source_task_id="task-source",
+        review_task_id="task-review",
+        worker_run_id="run-source",
+        review_progress_id="progress-review",
+    )
+
+    read_store = open_existing_planning_database(db_path)
+    tasks = {task.task_id: task for task in read_store.list_supervisor_tasks()}
+    run = read_store.list_worker_runs(task_id="task-source")[0]
+    result = read_store.list_worker_results()[0]
+    assert promotion.promoted_from_status == "needs_review"
+    assert tasks["task-source"].status == "completed"
+    assert tasks["task-review"].status == "completed"
+    assert run.status == "completed"
+    assert result.status == "completed"
+    assert result.raw_payload["status"] == "completed"
+    assert result.raw_payload["review_promotion"]["promoted_from_status"] == "needs_review"
+    assert read_store.list_worker_run_events(worker_run_id="run-source")[0].event_type == (
+        "worker_result_review_promoted"
+    )
 
 
 def test_worker_run_upsert_completed_validates_worker_result_contract(tmp_path, capsys):

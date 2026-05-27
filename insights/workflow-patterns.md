@@ -579,4 +579,76 @@ evidence audits.
 
 Next action: treat missing prompt, JSONL, stdout, stderr, final message, diff summary, raw result,
 or manifest paths as `worker_evidence_missing`, and route `review_required=true` through a separate
-HITL review task before closing the source task.
+AFK review task by default before closing the source task. Escalate to HITL only when the review
+result needs human authority.
+
+## Review Gates Need Lower-Level Completion Invariants
+
+Confidence: confirmed.
+
+Claim: Review gating cannot live only in Story Loop prose or orchestration helpers. Any path that
+can persist worker results, mark worker runs completed, mark review-required tasks completed, or
+mark plans completed must preserve the same invariant: worker-backed `review_required=true` work
+cannot close without review result evidence.
+
+Evidence: The `todo-list-test-4` smoke ended with project-local plans completed even though the
+worker result payload and metadata reported `needs_review`; planning integrity passed because it
+did not compare completed worker runs against non-completed DB worker-result statuses. The repair
+adds regression coverage in `tests/test_planning.py` and `tests/test_planning_integrity.py`, rejects
+completed worker runs linked to `needs_review` results, blocks completion of worker-backed
+review-required tasks without `review_result_recorded` progress, and makes planning integrity flag
+worker-run/result status drift.
+
+Scope: worker result ingestion, legacy/direct worker-run recording, task status mutation, plan
+completion, planning integrity, spawned project completion, and Desktop full-AFK smoke acceptance.
+
+Supersedes: prose-only review checkpoint assumptions and Story Loop-only review task creation as
+the sole enforcement point.
+
+Next action: when adding a new completion path, add both API-level and planning-integrity tests for
+review-required work before treating the path as eligible for full-AFK completion.
+
+## Spawned Project Smoke Gates Need Main-Checker Parity
+
+Confidence: confirmed.
+
+Claim: A spawned project is not supervisor-managed if its local integrity gate is weaker than the
+main supervisor gate. Count-only checks for "at least one plan and one task" let invalid allowed
+paths, stale handoffs, missing evidence manifests, and review-gating drift pass until a human audits
+the database manually.
+
+Evidence: The `todo-list-test-5` Desktop smoke built a functional app and produced real Story Loop
+run artifacts, but the project-local `scripts/check_planning_integrity.py` passed even though the
+main checker found directory-literal `allowed_paths`, unsupported Node verification commands, a
+stale `HANDOFF.md`, missing final evidence indexes, and no separate review task. The repair copies
+the full main integrity checker into supervisor-managed spawned projects, adds a standalone fallback
+for projects without the main package import, promotes common Node verification commands into the
+safe vocabulary, canonicalizes directory allowed paths to `path/**`, and documents those rules in
+generated `AGENTS.md` and `PLANS.md`.
+
+Scope: spawned-project bootstrap, plugin full-AFK scaffolds, project-local verification, Desktop
+smoke tests, and any queue completion that relies on local `scripts/verify.py`.
+
+Next action: when smoke-testing spawned projects, compare the project-local checker against the main
+checker and treat any parity gap as a supervisor defect, not as a one-off project cleanup item.
+
+## Review Promotion Must Be Typed
+
+Confidence: confirmed.
+
+Claim: A clean review should promote review-required worker output through a typed operation, not
+manual SQLite edits. Full-AFK can run the review as a separate AFK review task; HITL is reserved for
+authority, credentials, product judgment, or risk acceptance.
+
+Evidence: `todo-list-test-5` needed raw SQLite edits to change a `needs_review` worker result into a
+completed source task after inline review evidence was recorded. That bypassed the same invariants
+the review gate was meant to enforce. The repair adds typed review promotion, makes separate review
+tasks AFK with a `codex_review` backend by default, and teaches Desktop skill instructions to run
+`review-run-live` followed by `review-result-promote` for clean review results.
+
+Scope: review-required Story Loop tasks, live review execution, worker-result status alignment,
+planning integrity, and Desktop full-AFK queue advancement.
+
+Next action: any future completion path that accepts reviewed `needs_review` output should call the
+typed promotion surface and preserve the original status in metadata instead of mutating rows ad
+hoc.

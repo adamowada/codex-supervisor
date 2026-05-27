@@ -51,8 +51,10 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
   `task-show <task-id> --json`, or `plan-summary --current-queue --json` as needed.
 - Worker launch: route to `story-loop-runner`; render `goal-contract-render --task-id <task-id>`;
   claim with `task-claim` only when the queue still selects that task.
-- Review: route to `fresh-thread-code-reviewer`; persist structured results with
-  `review-result-ingest`.
+- Review: for a separate review task with `worker_backend=codex_review`, run `review-run-live`
+  against the source task target, then use `review-result-promote` when the structured result has
+  no accepted or needs-HITL findings. Use `fresh-thread-code-reviewer` for ordinary manual reviews
+  and persist imported structured results with `review-result-ingest`.
 - ACP: route to `acp-publisher`; run `uv run --no-sync python -B scripts/verify.py
   --publication-ready` after staging and before committing.
 - Handoff: route to `context-compaction-handoff` before context risk or `thread-resume-brief` when
@@ -71,6 +73,9 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
   Mode preflight support it.
 - Full-AFK work must not fall back to current-thread implementation. Record a blocker or HITL task
   instead.
+- In full-AFK, `review_required=true` creates a separate AFK review task by default; escalate to
+  HITL only when the review result needs human authority, product judgment, credentials, or risk
+  acceptance.
 - Native Codex Goals are allowed only when linked to a supervisor task and rendered Goal Contract.
 - Memory database fallback cannot satisfy supervised full-AFK acceptance.
 - Do not publish marketplace entries or install into a clean Desktop profile unless the current

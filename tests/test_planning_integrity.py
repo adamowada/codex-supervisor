@@ -434,6 +434,64 @@ def test_planning_integrity_rejects_completed_afk_task_without_worker_evidence(t
     )
 
 
+def test_planning_integrity_allows_completed_afk_review_task_with_review_evidence(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-review",
+            slug="review",
+            title="Review Plan",
+            goal="Allow separate AFK review tasks to close with review evidence.",
+            status="blocked",
+        )
+    )
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id="progress-review",
+            plan_id="plan-review",
+            event_type="review_result_recorded",
+            summary="Review accepted.",
+            details=json.dumps(
+                {
+                    "review_id": "review-task-source",
+                    "target": "task-source",
+                    "finding_counts": {"accepted": 0, "waived": 0, "needs_hitl": 0},
+                    "accepted_findings": [],
+                }
+            ),
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-review",
+            plan_id="plan-review",
+            title="Review source task",
+            goal="Review the source worker result.",
+            task_type="AFK",
+            status="completed",
+            scope={
+                "review_gate": "separate_review_required_task",
+                "source_task_id": "task-source",
+            },
+            acceptance_criteria=["review done"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["plans/planning.sqlite3"],
+            worker_backend="codex_review",
+            review_required=False,
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert not any(
+        failure.check_name == "completed_afk_task_without_worker_evidence"
+        and "task-review" in failure.reason
+        for failure in failures
+    )
+
+
 def test_planning_integrity_rejects_completed_review_required_task_without_review_result(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
@@ -576,6 +634,70 @@ def test_planning_integrity_requires_worker_result_run_link(tmp_path):
     failures = module.check_planning_integrity(db_path)
 
     assert not any(failure.check_name == "worker_result_without_run_link" for failure in failures)
+
+
+def test_planning_integrity_rejects_completed_run_that_lost_indexed_evidence_paths(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker",
+            slug="worker",
+            title="Worker Plan",
+            goal="Preserve raw worker evidence paths.",
+            status="blocked",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-worker",
+            title="Worker task",
+            goal="Produce evidence.",
+            task_type="AFK",
+            status="ready",
+            acceptance_criteria=["done"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            review_required=False,
+        )
+    )
+    _upsert_db_worker_result(store)
+    _complete_worker_run_with_result(store)
+    evidence_dir = tmp_path / "runs" / "run-worker"
+    evidence_dir.mkdir(parents=True)
+    (evidence_dir / "prompt.md").write_text("prompt", encoding="utf-8")
+    (evidence_dir / "session.jsonl").write_text("{}", encoding="utf-8")
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            UPDATE worker_runs
+            SET prompt_path = ?,
+                jsonl_path = ?,
+                metadata_json = ?
+            WHERE worker_run_id = 'run-worker'
+            """,
+            (
+                "runs/run-worker/prompt.md",
+                "runs/run-worker/session.jsonl",
+                json.dumps(
+                    {
+                        "raw_evidence_paths": {
+                            "prompt_path": "runs/run-worker/original-prompt.md",
+                            "jsonl_path": "runs/run-worker/session.jsonl",
+                        }
+                    },
+                    sort_keys=True,
+                ),
+            ),
+        )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "completed_worker_run_indexed_evidence_drift" for failure in failures
+    )
 
 
 def test_planning_integrity_rejects_worker_results_directory(tmp_path):
@@ -2127,6 +2249,39 @@ def test_planning_integrity_requires_plan_timestamps_to_cover_progress(tmp_path)
     failures = module.check_planning_integrity(db_path)
 
     assert any(failure.check_name == "plan_updated_at_trails_progress" for failure in failures)
+
+
+def test_planning_integrity_rejects_stale_review_handoff_after_completed_queue(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-done",
+            slug="done",
+            title="Done Plan",
+            goal="Keep handoff aligned.",
+            status="completed",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-done",
+            plan_id="plan-done",
+            title="Done",
+            goal="Done.",
+            task_type="HITL",
+            status="completed",
+        )
+    )
+    (tmp_path / "HANDOFF.md").write_text(
+        "# Handoff\n\nThe work is review pending before completion.\n",
+        encoding="utf-8",
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(failure.check_name == "handoff_snapshot_stale_review_state" for failure in failures)
 
 
 def json_worker_result() -> str:

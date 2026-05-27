@@ -50,7 +50,11 @@ read-only and review-only requests always override full-auto behavior for that t
 5. **Isolate.** Use a worktree or fresh-context worker when full-auto work could collide with active user edits or span multiple tasks.
 6. **Execute.** Implement one vertical slice or repair loop at a time. Use story-loop discipline for queued AFK work. Keep unrelated refactors out unless the selected skill says they are part of the task.
 7. **Verify.** Run targeted checks, then broader checks as risk demands. Record failures through the failure skills instead of hand-waving.
-8. **Review.** Use fresh-context review for branches, commits, diffs, or whole-repo reviews. Fix findings only after user or policy approval.
+8. **Review.** Use fresh-context review for branches, commits, diffs, or whole-repo reviews. For
+   `review_required=true` full-AFK work, create a separate AFK review task by default and promote
+   clean results through typed review promotion. Escalate to HITL only when the review result needs
+   human authority, product judgment, credentials, or risk acceptance. Fix findings only after user
+   or policy approval.
 9. **Record.** Update planning SQLite for live state, `HANDOFF.md` for mutable resume context,
    `insights/` for durable learning, issue trackers for reconciled remote state, and protected
    source-of-truth docs only when stable doctrine, contracts, architecture, testing policy, or
@@ -140,6 +144,8 @@ When the user has granted dangerous/full-auto operation, spend autonomy on throu
   `mcp_tools`, and do not pass `mcp_startup_diagnostic` merely because discovery went through
   `tool_search`.
 - Plugin full-AFK project bootstrap always uses the supervisor-managed scaffold tier.
+- Full-AFK review-required work uses a separate AFK review task by default; use HITL only for
+  findings or decisions that require human authority.
 - Parallelize read-only exploration, independent workers, CI inspection, and review where safe.
 - Never run two writers against the same files or branch without an explicit coordination plan.
 - Prefer worker outputs that are easy to review: diffs, test results, result summaries, issue/task ids, and handoff notes.

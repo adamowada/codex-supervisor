@@ -15,6 +15,7 @@ from codex_supervisor.planning import (
     PlanArtifactLinkRecord,
     PlanningSQLiteStore,
     PlanProgressRecord,
+    ReviewPromotionRecord,
     SupervisorTaskSummaryRecord,
 )
 from codex_supervisor.review_loop import ReviewFinding, ReviewResult, ReviewVerificationEvidence
@@ -113,6 +114,7 @@ class LiveReviewRunResult:
     launch_result: ReviewLaunchResult | None = None
     persistence: ReviewResultPersistenceRecord | None = None
     repair_result: ReviewRepairRoutingResult | None = None
+    review_promotion: ReviewPromotionRecord | None = None
 
 
 @dataclass(frozen=True)
@@ -313,7 +315,8 @@ def run_live_review_for_task(
     """Launch a live review, persist validated evidence, and route accepted findings."""
 
     task = _task_by_id(store, task_id)
-    review_target = target or task_id
+    source_task_id = _source_task_id_for_review_task(task)
+    review_target = target or source_task_id or task_id
     effective_progress_id = progress_id or f"progress-review-{review_id}"
     request = _review_launch_request(
         task,
@@ -357,7 +360,7 @@ def run_live_review_for_task(
             store,
             plan_id=task.plan_id,
             review_result=review_result,
-            source_task_id=task_id,
+            source_task_id=source_task_id or task_id,
             task_id_prefix=repair_task_id_prefix,
             verification_commands=repair_verification_commands,
         )
@@ -370,8 +373,17 @@ def run_live_review_for_task(
         review_artifact_ids=review_artifact_ids,
     )
     repair_result = apply_repair_task_plan(store, repair_plan) if repair_plan is not None else None
+    review_promotion: ReviewPromotionRecord | None = None
     if _needs_hitl_findings(review_result):
         status = "needs_hitl"
+    elif source_task_id is not None:
+        review_promotion = store.promote_reviewed_task_completion(
+            source_task_id=source_task_id,
+            review_task_id=task_id,
+            worker_run_id=_worker_run_id_for_review_task(task),
+            review_progress_id=effective_progress_id,
+        )
+        status = "completed"
     else:
         store.update_supervisor_task_status(task_id, "completed")
         status = "completed"
@@ -398,6 +410,7 @@ def run_live_review_for_task(
         launch_result=launch_result,
         persistence=persistence,
         repair_result=repair_result,
+        review_promotion=review_promotion,
     )
 
 
@@ -538,6 +551,18 @@ def _task_by_id(store: PlanningSQLiteStore, task_id: str) -> SupervisorTaskSumma
     if task is None:
         raise ValueError(f"task does not exist: {task_id}")
     return task
+
+
+def _source_task_id_for_review_task(task: SupervisorTaskSummaryRecord) -> str | None:
+    if task.scope.get("review_gate") != "separate_review_required_task":
+        return None
+    value = task.scope.get("source_task_id")
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _worker_run_id_for_review_task(task: SupervisorTaskSummaryRecord) -> str | None:
+    value = task.scope.get("worker_run_id")
+    return value if isinstance(value, str) and value.strip() else None
 
 
 def _review_launch_request(

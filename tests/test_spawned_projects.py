@@ -240,6 +240,14 @@ def test_spawned_project_apply_writes_full_supervisor_scaffold(tmp_path: Path) -
     assert "ops platform" in readme
     assert "spawned project" in readme
     assert "TODO" not in readme
+    agents = (target / "AGENTS.md").read_text(encoding="utf-8")
+    assert "client/**" in agents
+    assert "separate review task" in agents
+    integrity_text = (target / "scripts" / "check_planning_integrity.py").read_text(
+        encoding="utf-8"
+    )
+    assert "completed_worker_run_changed_file_outside_allowed_paths" in integrity_text
+    assert "planning database requires at least one plan and one task" not in integrity_text
     license_text = (target / "LICENSE").read_text(encoding="utf-8")
     assert "Permission is hereby granted, free of charge" in license_text
     assert "THE SOFTWARE IS PROVIDED" in license_text

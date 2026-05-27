@@ -32,10 +32,18 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
   `uv run --no-sync python -B -m mypy --no-incremental src scripts`.
 - Staged publication-ready verification for the CI repair passed with
   `uv run python -B scripts/verify.py --publication-ready`.
+- Replacement GitHub Actions run `26504128492` confirmed the Linux mypy repair, then failed planning
+  integrity because ignored historical worker evidence paths under `runs/`, `artifacts/`, and
+  `worktrees/` are absent in a clean CI checkout. The current turn repaired that by making path
+  existence strict when an ignored runtime root exists locally and non-fatal when the whole ignored
+  root is absent, with the durable lesson recorded in `insights/workflow-patterns.md`.
+- Focused verification for the clean-checkout repair passed:
+  `uv run --no-sync python -B -m pytest tests/test_planning_integrity.py -q -p no:cacheprovider`,
+  `uv run --no-sync python -B scripts/check_planning_integrity.py`, and
+  `uv run --no-sync python -B -m mypy --no-incremental --platform linux src scripts`.
 
 ## Next Action
 
-Publish the Linux mypy CI repair, confirm the replacement GitHub Actions run, then resume from the
-HITL checkpoint
+Verify and publish the clean-checkout evidence-path CI repair, then resume from the HITL checkpoint
 `task-review-review-required-hitl-gap-20260527` unless the user asks for a different next action. Do
 not resolve that checkpoint unless the user explicitly asks for the review outcome.

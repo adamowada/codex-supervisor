@@ -200,6 +200,7 @@ WORKER_RESULT_REQUIRED_KEYS = frozenset(
         "artifacts",
     }
 )
+IGNORED_RUNTIME_ROOTS = frozenset({"artifacts", "logs", "runs", "worktrees"})
 WORKER_RESULT_STATUSES = frozenset({"completed", "blocked", "failed", "needs_review"})
 FULL_COMMIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 STALE_TEST_SUMMARY_PHRASES = ("at the time", "previously passed", "passed previously")
@@ -865,7 +866,14 @@ def _check_completed_worker_runs_preserve_indexed_evidence(
                     )
                     continue
                 evidence_path = _artifact_path(repo_root, raw_value)
-                if evidence_path is not None and not evidence_path.exists():
+                if (
+                    evidence_path is not None
+                    and not evidence_path.exists()
+                    and not _missing_ignored_runtime_path_is_clean_checkout(
+                        repo_root,
+                        raw_value,
+                    )
+                ):
                     failures.append(
                         PlanningIntegrityFailure(
                             "completed_worker_run_indexed_evidence_missing",
@@ -878,7 +886,14 @@ def _check_completed_worker_runs_preserve_indexed_evidence(
             manifest_value = metadata.get("evidence_manifest")
         if isinstance(manifest_value, str) and manifest_value.strip():
             manifest_path = _artifact_path(repo_root, manifest_value)
-            if manifest_path is not None and not manifest_path.exists():
+            if (
+                manifest_path is not None
+                and not manifest_path.exists()
+                and not _missing_ignored_runtime_path_is_clean_checkout(
+                    repo_root,
+                    manifest_value,
+                )
+            ):
                 failures.append(
                     PlanningIntegrityFailure(
                         "completed_worker_run_evidence_manifest_missing",
@@ -2522,6 +2537,16 @@ def _artifact_path(repo_root: Path, artifact_id: str) -> Path | None:
     except ValueError:
         return None
     return resolved
+
+
+def _missing_ignored_runtime_path_is_clean_checkout(repo_root: Path, artifact_id: str) -> bool:
+    value = artifact_id.split("#", 1)[0].replace("\\", "/").strip()
+    if not value:
+        return False
+    root = value.split("/", 1)[0]
+    if root not in IGNORED_RUNTIME_ROOTS:
+        return False
+    return not (repo_root / root).exists()
 
 
 def _check_open_afk_tasks_have_execution_contracts(

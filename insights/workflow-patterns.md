@@ -673,3 +673,25 @@ Next action: keep raw/normalized result ingestion as the durable source of worke
 truth, copy declared support artifacts from the worktree before ingestion, and make planning
 integrity fail closed when full-AFK `codex_exec` completions lack raw evidence paths or only link an
 implementation commit without a final project-state commit.
+
+## Ignored Runtime Evidence Needs Clean-Checkout Semantics
+
+Confidence: confirmed.
+
+Claim: Planning SQLite should index ignored worker evidence paths, but public CI from a clean clone
+cannot require historical `runs/`, `artifacts/`, or `worktrees/` files to exist because those
+runtime roots are intentionally untracked. The integrity checker should require the index
+metadata, verify files when the ignored runtime root exists locally, and skip existence failures
+when the whole ignored root is absent.
+
+Evidence: GitHub Actions run `26504128492` fixed the Linux mypy failure from run `26503612674`, then
+failed planning integrity because historical completed worker runs pointed at ignored local runtime
+paths that are absent in a fresh Ubuntu checkout. Local verification passed because those ignored
+runtime directories still existed on the developer machine.
+
+Scope: planning integrity, publication-ready CI, raw worker evidence, ignored runtime cleanup, and
+full-AFK completion gates.
+
+Next action: when adding evidence-path checks, distinguish "missing specific evidence inside an
+available runtime root" from "clean checkout without ignored runtime roots" so CI remains useful
+without weakening local evidence audits.

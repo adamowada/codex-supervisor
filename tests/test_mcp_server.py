@@ -59,6 +59,8 @@ def test_list_mcp_tools_exposes_read_and_default_on_mutating_schemas(tmp_path: P
     assert task_show["inputSchema"]["required"] == ["task_id"]
     task_current = next(tool for tool in tools if tool["name"] == "codex_supervisor.task_current")
     assert task_current["inputSchema"]["required"] == ["story_loop_status_checked"]
+    task_next_afk = next(tool for tool in tools if tool["name"] == "codex_supervisor.task_next_afk")
+    assert task_next_afk["inputSchema"]["required"] == ["story_loop_status_checked"]
 
 
 def test_runtime_preflight_tool_blocks_hidden_full_afk_mode_switch(tmp_path: Path) -> None:
@@ -109,6 +111,7 @@ def test_runtime_preflight_tool_accepts_desktop_tool_name_aliases(tmp_path: Path
                 "mcp__codex_supervisor__.codex_supervisor_runtime_preflight",
                 "codex_supervisor_story_loop_status",
                 "codex_supervisor_task_current",
+                "codex_supervisor_task_next_afk",
                 "codex_supervisor_task_claim",
                 "codex_supervisor_story_loop_run_once",
             ],
@@ -159,6 +162,7 @@ def test_runtime_preflight_tool_uses_live_inventory_when_tool_search_snapshot_is
         "codex_supervisor.runtime_preflight",
         "codex_supervisor.story_loop_status",
         "codex_supervisor.task_current",
+        "codex_supervisor.task_next_afk",
         "codex_supervisor.task_claim",
         "codex_supervisor.story_loop_run_once",
     } <= normalized_tools
@@ -289,6 +293,11 @@ def test_planning_read_tools_delegate_without_mutating_or_launching(tmp_path: Pa
         {"story_loop_status_checked": True},
         context=context,
     )
+    next_afk = dispatch_mcp_tool(
+        "codex_supervisor.task_next_afk",
+        {"story_loop_status_checked": True},
+        context=context,
+    )
     shown_task = dispatch_mcp_tool(
         "codex_supervisor.task_show",
         {"task_id": "task-mcp"},
@@ -309,6 +318,7 @@ def test_planning_read_tools_delegate_without_mutating_or_launching(tmp_path: Pa
     assert status["data"]["queue_state"] == "ready"
     assert status["data"]["current_task_id"] == "task-mcp"
     assert current["data"]["task_id"] == "task-mcp"
+    assert next_afk["data"]["task_id"] == "task-mcp"
     assert shown_task["data"]["plan_id"] == "plan-mcp"
     assert runs["data"][0]["worker_run_id"] == "worker-run-mcp"
     assert shown_run["data"]["status"] == "completed"

@@ -68,6 +68,7 @@ def build_runtime_preflight_report(
     goal_contract_linked: bool = False,
     story_loop_status_checked: bool = False,
     task_current_requested: bool = False,
+    task_next_afk_requested: bool = False,
     scaffold_tier: str = "supervisor_managed",
     database_mode: str = "persistent_mongodb",
     evidence_mode: str = "strict_jsonl",
@@ -250,17 +251,19 @@ def build_runtime_preflight_report(
             )
         )
 
-    if task_current_requested and not story_loop_status_checked:
+    next_afk_selector_requested = task_current_requested or task_next_afk_requested
+
+    if next_afk_selector_requested and not story_loop_status_checked:
         issues.append(
             RuntimePreflightIssue(
                 code="story_loop_status_required",
                 severity="blocked",
                 message=(
-                    "task-current may only be used after story-loop-status has established queue "
-                    "state."
+                    "task-next-afk and legacy task-current may only be used after "
+                    "story-loop-status has established queue state."
                 ),
                 next_action=(
-                    "Run story-loop-status first, then call task-current as the AFK selector."
+                    "Run story-loop-status first, then call task-next-afk as the AFK selector."
                 ),
             )
         )
@@ -295,8 +298,10 @@ def build_runtime_preflight_report(
         evidence_mode=evidence_mode,
         mutation_policy=mutation_policy,
         queue_discovery=(
-            "story_loop_status_then_task_current"
-            if story_loop_status_checked
+            "story_loop_status_then_task_next_afk"
+            if story_loop_status_checked and next_afk_selector_requested
+            else "task_next_afk_without_story_loop_status"
+            if task_next_afk_requested
             else "task_current_without_story_loop_status"
             if task_current_requested
             else "not_requested"

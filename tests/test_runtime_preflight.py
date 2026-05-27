@@ -21,6 +21,7 @@ def test_runtime_preflight_passes_for_linked_full_afk_supervisor_modes(tmp_path:
             "codex_supervisor.runtime_preflight",
             "codex_supervisor.story_loop_status",
             "codex_supervisor.task_current",
+            "codex_supervisor.task_next_afk",
             "codex_supervisor.task_claim",
             "codex_supervisor.story_loop_run_once",
         ),
@@ -41,7 +42,7 @@ def test_runtime_preflight_passes_for_linked_full_afk_supervisor_modes(tmp_path:
     assert report.ledger.required_surface == "live_mcp"
     assert report.ledger.decision_source == "live_mcp"
     assert report.ledger.goal_contract == "native_goal_linked_to_supervisor_contract"
-    assert report.ledger.queue_discovery == "story_loop_status_then_task_current"
+    assert report.ledger.queue_discovery == "story_loop_status_then_task_next_afk"
 
 
 def test_runtime_preflight_normalizes_desktop_callable_mcp_tool_names(tmp_path: Path) -> None:
@@ -57,6 +58,7 @@ def test_runtime_preflight_normalizes_desktop_callable_mcp_tool_names(tmp_path: 
             "mcp__codex_supervisor__.codex_supervisor_runtime_preflight",
             "codex_supervisor_story_loop_status",
             "codex_supervisor_task_current",
+            "codex_supervisor_task_next_afk",
             "codex_supervisor_task_claim",
             "codex_supervisor_story_loop_run_once",
         ),
@@ -73,6 +75,7 @@ def test_runtime_preflight_normalizes_desktop_callable_mcp_tool_names(tmp_path: 
         "codex_supervisor.story_loop_status",
         "codex_supervisor.task_claim",
         "codex_supervisor.task_current",
+        "codex_supervisor.task_next_afk",
     ]
     assert (
         report.diagnostics["mcp_tool_aliases"]["codex_supervisor_story_loop_status"]
@@ -122,13 +125,15 @@ def test_runtime_preflight_cli_is_diagnostic_only_for_plugin_full_afk(
                 "--plugin-invocation",
                 "--plugin-full-afk",
                 "--story-loop-status-checked",
-                "--task-current-requested",
+                "--task-next-afk-requested",
                 "--mcp-tool",
                 "codex_supervisor.runtime_preflight",
                 "--mcp-tool",
                 "codex_supervisor.story_loop_status",
                 "--mcp-tool",
                 "codex_supervisor.task_current",
+                "--mcp-tool",
+                "codex_supervisor.task_next_afk",
                 "--mcp-tool",
                 "codex_supervisor.task_claim",
                 "--mcp-tool",
@@ -170,7 +175,7 @@ def test_runtime_preflight_cli_returns_json_and_nonzero_on_blocker(tmp_path, cap
                 "current_thread",
                 "--database-mode",
                 "memory_mongodb",
-                "--task-current-requested",
+                "--task-next-afk-requested",
                 "--json",
             ]
         )

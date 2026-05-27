@@ -140,6 +140,13 @@ OPERATIONS: tuple[SupervisorOperation, ...] = (
         "task-current",
         _mcp("task_current"),
         surface_groups=(FULL_AFK_MCP_SURFACE,),
+        aliases=("legacy_current_executable_afk_task", "task_next_afk"),
+    ),
+    SupervisorOperation(
+        "task_next_afk",
+        "task-next-afk",
+        _mcp("task_next_afk"),
+        surface_groups=(FULL_AFK_MCP_SURFACE,),
         aliases=("current_executable_afk_task",),
     ),
     SupervisorOperation("task_list", "task-list"),

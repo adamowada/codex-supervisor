@@ -23,8 +23,11 @@ from codex_supervisor.planning import (
     WorkerRunRecord,
     has_nonterminal_worker_run,
     has_unresolved_task_blockers,
-    is_executable_afk_task,
     missing_execution_contract_fields,
+)
+from codex_supervisor.queue_selection import (
+    executable_afk_tasks,
+    select_next_executable_afk_task,
 )
 from codex_supervisor.worker_backends import (
     CodexExecBackend,
@@ -150,14 +153,10 @@ def build_story_loop_status(
     )
     current_running_task_id = _current_running_task_id(plan_statuses)
     current_afk_task = (
-        next(
-            (
-                task
-                for task in tasks
-                if task.plan_id in selected_plan_ids
-                and is_executable_afk_task(task, tasks, worker_runs)
-            ),
-            None,
+        select_next_executable_afk_task(
+            tuple(task for task in tasks if task.plan_id in selected_plan_ids),
+            worker_runs,
+            all_tasks=tasks,
         )
         if current_running_task_id is None
         else None
@@ -1009,9 +1008,7 @@ def _build_plan_status(
         )
         and not has_unresolved_task_blockers(task, all_tasks)
     )
-    ready_tasks = tuple(
-        task for task in open_tasks if is_executable_afk_task(task, all_tasks, worker_runs)
-    )
+    ready_tasks = executable_afk_tasks(open_tasks, worker_runs, all_tasks=all_tasks)
     running_tasks = tuple(
         task
         for task in open_tasks

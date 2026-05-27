@@ -377,6 +377,20 @@ def test_cli_read_commands_return_json_for_empty_results(tmp_path, capsys):
     )
     assert json.loads(capsys.readouterr().out) is None
 
+    assert (
+        main(
+            [
+                "task-next-afk",
+                "--path",
+                str(db_path),
+                "--after-story-loop-status",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out) is None
+
 
 def test_cli_task_current_requires_story_loop_status_first(tmp_path, capsys):
     db_path = tmp_path / "plans" / "planning.sqlite3"
@@ -389,12 +403,29 @@ def test_cli_task_current_requires_story_loop_status_first(tmp_path, capsys):
     assert "requires prior story-loop-status" in captured.err
 
 
+def test_cli_task_next_afk_requires_story_loop_status_first(tmp_path, capsys):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    assert main(["plan-init", "--path", str(db_path)]) == 0
+    capsys.readouterr()
+
+    assert main(["task-next-afk", "--path", str(db_path)]) == 1
+
+    captured = capsys.readouterr()
+    assert "task-next-afk requires prior story-loop-status" in captured.err
+
+
 def test_cli_task_current_reports_empty_queue_in_text_mode_after_status(tmp_path, capsys):
     db_path = tmp_path / "plans" / "planning.sqlite3"
     assert main(["plan-init", "--path", str(db_path)]) == 0
     capsys.readouterr()
 
     assert main(["task-current", "--path", str(db_path), "--after-story-loop-status"]) == 0
+
+    captured = capsys.readouterr()
+    assert "No ready supervisor tasks found." in captured.out
+    assert "story-loop-status" in captured.out
+
+    assert main(["task-next-afk", "--path", str(db_path), "--after-story-loop-status"]) == 0
 
     captured = capsys.readouterr()
     assert "No ready supervisor tasks found." in captured.out

@@ -94,9 +94,7 @@ from codex_supervisor.planning import (
     SupervisorTaskSummaryRecord,
     WorkerResultRecord,
     WorkerRunRecord,
-    has_nonterminal_worker_run,
     initialize_planning_database,
-    missing_execution_contract_fields,
     open_existing_planning_database,
     unresolved_task_blockers,
 )
@@ -105,6 +103,11 @@ from codex_supervisor.projects import (
     ProjectTaskSeed,
     build_project_task_seeds,
     discover_projects,
+)
+from codex_supervisor.queue_selection import (
+    ready_task_nonclaimable_reason,
+    select_next_executable_afk_task,
+    story_loop_status_required_message,
 )
 from codex_supervisor.release import (
     PUBLICATION_READY_EVENT_TYPE,
@@ -378,7 +381,10 @@ def main(argv: list[str] | None = None) -> int:
 
     current_task_parser = subparsers.add_parser(
         "task-current",
-        help="Show the highest-priority unblocked ready AFK task attached to an active plan",
+        help=(
+            "Legacy alias for task-next-afk; show the next executable ready AFK task "
+            "after story-loop-status"
+        ),
     )
     current_task_parser.add_argument("--path", type=Path, default=None)
     current_task_parser.add_argument(
@@ -388,6 +394,19 @@ def main(argv: list[str] | None = None) -> int:
         help="Acknowledge that story-loop-status was inspected first.",
     )
     current_task_parser.add_argument("--json", action="store_true", default=False)
+
+    next_afk_task_parser = subparsers.add_parser(
+        "task-next-afk",
+        help="Show the next executable ready AFK task after story-loop-status",
+    )
+    next_afk_task_parser.add_argument("--path", type=Path, default=None)
+    next_afk_task_parser.add_argument(
+        "--after-story-loop-status",
+        action="store_true",
+        default=False,
+        help="Acknowledge that story-loop-status was inspected first.",
+    )
+    next_afk_task_parser.add_argument("--json", action="store_true", default=False)
 
     runtime_preflight_parser = subparsers.add_parser(
         "runtime-preflight",
@@ -428,6 +447,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     runtime_preflight_parser.add_argument(
         "--task-current-requested",
+        action="store_true",
+        default=False,
+    )
+    runtime_preflight_parser.add_argument(
+        "--task-next-afk-requested",
         action="store_true",
         default=False,
     )
@@ -1655,13 +1679,9 @@ def main(argv: list[str] | None = None) -> int:
             _print_worker_result_record(worker_result)
         return 0
 
-    if args.command == "task-current":
+    if args.command in {"task-current", "task-next-afk"}:
         if not args.after_story_loop_status:
-            message = (
-                "task-current requires prior story-loop-status inspection; run "
-                "`uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json` "
-                "first, then rerun task-current with --after-story-loop-status."
-            )
+            message = story_loop_status_required_message(args.command)
             if args.json:
                 _print_json(
                     {
@@ -1679,9 +1699,13 @@ def main(argv: list[str] | None = None) -> int:
         if read_store is None:
             return 1
         task_store = read_store
-        current_task = _read_or_report(task_store.next_ready_afk_task)
-        if current_task is None and _last_read_failed:
+        queue_snapshot = _read_or_report(task_store.read_queue_snapshot)
+        if queue_snapshot is None:
             return 1
+        current_task = select_next_executable_afk_task(
+            queue_snapshot.tasks,
+            queue_snapshot.worker_runs,
+        )
         if current_task is not None:
             if args.json:
                 _print_json(current_task)
@@ -1691,15 +1715,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.json:
             _print_json(None)
             return 0
-        queue_snapshot = _read_or_report(
-            lambda: (
-                task_store.list_supervisor_tasks(),
-                task_store.list_worker_runs(),
-            )
-        )
-        if queue_snapshot is None:
-            return 1
-        ready_all_tasks, worker_runs = queue_snapshot
+        ready_all_tasks = queue_snapshot.tasks
+        worker_runs = queue_snapshot.worker_runs
         all_ready_tasks = tuple(task for task in ready_all_tasks if task.status == "ready")
         if all_ready_tasks:
             print("No unblocked ready AFK tasks are attached to active plans.")
@@ -1738,6 +1755,7 @@ def main(argv: list[str] | None = None) -> int:
             goal_contract_linked=args.goal_contract_linked,
             story_loop_status_checked=args.story_loop_status_checked,
             task_current_requested=args.task_current_requested,
+            task_next_afk_requested=args.task_next_afk_requested,
             scaffold_tier=args.scaffold_tier,
             database_mode=args.database_mode,
             evidence_mode=args.evidence_mode,
@@ -3924,21 +3942,7 @@ def _task_claimability_reason(
     all_tasks: tuple[SupervisorTaskSummaryRecord, ...],
     worker_runs: tuple[WorkerRunRecord, ...],
 ) -> str:
-    reasons: list[str] = []
-    if task.plan_status != "active":
-        reasons.append(f"plan-{task.plan_status}")
-    if task.task_type != "AFK":
-        reasons.append("hitl")
-    blockers = unresolved_task_blockers(task, all_tasks)
-    if blockers:
-        reasons.append("blocked-by=" + ",".join(blockers))
-    if task.task_type == "AFK":
-        missing_fields = missing_execution_contract_fields(task)
-        if missing_fields:
-            reasons.append("missing=" + ",".join(missing_fields))
-    if has_nonterminal_worker_run(task.task_id, worker_runs):
-        reasons.append("worker-run-active")
-    return ";".join(reasons) if reasons else "unblocked"
+    return ready_task_nonclaimable_reason(task, all_tasks, worker_runs)
 
 
 if __name__ == "__main__":

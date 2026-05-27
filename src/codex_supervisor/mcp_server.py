@@ -31,6 +31,10 @@ from codex_supervisor.planning import (
     open_existing_planning_database,
 )
 from codex_supervisor.projects import discover_projects
+from codex_supervisor.queue_selection import (
+    select_next_executable_afk_task,
+    story_loop_status_required_message,
+)
 from codex_supervisor.review_loop import validate_review_result_payload
 from codex_supervisor.review_persistence import record_review_result
 from codex_supervisor.review_repairs import (
@@ -216,6 +220,7 @@ def _handle_runtime_preflight(arguments: JsonObject, context: McpServerContext) 
         goal_contract_linked=bool(arguments.get("goal_contract_linked", False)),
         story_loop_status_checked=bool(arguments.get("story_loop_status_checked", False)),
         task_current_requested=bool(arguments.get("task_current_requested", False)),
+        task_next_afk_requested=bool(arguments.get("task_next_afk_requested", False)),
         scaffold_tier=str(arguments.get("scaffold_tier") or "supervisor_managed"),
         database_mode=str(arguments.get("database_mode") or "persistent_mongodb"),
         evidence_mode=str(arguments.get("evidence_mode") or "strict_jsonl"),
@@ -235,10 +240,20 @@ def _handle_task_current(arguments: JsonObject, context: McpServerContext) -> ob
     if arguments.get("story_loop_status_checked") is not True:
         raise McpDispatchError(
             "story_loop_status_required",
-            "task_current requires story_loop_status_checked=true after inspecting "
-            "story_loop_status.",
+            story_loop_status_required_message("codex_supervisor.task_current"),
         )
-    return _open_store(context).next_ready_afk_task()
+    snapshot = _open_store(context).read_queue_snapshot()
+    return select_next_executable_afk_task(snapshot.tasks, snapshot.worker_runs)
+
+
+def _handle_task_next_afk(arguments: JsonObject, context: McpServerContext) -> object | None:
+    if arguments.get("story_loop_status_checked") is not True:
+        raise McpDispatchError(
+            "story_loop_status_required",
+            story_loop_status_required_message("codex_supervisor.task_next_afk"),
+        )
+    snapshot = _open_store(context).read_queue_snapshot()
+    return select_next_executable_afk_task(snapshot.tasks, snapshot.worker_runs)
 
 
 def _handle_task_show(arguments: JsonObject, context: McpServerContext) -> object:
@@ -1168,6 +1183,7 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
                 "goal_contract_linked": {"type": "boolean"},
                 "story_loop_status_checked": {"type": "boolean"},
                 "task_current_requested": {"type": "boolean"},
+                "task_next_afk_requested": {"type": "boolean"},
                 "scaffold_tier": {
                     "type": "string",
                     "enum": ["supervisor_managed", "base", "prototype_light", "unknown"],
@@ -1190,7 +1206,20 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     ),
     "codex_supervisor.task_current": McpToolDefinition(
         name="codex_supervisor.task_current",
-        description="Return the current executable ready AFK task after story_loop_status.",
+        description=(
+            "Legacy alias for task_next_afk; return the next executable ready AFK task "
+            "after story_loop_status."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {"story_loop_status_checked": {"type": "boolean"}},
+            "required": ["story_loop_status_checked"],
+            "additionalProperties": False,
+        },
+    ),
+    "codex_supervisor.task_next_afk": McpToolDefinition(
+        name="codex_supervisor.task_next_afk",
+        description="Return the next executable ready AFK task after story_loop_status.",
         input_schema={
             "type": "object",
             "properties": {"story_loop_status_checked": {"type": "boolean"}},
@@ -1642,6 +1671,7 @@ TOOL_HANDLERS: dict[str, McpHandler] = {
     "codex_supervisor.plan_list": _handle_plan_list,
     "codex_supervisor.runtime_preflight": _handle_runtime_preflight,
     "codex_supervisor.task_current": _handle_task_current,
+    "codex_supervisor.task_next_afk": _handle_task_next_afk,
     "codex_supervisor.task_show": _handle_task_show,
     "codex_supervisor.worker_run_list": _handle_worker_run_list,
     "codex_supervisor.worker_run_show": _handle_worker_run_show,

@@ -31,10 +31,17 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 - Planning SQLite also records `progress-execution-surface-deepening-verified-20260527`; focused
   execution-surface/goal-contract/worker-backend/runtime-preflight tests and full
   `scripts/verify.py` passed.
+- `task-queue-selection-surface-deepening-20260527` completed the fourth slice: `queue_selection`
+  now owns next-executable-AFK selection, `task-next-afk`/`codex_supervisor.task_next_afk` are the
+  explicit caller surfaces, and `task-current` remains a legacy compatibility alias.
+- Planning SQLite records `progress-queue-selection-surface-start-20260527` for the fourth slice.
+- Planning SQLite also records `progress-queue-selection-surface-verified-20260527`; focused
+  queue-selection/planning/story-loop/MCP/runtime/registry tests and full `scripts/verify.py`
+  passed.
 - The previously cleared queue remains historical: `plan-v1-live-operational-hardening` was
   abandoned after the user requested clearing that checkpoint.
 
 ## Next Action
 
-ACP `task-execution-surface-deepening-20260527`; then record and implement the next architecture
-deepening candidate under the same plan.
+ACP `task-queue-selection-surface-deepening-20260527`; then record and implement the next
+architecture deepening candidate under the same plan.

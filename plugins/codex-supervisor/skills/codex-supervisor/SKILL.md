@@ -13,7 +13,7 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
 - Use MCP tools for inspection and guarded mutation when available.
 - Use `uv run --no-sync python -B -m codex_supervisor.cli ...` as the reference queue mutation and
   evidence workflow when MCP is unavailable or an operation needs CLI-only flags.
-- Before full-AFK, project bootstrap, worker launch, or `task-current`, call
+- Before full-AFK, project bootstrap, worker launch, or next-AFK selection, call
   `codex_supervisor.runtime_preflight` through MCP. Use canonical dotted MCP tool names in
   `mcp_tools`, for example `codex_supervisor.runtime_preflight`, not Desktop callable aliases such
   as `codex_supervisor_runtime_preflight`.
@@ -50,7 +50,7 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
   user's concrete implementation request as a new project-local plan/task before calling
   `story-loop-run-once`.
 - Queue inspection: start with `story-loop-status --json`, then
-  `task-current --after-story-loop-status --json`,
+  `task-next-afk --after-story-loop-status --json`,
   `task-show <task-id> --json`, or `plan-summary --current-queue --json` as needed.
 - Worker launch: route to `story-loop-runner`; render `goal-contract-render --task-id <task-id>`;
   claim with `task-claim` only when the queue still selects that task.

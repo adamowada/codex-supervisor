@@ -350,6 +350,10 @@ FILE_PURPOSES = {
         "project registry and generic adapter helpers",
         "pytest",
     ),
+    "src/codex_supervisor/queue_selection.py": FilePurpose(
+        "Story Loop next-AFK queue selection vocabulary and helpers",
+        "pytest",
+    ),
     "src/codex_supervisor/review_loop.py": FilePurpose(
         "review mode, finding, waiver, and repair draft contracts", "pytest"
     ),
@@ -419,6 +423,9 @@ FILE_PURPOSES = {
     "tests/test_projects.py": FilePurpose(
         "project registry and generic adapter tests",
         "pytest",
+    ),
+    "tests/test_queue_selection.py": FilePurpose(
+        "Story Loop next-AFK queue selection tests", "pytest"
     ),
     "tests/test_public_repo_hygiene.py": FilePurpose("public hygiene gate tests", "pytest"),
     "tests/test_review_loop.py": FilePurpose("review loop contract tests", "pytest"),

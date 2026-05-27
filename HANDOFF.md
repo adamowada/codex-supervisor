@@ -63,10 +63,16 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 - Planning SQLite records `progress-selector-ingestion-doc-names-start-20260527` for this slice.
 - Planning SQLite also records `progress-selector-ingestion-doc-names-verified-20260527`; full
   `scripts/verify.py` passed.
+- `task-execution-mode-name-20260527` completed the fourth actionable naming fix: make Codex Exec
+  execution-surface `execution_mode` match the runtime preflight `worker_execution=codex_exec`
+  value.
+- Planning SQLite records `progress-execution-mode-name-start-20260527` for this slice.
+- Planning SQLite also records `progress-execution-mode-name-verified-20260527`; focused
+  execution-surface tests and full `scripts/verify.py` passed.
 - The previously cleared queue remains historical: `plan-v1-live-operational-hardening` was
   abandoned after the user requested clearing that checkpoint.
 
 ## Next Action
 
-ACP `task-selector-ingestion-doc-names-20260527`; then seed and handle the next actionable naming
+ACP `task-execution-mode-name-20260527`; then seed and handle the next actionable naming
 inconsistency one slice at a time.

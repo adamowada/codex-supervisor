@@ -61,7 +61,7 @@ def test_goal_contract_renderer_produces_required_sections():
     assert contract.execution_surface["worker_backend"] == {
         "name": "codex_exec",
         "backend_status": "available",
-        "execution_mode": "codex_exec_worker_backend",
+        "execution_mode": "codex_exec",
         "native_goal_support": "prompt_rendered_fallback_only",
         "official_noninteractive_native_goal_path": False,
     }

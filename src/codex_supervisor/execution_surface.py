@@ -9,7 +9,7 @@ JsonObject = dict[str, Any]
 
 CODEX_EXEC_BACKEND = "codex_exec"
 CODEX_EXEC_BACKEND_STATUS = "available"
-CODEX_EXEC_EXECUTION_MODE = "codex_exec_worker_backend"
+CODEX_EXEC_EXECUTION_MODE = CODEX_EXEC_BACKEND
 CODEX_EXEC_NATIVE_GOAL_SUPPORT = "prompt_rendered_fallback_only"
 CODEX_REASONING_EFFORT_CONFIG_KEY = "model_reasoning_effort"
 CODEX_REASONING_EFFORT_FALLBACK = "retry_without_reasoning_effort_when_cli_rejects_mapping"

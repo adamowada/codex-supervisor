@@ -45,7 +45,9 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
 
 - Project bootstrap: route to `spawned-project-bootstrap` for full factory scaffolds or
   `setup-agent-docs` for lightweight imported-skill prerequisites. Plugin full-AFK requests always
-  use the supervisor-managed scaffold tier.
+  use the supervisor-managed scaffold tier. After `spawned-project-apply`, treat the scaffold task
+  as already completed by deterministic apply evidence; seed or compile the user's concrete
+  implementation request as a new project-local task before calling `story-loop-run-once`.
 - Queue inspection: start with `story-loop-status --json`, then
   `task-current --after-story-loop-status --json`,
   `task-show <task-id> --json`, or `plan-summary --current-queue --json` as needed.

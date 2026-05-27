@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,6 +17,7 @@ from codex_supervisor.planning import (
     PlanProgressRecord,
     PlanRecord,
     SupervisorTaskRecord,
+    WorkerRunRecord,
     initialize_planning_database,
 )
 
@@ -316,6 +319,7 @@ def apply_spawned_project_scaffold(
         ):
             pass
 
+    _complete_spawned_scaffold_apply_task(root, proposal, tuple(created))
     git_baseline = _ensure_full_afk_git_baseline(brief, proposal, root)
     return SpawnedProjectScaffoldApplyResult(
         project_name=proposal.project_name,
@@ -421,6 +425,234 @@ def _run_git(
     return result
 
 
+def _complete_spawned_scaffold_apply_task(
+    root: Path,
+    proposal: SpawnedProjectScaffoldProposal,
+    created_files: tuple[str, ...],
+) -> None:
+    if "plans/planning.sqlite3" not in proposal.recommendation.required_files:
+        return
+    db_path = root / "plans" / "planning.sqlite3"
+    if not db_path.exists():
+        return
+
+    verification = _run_spawned_scaffold_verification(root)
+    slug = _slugify(proposal.project_name)
+    plan_id = f"plan-{slug}-bootstrap"
+    task_id = f"task-{slug}-bootstrap-scaffold"
+    worker_run_id = f"run-{slug}-scaffold-apply"
+    run_directory = f"runs/{worker_run_id}"
+    artifact_directory = f"artifacts/{worker_run_id}"
+    prompt_path = f"{run_directory}/prompt.md"
+    jsonl_path = f"{run_directory}/events.jsonl"
+    stdout_path = f"{run_directory}/stdout.txt"
+    stderr_path = f"{run_directory}/stderr.txt"
+    final_message_path = f"{run_directory}/final-message.txt"
+    diff_summary_path = f"{run_directory}/diff-summary.txt"
+    result_path = f"{artifact_directory}/worker-result.raw.json"
+    evidence_manifest_path = f"{artifact_directory}/evidence-manifest.json"
+    changed_files = _created_scaffold_files(root, created_files)
+    if not changed_files:
+        changed_files = ("plans/planning.sqlite3",)
+
+    acceptance_results = {
+        criterion: {
+            "status": "passed",
+            "evidence": "Satisfied by deterministic spawned-project scaffold apply.",
+        }
+        for criterion in proposal.first_task.acceptance_criteria
+    }
+    payload = {
+        "worker_run_id": worker_run_id,
+        "status": "completed",
+        "summary": "Supervisor scaffold apply completed the generated scaffold task.",
+        "changed_files": list(changed_files),
+        "tests_run": [
+            {
+                "command": "python -B scripts/verify.py",
+                "exit_code": verification.returncode,
+                "summary": "passed",
+            }
+        ],
+        "acceptance_results": acceptance_results,
+        "risks": [],
+        "follow_up_tasks": [
+            "Seed the first concrete implementation task from the user's product request before "
+            "running Story Loop workers."
+        ],
+        "artifacts": [result_path, evidence_manifest_path],
+        "completion_notes": (
+            "Scaffold task was completed by spawned-project-apply; Story Loop should run the "
+            "next concrete implementation task, not a scaffold redo."
+        ),
+    }
+    _write_spawned_text(
+        root,
+        prompt_path,
+        "Deterministically apply the selected codex-supervisor spawned-project scaffold.\n",
+    )
+    _write_spawned_text(
+        root,
+        jsonl_path,
+        json.dumps(
+            {
+                "event": "spawned_project.scaffold_apply.completed",
+                "worker_run_id": worker_run_id,
+                "task_id": task_id,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+    )
+    _write_spawned_text(root, stdout_path, verification.stdout)
+    _write_spawned_text(root, stderr_path, verification.stderr)
+    _write_spawned_text(root, diff_summary_path, "\n".join(changed_files) + "\n")
+    _write_spawned_text(root, final_message_path, json.dumps(payload, indent=2) + "\n")
+    _write_spawned_text(root, result_path, json.dumps(payload, indent=2) + "\n")
+    _write_spawned_evidence_manifest(
+        root,
+        worker_run_id=worker_run_id,
+        task_id=task_id,
+        paths={
+            "prompt": prompt_path,
+            "jsonl": jsonl_path,
+            "stdout": stdout_path,
+            "stderr": stderr_path,
+            "final_message": final_message_path,
+            "diff_summary": diff_summary_path,
+            "raw_result": result_path,
+        },
+        output_path=evidence_manifest_path,
+    )
+
+    store = PlanningSQLiteStore(db_path, read_only=False)
+    metadata = {
+        "backend": "scaffold_apply",
+        "execution_mode": "deterministic_supervisor_scaffold_apply",
+        "launch_decision": "deterministic_scaffold_apply",
+        "raw_evidence_paths": {
+            "prompt": prompt_path,
+            "jsonl": jsonl_path,
+            "stdout": stdout_path,
+            "stderr": stderr_path,
+            "final_message": final_message_path,
+            "diff_summary": diff_summary_path,
+            "result": result_path,
+            "evidence_manifest": evidence_manifest_path,
+        },
+        "evidence_manifest_path": evidence_manifest_path,
+    }
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id=worker_run_id,
+            task_id=task_id,
+            backend="scaffold_apply",
+            status="running",
+            prompt_path=prompt_path,
+            jsonl_path=jsonl_path,
+            result_path=result_path,
+            metadata=metadata,
+        )
+    )
+    store.ingest_worker_result(worker_run_id, result_path)
+    store.upsert_plan_milestone(
+        PlanMilestoneRecord(
+            milestone_id=f"milestone-{slug}-bootstrap",
+            plan_id=plan_id,
+            title="Bootstrap scaffold",
+            status="completed",
+            sort_order=10,
+            details={"tiers": list(proposal.recommendation.tiers)},
+        )
+    )
+    store.upsert_plan_acceptance_criterion(
+        PlanAcceptanceCriterionRecord(
+            criterion_id=f"criterion-{slug}-scaffold",
+            plan_id=plan_id,
+            description="Selected scaffold files exist and scaffold verification passes.",
+            status="completed",
+            verification_command="python -B scripts/verify.py",
+        )
+    )
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id=f"progress-{slug}-scaffold-completed",
+            plan_id=plan_id,
+            event_type="scaffold_completed",
+            summary="Deterministic spawned-project scaffold apply completed the scaffold task.",
+            details=(
+                "The bootstrap task is a scaffold-apply record, not a Story Loop worker target. "
+                "Seed the user's concrete implementation request as the next task before "
+                "launching codex_exec."
+            ),
+            linked_artifact_id=evidence_manifest_path,
+        )
+    )
+
+
+def _run_spawned_scaffold_verification(root: Path) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        (sys.executable, "-B", "scripts/verify.py"),
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        details = (result.stderr or result.stdout).strip()
+        msg = "spawned project scaffold verification failed"
+        if details:
+            msg = f"{msg}: {details}"
+        raise RuntimeError(msg)
+    return result
+
+
+def _created_scaffold_files(root: Path, created_files: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(
+        path
+        for path in dict.fromkeys(created_files)
+        if not path.endswith("/") and (root / path).is_file()
+    )
+
+
+def _write_spawned_text(root: Path, relative_path: str, content: str) -> None:
+    path = root / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def _write_spawned_evidence_manifest(
+    root: Path,
+    *,
+    worker_run_id: str,
+    task_id: str,
+    paths: dict[str, str],
+    output_path: str,
+) -> None:
+    manifest = {
+        "worker_run_id": worker_run_id,
+        "task_id": task_id,
+        "status": "completed",
+        "launch_decision": "deterministic_scaffold_apply",
+        "paths": {
+            name: _spawned_evidence_path_record(root / relative_path)
+            for name, relative_path in paths.items()
+        },
+    }
+    _write_spawned_text(root, output_path, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+
+
+def _spawned_evidence_path_record(path: Path) -> dict[str, object]:
+    if not path.exists() or not path.is_file():
+        return {"exists": False}
+    raw_bytes = path.read_bytes()
+    return {
+        "exists": True,
+        "bytes": len(raw_bytes),
+        "sha256": hashlib.sha256(raw_bytes).hexdigest(),
+    }
+
+
 def _write_scaffold_file(
     root: Path,
     relative_path: str,
@@ -486,7 +718,7 @@ def _initialize_spawned_planning_database(
             plan_id=plan_id,
             description="Selected scaffold files exist and scaffold verification passes.",
             status="pending",
-            verification_command="uv run --no-sync python -B scripts/verify.py",
+            verification_command="python -B scripts/verify.py",
         )
     )
     store.upsert_supervisor_task(
@@ -545,9 +777,11 @@ def _scaffold_file_content(
             "`python -B scripts/check_planning_integrity.py` before declaring a queue complete. "
             "Directory allowed paths must use explicit glob patterns such as `client/**`, not "
             "trailing slash forms such as `client/`. Review-required AFK work needs a separate "
-            "review task and review result before completion. Keep source-of-truth docs stable, "
-            "run `python -B scripts/verify.py` before publishing, and do not store secrets or "
-            "local absolute roots in tracked state.\n"
+            "review task and review result before completion. The scaffold task is completed by "
+            "`spawned-project-apply`; seed the user's concrete implementation request as a new "
+            "task before running Story Loop workers. Keep source-of-truth docs stable, run "
+            "`python -B scripts/verify.py` before publishing, and do not store secrets or local "
+            "absolute roots in tracked state.\n"
         )
     if relative_path == "PLANS.md":
         return (
@@ -555,8 +789,9 @@ def _scaffold_file_content(
             "Planning state lives in `plans/planning.sqlite3`. Tasks need a clear goal, "
             "acceptance criteria, verification commands, allowed paths, and review posture before "
             "unattended work begins. Use repo-relative file paths or glob patterns for allowed "
-            "paths; express directories as `path/**`. A completed plan must not leave `HANDOFF.md` "
-            "saying review is still pending.\n"
+            "paths; express directories as `path/**`. After scaffold apply, do not run a worker on "
+            "the scaffold completion record; compile or upsert the real product task first. A "
+            "completed plan must not leave `HANDOFF.md` saying review is still pending.\n"
         )
     if relative_path == "ARCHITECTURE.md":
         return (
@@ -1188,10 +1423,18 @@ def _first_task_for_recommendation(
             "Verification commands pass for the scaffold.",
             "HANDOFF.md contains a compact current resume snapshot.",
         ),
-        verification_commands=recommendation.verification_commands,
-        allowed_paths=tuple(action.path for action in file_actions),
-        review_required=True,
+        verification_commands=("python -B scripts/verify.py",),
+        allowed_paths=tuple(
+            _allowed_path_for_scaffold_action(action.path) for action in file_actions
+        ),
+        review_required=False,
     )
+
+
+def _allowed_path_for_scaffold_action(path: str) -> str:
+    if path.endswith("/"):
+        return f"{path.rstrip('/')}/**"
+    return path
 
 
 def _recommended_action_tiers(

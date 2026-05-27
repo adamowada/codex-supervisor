@@ -144,6 +144,10 @@ When the user has granted dangerous/full-auto operation, spend autonomy on throu
   `mcp_tools`, and do not pass `mcp_startup_diagnostic` merely because discovery went through
   `tool_search`.
 - Plugin full-AFK project bootstrap always uses the supervisor-managed scaffold tier.
+- After `spawned-project-apply`, treat the generated scaffold task as already completed by the
+  deterministic apply step. Seed or compile the user's concrete implementation request as a new
+  project-local task before calling `story-loop-run-once`; do not launch a Codex worker merely to
+  redo scaffold creation.
 - Full-AFK review-required work uses a separate AFK review task by default; use HITL only for
   findings or decisions that require human authority.
 - Parallelize read-only exploration, independent workers, CI inspection, and review where safe.

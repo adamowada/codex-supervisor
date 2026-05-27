@@ -182,10 +182,10 @@ def test_spawned_project_proposal_for_full_scaffold_includes_guidance() -> None:
     assert any("project-specific skills" in item for item in proposal.skill_actions)
     assert any("sources/README.md" in item for item in proposal.source_study_actions)
     assert proposal.first_task.title == "Bootstrap spawned project scaffold"
-    assert proposal.first_task.review_required is True
-    assert proposal.first_task.allowed_paths == tuple(
-        action.path for action in proposal.file_actions
-    )
+    assert proposal.first_task.review_required is False
+    assert proposal.first_task.verification_commands == ("python -B scripts/verify.py",)
+    assert ".agents/skills/**" in proposal.first_task.allowed_paths
+    assert ".agents/skills/" not in proposal.first_task.allowed_paths
 
 
 def test_spawned_project_apply_writes_full_supervisor_scaffold(tmp_path: Path) -> None:
@@ -260,9 +260,24 @@ def test_spawned_project_apply_writes_full_supervisor_scaffold(tmp_path: Path) -
     with sqlite3.connect(target / "plans" / "planning.sqlite3") as connection:
         plan_count = connection.execute("SELECT COUNT(*) FROM plans").fetchone()[0]
         task_count = connection.execute("SELECT COUNT(*) FROM supervisor_tasks").fetchone()[0]
+        task_status = connection.execute(
+            "SELECT status FROM supervisor_tasks WHERE task_id = ?",
+            ("task-ops-platform-bootstrap-scaffold",),
+        ).fetchone()[0]
+        worker_run = connection.execute(
+            "SELECT backend, status, result_id FROM worker_runs WHERE worker_run_id = ?",
+            ("run-ops-platform-scaffold-apply",),
+        ).fetchone()
+        result_count = connection.execute("SELECT COUNT(*) FROM worker_result_records").fetchone()[
+            0
+        ]
         database_text = "\n".join(connection.iterdump())
     assert plan_count == 1
     assert task_count == 1
+    assert task_status == "completed"
+    assert tuple(worker_run[:2]) == ("scaffold_apply", "completed")
+    assert worker_run[2]
+    assert result_count == 1
     assert "C:\\Users" not in database_text
     assert str(target) not in database_text
 
@@ -504,5 +519,7 @@ def test_cli_spawned_project_propose_emits_json(capsys) -> None:
     assert any("insights/" in item for item in payload["insight_actions"])
     assert any("project-specific skills" in item for item in payload["skill_actions"])
     assert any("sources/README.md" in item for item in payload["source_study_actions"])
-    assert payload["first_task"]["review_required"] is True
-    assert payload["first_task"]["allowed_paths"] == action_paths
+    assert payload["first_task"]["review_required"] is False
+    assert payload["first_task"]["verification_commands"] == ["python -B scripts/verify.py"]
+    assert ".agents/skills/**" in payload["first_task"]["allowed_paths"]
+    assert payload["first_task"]["allowed_paths"] != action_paths

@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import codex_supervisor.worker_backends as worker_backends
 from codex_supervisor.worker_backends import (
     CodexExecBackend,
     CommandExecutionResult,
@@ -198,12 +199,68 @@ def test_codex_exec_backend_preflight_builds_list_argv_without_launching(tmp_pat
         "requested": "high",
         "transport": "config_override",
         "codex_config_key": "model_reasoning_effort",
+        "fallback": "retry_without_reasoning_effort_when_cli_rejects_mapping",
     }
     assert preflight.metadata["version_gated_options"] == [
         "model",
         "reasoning_effort_config",
         "config",
     ]
+
+
+def test_codex_exec_backend_prefers_windows_cmd_when_bare_codex_is_requested(
+    tmp_path,
+    monkeypatch,
+):
+    calls: list[tuple[str, ...]] = []
+
+    def fake_which(candidate: str) -> str | None:
+        return {
+            "codex.cmd": "C:/Tools/codex.cmd",
+            "codex": "C:/Tools/codex.ps1",
+        }.get(candidate)
+
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        calls.append(argv)
+        return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+
+    monkeypatch.setattr(worker_backends.os, "name", "nt")
+    monkeypatch.setattr(worker_backends.shutil, "which", fake_which)
+
+    preflight = CodexExecBackend(codex_executable="codex", command_runner=runner).preflight(
+        _codex_exec_request(tmp_path)
+    )
+
+    assert calls == [("C:/Tools/codex.cmd", "--version")]
+    assert preflight.executable_path == "C:/Tools/codex.cmd"
+    assert preflight.resolution_method == "configured_path_windows_cmd"
+    assert preflight.failure_class is None
+
+
+def test_codex_exec_backend_rejects_configured_powershell_shim_without_launching(tmp_path):
+    calls: list[tuple[str, ...]] = []
+
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        calls.append(argv)
+        return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+
+    result = CodexExecBackend(
+        codex_executable="C:/Tools/codex.ps1",
+        command_runner=runner,
+    ).run(_codex_exec_request(tmp_path))
+
+    assert calls == []
+    assert result.status == "failed"
+    assert result.failure_class == "codex_cli_unavailable"
+    assert "PowerShell .ps1 shim" in (tmp_path / "runs/run-worker/stderr.txt").read_text()
 
 
 def test_codex_exec_backend_fails_closed_for_unsupported_options(tmp_path):
@@ -695,6 +752,101 @@ def test_codex_exec_backend_launch_failure_preserves_process_evidence(tmp_path):
     jsonl = (tmp_path / "runs" / "run-worker" / "events.jsonl").read_text()
     assert "assistant.error" in jsonl
     assert "codex_exec.failed" in jsonl
+
+
+def test_codex_exec_backend_retries_with_cli_defaults_when_model_is_rejected(tmp_path):
+    calls: list[tuple[str, ...]] = []
+
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        calls.append(argv)
+        if argv == ("C:/Tools/codex.exe", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+        if "--model" in argv:
+            return CommandExecutionResult(
+                exit_code=1,
+                stderr="invalid_request_error: model gpt-5 is not supported\n",
+            )
+        _write_valid_worker_result(
+            tmp_path,
+            worker_run_id="run-worker",
+            changed_file="src/success.py",
+        )
+        (tmp_path / "runs" / "run-worker" / "events.jsonl").write_text(
+            '{"event":"assistant.step"}\n',
+            encoding="utf-8",
+        )
+        (tmp_path / "runs" / "run-worker" / "diff-summary.txt").write_text(
+            "src/success.py\n",
+            encoding="utf-8",
+        )
+        return CommandExecutionResult(exit_code=0, stdout='{"event":"done"}\n')
+
+    request = _codex_exec_request(tmp_path, model="gpt-5")
+
+    result = CodexExecBackend(
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=runner,
+        launch_enabled=True,
+    ).run(request)
+
+    exec_calls = [argv for argv in calls if len(argv) > 1 and argv[1] == "exec"]
+    assert len(exec_calls) == 2
+    assert "--model" in exec_calls[0]
+    assert "--model" not in exec_calls[1]
+    assert result.status == "completed"
+    assert result.metadata["capability_retry"]["removed_options"] == ["model"]
+    assert result.metadata["capability_retry"]["retry_exit_code"] == 0
+
+
+def test_codex_exec_backend_retries_without_reasoning_mapping_when_cli_rejects_it(tmp_path):
+    calls: list[tuple[str, ...]] = []
+
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        calls.append(argv)
+        if argv == ("C:/Tools/codex.exe", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+        if any("model_reasoning_effort" in item for item in argv):
+            return CommandExecutionResult(
+                exit_code=1,
+                stderr="unsupported config key model_reasoning_effort\n",
+            )
+        _write_valid_worker_result(
+            tmp_path,
+            worker_run_id="run-worker",
+            changed_file="src/success.py",
+        )
+        (tmp_path / "runs" / "run-worker" / "events.jsonl").write_text(
+            '{"event":"assistant.step"}\n',
+            encoding="utf-8",
+        )
+        (tmp_path / "runs" / "run-worker" / "diff-summary.txt").write_text(
+            "src/success.py\n",
+            encoding="utf-8",
+        )
+        return CommandExecutionResult(exit_code=0, stdout='{"event":"done"}\n')
+
+    request = _codex_exec_request(tmp_path, reasoning_effort="high")
+
+    result = CodexExecBackend(
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=runner,
+        launch_enabled=True,
+    ).run(request)
+
+    exec_calls = [argv for argv in calls if len(argv) > 1 and argv[1] == "exec"]
+    assert len(exec_calls) == 2
+    assert any("model_reasoning_effort" in item for item in exec_calls[0])
+    assert not any("model_reasoning_effort" in item for item in exec_calls[1])
+    assert result.status == "completed"
+    assert result.metadata["capability_retry"]["removed_options"] == ["reasoning_effort"]
 
 
 def test_codex_exec_backend_launch_missing_result_preserves_evidence(tmp_path):

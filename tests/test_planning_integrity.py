@@ -684,8 +684,8 @@ def test_planning_integrity_rejects_completed_run_that_lost_indexed_evidence_pat
                 json.dumps(
                     {
                         "raw_evidence_paths": {
-                            "prompt_path": "runs/run-worker/original-prompt.md",
-                            "jsonl_path": "runs/run-worker/session.jsonl",
+                            "prompt": "runs/run-worker/original-prompt.md",
+                            "jsonl": "runs/run-worker/session.jsonl",
                         }
                     },
                     sort_keys=True,

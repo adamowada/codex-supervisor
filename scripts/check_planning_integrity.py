@@ -740,30 +740,42 @@ def _check_completed_worker_runs_preserve_indexed_evidence(
         raw_evidence_paths = metadata.get("raw_evidence_paths")
         if isinstance(raw_evidence_paths, dict):
             indexed_paths = {
-                "prompt_path": prompt_path,
-                "jsonl_path": jsonl_path,
+                "prompt": ("prompt_path", prompt_path),
+                "jsonl": ("jsonl_path", jsonl_path),
             }
-            for key, indexed_value in indexed_paths.items():
-                raw_value = raw_evidence_paths.get(key)
+            for evidence_key, (indexed_key, indexed_value) in indexed_paths.items():
+                raw_value = raw_evidence_paths.get(evidence_key)
                 if not isinstance(raw_value, str) or not raw_value.strip():
                     continue
                 if indexed_value != raw_value:
                     failures.append(
                         PlanningIntegrityFailure(
                             "completed_worker_run_indexed_evidence_drift",
-                            f"{worker_run_id}: indexed {key}={indexed_value!r}, "
+                            f"{worker_run_id}: indexed {indexed_key}={indexed_value!r}, "
                             f"raw evidence records {raw_value!r}",
                         )
                     )
+            for evidence_key, raw_value in sorted(raw_evidence_paths.items()):
+                if not isinstance(raw_value, str) or not raw_value.strip():
+                    failures.append(
+                        PlanningIntegrityFailure(
+                            "completed_worker_run_raw_evidence_invalid",
+                            f"{worker_run_id}: raw evidence {evidence_key} must be nonblank",
+                        )
+                    )
+                    continue
                 evidence_path = _artifact_path(repo_root, raw_value)
                 if evidence_path is not None and not evidence_path.exists():
                     failures.append(
                         PlanningIntegrityFailure(
                             "completed_worker_run_indexed_evidence_missing",
-                            f"{worker_run_id}: {key} path does not exist: {raw_value}",
+                            f"{worker_run_id}: raw evidence {evidence_key} does not exist: "
+                            f"{raw_value}",
                         )
                     )
-        manifest_value = metadata.get("evidence_manifest")
+        manifest_value = metadata.get("evidence_manifest_path")
+        if not isinstance(manifest_value, str) or not manifest_value.strip():
+            manifest_value = metadata.get("evidence_manifest")
         if isinstance(manifest_value, str) and manifest_value.strip():
             manifest_path = _artifact_path(repo_root, manifest_value)
             if manifest_path is not None and not manifest_path.exists():

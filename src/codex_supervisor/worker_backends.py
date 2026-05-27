@@ -10,7 +10,7 @@ import subprocess
 import time
 import tomllib
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from hashlib import sha256
 from pathlib import Path, PureWindowsPath
 from typing import Any
@@ -123,6 +123,16 @@ class CodexExecPreflightResult:
 
 
 @dataclass(frozen=True)
+class CodexExecutableResolution:
+    """Resolved Codex executable path plus fail-closed launch diagnostics."""
+
+    executable_path: str | None
+    resolution_method: str
+    failure_class: str | None = None
+    stderr: str = ""
+
+
+@dataclass(frozen=True)
 class CodexExecBackend:
     """Codex Exec backend preflight, argv builder, and launch wrapper.
 
@@ -137,7 +147,9 @@ class CodexExecBackend:
     def preflight(self, request: WorkerLaunchRequest) -> CodexExecPreflightResult:
         """Resolve Codex, run version preflight, and build the intended argv list."""
 
-        executable_path, resolution_method = _resolve_codex_executable(self.codex_executable)
+        executable_resolution = _resolve_codex_executable(self.codex_executable)
+        executable_path = executable_resolution.executable_path
+        resolution_method = executable_resolution.resolution_method
         environment_result = _build_launch_environment(request)
         option_failure = _unsupported_launch_option_failure(request)
         argv = _build_codex_exec_argv(request, executable_path) if executable_path else ()
@@ -146,7 +158,10 @@ class CodexExecBackend:
         version_stdout = ""
         version_stderr = ""
         failure_class = None
-        if executable_path is None:
+        if executable_resolution.failure_class is not None:
+            failure_class = executable_resolution.failure_class
+            version_stderr = executable_resolution.stderr
+        elif executable_path is None:
             failure_class = "codex_cli_unavailable"
             version_stderr = "codex executable was not found on PATH"
         elif environment_result.failure_class is not None:
@@ -329,6 +344,40 @@ class CodexExecBackend:
                 stdin=composed_prompt,
                 timeout_seconds=request.launch_timeout_seconds,
             )
+        except KeyboardInterrupt:
+            duration_seconds = time.perf_counter() - started_at
+            metadata = _codex_exec_launch_metadata(
+                preflight,
+                launch_decision="exec_interrupted",
+                exec_exit_code=None,
+                duration_seconds=duration_seconds,
+            )
+            _write_codex_exec_evidence(
+                request,
+                event="codex_exec.interrupted",
+                stdout="",
+                stderr="Codex Exec launch was interrupted; child process cleanup was requested.\n",
+                final_message="Codex Exec launch was interrupted before producing a result.\n",
+                preflight=preflight,
+                extra_event={"failure_class": "codex_exec_interrupted"},
+                preserve_existing_jsonl=True,
+                preserve_existing_diff_summary=True,
+            )
+            return WorkerLaunchResult(
+                worker_run_id=request.worker_run_id,
+                task_id=request.task_id,
+                status="failed",
+                exit_code=130,
+                duration_seconds=duration_seconds,
+                prompt_path=request.prompt_path,
+                jsonl_path=request.jsonl_path,
+                stdout_path=request.stdout_path,
+                stderr_path=request.stderr_path,
+                final_message_path=request.final_message_path,
+                diff_summary_path=request.diff_summary_path,
+                failure_class="codex_exec_interrupted",
+                metadata=metadata,
+            )
         except OSError as exc:
             duration_seconds = time.perf_counter() - started_at
             metadata = _codex_exec_launch_metadata(
@@ -400,6 +449,45 @@ class CodexExecBackend:
                 metadata=metadata,
             )
         duration_seconds = time.perf_counter() - started_at
+        if exec_result.exit_code != 0:
+            retry = _codex_exec_capability_retry(
+                request,
+                preflight,
+                exec_result,
+                command_runner=self.command_runner,
+            )
+            if retry is not None:
+                retry_request, retry_preflight, retry_metadata = retry
+                retry_started_at = time.perf_counter()
+                try:
+                    retry_exec_result = _run_command(
+                        self.command_runner,
+                        retry_preflight.argv,
+                        retry_request.worktree_path,
+                        environment_result.environment,
+                        stdin=composed_prompt,
+                        timeout_seconds=retry_request.launch_timeout_seconds,
+                    )
+                except OSError, subprocess.TimeoutExpired, KeyboardInterrupt:
+                    pass
+                else:
+                    if retry_exec_result.exit_code == 0:
+                        request = retry_request
+                        preflight = replace(
+                            retry_preflight,
+                            metadata={
+                                **retry_preflight.metadata,
+                                "capability_retry": {
+                                    **retry_metadata,
+                                    "retry_exit_code": retry_exec_result.exit_code,
+                                    "retry_duration_seconds": (
+                                        time.perf_counter() - retry_started_at
+                                    ),
+                                },
+                            },
+                        )
+                        exec_result = retry_exec_result
+                        duration_seconds = time.perf_counter() - started_at
         if exec_result.exit_code != 0:
             _write_codex_exec_evidence(
                 request,
@@ -1118,32 +1206,124 @@ def _default_command_runner(
     process_environment = _minimal_process_environment(os.environ)
     process_environment.update(environment)
     encoded_stdin = stdin.encode("utf-8") if stdin is not None else None
-    completed = subprocess.run(
+    creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+    process = subprocess.Popen(
         argv,
         cwd=cwd,
         env=process_environment,
         text=False,
-        input=encoded_stdin,
-        capture_output=True,
-        check=False,
-        timeout=timeout_seconds,
+        stdin=subprocess.PIPE if encoded_stdin is not None else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        creationflags=creationflags,
+        start_new_session=os.name != "nt",
     )
+    try:
+        stdout, stderr = process.communicate(encoded_stdin, timeout=timeout_seconds)
+    except subprocess.TimeoutExpired as exc:
+        _terminate_process_tree(process)
+        stdout, stderr = process.communicate()
+        raise subprocess.TimeoutExpired(
+            exc.cmd,
+            exc.timeout,
+            output=stdout,
+            stderr=stderr,
+        ) from exc
+    except KeyboardInterrupt:
+        _terminate_process_tree(process)
+        process.wait()
+        raise
     return CommandExecutionResult(
-        exit_code=completed.returncode,
-        stdout=_decode_process_output(completed.stdout),
-        stderr=_decode_process_output(completed.stderr),
-        stdout_bytes=completed.stdout or b"",
-        stderr_bytes=completed.stderr or b"",
+        exit_code=process.returncode,
+        stdout=_decode_process_output(stdout),
+        stderr=_decode_process_output(stderr),
+        stdout_bytes=stdout or b"",
+        stderr_bytes=stderr or b"",
     )
 
 
-def _resolve_codex_executable(configured_executable: str | None) -> tuple[str | None, str]:
+def _resolve_codex_executable(configured_executable: str | None) -> CodexExecutableResolution:
     if configured_executable:
-        return configured_executable, "configured"
+        if configured_executable.casefold() == "codex":
+            return _resolve_path_codex_executable(configured_bare=True)
+        if _is_unlaunchable_powershell_shim(configured_executable):
+            return _unlaunchable_powershell_shim_resolution(
+                configured_executable,
+                method="configured_powershell_shim",
+            )
+        return CodexExecutableResolution(configured_executable, "configured")
+    return _resolve_path_codex_executable(configured_bare=False)
+
+
+def _resolve_path_codex_executable(*, configured_bare: bool) -> CodexExecutableResolution:
+    if os.name == "nt":
+        powershell_shim: str | None = None
+        for candidate in ("codex.cmd", "codex.exe", "codex"):
+            resolved = shutil.which(candidate)
+            if resolved is None:
+                continue
+            if _is_unlaunchable_powershell_shim(resolved):
+                powershell_shim = resolved
+                continue
+            method = "configured_path_windows" if configured_bare else "path_windows"
+            if candidate.endswith(".cmd"):
+                method = f"{method}_cmd"
+            elif candidate.endswith(".exe"):
+                method = f"{method}_exe"
+            return CodexExecutableResolution(resolved, method)
+        if powershell_shim is not None:
+            return _unlaunchable_powershell_shim_resolution(
+                powershell_shim,
+                method="configured_path_powershell_shim"
+                if configured_bare
+                else "path_powershell_shim",
+            )
+        return CodexExecutableResolution(None, "not_found")
     resolved = shutil.which("codex")
     if resolved is None:
-        return None, "not_found"
-    return resolved, "path"
+        return CodexExecutableResolution(None, "not_found")
+    return CodexExecutableResolution(resolved, "path")
+
+
+def _is_unlaunchable_powershell_shim(value: str) -> bool:
+    return Path(value).suffix.casefold() == ".ps1"
+
+
+def _unlaunchable_powershell_shim_resolution(
+    executable_path: str,
+    *,
+    method: str,
+) -> CodexExecutableResolution:
+    return CodexExecutableResolution(
+        executable_path=executable_path,
+        resolution_method=method,
+        failure_class="codex_cli_unavailable",
+        stderr=(
+            "codex resolved to a PowerShell .ps1 shim, which cannot be launched directly by "
+            "the noninteractive worker backend on Windows. Use codex.cmd or codex.exe."
+        ),
+    )
+
+
+def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ("taskkill", "/PID", str(process.pid), "/T", "/F"),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return
+    kill_process_group = getattr(os, "killpg", None)
+    if callable(kill_process_group):
+        try:
+            kill_process_group(process.pid, 15)
+            return
+        except OSError:
+            pass
+    process.terminate()
 
 
 def compose_worker_prompt(request: WorkerLaunchRequest) -> str:
@@ -1235,8 +1415,90 @@ def _codex_exec_capability_mappings(request: WorkerLaunchRequest) -> JsonObject:
             "requested": request.reasoning_effort,
             "transport": "config_override",
             "codex_config_key": "model_reasoning_effort",
+            "fallback": "retry_without_reasoning_effort_when_cli_rejects_mapping",
+        }
+    if request.model is not None:
+        mappings["model"] = {
+            "requested": request.model,
+            "transport": "cli_model_flag",
+            "fallback": "retry_with_cli_default_when_account_rejects_model_before_work",
         }
     return mappings
+
+
+def _codex_exec_capability_retry(
+    request: WorkerLaunchRequest,
+    preflight: CodexExecPreflightResult,
+    exec_result: CommandExecutionResult,
+    *,
+    command_runner: CommandRunner | None,
+) -> tuple[WorkerLaunchRequest, CodexExecPreflightResult, JsonObject] | None:
+    removed_options: list[str] = []
+    model = request.model
+    reasoning_effort = request.reasoning_effort
+    if model is not None and _looks_like_unsupported_model_failure(exec_result):
+        model = None
+        removed_options.append("model")
+    if reasoning_effort is not None and _looks_like_unsupported_reasoning_failure(exec_result):
+        reasoning_effort = None
+        removed_options.append("reasoning_effort")
+    if not removed_options:
+        return None
+    retry_request = replace(request, model=model, reasoning_effort=reasoning_effort)
+    retry_preflight = CodexExecBackend(
+        codex_executable=preflight.executable_path,
+        command_runner=command_runner,
+        launch_enabled=True,
+    ).preflight(retry_request)
+    if retry_preflight.failure_class is not None:
+        return None
+    retry_metadata: JsonObject = {
+        "decision": "retry_without_unsupported_cli_options",
+        "removed_options": removed_options,
+        "first_exit_code": exec_result.exit_code,
+        "first_stdout": _truncate_diagnostic(exec_result.stdout),
+        "first_stderr": _truncate_diagnostic(exec_result.stderr),
+        "first_argv": preflight.metadata.get("argv", []),
+        "retry_argv": retry_preflight.metadata.get("argv", []),
+    }
+    return retry_request, retry_preflight, retry_metadata
+
+
+def _looks_like_unsupported_model_failure(result: CommandExecutionResult) -> bool:
+    text = f"{result.stdout}\n{result.stderr}".casefold()
+    return "model" in text and any(
+        phrase in text
+        for phrase in (
+            "not supported",
+            "unsupported",
+            "unknown model",
+            "model_not_found",
+            "invalid_request_error",
+        )
+    )
+
+
+def _looks_like_unsupported_reasoning_failure(result: CommandExecutionResult) -> bool:
+    text = f"{result.stdout}\n{result.stderr}".casefold()
+    if "reasoning" not in text and "model_reasoning_effort" not in text:
+        return False
+    return any(
+        phrase in text
+        for phrase in (
+            "not supported",
+            "unsupported",
+            "unknown",
+            "unrecognized",
+            "invalid",
+            "unexpected argument",
+        )
+    )
+
+
+def _truncate_diagnostic(value: str, *, limit: int = 4000) -> str:
+    if len(value) <= limit:
+        return value
+    return value[:limit] + "...<truncated>"
 
 
 def _classify_version_exception(executable_path: str, exc: OSError) -> str:

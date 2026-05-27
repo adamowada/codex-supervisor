@@ -57,10 +57,16 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 - Planning SQLite records `progress-codex-executable-alias-start-20260527` for this slice.
 - Planning SQLite also records `progress-codex-executable-alias-verified-20260527`; focused
   launch-surface tests and full `scripts/verify.py` passed.
+- `task-selector-ingestion-doc-names-20260527` completed the third actionable naming fix: steer
+  repo-local skills and source-of-truth docs to `task-next-afk` and `worker-result-ingest` as
+  canonical surfaces.
+- Planning SQLite records `progress-selector-ingestion-doc-names-start-20260527` for this slice.
+- Planning SQLite also records `progress-selector-ingestion-doc-names-verified-20260527`; full
+  `scripts/verify.py` passed.
 - The previously cleared queue remains historical: `plan-v1-live-operational-hardening` was
   abandoned after the user requested clearing that checkpoint.
 
 ## Next Action
 
-ACP `task-codex-executable-alias-20260527`; then seed and handle the next actionable naming
+ACP `task-selector-ingestion-doc-names-20260527`; then seed and handle the next actionable naming
 inconsistency one slice at a time.

@@ -20,9 +20,9 @@ from codex_supervisor.locks import (  # noqa: E402
 PROTECTED_FILE_HASHES = {
     ".gitignore": "e67254cca067cb65c4b691c33416e23f9ab245c25e8528593df7459993c70abb",
     ".gitattributes": "287b668a5753e463f837a21c0cd062f3722e45a4ad89cc9075041bfd12d3f0ae",
-    "README.md": "4d9af14626014be9ce07bb76d923fb5b96b0a26b62aed0efd5e3cfd4897b66ac",
-    "AGENTS.md": "3c3da52adc2f2faadf803927e4e6b593945befe980502bf7892194b2eee1b612",
-    "PLANS.md": "114693cce008f70c49408cdd7f31520bd333d945d89a92e8ef0c759b594175ce",
+    "README.md": "378b5ef2ae2fc547c9d0d3f0dbd52fd551c2b6151944aed267ad3a77295fee22",
+    "AGENTS.md": "ae60c6ce61055412a8bf49afc6695479083db8402241c4bf9becaae73450ee92",
+    "PLANS.md": "df04f1f024942f88f9443ecbbcfb8f3588b0977eec6b0c068e2bf11614b6063f",
     "ARCHITECTURE.md": "7448f24d01327073acbe4c002372e96dcfca2de770ba709af2ab4e690b0a99bb",
     "CONTRACTS.md": "631080b73c7d3b29a47b4a2a3142bc14285387e807a6ec3c181fcf9d7f3ebf43",
     "ROADMAP.md": "10a3e8015d4daa341e30dc029a00750caab15e25ecc7d44ae83b5ebfeebaacba",

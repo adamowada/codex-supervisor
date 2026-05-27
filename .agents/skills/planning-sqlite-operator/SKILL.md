@@ -31,7 +31,7 @@ Use `plans/planning.sqlite3` for operational planning state.
 - Store Goal Contract and Story Loop metadata in task `scope_json`, `acceptance_criteria_json`,
   `verification_commands_json`, and worker-run `metadata_json` until the schema gains dedicated
   tables.
-- Complete worker runs through `worker-run-status ... --result-path <json>` so the transient JSON is
+- Complete worker runs through `worker-result-ingest --worker-run-id <id> --result-path <json>` so the transient JSON is
   ingested into `worker_result_records` and the durable worker row points at `result_id`.
   Publication-ready state must not require ignored `runs/`, `artifacts/`, `worktrees/`, or
   `worker-results/` files to be tracked. Link only tracked supporting docs, tracked durable reports,
@@ -46,10 +46,11 @@ queue-state discovery, not as permission to dump historical tables. Start with t
 inspect all history after the live queue is clear.
 
 When asked "what is the current task?", use `story-loop-status` as the queue state machine and
-`task-current` as the executable AFK selector.
+`task-next-afk` as the executable AFK selector.
 
-Never answer the current-task question from `task-current` alone. `task-current` intentionally cannot
-select HITL checkpoints, running work, or blocked queues.
+Never answer the current-task question from `task-next-afk` alone. `task-next-afk` intentionally
+cannot select HITL checkpoints, running work, or blocked queues. `task-current` remains a legacy
+compatibility alias only.
 
 - `ready`: report the highest-priority unblocked ready `AFK` task on an active plan.
 - `running`: report the claimed task and worker-run state; do not start a second worker unless the
@@ -68,7 +69,7 @@ Fresh-thread recipe:
 3. If `queue_state` is `hitl`, read `current_task_id` from that output and run
    `uv run --no-sync python -B -m codex_supervisor.cli task-show <current_task_id> --json`.
 4. If `queue_state` is `ready`, run
-   `uv run --no-sync python -B -m codex_supervisor.cli task-current --after-story-loop-status
+   `uv run --no-sync python -B -m codex_supervisor.cli task-next-afk --after-story-loop-status
    --json`, report the selected AFK task, and route execution to `story-loop-runner`.
 5. Use
    `uv run --no-sync python -B -m codex_supervisor.cli task-list --current-queue-plans-only --json`
@@ -90,7 +91,7 @@ If the user asks for all rows after queue-state discovery, separate the answer i
 and `Historical Rows`. Never phrase historical ready tasks as "one other ready task" without naming
 their terminal or non-current plan status. That wording caused fresh-thread confusion in this repo.
 
-`task-current --after-story-loop-status --json` returning `null` means "no executable AFK task was
+`task-next-afk --after-story-loop-status --json` returning `null` means "no executable AFK task was
 selected." It does not mean "nothing is happening" until `story-loop-status` also reports
 `completed` or `empty`.
 
@@ -121,7 +122,7 @@ Read/orient:
 ```sh
 uv run --no-sync python -B -m codex_supervisor.cli story-loop-status
 uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
-uv run --no-sync python -B -m codex_supervisor.cli task-current --after-story-loop-status --json
+uv run --no-sync python -B -m codex_supervisor.cli task-next-afk --after-story-loop-status --json
 uv run --no-sync python -B -m codex_supervisor.cli task-show <task-id> --json
 uv run --no-sync python -B -m codex_supervisor.cli task-list --current-queue-plans-only --json
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
@@ -154,7 +155,7 @@ uv run python -B -m codex_supervisor.cli plan-status ...
 uv run python -B -m codex_supervisor.cli milestone-status ...
 uv run python -B -m codex_supervisor.cli criterion-status ...
 uv run python -B -m codex_supervisor.cli task-status ...
-uv run python -B -m codex_supervisor.cli worker-run-status ... --result-path <path>
+uv run python -B -m codex_supervisor.cli worker-result-ingest --worker-run-id <id> --result-path <path>
 uv run python -B -m codex_supervisor.cli story-loop-record ...
 ```
 

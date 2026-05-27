@@ -4,9 +4,9 @@ This support document is read-only doctrine for repo-local skills. It does not a
 database writes, tracker mutations, worker launches, or git actions by itself.
 
 Completed worker runs must produce one repo-local JSON result file and pass it to
-`worker-run-status ... --result-path <json>` or the equivalent typed ingestion helper. The raw JSON
-path is a transient import source; after ingestion, durable completion evidence lives in
-`worker_result_records`, `worker_result_run_links`, and the completed `worker_runs.result_id`.
+`worker-result-ingest --worker-run-id <id> --result-path <json>`. The raw JSON path is a transient
+import source; after ingestion, durable completion evidence lives in `worker_result_records`,
+`worker_result_run_links`, and the completed `worker_runs.result_id`.
 
 Required JSON fields:
 

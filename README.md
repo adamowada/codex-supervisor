@@ -155,11 +155,11 @@ Then read `AGENTS.md`, `PLANS.md`, and `insights/README.md`. Use those stable fi
 task-relevant source-of-truth docs after the live queue is known. Read `HANDOFF.md` only after the
 live queue has been inspected; it is a mutable snapshot, not the queue authority.
 
-Inspect the live queue before interpreting `task-current` or running broad checks:
+Inspect the live queue before selecting AFK work or running broad checks:
 
 ```sh
 uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json
-uv run --no-sync python -B -m codex_supervisor.cli task-current --after-story-loop-status --json
+uv run --no-sync python -B -m codex_supervisor.cli task-next-afk --after-story-loop-status --json
 uv run --no-sync python -B -m codex_supervisor.cli task-list --current-queue-plans-only
 uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue
 uv run --no-sync python -B -m codex_supervisor.cli plan-list

@@ -37,7 +37,7 @@ orientation needs dependency setup.
    repair task.
 7. If `queue_state` is `completed` or `empty`, report that no executable AFK task remains.
 8. If `queue_state` is `ready`, run
-   `uv run --no-sync python -B -m codex_supervisor.cli task-current --after-story-loop-status
+   `uv run --no-sync python -B -m codex_supervisor.cli task-next-afk --after-story-loop-status
    --json` and execute only the returned task.
 9. Claim the task with
    `uv run --no-sync python -B -m codex_supervisor.cli task-claim --task-id <task_id> --worker-run-id <id> --json`
@@ -53,7 +53,8 @@ orientation needs dependency setup.
 13. Run the task verification commands.
 14. Run review when required.
 15. If checks pass, write a repo-local JSON worker result that satisfies
-    `../worker-result-contract.md` and ingest it with `worker-run-status ... --result-path <json>`.
+    `../worker-result-contract.md` and ingest it with
+    `worker-result-ingest --worker-run-id <id> --result-path <json>`.
     The JSON path is a transient import source; after ingestion the durable completion authority is
     the DB-backed worker result record and the worker run `result_id`. Do not link ignored
     `runs/`, `artifacts/`, `worktrees/`, or `worker-results/` paths as publication artifacts. Link

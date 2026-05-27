@@ -79,7 +79,7 @@ When starting or resuming `codex-supervisor` in a fresh Codex thread:
    environment condition.
 7. Run `uv run --no-sync python -B -m codex_supervisor.cli plan-summary --current-queue` only when
    the environment is already synced or dependency setup is allowed.
-8. Run `uv run --no-sync python -B -m codex_supervisor.cli task-current --after-story-loop-status
+8. Run `uv run --no-sync python -B -m codex_supervisor.cli task-next-afk --after-story-loop-status
    --json` only to select an executable AFK task after step 6 has established queue state.
    In strict read-only mode with no synced environment, use existing command output, Git state, or
    the read-only SQLite fallback below and report that typed CLI orientation needs dependency setup.

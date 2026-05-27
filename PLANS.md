@@ -63,10 +63,11 @@ fields to empty/default values.
 
 For current-work discovery, `story-loop-status` is the state machine. It distinguishes ready AFK,
 running, HITL, blocked, completed, and empty queues across active and blocked current-queue plans by
-default; `--all` adds completed, abandoned, and superseded history. `task-current
---after-story-loop-status` is only the executable AFK selector. A null `task-current` result is not
-enough to say "there is no task" until `story-loop-status` also reports `completed` or `empty`; in
-`running` or `hitl`, inspect the reported `current_task_id` with `task-show`.
+default; `--all` adds completed, abandoned, and superseded history. `task-next-afk
+--after-story-loop-status` is the executable AFK selector; `task-current` is a legacy compatibility
+alias. A null `task-next-afk` result is not enough to say "there is no task" until
+`story-loop-status` also reports `completed` or `empty`; in `running` or `hitl`, inspect the
+reported `current_task_id` with `task-show`.
 
 Use `plan-summary --current-queue` and `task-list --current-queue-plans-only` for fresh-thread
 orientation. Use `--active-only` or `--active-plans-only` only when the task explicitly excludes
@@ -159,10 +160,11 @@ the same DB result, nonempty completed-run evidence fields, zero-exit structured
 acceptance-criterion evidence, and `changed_files` entries limited to implementation or
 durable-documentation paths covered by task `allowed_paths_json`.
 
-Use `worker-run-status ... --status completed --result-path <json>` or `worker-run-upsert` to ingest
-a transient worker JSON source into SQLite. The helper stores the raw JSON payload, structured
-fields, provenance, and run links in the database, then clears filesystem result paths. Manual
-`artifact-link-add` is still useful for supporting reports, prompts, or non-result evidence.
+Use `worker-result-ingest --worker-run-id <id> --result-path <json>` to ingest a transient worker
+JSON source into SQLite. The helper stores the raw JSON payload, structured fields, provenance, and
+run links in the database, then clears filesystem result paths. `worker-run-status ... --status
+completed --result-path <json>` remains a legacy compatibility path. Manual `artifact-link-add` is
+still useful for supporting reports, prompts, or non-result evidence.
 
 For `backend = "codex_exec"`, `metadata_json` stores launch preflight and evidence pointers that do
 not deserve first-class columns yet:
@@ -234,4 +236,4 @@ The initial database seed should contain `plan-bootstrap-supervisor`, which cove
 this repo, source-of-truth documents, source clones, Python skeleton, and handoff for implementation.
 This is historical seed doctrine, not the live-work selector. Live work selection must always come
 from `story-loop-status`, then `task-show <current_task_id>` or
-`task-current --after-story-loop-status` according to queue state.
+`task-next-afk --after-story-loop-status` according to queue state.

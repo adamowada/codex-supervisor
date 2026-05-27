@@ -24,7 +24,7 @@ proposed target path and recording commands for later approval.
 - commands run and results;
 - source-of-truth docs touched;
 - planning SQLite state from `story-loop-status --json` and, when present,
-  `task-current --after-story-loop-status --json`;
+  `task-next-afk --after-story-loop-status --json`;
 - active subagents or workers;
 - blockers and unresolved decisions;
 - next ready AFK task, if any;

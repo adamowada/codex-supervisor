@@ -11,14 +11,19 @@ from codex_supervisor.codex_state import (
     CodexStateReconciliationFinding,
     CodexStateReconciliationProposal,
 )
+from codex_supervisor.evidence_vocabulary import (
+    CODEX_STATE_RECONCILIATION_APPLIED_EVENT,
+    CODEX_STATE_RECONCILIATION_FINDING_EVENT,
+    CODEX_STATE_SNAPSHOT_ARTIFACT_RELATIONSHIP,
+)
 from codex_supervisor.planning import (
     PlanningSQLiteStore,
     PlanProgressRecord,
 )
 
-CODEX_STATE_SNAPSHOT_RELATIONSHIP = "codex-state-snapshot"
-CODEX_STATE_APPLIED_EVENT = "codex_state_reconciliation_applied"
-CODEX_STATE_FINDING_EVENT = "codex_state_reconciliation_finding"
+CODEX_STATE_SNAPSHOT_RELATIONSHIP = CODEX_STATE_SNAPSHOT_ARTIFACT_RELATIONSHIP
+CODEX_STATE_APPLIED_EVENT = CODEX_STATE_RECONCILIATION_APPLIED_EVENT
+CODEX_STATE_FINDING_EVENT = CODEX_STATE_RECONCILIATION_FINDING_EVENT
 
 
 class CodexStateReconciliationApplyError(ValueError):

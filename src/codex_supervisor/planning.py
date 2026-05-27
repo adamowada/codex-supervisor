@@ -15,6 +15,18 @@ from pathlib import Path, PurePosixPath
 from typing import Any, cast
 from urllib.parse import quote, urlparse
 
+from codex_supervisor.evidence_vocabulary import (
+    CI_RUN_RECORDED_EVENT,
+    ISSUE_COMMENT_ARTIFACT_RELATIONSHIP,
+    ISSUE_COMMENT_COMMIT_RELATIONSHIP,
+    ISSUE_COMMENT_RECORDED_EVENT,
+    PR_HEAD_COMMIT_RELATIONSHIP,
+    PULL_REQUEST_RECORDED_EVENT,
+    REVIEW_RESULT_RECORDED_EVENT,
+    WORKER_RESULT_ARTIFACT_RELATIONSHIP,
+    WORKER_RESULT_JSON_SOURCE_KIND,
+    WORKER_RESULT_REVIEW_PROMOTED_EVENT,
+)
 from codex_supervisor.worker_results import (
     WorkerResult,
     WorkerResultError,
@@ -578,7 +590,7 @@ class PullRequestEvidenceRecord:
     issue_number: int | None = None
     artifact_id: str | None = None
     artifact_relationship: str = "pr-evidence"
-    commit_relationship: str = "pr-head"
+    commit_relationship: str = PR_HEAD_COMMIT_RELATIONSHIP
     occurred_at: datetime | None = None
 
 
@@ -604,8 +616,8 @@ class IssueCommentEvidenceRecord:
     author: str | None = None
     commit_sha: str | None = None
     artifact_id: str | None = None
-    artifact_relationship: str = "issue-comment"
-    commit_relationship: str = "issue-comment-commit"
+    artifact_relationship: str = ISSUE_COMMENT_ARTIFACT_RELATIONSHIP
+    commit_relationship: str = ISSUE_COMMENT_COMMIT_RELATIONSHIP
     occurred_at: datetime | None = None
 
 
@@ -701,7 +713,7 @@ class WorkerResultRecord:
     completion_notes: str | None = None
     source_path: str | None = None
     source_sha256: str | None = None
-    source_kind: str = "worker-result-json"
+    source_kind: str = WORKER_RESULT_JSON_SOURCE_KIND
     imported_at: str | None = None
     metadata: JsonObject = field(default_factory=dict)
 
@@ -1685,7 +1697,7 @@ class PlanningSQLiteStore:
         progress = PlanProgressRecord(
             progress_id=record.progress_id,
             plan_id=record.plan_id,
-            event_type="ci_run_recorded",
+            event_type=CI_RUN_RECORDED_EVENT,
             summary=summary,
             details=details,
             linked_artifact_id=record.artifact_id,
@@ -1716,7 +1728,7 @@ class PlanningSQLiteStore:
             ).fetchone()
             if (
                 previous_progress is not None
-                and previous_progress["event_type"] != "ci_run_recorded"
+                and previous_progress["event_type"] != CI_RUN_RECORDED_EVENT
             ):
                 msg = "progress_id already exists for non-CI progress event"
                 raise ValueError(msg)
@@ -1791,7 +1803,7 @@ class PlanningSQLiteStore:
         progress = PlanProgressRecord(
             progress_id=record.progress_id,
             plan_id=record.plan_id,
-            event_type="pull_request_recorded",
+            event_type=PULL_REQUEST_RECORDED_EVENT,
             summary=summary,
             details=details,
             linked_artifact_id=record.artifact_id,
@@ -1826,7 +1838,7 @@ class PlanningSQLiteStore:
             ).fetchone()
             if (
                 previous_progress is not None
-                and previous_progress["event_type"] != "pull_request_recorded"
+                and previous_progress["event_type"] != PULL_REQUEST_RECORDED_EVENT
             ):
                 msg = "progress_id already exists for non-PR progress event"
                 raise ValueError(msg)
@@ -1909,7 +1921,7 @@ class PlanningSQLiteStore:
         progress = PlanProgressRecord(
             progress_id=record.progress_id,
             plan_id=record.plan_id,
-            event_type="issue_comment_recorded",
+            event_type=ISSUE_COMMENT_RECORDED_EVENT,
             summary=summary,
             details=details,
             linked_artifact_id=record.artifact_id,
@@ -1944,7 +1956,7 @@ class PlanningSQLiteStore:
             ).fetchone()
             if (
                 previous_progress is not None
-                and previous_progress["event_type"] != "issue_comment_recorded"
+                and previous_progress["event_type"] != ISSUE_COMMENT_RECORDED_EVENT
             ):
                 msg = "progress_id already exists for non-issue-comment progress event"
                 raise ValueError(msg)
@@ -2558,7 +2570,7 @@ class PlanningSQLiteStore:
         worker_run_id: str,
         source_path: str,
         result: WorkerResult,
-        source_kind: str = "worker-result-json",
+        source_kind: str = WORKER_RESULT_JSON_SOURCE_KIND,
     ) -> WorkerResultRecord:
         """Persist validated worker result evidence in SQLite and link worker runs."""
 
@@ -2798,7 +2810,7 @@ class PlanningSQLiteStore:
                 (
                     f"event-{effective_worker_run_id}-review-promoted",
                     effective_worker_run_id,
-                    "worker_result_review_promoted",
+                    WORKER_RESULT_REVIEW_PROMOTED_EVENT,
                     "Promoted reviewed worker result to completed.",
                     _dump_json(_review_promotion_to_json(promotion)),
                     now,
@@ -4258,10 +4270,10 @@ def _has_review_result_for_task(
         """
         SELECT * FROM plan_progress_events
         WHERE plan_id = ?
-          AND event_type = 'review_result_recorded'
+          AND event_type = ?
         ORDER BY occurred_at DESC, progress_id DESC
         """,
-        (plan_id,),
+        (plan_id, REVIEW_RESULT_RECORDED_EVENT),
     ).fetchall()
     for row in rows:
         try:
@@ -5172,24 +5184,25 @@ def _review_progress_for_task(
             """
             SELECT * FROM plan_progress_events
             WHERE progress_id = ?
-              AND event_type = 'review_result_recorded'
+              AND event_type = ?
             """,
-            (progress_id,),
+            (progress_id, REVIEW_RESULT_RECORDED_EVENT),
         ).fetchone()
         _raise_missing(0 if row is None else 1, "review progress", progress_id)
         return cast(sqlite3.Row, row)
     rows = connection.execute(
         """
         SELECT * FROM plan_progress_events
-        WHERE event_type = 'review_result_recorded'
+        WHERE event_type = ?
         ORDER BY occurred_at DESC, progress_id DESC
-        """
+        """,
+        (REVIEW_RESULT_RECORDED_EVENT,),
     ).fetchall()
     for row in rows:
         details = _load_review_progress_details(row)
         if details.get("target") == source_task_id:
             return cast(sqlite3.Row, row)
-    msg = f"No review_result_recorded progress found for task {source_task_id}"
+    msg = f"No {REVIEW_RESULT_RECORDED_EVENT} progress found for task {source_task_id}"
     raise ValueError(msg)
 
 
@@ -5325,9 +5338,9 @@ def _link_worker_result_artifact(
     connection.execute(
         """
         INSERT OR IGNORE INTO plan_artifact_links(plan_id, artifact_id, relationship)
-        VALUES (?, ?, 'worker-result')
+        VALUES (?, ?, ?)
         """,
-        (str(row["plan_id"]), result_path),
+        (str(row["plan_id"]), result_path, WORKER_RESULT_ARTIFACT_RELATIONSHIP),
     )
 
 

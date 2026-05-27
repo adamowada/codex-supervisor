@@ -314,6 +314,10 @@ FILE_PURPOSES = {
         "worker execution surface vocabulary and capability mapping helpers",
         "pytest",
     ),
+    "src/codex_supervisor/evidence_vocabulary.py": FilePurpose(
+        "planning evidence event and relationship vocabulary",
+        "pytest",
+    ),
     "src/codex_supervisor/factory_smoke.py": FilePurpose(
         "deterministic release factory-loop smoke runner",
         "pytest",
@@ -458,6 +462,9 @@ FILE_PURPOSES = {
     ),
     "tests/test_execution_surface.py": FilePurpose(
         "worker execution surface vocabulary tests", "pytest"
+    ),
+    "tests/test_evidence_vocabulary.py": FilePurpose(
+        "planning evidence vocabulary tests", "pytest"
     ),
     "tests/test_story_loop.py": FilePurpose("Story Loop tests", "pytest"),
     "tests/test_task_compiler.py": FilePurpose("plan-to-task compiler tests", "pytest"),

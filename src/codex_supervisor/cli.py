@@ -38,6 +38,11 @@ from codex_supervisor.codex_state_reconciliation import (
     apply_codex_state_reconciliation_report,
     codex_state_reconciliation_report_from_payload,
 )
+from codex_supervisor.evidence_vocabulary import (
+    ISSUE_COMMENT_ARTIFACT_RELATIONSHIP,
+    ISSUE_COMMENT_COMMIT_RELATIONSHIP,
+    PR_HEAD_COMMIT_RELATIONSHIP,
+)
 from codex_supervisor.factory_smoke import (
     FactoryLoopSmokeReport,
     run_factory_loop_smoke,
@@ -713,7 +718,7 @@ def main(argv: list[str] | None = None) -> int:
     pr_parser.add_argument("--issue-number", type=int, default=None)
     pr_parser.add_argument("--artifact-id", default=None)
     pr_parser.add_argument("--artifact-relationship", default="pr-evidence")
-    pr_parser.add_argument("--commit-relationship", default="pr-head")
+    pr_parser.add_argument("--commit-relationship", default=PR_HEAD_COMMIT_RELATIONSHIP)
     pr_parser.add_argument("--json", action="store_true", default=False)
 
     issue_comment_parser = subparsers.add_parser(
@@ -734,8 +739,14 @@ def main(argv: list[str] | None = None) -> int:
     issue_comment_parser.add_argument("--author", default=None)
     issue_comment_parser.add_argument("--commit-sha", default=None)
     issue_comment_parser.add_argument("--artifact-id", default=None)
-    issue_comment_parser.add_argument("--artifact-relationship", default="issue-comment")
-    issue_comment_parser.add_argument("--commit-relationship", default="issue-comment-commit")
+    issue_comment_parser.add_argument(
+        "--artifact-relationship",
+        default=ISSUE_COMMENT_ARTIFACT_RELATIONSHIP,
+    )
+    issue_comment_parser.add_argument(
+        "--commit-relationship",
+        default=ISSUE_COMMENT_COMMIT_RELATIONSHIP,
+    )
     issue_comment_parser.add_argument("--json", action="store_true", default=False)
 
     commit_delete_parser = subparsers.add_parser("commit-link-delete", help="Unlink a plan commit")

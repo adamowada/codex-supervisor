@@ -24,6 +24,13 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 try:
+    from codex_supervisor.evidence_vocabulary import (  # noqa: E402
+        FINAL_STATE_COMMIT_RELATIONSHIPS,
+        PROMOTION_COMPLETED_EVENT,
+        REVIEW_ENFORCEMENT_ENABLED_EVENT,
+        REVIEW_RESULT_RECORDED_EVENT,
+        WORKER_RESULT_ARTIFACT_RELATIONSHIP,
+    )
     from codex_supervisor.paths import default_planning_database_path  # noqa: E402
     from codex_supervisor.planning import (  # noqa: E402
         CRITERION_STATUSES,
@@ -41,6 +48,11 @@ try:
         unsafe_worker_result_path_reason,
     )
 except ModuleNotFoundError:
+    FINAL_STATE_COMMIT_RELATIONSHIPS = ("final-project-state", "final-state", "completion")
+    PROMOTION_COMPLETED_EVENT = "promotion_completed"
+    REVIEW_ENFORCEMENT_ENABLED_EVENT = "review_enforcement_enabled"
+    REVIEW_RESULT_RECORDED_EVENT = "review_result_recorded"
+    WORKER_RESULT_ARTIFACT_RELATIONSHIP = "worker-result"
     PLAN_STATUSES = frozenset({"active", "blocked", "completed", "abandoned", "superseded"})
     CURRENT_QUEUE_PLAN_STATUSES = frozenset({"active", "blocked"})
     MILESTONE_STATUSES = frozenset({"pending", "active", "blocked", "completed", "cancelled"})
@@ -618,20 +630,21 @@ def _check_completed_publication_required_tasks_have_commit_links(
         """
     ).fetchall()
     failures: list[PlanningIntegrityFailure] = []
+    relationship_placeholders = ", ".join("?" for _ in FINAL_STATE_COMMIT_RELATIONSHIPS)
     for task_id, plan_id, scope_json, context_json in rows:
         scope = _json_object(scope_json)
         context = _json_object(context_json)
         if not _requires_final_commit(scope, context):
             continue
         final_commit_link = connection.execute(
-            """
+            f"""
             SELECT 1
             FROM plan_commit_links
             WHERE plan_id = ?
-              AND relationship IN ('final-project-state', 'final-state', 'completion')
+              AND relationship IN ({relationship_placeholders})
             LIMIT 1
             """,
-            (plan_id,),
+            (plan_id, *FINAL_STATE_COMMIT_RELATIONSHIPS),
         ).fetchone()
         if final_commit_link is not None:
             continue
@@ -1096,14 +1109,15 @@ def _check_completed_review_required_tasks_have_review_evidence(
         JOIN (
             SELECT plan_id, MIN(occurred_at) AS enabled_at
             FROM plan_progress_events
-            WHERE event_type = 'review_enforcement_enabled'
+            WHERE event_type = ?
             GROUP BY plan_id
         ) marker ON marker.plan_id = st.plan_id
         WHERE st.status = 'completed'
           AND st.review_required = 1
           AND st.updated_at >= marker.enabled_at
         ORDER BY st.task_id
-        """
+        """,
+        (REVIEW_ENFORCEMENT_ENABLED_EVENT,),
     ).fetchall()
     failures: list[PlanningIntegrityFailure] = []
     for task_id, plan_id, task_type, scope_json, context_json in rows:
@@ -1112,7 +1126,7 @@ def _check_completed_review_required_tasks_have_review_evidence(
             failures.append(
                 PlanningIntegrityFailure(
                     "completed_review_required_task_without_review_result",
-                    f"{task_id} completed without review_result_recorded progress",
+                    f"{task_id} completed without {REVIEW_RESULT_RECORDED_EVENT} progress",
                 )
             )
             continue
@@ -1213,10 +1227,10 @@ def _review_progress_for_task(
         SELECT progress_id, details
         FROM plan_progress_events
         WHERE plan_id = ?
-          AND event_type = 'review_result_recorded'
+          AND event_type = ?
         ORDER BY occurred_at DESC, progress_id DESC
         """,
-        (plan_id,),
+        (plan_id, REVIEW_RESULT_RECORDED_EVENT),
     ).fetchall()
     for progress_id, details_json in rows:
         try:
@@ -1238,10 +1252,10 @@ def _promotion_progress_for_task(
         SELECT progress_id, details
         FROM plan_progress_events
         WHERE plan_id = ?
-          AND event_type = 'promotion_completed'
+          AND event_type = ?
         ORDER BY occurred_at DESC, progress_id DESC
         """,
-        (plan_id,),
+        (plan_id, PROMOTION_COMPLETED_EVENT),
     ).fetchall()
     for progress_id, details_json in rows:
         try:
@@ -2505,10 +2519,11 @@ def _check_completed_worker_runs_are_linked(
               SELECT 1 FROM plan_artifact_links pa
               WHERE pa.plan_id = st.plan_id
                 AND pa.artifact_id = wr.result_path
-                AND pa.relationship = 'worker-result'
+                AND pa.relationship = ?
           )
         ORDER BY wr.worker_run_id
-        """
+        """,
+        (WORKER_RESULT_ARTIFACT_RELATIONSHIP,),
     ).fetchall()
     return tuple(
         PlanningIntegrityFailure(

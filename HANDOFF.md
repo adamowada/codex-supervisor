@@ -38,10 +38,17 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 - Planning SQLite also records `progress-queue-selection-surface-verified-20260527`; focused
   queue-selection/planning/story-loop/MCP/runtime/registry tests and full `scripts/verify.py`
   passed.
+- `task-evidence-vocabulary-deepening-20260527` completed the fifth slice:
+  `evidence_vocabulary` now owns final-state commit relationships, worker-result artifact links,
+  review/promotion/browser-smoke events, Codex-state reconciliation labels, and
+  publication/CI/PR/issue evidence names.
+- Planning SQLite records `progress-evidence-vocabulary-start-20260527` for the fifth slice.
+- Planning SQLite also records `progress-evidence-vocabulary-verified-20260527`; focused
+  evidence/planning/integrity tests and full `scripts/verify.py` passed.
 - The previously cleared queue remains historical: `plan-v1-live-operational-hardening` was
   abandoned after the user requested clearing that checkpoint.
 
 ## Next Action
 
-ACP `task-queue-selection-surface-deepening-20260527`; then record and implement the next
-architecture deepening candidate under the same plan.
+ACP `task-evidence-vocabulary-deepening-20260527`; then record and implement the actionable naming
+inconsistency fixes one by one.

@@ -8,6 +8,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from codex_supervisor.evidence_vocabulary import (
+    CI_RUN_RECORDED_EVENT,
+    PUBLICATION_READY_VERIFICATION_RECORDED_EVENT,
+)
 from codex_supervisor.planning import (
     PlanArtifactLinkRecord,
     PlanProgressRecord,
@@ -26,8 +30,8 @@ RELEASE_READINESS_SECTIONS = (
     "os_validation",
 )
 RELEASE_VALIDATION_EVENT_TYPE = "release_validation_recorded"
-CI_RUN_EVENT_TYPE = "ci_run_recorded"
-PUBLICATION_READY_EVENT_TYPE = "publication_ready_verification_recorded"
+CI_RUN_EVENT_TYPE = CI_RUN_RECORDED_EVENT
+PUBLICATION_READY_EVENT_TYPE = PUBLICATION_READY_VERIFICATION_RECORDED_EVENT
 LIVE_WORKER_SMOKE_EVENT_TYPE = "live_worker_smoke_recorded"
 LIVE_REVIEW_SMOKE_EVENT_TYPE = "live_review_smoke_recorded"
 MUTATING_MCP_SMOKE_EVENT_TYPE = "mutating_mcp_smoke_recorded"
@@ -371,7 +375,7 @@ def _current_ci_check(
             stale=stale,
             current_count=len(matching),
             missing=(
-                "missing: ci_run_recorded progress with matching head_sha, "
+                f"missing: {CI_RUN_EVENT_TYPE} progress with matching head_sha, "
                 "status=completed, and conclusion=success"
             ),
         ),
@@ -392,9 +396,7 @@ def _current_publication_verification_check(
         name="Current publication-ready verification evidence",
         event_type=PUBLICATION_READY_EVENT_TYPE,
         command_fragment="scripts/verify.py --publication-ready",
-        next_action=(
-            "Record publication_ready_verification_recorded evidence for the target commit."
-        ),
+        next_action=(f"Record {PUBLICATION_READY_EVENT_TYPE} evidence for the target commit."),
     )
 
 

@@ -11,6 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from codex_supervisor.evidence_vocabulary import (
+    REVIEW_ARTIFACT_RELATIONSHIP,
+    REVIEW_RESULT_ARTIFACT_RELATIONSHIP,
+    REVIEW_RESULT_RECORDED_EVENT,
+)
 from codex_supervisor.planning import (
     PlanArtifactLinkRecord,
     PlanningSQLiteStore,
@@ -32,9 +37,6 @@ from codex_supervisor.worker_backends import (
     build_codex_launch_environment,
 )
 
-REVIEW_RESULT_RECORDED_EVENT = "review_result_recorded"
-REVIEW_RESULT_ARTIFACT_RELATIONSHIP = "review-result"
-REVIEW_ARTIFACT_RELATIONSHIP = "review-artifact"
 JsonObject = dict[str, Any]
 
 

@@ -6,6 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from codex_supervisor.evidence_vocabulary import (
+    WORKER_EVIDENCE_MANIFEST_ARTIFACT_RELATIONSHIP,
+    WORKER_RESULT_ARTIFACT_RELATIONSHIP,
+    WORKER_RESULT_NORMALIZED_ARTIFACT_RELATIONSHIP,
+)
 from codex_supervisor.goal_contracts import render_goal_contract, render_goal_contract_markdown
 from codex_supervisor.planning import (
     CURRENT_QUEUE_PLAN_STATUSES,
@@ -955,7 +960,7 @@ def _link_completed_worker_evidence_artifacts(
             PlanArtifactLinkRecord(
                 plan_id=plan_id,
                 artifact_id=manifest_path,
-                relationship="worker-evidence-manifest",
+                relationship=WORKER_EVIDENCE_MANIFEST_ARTIFACT_RELATIONSHIP,
             )
         )
     if launch_result.result_path is not None:
@@ -963,7 +968,7 @@ def _link_completed_worker_evidence_artifacts(
             PlanArtifactLinkRecord(
                 plan_id=plan_id,
                 artifact_id=launch_result.result_path,
-                relationship="worker-result",
+                relationship=WORKER_RESULT_ARTIFACT_RELATIONSHIP,
             )
         )
     normalized_path = worker_result.metadata.get("normalized_result_path")
@@ -972,7 +977,7 @@ def _link_completed_worker_evidence_artifacts(
             PlanArtifactLinkRecord(
                 plan_id=plan_id,
                 artifact_id=normalized_path,
-                relationship="worker-result-normalized",
+                relationship=WORKER_RESULT_NORMALIZED_ARTIFACT_RELATIONSHIP,
             )
         )
     for link in links:

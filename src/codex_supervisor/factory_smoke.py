@@ -10,6 +10,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from codex_supervisor.evidence_vocabulary import REVIEW_RESULT_RECORDED_EVENT
 from codex_supervisor.planning import (
     PlanAcceptanceCriterionRecord,
     PlanMilestoneRecord,
@@ -190,7 +191,7 @@ def _run_factory_loop_smoke_in_workspace(
             PlanProgressRecord(
                 progress_id="progress-smoke-review",
                 plan_id=SMOKE_PLAN_ID,
-                event_type="review_result_recorded",
+                event_type=REVIEW_RESULT_RECORDED_EVENT,
                 summary=(
                     "Recorded zero-finding local review marker for factory-loop smoke; "
                     "not v1 release readiness evidence."

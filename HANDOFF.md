@@ -31,6 +31,10 @@ Active planning database:
 
 Ignored local cleanup is complete. `.venv/` remains for local development.
 
+Stage 2 is implemented in `src/codex_supervisor/policy.py`. Assurance policy is pure core code:
+it maps task intent to `low`, `medium`, or `high`, defines evidence requirements, and evaluates task,
+attempt, and evidence records without importing CLI, MCP, plugin, worker, or SQLite layers.
+
 ## Roadmap
 
 1. Stage 1, Foundation Contract: align docs, planning SQLite, skill guidance, CI, insights, handoff,
@@ -44,9 +48,9 @@ Ignored local cleanup is complete. `.venv/` remains for local development.
 
 ## Next Action
 
-Continue with Stage 2 from `ROADMAP.md`: implement the policy core that maps task intent to
-assurance requirements.
+Continue with Stage 3 from `ROADMAP.md`: define the simplified `RunAttempt` lifecycle and SQLite
+helpers for manual, shell, review, and future Codex execution.
 
 Planning task:
 
-- `task-rebuild-policy-core-20260528`
+- `task-rebuild-execution-attempts-20260528`

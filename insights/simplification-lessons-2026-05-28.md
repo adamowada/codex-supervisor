@@ -135,6 +135,29 @@ Future tests should grow with rebuilt behavior:
 - acceptance evaluation;
 - inspection and mutation commands.
 
+## Stage 2 Policy Core
+
+Assurance policy is now a pure core concern. It should not know how work was launched, which CLI
+command called it, which MCP tool exposed it, or which worker backend produced evidence.
+
+The useful boundary is:
+
+1. A task names intent, assurance, and acceptance criteria.
+2. An attempt names execution status when that record exists.
+3. Evidence names summaries, checks, artifacts, acceptance results, risks, gaps, next actions, and
+   review evidence.
+4. Policy evaluates those inputs and returns missing requirements or failed acceptance criteria.
+
+This keeps `low`, `medium`, and `high` from becoming new runtime modes. They are evidence policies:
+`low` moves exploration forward with risks or gaps and a next action; `medium` covers ordinary
+implementation with focused checks, artifacts, and acceptance results; `high` protects durable work
+with strict checks, artifacts, acceptance results, risk notes, and review evidence when review is the
+risk control.
+
+The policy module can mention attempts without owning attempt lifecycle. Creating attempts, moving
+them between statuses, attaching evidence, and writing SQLite rows belongs to the execution-attempt
+layer. That division keeps Stage 2 small and gives Stage 3 a clear job.
+
 ## Local Hygiene
 
 Ignored local artifacts should stay disposable. Development environments, caches, run outputs,

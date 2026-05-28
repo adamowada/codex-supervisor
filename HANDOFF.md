@@ -8,8 +8,12 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 ## Current Snapshot
 
 - Current queue state: empty. `story-loop-status --json` reports no current AFK, HITL, or running
-  task after `plan-supervisor-worker-boundary-cleanup-20260528` was completed.
-- Latest completed checkpoint: `plan-supervisor-worker-boundary-cleanup-20260528` recorded the
+  task after `plan-ci-linux-mypy-windll-20260528` was completed.
+- Latest completed checkpoint: `plan-ci-linux-mypy-windll-20260528` repaired GitHub Actions Verify
+  run `26552849566`, where Linux mypy rejected direct `ctypes.windll` access in
+  `src/codex_supervisor/story_loop.py`. Implementation commit:
+  `9aed4a031b04634fdcb5711403cac24113176ca0`.
+- Previous completed checkpoint: `plan-supervisor-worker-boundary-cleanup-20260528` recorded the
   todo-list-test-14 RCA, implemented project-aware optional attribution context, shared
   product-worker/controller-owned path policy, planned-vs-actual evidence metadata, and
   product-worker prompt/runtime boundary guidance. Implementation commit:
@@ -18,7 +22,7 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
   tiny backend. It proved private product workers do not receive absent `ATTRIBUTIONS.md`, preclaim
   worker metadata uses `planned_evidence_paths` instead of actual raw evidence claims, and
   controller-owned product paths fail closed before worktree creation.
-- Previous completed checkpoint: `plan-worker-controller-boundary-hardening-20260527` implemented
+- Earlier completed checkpoint: `plan-worker-controller-boundary-hardening-20260527` implemented
   the worker/controller boundary hardening fixes requested after the earlier todo-list smoke tests.
 - Durable changes now keep normal `codex_exec` workers read-only against planning/controller state,
   reject unsafe product-worker contracts pre-launch, preserve rejected Worker Result JSON as

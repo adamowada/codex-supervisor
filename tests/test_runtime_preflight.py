@@ -114,6 +114,38 @@ def test_runtime_preflight_blocks_memory_database_and_current_thread(tmp_path: P
     assert "story_loop_status_required" in issue_codes
 
 
+def test_runtime_preflight_blocks_manual_worker_execution_for_full_afk(tmp_path: Path) -> None:
+    initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+
+    report = build_runtime_preflight_report(
+        repo_root=tmp_path,
+        full_afk=True,
+        plugin_invocation=True,
+        plugin_full_afk=True,
+        supervisor_backend="mcp",
+        mcp_tools=(
+            "codex_supervisor.runtime_preflight",
+            "codex_supervisor.story_loop_status",
+            "codex_supervisor.task_current",
+            "codex_supervisor.task_next_afk",
+            "codex_supervisor.task_claim",
+            "codex_supervisor.story_loop_run_once",
+            "codex_supervisor.story_loop_start",
+            "codex_supervisor.story_loop_poll",
+        ),
+        worker_execution="manual",
+        story_loop_status_checked=True,
+        task_next_afk_requested=True,
+        database_mode="persistent_mongodb",
+        evidence_mode="strict_jsonl",
+    )
+
+    assert report.ok is False
+    assert report.status == "blocked"
+    assert {issue.code for issue in report.issues} == {"manual_worker_fallback_blocked"}
+    assert report.ledger.worker_execution == "manual"
+
+
 def test_runtime_preflight_cli_is_diagnostic_only_for_plugin_full_afk(
     tmp_path: Path,
     capsys,

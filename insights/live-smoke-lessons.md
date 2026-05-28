@@ -48,6 +48,36 @@ not live queue state. Current work still belongs in `plans/planning.sqlite3`.
 - `supersedes`: prose-only worker completion or lossy controller summaries.
 - `next action`: Keep liveness and evidence-manifest checks in both fake and live smoke paths.
 
+### Liveness Heartbeats Must Preserve Semantic Worker Events
+
+- `claim`: Heartbeat updates are only useful when they preserve the most recent semantic Codex Exec
+  event; otherwise an active file-changing worker can look like a generic idle process.
+- `confidence`: confirmed
+- `evidence`: todo-list-test-16 audit, `src/codex_supervisor/worker_backends.py`,
+  `tests/test_worker_backends.py`, `tests/test_story_loop_e2e.py`, and
+  `scripts/check_planning_integrity.py`.
+- `scope`: Codex Exec stream observation, async Story Loop polling, liveness probes, and stalled
+  worker classification.
+- `supersedes`: treating heartbeat-only liveness as sufficient evidence for a stall decision.
+- `next action`: Keep file-change/todo/command semantic liveness fields across heartbeat writes and
+  reject stalled failure records that conflict with file-change stream events.
+
+### Full-AFK Must Not Escape Into Manual Worker Execution
+
+- `claim`: In plugin or supervised full-AFK mode, direct/manual worker execution is a blocked state,
+  not a recovery path; recovery must continue through Story Loop polling or record HITL/blocker
+  evidence.
+- `confidence`: confirmed
+- `evidence`: todo-list-test-16 audit, `src/codex_supervisor/runtime_preflight.py`,
+  `scripts/check_planning_integrity.py`, `tests/test_runtime_preflight.py`, and
+  `tests/test_planning_integrity.py`.
+- `scope`: Desktop plugin full-AFK, live Story Loop recovery, runtime preflight, and planning
+  integrity.
+- `supersedes`: launching ad hoc `codex exec` workers or implementing in the controller thread
+  after a Story Loop worker appears stalled.
+- `next action`: Treat `manual` and `current_thread` worker execution as preflight-blocked for
+  full-AFK and require nonterminal Codex Exec runs to carry Story Loop evidence metadata.
+
 ### Strict Output Schemas Must Match The Live API Dialect
 
 - `claim`: Local JSON Schema validation is not enough for `codex exec --output-schema`; strict

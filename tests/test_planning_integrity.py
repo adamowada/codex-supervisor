@@ -20,6 +20,7 @@ from codex_supervisor.planning import (
     PlanRecord,
     SupervisorTaskRecord,
     WorkerResultRecord,
+    WorkerRunEventRecord,
     WorkerRunRecord,
     initialize_planning_database,
 )
@@ -613,6 +614,154 @@ def test_planning_integrity_requires_full_afk_codex_exec_raw_evidence_paths(tmp_
 
     assert any(
         failure.check_name == "completed_codex_exec_run_without_raw_evidence_paths"
+        for failure in failures
+    )
+
+
+def test_planning_integrity_rejects_running_codex_exec_without_story_loop_evidence_metadata(
+    tmp_path,
+):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker",
+            slug="worker",
+            title="Worker Plan",
+            goal="Validate live worker evidence.",
+            status="active",
+        )
+    )
+    store.upsert_plan_milestone(
+        PlanMilestoneRecord(
+            milestone_id="milestone-worker",
+            plan_id="plan-worker",
+            title="Milestone",
+            status="pending",
+        )
+    )
+    store.upsert_plan_acceptance_criterion(
+        PlanAcceptanceCriterionRecord(
+            criterion_id="criterion-worker",
+            plan_id="plan-worker",
+            description="Worker remains observable.",
+            status="pending",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-worker",
+            title="Worker task",
+            goal="Run through Story Loop.",
+            task_type="AFK",
+            status="running",
+            scope={"full_afk": True},
+            acceptance_criteria=["done"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            worker_backend="codex_exec",
+        )
+    )
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-worker",
+            task_id="task-worker",
+            backend="codex_exec",
+            status="running",
+            metadata={},
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "nonterminal_codex_exec_run_without_story_loop_evidence"
+        and "run-worker" in failure.reason
+        for failure in failures
+    )
+
+
+def test_planning_integrity_rejects_stalled_codex_exec_run_with_file_change_events(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker",
+            slug="worker",
+            title="Worker Plan",
+            goal="Do not hide active file changes behind a stalled label.",
+            status="active",
+        )
+    )
+    store.upsert_plan_milestone(
+        PlanMilestoneRecord(
+            milestone_id="milestone-worker",
+            plan_id="plan-worker",
+            title="Milestone",
+            status="pending",
+        )
+    )
+    store.upsert_plan_acceptance_criterion(
+        PlanAcceptanceCriterionRecord(
+            criterion_id="criterion-worker",
+            plan_id="plan-worker",
+            description="Worker state is classified from evidence.",
+            status="pending",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-worker",
+            title="Worker task",
+            goal="Run through Story Loop.",
+            task_type="AFK",
+            status="failed",
+            scope={"full_afk": True},
+            acceptance_criteria=["done"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            worker_backend="codex_exec",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-hitl",
+            plan_id="plan-worker",
+            title="Classify failed worker",
+            goal="Human resolves failed worker classification.",
+            task_type="HITL",
+            status="ready",
+        )
+    )
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-worker",
+            task_id="task-worker",
+            backend="codex_exec",
+            status="failed",
+            failure_class="worker_stalled_after_progress_message",
+        )
+    )
+    store.add_worker_run_event(
+        WorkerRunEventRecord(
+            event_id="event-file-change",
+            worker_run_id="run-worker",
+            event_type="codex_exec_item_completed_file_change",
+            summary="Codex Exec reported 1 file change(s).",
+            details={"changes": [{"path": "src/app.py", "kind": "add"}]},
+            artifact_path="runs/run-worker/events.jsonl",
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "stalled_codex_exec_run_has_file_change_events"
+        and "run-worker" in failure.reason
         for failure in failures
     )
 

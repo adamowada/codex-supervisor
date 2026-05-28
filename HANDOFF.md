@@ -8,8 +8,15 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 ## Current Snapshot
 
 - Current queue state: empty. `story-loop-status --json` reports no current AFK, HITL, or running
-  task after `plan-live-evidence-gate-loop-20260528` was completed.
-- Latest completed checkpoint: `plan-live-evidence-gate-loop-20260528` adds a Codex Exec evidence
+  task after `plan-test16-orchestration-regressions-20260528` was completed.
+- Latest completed checkpoint: `plan-test16-orchestration-regressions-20260528` added regression
+  coverage for the todo-list-test-16 orchestration failure mode: Codex Exec liveness now preserves
+  last semantic file-change context across heartbeats, full-AFK runtime preflight blocks manual
+  worker execution, Story Loop e2e polling covers a live file-change-plus-heartbeat worker, and
+  planning integrity rejects nonterminal Codex Exec runs without Story Loop evidence metadata or
+  stalled runs that already recorded file-change events. Durable lessons were added to
+  `insights/live-smoke-lessons.md` and `insights/graph.md`.
+- Previous completed checkpoint: `plan-live-evidence-gate-loop-20260528` adds a Codex Exec evidence
   gate that rejects completed worker-result claims whose `tests_run` commands were not observed in raw
   JSONL command-execution events. Regression coverage now includes backend unit coverage and a real
   CLI Story Loop e2e rejection path. A real Codex MCP Story Loop smoke,

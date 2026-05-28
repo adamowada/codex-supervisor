@@ -203,6 +203,21 @@ def build_runtime_preflight_report(
             )
         )
 
+    if full_afk and worker_execution == "manual":
+        issues.append(
+            RuntimePreflightIssue(
+                code="manual_worker_fallback_blocked",
+                severity="blocked",
+                message=(
+                    "Manual/direct worker execution is not a valid full-AFK worker execution mode."
+                ),
+                next_action=(
+                    "Continue through Story Loop polling, or record a blocker/HITL task instead "
+                    "of launching an untracked manual worker."
+                ),
+            )
+        )
+
     if native_goal_mode and (not supervisor_task_id or not goal_contract_linked):
         issues.append(
             RuntimePreflightIssue(

@@ -29,6 +29,8 @@ graph.
   supervisor/controller-owned paths.
 - `WorkerResultEvidenceGate`: controller validation that reconciles Worker Result claims with raw
   JSONL tool events and inspected worktree state.
+- `WorkerLivenessEvidence`: live Codex Exec liveness state that preserves semantic events across
+  heartbeat updates.
 - `CrossPlatformCI`: publication gate that proves Windows-local assumptions still hold under Linux
   CI type-checking, path semantics, shell behavior, and clean-checkout evidence.
 - `LiveSmokeEvidence`: bounded real-environment validation using disposable repos, real Codex Exec,
@@ -60,3 +62,5 @@ graph.
 | `LiveSmokeEvidence` | complements | `StoryLoop` | `insights/live-smoke-lessons.md`, `plan-broader-live-smoke-20260528`, `tests/test_story_loop_e2e.py` | confirmed | 2026-05-28 | Keep fake-Codex e2e tests in CI, then run narrow real Codex Exec smokes for API/schema/sandbox behavior. |
 | `LiveSmokeEvidence` | constrains | `CodexExecBackend` | `insights/live-smoke-lessons.md`, `src/codex_supervisor/worker_backends.py`, `tests/test_worker_backends.py` | confirmed | 2026-05-28 | Make model-facing output schemas strict-API compatible while preserving stronger repo-side validation. |
 | `WorkerResultEvidenceGate` | verifies claims from | `CodexExecBackend` | `insights/live-smoke-lessons.md`, `plan-multiturn-live-smoke-20260528`, `plan-live-evidence-gate-loop-20260528`, live runs `run-live-multiturn-turn2`, `run-live-multiturn-turn2-retry`, `run-live-multiturn-turn2-simple`, and `run-evidence-gate-live-smoke` | confirmed | 2026-05-28 | Keep matching `tests_run` commands against JSONL command events, and expand claim reconciliation when new unsupported claim types appear. |
+| `WorkerLivenessEvidence` | informs | `StoryLoop` | `insights/live-smoke-lessons.md`, `src/codex_supervisor/worker_backends.py`, `scripts/check_planning_integrity.py`, `tests/test_worker_backends.py`, and `tests/test_story_loop_e2e.py` | confirmed | 2026-05-28 | Preserve last semantic events across heartbeats and reject stalled classifications that conflict with file-change evidence. |
+| `ExecutionModeLedger` | blocks manual fallback for | `StoryLoop` | `insights/live-smoke-lessons.md`, `src/codex_supervisor/runtime_preflight.py`, and `tests/test_runtime_preflight.py` | confirmed | 2026-05-28 | In full-AFK, record HITL/blocker evidence instead of direct/manual worker execution. |

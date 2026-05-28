@@ -385,6 +385,10 @@ def check_planning_integrity(db_path: Path) -> tuple[PlanningIntegrityFailure, .
             failures.extend(_check_completed_plans_have_completed_criteria(connection))
             failures.extend(_check_completed_plans_have_no_open_tasks(connection))
             failures.extend(_check_nonterminal_worker_runs_match_task_state(connection))
+            failures.extend(_check_nonterminal_codex_exec_runs_have_story_loop_evidence(connection))
+            failures.extend(
+                _check_stalled_codex_exec_runs_do_not_have_file_change_events(connection)
+            )
             failures.extend(_check_open_afk_tasks_have_execution_contracts(connection))
             failures.extend(_check_open_afk_task_contract_values(connection))
             failures.extend(_check_open_codex_exec_tasks_avoid_controller_owned_paths(connection))
@@ -526,6 +530,84 @@ def _check_nonterminal_worker_runs_match_task_state(
         )
         for worker_run_id, worker_status, task_id, task_status in rows
     )
+
+
+def _check_nonterminal_codex_exec_runs_have_story_loop_evidence(
+    connection: sqlite3.Connection,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    rows = connection.execute(
+        f"""
+        SELECT wr.worker_run_id, wr.backend, wr.prompt_path, wr.jsonl_path, wr.metadata_json
+        FROM worker_runs wr
+        JOIN supervisor_tasks st ON st.task_id = wr.task_id
+        JOIN plans p ON p.plan_id = st.plan_id
+        WHERE wr.status IN ({", ".join("?" for _ in NONTERMINAL_WORKER_RUN_STATUSES)})
+          AND p.status IN ({", ".join("?" for _ in CURRENT_QUEUE_PLAN_STATUSES)})
+        ORDER BY wr.worker_run_id
+        """,
+        (*sorted(NONTERMINAL_WORKER_RUN_STATUSES), *CURRENT_QUEUE_PLAN_STATUSES),
+    ).fetchall()
+    failures: list[PlanningIntegrityFailure] = []
+    for worker_run_id, backend, prompt_path, jsonl_path, metadata_json in rows:
+        if canonical_worker_backend(str(backend)) != "codex_exec":
+            continue
+        metadata = _json_object(metadata_json)
+        planned_evidence = metadata.get("planned_evidence_paths")
+        runtime_preflight = metadata.get("runtime_preflight")
+        missing: list[str] = []
+        if not isinstance(runtime_preflight, dict):
+            missing.append("runtime_preflight")
+        elif runtime_preflight.get("worker_execution") != "codex_exec":
+            missing.append("runtime_preflight.worker_execution=codex_exec")
+        if not isinstance(planned_evidence, dict):
+            missing.append("planned_evidence_paths")
+        else:
+            for key in ("worktree", "prompt", "liveness_probe", "jsonl", "raw_result"):
+                value = planned_evidence.get(key)
+                if not isinstance(value, str) or not value.strip():
+                    missing.append(f"planned_evidence_paths.{key}")
+        if not isinstance(prompt_path, str) or not prompt_path.strip():
+            missing.append("prompt_path")
+        if not isinstance(jsonl_path, str) or not jsonl_path.strip():
+            missing.append("jsonl_path")
+        if missing:
+            failures.append(
+                PlanningIntegrityFailure(
+                    "nonterminal_codex_exec_run_without_story_loop_evidence",
+                    f"{worker_run_id}: missing {', '.join(missing)}",
+                )
+            )
+    return tuple(failures)
+
+
+def _check_stalled_codex_exec_runs_do_not_have_file_change_events(
+    connection: sqlite3.Connection,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    rows = connection.execute(
+        """
+        SELECT wr.worker_run_id, wr.backend, wr.failure_class,
+               COUNT(event.event_id) AS file_change_events
+        FROM worker_runs wr
+        JOIN worker_run_events event ON event.worker_run_id = wr.worker_run_id
+        WHERE wr.status = 'failed'
+          AND wr.failure_class LIKE 'worker_stalled%'
+          AND event.event_type LIKE '%file_change%'
+        GROUP BY wr.worker_run_id, wr.backend, wr.failure_class
+        ORDER BY wr.worker_run_id
+        """
+    ).fetchall()
+    failures: list[PlanningIntegrityFailure] = []
+    for worker_run_id, backend, failure_class, file_change_events in rows:
+        if canonical_worker_backend(str(backend)) != "codex_exec":
+            continue
+        failures.append(
+            PlanningIntegrityFailure(
+                "stalled_codex_exec_run_has_file_change_events",
+                f"{worker_run_id}: {failure_class} conflicts with {file_change_events} "
+                "file-change event(s)",
+            )
+        )
+    return tuple(failures)
 
 
 def _check_json_columns(connection: sqlite3.Connection) -> tuple[PlanningIntegrityFailure, ...]:

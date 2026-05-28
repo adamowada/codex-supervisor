@@ -1333,6 +1333,7 @@ class _CodexExecStreamObserver:
         self._stdout_remainder = b""
         self._event_index = 0
         self._heartbeat_index = 0
+        self._last_semantic_liveness: JsonObject = {}
         planning_path = request.metadata.get("planning_path")
         self._store = (
             PlanningSQLiteStore(Path(planning_path))
@@ -1380,6 +1381,7 @@ class _CodexExecStreamObserver:
     def on_heartbeat(self) -> None:
         self._heartbeat_index += 1
         extra: JsonObject = {
+            **self._last_semantic_liveness,
             "heartbeat_index": self._heartbeat_index,
             "last_event_index": self._event_index,
         }
@@ -1457,6 +1459,7 @@ class _CodexExecStreamObserver:
         command = details.get("command")
         if isinstance(command, str):
             extra["active_command"] = command
+        self._last_semantic_liveness = dict(extra)
         _safe_observer_call(
             lambda: _write_liveness_probe(
                 self.request,

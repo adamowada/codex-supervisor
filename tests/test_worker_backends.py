@@ -443,6 +443,37 @@ def test_codex_exec_stream_observer_records_live_jsonl_liveness_and_events(tmp_p
     assert events[1].artifact_path == "runs/run-worker/events.jsonl"
 
 
+def test_codex_exec_stream_observer_heartbeat_preserves_last_file_change_liveness(tmp_path):
+    request = _codex_exec_request(tmp_path)
+    preflight = worker_backends.CodexExecPreflightResult(
+        executable_path="C:/Tools/codex.exe",
+        resolution_method="configured",
+        version_command=("C:/Tools/codex.exe", "--version"),
+        version_exit_code=0,
+        version_stdout="codex 1.2.3\n",
+        version_stderr="",
+        failure_class=None,
+        argv=("C:/Tools/codex.exe", "exec", "--json"),
+        metadata={"argv": ["<local-path:codex.exe>", "exec", "--json"]},
+    )
+    observer = worker_backends._CodexExecStreamObserver(request=request, preflight=preflight)
+
+    observer.on_start(123)
+    observer.on_stdout_chunk(
+        b'{"type":"item.completed","item":{"id":"item_1","type":"file_change",'
+        b'"status":"completed","changes":[{"path":"src/app.py","kind":"add"}]}}\n'
+    )
+    observer.on_heartbeat()
+
+    liveness = json.loads((tmp_path / "runs" / "run-worker" / "liveness.json").read_text())
+    assert liveness["stage"] == "exec_running"
+    assert liveness["heartbeat_index"] == 1
+    assert liveness["last_event_index"] == 1
+    assert liveness["last_event_type"] == "codex_exec_item_completed_file_change"
+    assert liveness["last_event_summary"] == "Codex Exec reported 1 file change(s)."
+    assert liveness["last_event_details"]["changes"] == [{"path": "src/app.py", "kind": "add"}]
+
+
 def test_codex_exec_backend_fails_closed_for_unapplied_config_path(tmp_path):
     calls: list[tuple[str, ...]] = []
 
@@ -597,6 +628,8 @@ def test_codex_exec_backend_records_windowsapps_access_denied_without_launching(
     assert "Worker Result JSON" in prompt
     assert "schema constrains only the final assistant message" in prompt
     assert "Do not call `codex_supervisor` MCP tools" in prompt
+    assert "Do not output a JSON Worker Result" not in prompt
+    assert "controller will create supervisor evidence" not in prompt
     assert (tmp_path / "runs" / "run-worker" / "stderr.txt").read_text() == "Access is denied"
     assert (tmp_path / "runs" / "run-worker" / "final-message.txt").read_text() == (
         "Codex Exec preflight failed: codex_cli_unavailable\n"

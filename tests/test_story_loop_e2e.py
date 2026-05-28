@@ -193,6 +193,94 @@ def test_story_loop_start_and_poll_cli_complete_fake_codex_controller_subprocess
     ).read_text(encoding="utf-8")
 
 
+def test_story_loop_poll_preserves_running_file_change_context_after_heartbeat(
+    tmp_path: Path,
+) -> None:
+    project = _seed_story_loop_project(tmp_path)
+    fake_codex = _write_fake_codex_executable(
+        tmp_path,
+        pause_after_file_change_seconds=7.0,
+    )
+
+    started = _run_cli(
+        "story-loop-start",
+        "--path",
+        str(project / "plans" / "planning.sqlite3"),
+        "--repo-root",
+        str(project),
+        "--worker-run-id",
+        "run-file-change-heartbeat",
+        "--codex-executable",
+        str(fake_codex),
+        "--json",
+        cwd=REPO_ROOT,
+    )
+
+    assert started.returncode == 0, started.stderr + started.stdout
+    start_payload = json.loads(started.stdout)
+
+    running_payload: dict[str, object] | None = None
+    completed_payload: dict[str, object] | None = None
+    for _ in range(90):
+        polled = _run_cli(
+            "story-loop-poll",
+            "--path",
+            str(project / "plans" / "planning.sqlite3"),
+            "--repo-root",
+            str(project),
+            "--worker-run-id",
+            "run-file-change-heartbeat",
+            "--controller-pid",
+            str(start_payload["controller_pid"]),
+            "--json",
+            cwd=REPO_ROOT,
+        )
+        assert polled.returncode == 0, polled.stderr + polled.stdout
+        payload = json.loads(polled.stdout)
+        liveness = payload.get("liveness_probe")
+        if (
+            payload["done"] is False
+            and isinstance(liveness, dict)
+            and liveness.get("heartbeat_index", 0) >= 1
+            and liveness.get("last_event_type") == "codex_exec_item_completed_file_change"
+        ):
+            running_payload = payload
+            break
+        time.sleep(0.1)
+
+    assert running_payload is not None
+    assert running_payload["status"] == "running"
+    assert running_payload["worker_run_status"] == "running"
+    assert any(
+        event["event_type"] == "codex_exec_item_completed_file_change"
+        for event in running_payload["latest_events"]
+    )
+
+    for _ in range(80):
+        polled = _run_cli(
+            "story-loop-poll",
+            "--path",
+            str(project / "plans" / "planning.sqlite3"),
+            "--repo-root",
+            str(project),
+            "--worker-run-id",
+            "run-file-change-heartbeat",
+            "--controller-pid",
+            str(start_payload["controller_pid"]),
+            "--json",
+            cwd=REPO_ROOT,
+        )
+        assert polled.returncode == 0, polled.stderr + polled.stdout
+        completed_payload = json.loads(polled.stdout)
+        if completed_payload["done"] is True:
+            break
+        time.sleep(0.1)
+
+    assert completed_payload is not None
+    assert completed_payload["status"] == "completed", completed_payload
+    assert completed_payload["done"] is True
+
+
 def _seed_story_loop_project(tmp_path: Path) -> Path:
     project = tmp_path / "project"
     project.mkdir()
@@ -240,6 +328,7 @@ def _write_fake_codex_executable(
     tmp_path: Path,
     *,
     emit_test_command_event: bool = True,
+    pause_after_file_change_seconds: float = 0.0,
 ) -> Path:
     tool_dir = tmp_path / "tools"
     tool_dir.mkdir()
@@ -249,11 +338,13 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
 ACCEPTANCE = "Live Story Loop e2e completes."
 VERIFY_COMMAND = "python -B -m pytest -p no:cacheprovider tests/test_fake.py"
 EMIT_TEST_COMMAND_EVENT = __EMIT_TEST_COMMAND_EVENT__
+PAUSE_AFTER_FILE_CHANGE_SECONDS = __PAUSE_AFTER_FILE_CHANGE_SECONDS__
 
 
 def main() -> int:
@@ -274,6 +365,17 @@ def main() -> int:
     changed_file.parent.mkdir(parents=True, exist_ok=True)
     existing = changed_file.read_text(encoding="utf-8") if changed_file.exists() else ""
     changed_file.write_text(existing + "fake codex e2e update\\n", encoding="utf-8")
+    print(json.dumps({
+        "type": "item.completed",
+        "item": {
+            "id": "item-file-change",
+            "type": "file_change",
+            "status": "completed",
+            "changes": [{"path": "src/live_story.py", "kind": "modify"}],
+        },
+    }), flush=True)
+    if PAUSE_AFTER_FILE_CHANGE_SECONDS:
+        time.sleep(PAUSE_AFTER_FILE_CHANGE_SECONDS)
 
     smoke_dir = worktree / "artifacts" / "browser"
     smoke_dir.mkdir(parents=True, exist_ok=True)
@@ -346,6 +448,9 @@ if __name__ == "__main__":
         script_template.replace(
             "__EMIT_TEST_COMMAND_EVENT__",
             repr(emit_test_command_event),
+        ).replace(
+            "__PAUSE_AFTER_FILE_CHANGE_SECONDS__",
+            repr(pause_after_file_change_seconds),
         ),
         encoding="utf-8",
     )

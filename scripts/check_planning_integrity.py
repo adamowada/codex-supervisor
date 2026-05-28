@@ -85,14 +85,19 @@ except ModuleNotFoundError:
             "ATTRIBUTIONS.md",
         }
         parsed_scope = scope if isinstance(scope, dict) else {}
-        role = parsed_scope.get("task_role", parsed_scope.get("worker_role"))
-        if parsed_scope.get("controller_task") is True or role in {
+        if parsed_scope.get("controller_mutation_kind") in {
             "controller",
             "planning",
             "promotion",
             "source_lock",
         }:
             return ()
+        legacy_role = None
+        role = parsed_scope.get("task_role", parsed_scope.get("worker_role"))
+        if parsed_scope.get("controller_task") is True:
+            legacy_role = "controller_task"
+        elif role in {"controller", "planning", "promotion", "source_lock"}:
+            legacy_role = f"task_role={role}"
         violations: list[str] = []
         forbidden = tuple(
             item.strip().replace("\\", "/")
@@ -117,12 +122,27 @@ except ModuleNotFoundError:
                 "scripts/print_protected_hashes.py",
                 "scripts/verify.py",
             }:
+                if legacy_role is not None:
+                    violations.append(
+                        f"{legacy_role}: legacy controller role is ignored without "
+                        "controller_mutation_kind"
+                    )
                 violations.append(f"{normalized}: controller-owned path")
                 continue
             if normalized in protected_docs:
+                if legacy_role is not None:
+                    violations.append(
+                        f"{legacy_role}: legacy controller role is ignored without "
+                        "controller_mutation_kind"
+                    )
                 violations.append(f"{normalized}: protected source-of-truth doc")
                 continue
             if normalized == ".agents/**" or normalized.startswith(".agents/"):
+                if legacy_role is not None:
+                    violations.append(
+                        f"{legacy_role}: legacy controller role is ignored without "
+                        "controller_mutation_kind"
+                    )
                 violations.append(f"{normalized}: controller-owned path")
         return tuple(dict.fromkeys(violations))
 
@@ -1905,6 +1925,20 @@ def _check_handoff_snapshot_matches_queue_state(
     if active_queue_count:
         return ()
     text = handoff_path.read_text(encoding="utf-8").lower()
+    queue_state_line = next(
+        (line for line in text.splitlines() if "current queue state:" in line),
+        None,
+    )
+    if queue_state_line is not None and not any(
+        state in queue_state_line for state in ("empty", "completed")
+    ):
+        return (
+            PlanningIntegrityFailure(
+                "handoff_snapshot_stale_queue_state",
+                "HANDOFF.md current queue state disagrees with planning SQLite: no active or "
+                "blocked queue plan remains",
+            ),
+        )
     stale_review_phrases = (
         "ready for required review",
         "review pending",

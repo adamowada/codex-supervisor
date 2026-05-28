@@ -341,11 +341,7 @@ def _validate_browser_smoke_results(
                     string_value,
                     field_name=f"browser_smoke_results[{index}].command",
                 )
-        artifact = item.get("artifact")
-        if artifact is not None:
-            if not isinstance(artifact, str) or not artifact.strip():
-                msg = f"browser_smoke_results[{index}].artifact must be nonblank"
-                raise WorkerResultError(msg)
+        for artifact in _browser_smoke_artifact_paths(item, index):
             _validate_existing_repo_relative_path(
                 (artifact_root, repo_root),
                 _normalize(artifact),
@@ -362,6 +358,45 @@ def _validate_bounded_smoke_command(command: str, *, field_name: str) -> None:
                 "that starts child servers with a timeout and always cleans them up"
             )
             raise WorkerResultError(msg)
+
+
+def _browser_smoke_artifact_paths(item: JsonObject, index: int) -> tuple[str, ...]:
+    paths: list[str] = []
+    artifact = item.get("artifact")
+    if artifact is not None:
+        paths.append(
+            _browser_smoke_artifact_path(
+                artifact,
+                f"browser_smoke_results[{index}].artifact",
+            )
+        )
+    artifacts = item.get("artifacts")
+    if artifacts is not None:
+        if not isinstance(artifacts, list):
+            msg = f"browser_smoke_results[{index}].artifacts must be a list"
+            raise WorkerResultError(msg)
+        for artifact_index, value in enumerate(artifacts):
+            paths.append(
+                _browser_smoke_artifact_path(
+                    value,
+                    f"browser_smoke_results[{index}].artifacts[{artifact_index}]",
+                )
+            )
+    return tuple(dict.fromkeys(paths))
+
+
+def _browser_smoke_artifact_path(value: object, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        msg = f"{field_name} must be nonblank"
+        raise WorkerResultError(msg)
+    normalized = value.strip()
+    if ";" in normalized or "\n" in normalized or "\r" in normalized:
+        msg = (
+            f"{field_name} must be one artifact path; use artifacts[] for multiple browser "
+            "smoke files"
+        )
+        raise WorkerResultError(msg)
+    return normalized
 
 
 def _validate_acceptance_results(

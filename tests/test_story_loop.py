@@ -14,6 +14,7 @@ from codex_supervisor.planning import (
     open_existing_planning_database,
 )
 from codex_supervisor.story_loop import (
+    WORKER_CONTRACT_GIT_PATHS,
     advance_story_loop_once,
     build_story_loop_status,
     poll_story_loop_run_async,
@@ -362,6 +363,62 @@ def test_story_loop_async_poll_reports_liveness_probe_and_latest_events(tmp_path
     assert result.controller_running is True
     assert result.liveness_probe == {"stage": "exec_started", "pid": 456}
     assert result.latest_events[0]["event_type"] == "codex_exec_liveness_probe"
+
+
+def test_story_loop_async_poll_can_finalize_orphaned_running_worker(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-async",
+            slug="async",
+            title="Async",
+            goal="Poll a running controller.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-async",
+            plan_id="plan-async",
+            title="Async task",
+            goal="Run async.",
+            task_type="AFK",
+            status="running",
+        )
+    )
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-async",
+            task_id="task-async",
+            backend="codex_exec",
+            status="running",
+        )
+    )
+    (tmp_path / "runs" / "run-async").mkdir(parents=True)
+
+    observed = poll_story_loop_run_async(
+        planning_path=db_path,
+        repo_root=tmp_path,
+        worker_run_id="run-async",
+        controller_pid=456,
+        process_probe=lambda pid: False,
+    )
+    finalized = poll_story_loop_run_async(
+        planning_path=db_path,
+        repo_root=tmp_path,
+        worker_run_id="run-async",
+        controller_pid=456,
+        finalize_orphaned=True,
+        process_probe=lambda pid: False,
+    )
+
+    assert observed.status == "orphaned_running"
+    assert observed.done is False
+    assert finalized.status == "failed"
+    assert finalized.done is True
+    assert finalized.failure_class == "story_loop_controller_exited"
+    assert finalized.latest_events[-1]["event_type"] == "story_loop_controller_exited"
 
 
 def test_story_loop_status_blocks_failed_tasks_until_reconciled(tmp_path, capsys):
@@ -978,7 +1035,7 @@ def test_live_story_loop_run_claims_worktree_launches_and_ingests_result(tmp_pat
         calls.append(argv)
         if argv == ("C:/Tools/codex.exe", "--version"):
             return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
-        _write_live_worker_result(tmp_path, worker_run_id="run-live")
+        _write_live_worker_result(tmp_path, worker_run_id="run-live", browser_smoke=True)
         return CommandExecutionResult(exit_code=0, stdout='{"event":"done"}\n')
 
     git_calls: list[tuple[str, ...]] = []
@@ -986,14 +1043,7 @@ def test_live_story_loop_run_claims_worktree_launches_and_ingests_result(tmp_pat
     def git_runner(argv, cwd, environment):
         git_calls.append(argv)
         assert environment == {"GIT_OPTIONAL_LOCKS": "0"}
-        if argv == (
-            "git",
-            "status",
-            "--porcelain=v1",
-            "--",
-            "plans/planning.sqlite3",
-            "HANDOFF.md",
-        ):
+        if argv == ("git", "status", "--porcelain=v1", "--", *WORKER_CONTRACT_GIT_PATHS):
             return CommandExecutionResult(exit_code=0, stdout="")
         if argv == ("git", "rev-parse", "HEAD") and cwd == tmp_path:
             return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
@@ -1055,6 +1105,8 @@ def test_live_story_loop_run_claims_worktree_launches_and_ingests_result(tmp_pat
     events = read_store.list_worker_run_events(worker_run_id="run-live")
     assert events[0].event_type == "codex_exec_launch_result"
     assert events[0].details["changed_files"] == ["src/live_story.py"]
+    progress = read_store.list_plan_progress(plan_id="plan-live")
+    assert any(event.event_type == "browser_smoke_passed" for event in progress)
     artifact_links = read_store.list_plan_artifact_links(plan_id="plan-live")
     assert {(link.artifact_id, link.relationship) for link in artifact_links} == {
         ("artifacts/run-live/evidence-manifest.json", "worker-evidence-manifest"),
@@ -1076,14 +1128,7 @@ def test_live_story_loop_creates_separate_review_task_when_review_required(tmp_p
         return CommandExecutionResult(exit_code=0, stdout='{"event":"done"}\n')
 
     def git_runner(argv, cwd, environment):
-        if argv == (
-            "git",
-            "status",
-            "--porcelain=v1",
-            "--",
-            "plans/planning.sqlite3",
-            "HANDOFF.md",
-        ):
+        if argv == ("git", "status", "--porcelain=v1", "--", *WORKER_CONTRACT_GIT_PATHS):
             return CommandExecutionResult(exit_code=0, stdout="")
         if argv == ("git", "rev-parse", "HEAD") and cwd == tmp_path:
             return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
@@ -1158,14 +1203,7 @@ def test_live_story_loop_refuses_completion_when_evidence_paths_are_missing(tmp_
             )
 
     def git_runner(argv, cwd, environment):
-        if argv == (
-            "git",
-            "status",
-            "--porcelain=v1",
-            "--",
-            "plans/planning.sqlite3",
-            "HANDOFF.md",
-        ):
+        if argv == ("git", "status", "--porcelain=v1", "--", *WORKER_CONTRACT_GIT_PATHS):
             return CommandExecutionResult(exit_code=0, stdout="")
         if argv == ("git", "rev-parse", "HEAD") and cwd == tmp_path:
             return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
@@ -1225,14 +1263,7 @@ def test_story_loop_advance_runs_one_ready_transition(tmp_path):
         return CommandExecutionResult(exit_code=0, stdout='{"event":"done"}\n')
 
     def git_runner(argv, cwd, environment):
-        if argv == (
-            "git",
-            "status",
-            "--porcelain=v1",
-            "--",
-            "plans/planning.sqlite3",
-            "HANDOFF.md",
-        ):
+        if argv == ("git", "status", "--porcelain=v1", "--", *WORKER_CONTRACT_GIT_PATHS):
             return CommandExecutionResult(exit_code=0, stdout="")
         if argv == ("git", "rev-parse", "HEAD") and cwd == tmp_path:
             return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
@@ -1283,14 +1314,7 @@ def test_live_story_loop_run_fails_claimed_run_when_worktree_creation_fails(tmp_
         return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
 
     def git_runner(argv, cwd, environment):
-        if argv == (
-            "git",
-            "status",
-            "--porcelain=v1",
-            "--",
-            "plans/planning.sqlite3",
-            "HANDOFF.md",
-        ):
+        if argv == ("git", "status", "--porcelain=v1", "--", *WORKER_CONTRACT_GIT_PATHS):
             return CommandExecutionResult(exit_code=0, stdout="")
         if argv == ("git", "rev-parse", "HEAD"):
             return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
@@ -1330,14 +1354,7 @@ def test_live_story_loop_refuses_uncommitted_worker_contract_before_claim(tmp_pa
         return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
 
     def git_runner(argv, cwd, environment):
-        if argv == (
-            "git",
-            "status",
-            "--porcelain=v1",
-            "--",
-            "plans/planning.sqlite3",
-            "HANDOFF.md",
-        ):
+        if argv == ("git", "status", "--porcelain=v1", "--", *WORKER_CONTRACT_GIT_PATHS):
             return CommandExecutionResult(exit_code=0, stdout=" M plans/planning.sqlite3\n")
         raise AssertionError(f"unexpected git argv: {argv}")
 
@@ -1467,6 +1484,50 @@ def test_live_story_loop_policy_lint_does_not_trust_broad_controller_owned_flag(
     ]
 
 
+def test_live_story_loop_policy_lint_requires_typed_controller_mutation_kind(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-live",
+            slug="live",
+            title="Live",
+            goal="Run a live worker.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-live",
+            plan_id="plan-live",
+            title="Live task",
+            goal="Legacy controller labels cannot hand controller state to a worker.",
+            task_type="AFK",
+            status="ready",
+            scope={"controller_task": True, "task_role": "controller"},
+            acceptance_criteria=["done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["plans/planning.sqlite3"],
+            worker_backend="codex_exec",
+        )
+    )
+
+    result = run_live_story_loop_once(
+        store,
+        repo_root=tmp_path,
+        worker_run_id="run-policy-legacy-role",
+        codex_executable="C:/Tools/codex.exe",
+    )
+
+    assert result.status == "failed"
+    assert result.failure_class == "worker_contract_policy_violation"
+    worker = open_existing_planning_database(db_path).list_worker_runs()[0]
+    assert worker.metadata["launch_preflight"]["violations"] == [
+        "controller_task: legacy controller role is ignored without controller_mutation_kind",
+        "plans/planning.sqlite3: controller-owned path",
+    ]
+
+
 def test_live_story_loop_policy_lint_blocks_worker_must_not_edit_overlap(tmp_path):
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)
@@ -1559,14 +1620,7 @@ def test_live_story_loop_preserves_rejected_worker_result_when_changed_paths_fai
 
     def git_runner(argv, cwd, environment):
         worktree = tmp_path / "worktrees" / "run-out-of-scope"
-        if argv == (
-            "git",
-            "status",
-            "--porcelain=v1",
-            "--",
-            "plans/planning.sqlite3",
-            "HANDOFF.md",
-        ):
+        if argv == ("git", "status", "--porcelain=v1", "--", *WORKER_CONTRACT_GIT_PATHS):
             return CommandExecutionResult(exit_code=0, stdout="")
         if argv == ("git", "rev-parse", "HEAD") and cwd == tmp_path:
             return CommandExecutionResult(exit_code=0, stdout="base-sha\n")
@@ -1633,6 +1687,7 @@ def _live_story_loop_store(db_path, *, review_required=False):
             goal="Exercise live Story Loop worker execution.",
             task_type="AFK",
             status="ready",
+            scope={} if review_required else {"review_skipped": True},
             acceptance_criteria=["done"],
             verification_commands=["python -B -m pytest -p no:cacheprovider"],
             allowed_paths=["src/**"],
@@ -1644,7 +1699,7 @@ def _live_story_loop_store(db_path, *, review_required=False):
     return store
 
 
-def _write_live_worker_result(repo_root, *, worker_run_id):
+def _write_live_worker_result(repo_root, *, worker_run_id, browser_smoke=False):
     changed_file = repo_root / "worktrees" / worker_run_id / "src" / "live_story.py"
     changed_file.parent.mkdir(parents=True, exist_ok=True)
     changed_file.write_text("print('ok')\n", encoding="utf-8")
@@ -1674,6 +1729,21 @@ def _write_live_worker_result(repo_root, *, worker_run_id):
         "artifacts": [result_path],
         "completion_notes": "Ready.",
     }
+    if browser_smoke:
+        smoke_path = repo_root / "worktrees" / worker_run_id / "artifacts" / "browser" / "smoke.png"
+        smoke_path.parent.mkdir(parents=True, exist_ok=True)
+        smoke_path.write_bytes(b"png")
+        payload["browser_smoke_results"] = [
+            {
+                "status": "passed",
+                "summary": "Browser smoke passed.",
+                "tool": "playwright",
+                "command": "node scripts/browser-smoke.mjs",
+                "exit_code": 0,
+                "artifact": "artifacts/browser/smoke.png",
+                "url": "http://127.0.0.1:5173",
+            }
+        ]
     result_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     final_file = repo_root / "runs" / worker_run_id / "final-message.txt"
     final_file.parent.mkdir(parents=True, exist_ok=True)

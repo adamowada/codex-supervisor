@@ -222,6 +222,9 @@ FILE_PURPOSES = {
     "insights/codex-usage-skill-synthesis.md": FilePurpose(
         "privacy-safe Codex usage pattern synthesis", "check_public_repo_hygiene"
     ),
+    "insights/cross-platform-ci.md": FilePurpose(
+        "cross-platform CI assumption insight", "check_file_justification"
+    ),
     "insights/goal-mode-and-ralph-loop.md": FilePurpose(
         "Goal Mode and Ralph loop synthesis", "check_public_repo_hygiene"
     ),

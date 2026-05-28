@@ -28,6 +28,10 @@ from codex_supervisor.evidence_vocabulary import (
     WORKER_RESULT_REVIEW_PROMOTED_EVENT,
 )
 from codex_supervisor.execution_surface import canonical_worker_backend
+from codex_supervisor.task_policy import (
+    controller_owned_allowed_path_violations,
+    task_uses_controller_worker_profile,
+)
 from codex_supervisor.worker_results import (
     WorkerResult,
     WorkerResultError,
@@ -4104,6 +4108,9 @@ def _validate_task_contract_for_current_queue_plan(
         acceptance_criteria=record.acceptance_criteria,
         verification_commands=record.verification_commands,
         allowed_paths=record.allowed_paths,
+        scope=record.scope,
+        worker_backend=record.worker_backend,
+        review_required=record.review_required,
     )
     if failures:
         msg = (
@@ -4126,6 +4133,9 @@ def _validate_status_transition_contract_for_current_queue_plan(
         acceptance_criteria=task.acceptance_criteria,
         verification_commands=task.verification_commands,
         allowed_paths=task.allowed_paths,
+        scope=task.scope,
+        worker_backend=task.worker_backend,
+        review_required=task.review_required,
     )
     if failures:
         msg = (
@@ -4148,11 +4158,20 @@ def _plan_status_for_task_contract_validation(
     return str(row["status"])
 
 
+def _review_waived(scope: object) -> bool:
+    if not isinstance(scope, dict):
+        return False
+    return scope.get("review_skipped") is True or scope.get("review_gate") == "review_skipped"
+
+
 def _afk_execution_contract_failures(
     *,
     acceptance_criteria: Iterable[object],
     verification_commands: Iterable[object],
     allowed_paths: Iterable[object],
+    scope: object = None,
+    worker_backend: str = "codex_exec",
+    review_required: bool = True,
 ) -> tuple[str, ...]:
     failures: list[str] = []
     if not _contains_nonblank_string(acceptance_criteria):
@@ -4171,6 +4190,20 @@ def _afk_execution_contract_failures(
     path_failures = unsafe_repo_relative_path_patterns(allowed_paths)
     if path_failures:
         failures.append(f"allowed_paths is unsafe: {path_failures[0]}")
+    policy_failures = controller_owned_allowed_path_violations(
+        allowed_paths,
+        scope=scope,
+        worker_backend=worker_backend,
+    )
+    if policy_failures:
+        failures.append(f"allowed_paths violate worker policy: {policy_failures[0]}")
+    if (
+        canonical_worker_backend(worker_backend) == "codex_exec"
+        and not review_required
+        and not _review_waived(scope)
+        and not task_uses_controller_worker_profile(scope)
+    ):
+        failures.append("review_required must be true for codex_exec AFK tasks unless waived")
     return tuple(failures)
 
 

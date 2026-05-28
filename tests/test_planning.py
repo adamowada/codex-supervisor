@@ -1125,7 +1125,7 @@ def test_cli_write_commands_record_planning_rows(tmp_path, capsys):
                 "--status",
                 "ready",
                 "--scope-json",
-                '{"area":"planning"}',
+                '{"area":"planning","review_skipped":true}',
                 "--acceptance-criterion",
                 "Task exists.",
                 "--verification-command",
@@ -1139,7 +1139,7 @@ def test_cli_write_commands_record_planning_rows(tmp_path, capsys):
         == 0
     )
     task_json = json.loads(capsys.readouterr().out)
-    assert task_json["scope"] == {"area": "planning"}
+    assert task_json["scope"] == {"area": "planning", "review_skipped": True}
     assert task_json["review_required"] is False
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "write.py").write_text("print('ok')\n", encoding="utf-8")
@@ -1282,7 +1282,7 @@ def test_cli_task_upsert_preserves_omitted_optional_fields_on_update(tmp_path, c
             goal="Original goal.",
             task_type="AFK",
             status="ready",
-            scope={"area": "planning"},
+            scope={"area": "planning", "review_skipped": True},
             out_of_scope={"skip": "other"},
             acceptance_criteria=["done"],
             verification_commands=["python -B -m pytest -p no:cacheprovider"],
@@ -1319,7 +1319,7 @@ def test_cli_task_upsert_preserves_omitted_optional_fields_on_update(tmp_path, c
     payload = json.loads(capsys.readouterr().out)
 
     assert payload["title"] == "Updated"
-    assert payload["scope"] == {"area": "planning"}
+    assert payload["scope"] == {"area": "planning", "review_skipped": True}
     assert payload["out_of_scope"] == {"skip": "other"}
     assert payload["acceptance_criteria"] == ["done"]
     assert payload["verification_commands"] == ["python -B -m pytest -p no:cacheprovider"]

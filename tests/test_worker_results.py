@@ -198,6 +198,7 @@ def test_worker_result_validation_accepts_browser_smoke_evidence_outside_tests_r
     (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
     (tmp_path / "artifacts" / "browser").mkdir(parents=True)
     (tmp_path / "artifacts" / "browser" / "signin.png").write_bytes(b"png")
+    (tmp_path / "artifacts" / "browser" / "signin.log").write_text("ok\n", encoding="utf-8")
     (tmp_path / "artifacts" / "run-worker").mkdir(parents=True)
     (tmp_path / "artifacts" / "run-worker" / "worker-result.raw.json").write_text(
         "{}",
@@ -211,7 +212,7 @@ def test_worker_result_validation_accepts_browser_smoke_evidence_outside_tests_r
             "tool": "playwright",
             "command": "node --input-type=module -",
             "exit_code": 0,
-            "artifact": "artifacts/browser/signin.png",
+            "artifacts": ["artifacts/browser/signin.log", "artifacts/browser/signin.png"],
             "url": "http://127.0.0.1:5173",
         }
     ]
@@ -227,6 +228,34 @@ def test_worker_result_validation_accepts_browser_smoke_evidence_outside_tests_r
     )
 
     assert result.payload["browser_smoke_results"][0]["command"] == "node --input-type=module -"
+
+
+def test_worker_result_validation_rejects_joined_browser_smoke_artifact_paths(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
+    payload = _worker_result()
+    payload["browser_smoke_results"] = [
+        {
+            "status": "passed",
+            "summary": "Browser smoke passed.",
+            "tool": "playwright",
+            "command": "node tests/browser-smoke.mjs",
+            "exit_code": 0,
+            "artifact": "artifacts/browser/signin.log; artifacts/browser/signin.png",
+            "url": "http://127.0.0.1:5173",
+        }
+    ]
+
+    with pytest.raises(WorkerResultError, match=r"use artifacts\[\]"):
+        validate_worker_result_payload(
+            payload,
+            repo_root=tmp_path,
+            result_path="artifacts/run-worker/worker-result.raw.json",
+            worker_run_id="run-worker",
+            allowed_paths=("src/**",),
+            verification_commands=("python -B -m pytest -p no:cacheprovider",),
+            acceptance_criteria=("Criterion passes.",),
+        )
 
 
 def test_worker_result_validation_rejects_unbounded_browser_smoke_dev_server(tmp_path):

@@ -2545,6 +2545,44 @@ def test_planning_integrity_rejects_controller_owned_paths_despite_broad_flag(tm
     )
 
 
+def test_planning_integrity_rejects_legacy_controller_role_without_typed_kind(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-ready",
+            slug="ready",
+            title="Ready Plan",
+            goal="Validate ready task contracts.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-ready",
+            plan_id="plan-ready",
+            title="Ready task",
+            goal="Legacy labels cannot authorize controller mutation.",
+            task_type="AFK",
+            status="ready",
+            scope={"controller_task": True, "task_role": "controller"},
+            acceptance_criteria=["done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["plans/planning.sqlite3"],
+            worker_backend="live_codex_exec",
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "open_codex_exec_task_allows_controller_owned_path"
+        and "legacy controller role" in failure.reason
+        for failure in failures
+    )
+
+
 def test_planning_integrity_rejects_worker_must_not_edit_overlap(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"

@@ -633,6 +633,12 @@ def main(argv: list[str] | None = None) -> int:
     story_poll_parser.add_argument("--worker-run-id", required=True)
     story_poll_parser.add_argument("--controller-pid", type=int, default=None)
     story_poll_parser.add_argument("--max-events", type=int, default=5)
+    story_poll_parser.add_argument(
+        "--finalize-orphaned",
+        action="store_true",
+        default=False,
+        help="Mark a queued/running worker failed when its async controller has exited.",
+    )
     story_poll_parser.add_argument("--json", action="store_true", default=False)
 
     story_advance_parser = subparsers.add_parser(
@@ -2090,6 +2096,7 @@ def main(argv: list[str] | None = None) -> int:
                 worker_run_id=args.worker_run_id,
                 controller_pid=args.controller_pid,
                 max_events=args.max_events,
+                finalize_orphaned=args.finalize_orphaned,
             )
         except (OSError, sqlite3.Error, ValueError) as exc:
             print(f"story-loop-poll failed: {exc}", file=sys.stderr)
@@ -4065,6 +4072,7 @@ def seed_bootstrap_plan(store: PlanningSQLiteStore) -> None:
                 task_type="AFK",
                 status=existing_bootstrap_task.status if existing_bootstrap_task else "ready",
                 scope={
+                    "controller_mutation_kind": "planning",
                     "read_first": [
                         "README.md",
                         "AGENTS.md",

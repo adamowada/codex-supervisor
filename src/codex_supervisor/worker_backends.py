@@ -108,6 +108,9 @@ class CommandExecutionResult:
 type CommandRunner = Callable[[tuple[str, ...], Path, dict[str, str]], CommandExecutionResult]
 type CommandStartCallback = Callable[[int | None], None]
 type CommandOutputCallback = Callable[[bytes], None]
+type CommandHeartbeatCallback = Callable[[], None]
+
+PROCESS_HEARTBEAT_INTERVAL_SECONDS = 5.0
 
 
 @dataclass(frozen=True)
@@ -405,6 +408,7 @@ class CodexExecBackend:
                 ),
                 on_stdout_chunk=stream_observer.on_stdout_chunk,
                 on_stderr_chunk=stream_observer.on_stderr_chunk,
+                on_heartbeat=stream_observer.on_heartbeat,
             )
             stream_observer.flush_stdout_remainder()
             _write_liveness_probe(
@@ -573,6 +577,7 @@ class CodexExecBackend:
                         ),
                         on_stdout_chunk=retry_stream_observer.on_stdout_chunk,
                         on_stderr_chunk=retry_stream_observer.on_stderr_chunk,
+                        on_heartbeat=retry_stream_observer.on_heartbeat,
                     )
                 except OSError, subprocess.TimeoutExpired, KeyboardInterrupt:
                     retry_stream_observer.flush_stdout_remainder()
@@ -749,6 +754,12 @@ class CodexExecBackend:
                 stdout_bytes=exec_result.stdout_bytes,
                 stderr_bytes=exec_result.stderr_bytes,
             )
+            _add_evidence_manifest_metadata(
+                request,
+                metadata,
+                status="failed",
+                launch_decision="worker_result_missing",
+            )
             return WorkerLaunchResult(
                 worker_run_id=request.worker_run_id,
                 task_id=request.task_id,
@@ -784,6 +795,7 @@ class CodexExecBackend:
                 exec_exit_code=exec_result.exit_code,
                 duration_seconds=duration_seconds,
             )
+            metadata["worker_result_validation_error"] = str(exc)
             _write_codex_exec_evidence(
                 request,
                 event="codex_exec.worker_result_invalid",
@@ -804,10 +816,18 @@ class CodexExecBackend:
                 stdout_bytes=exec_result.stdout_bytes,
                 stderr_bytes=exec_result.stderr_bytes,
             )
+            _copy_rejected_worker_result_source(request)
+            _add_evidence_manifest_metadata(
+                request,
+                metadata,
+                status="failed",
+                launch_decision="worker_result_invalid",
+            )
             return WorkerLaunchResult(
                 worker_run_id=request.worker_run_id,
                 task_id=request.task_id,
                 status="failed",
+                result_path=request.result_path,
                 exit_code=1,
                 duration_seconds=duration_seconds,
                 prompt_path=request.prompt_path,
@@ -1135,6 +1155,15 @@ def _copy_canonical_worker_result(request: WorkerLaunchRequest) -> None:
     target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
 
 
+def _copy_rejected_worker_result_source(request: WorkerLaunchRequest) -> None:
+    source = request.repo_root / request.final_message_path
+    if not source.is_file():
+        return
+    target = request.repo_root / request.result_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(source.read_bytes())
+
+
 def _copy_worker_result_support_artifacts(
     request: WorkerLaunchRequest,
     worker_result: WorkerResult,
@@ -1158,6 +1187,9 @@ def _worker_result_support_artifact_paths(
             artifact = item.get("artifact")
             if isinstance(artifact, str) and artifact.strip():
                 paths.append(artifact)
+            artifacts = item.get("artifacts")
+            if isinstance(artifacts, list):
+                paths.extend(path for path in artifacts if isinstance(path, str) and path.strip())
     normalized_result_path = result_path.strip().replace("\\", "/")
     return tuple(
         dict.fromkeys(
@@ -1245,6 +1277,7 @@ class _CodexExecStreamObserver:
         self.pid: int | None = None
         self._stdout_remainder = b""
         self._event_index = 0
+        self._heartbeat_index = 0
         planning_path = request.metadata.get("planning_path")
         self._store = (
             PlanningSQLiteStore(Path(planning_path))
@@ -1286,6 +1319,22 @@ class _CodexExecStreamObserver:
                 self.request.repo_root,
                 self.request.stderr_path,
                 chunk,
+            )
+        )
+
+    def on_heartbeat(self) -> None:
+        self._heartbeat_index += 1
+        extra: JsonObject = {
+            "heartbeat_index": self._heartbeat_index,
+            "last_event_index": self._event_index,
+        }
+        _safe_observer_call(
+            lambda: _write_liveness_probe(
+                self.request,
+                preflight=self.preflight,
+                stage="exec_running",
+                pid=self.pid,
+                extra=extra,
             )
         )
 
@@ -1537,6 +1586,23 @@ def _write_evidence_manifest(
     return missing
 
 
+def _add_evidence_manifest_metadata(
+    request: WorkerLaunchRequest,
+    metadata: JsonObject,
+    *,
+    status: str,
+    launch_decision: str,
+) -> None:
+    missing_evidence = _write_evidence_manifest(
+        request,
+        status=status,
+        launch_decision=launch_decision,
+    )
+    metadata["evidence_manifest_path"] = request.evidence_manifest_path
+    if missing_evidence:
+        metadata["missing_evidence_paths"] = list(missing_evidence)
+
+
 def _evidence_path_record(path: Path) -> JsonObject:
     if not path.exists() or not path.is_file():
         return {"exists": False}
@@ -1659,15 +1725,7 @@ def _worker_result_output_schema(request: WorkerLaunchRequest) -> JsonObject:
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "required": [
-                        "artifact",
-                        "command",
-                        "exit_code",
-                        "status",
-                        "summary",
-                        "tool",
-                        "url",
-                    ],
+                    "required": ["status", "summary"],
                     "properties": {
                         "status": {"enum": ["passed", "failed", "blocked"]},
                         "summary": {"type": "string"},
@@ -1675,6 +1733,7 @@ def _worker_result_output_schema(request: WorkerLaunchRequest) -> JsonObject:
                         "command": {"type": "string"},
                         "exit_code": {"type": "integer"},
                         "artifact": {"type": "string"},
+                        "artifacts": {"type": "array", "items": {"type": "string"}},
                         "url": {"type": "string"},
                     },
                     "additionalProperties": False,
@@ -1706,6 +1765,7 @@ def _run_command(
     on_start: CommandStartCallback | None = None,
     on_stdout_chunk: CommandOutputCallback | None = None,
     on_stderr_chunk: CommandOutputCallback | None = None,
+    on_heartbeat: CommandHeartbeatCallback | None = None,
 ) -> CommandExecutionResult:
     if command_runner is None:
         return _default_command_runner(
@@ -1717,6 +1777,7 @@ def _run_command(
             on_start=on_start,
             on_stdout_chunk=on_stdout_chunk,
             on_stderr_chunk=on_stderr_chunk,
+            on_heartbeat=on_heartbeat,
         )
     if on_start is not None:
         on_start(None)
@@ -1733,6 +1794,7 @@ def _default_command_runner(
     on_start: CommandStartCallback | None = None,
     on_stdout_chunk: CommandOutputCallback | None = None,
     on_stderr_chunk: CommandOutputCallback | None = None,
+    on_heartbeat: CommandHeartbeatCallback | None = None,
 ) -> CommandExecutionResult:
     process_environment = _minimal_process_environment(os.environ)
     process_environment.update(environment)
@@ -1777,7 +1839,11 @@ def _default_command_runner(
         finally:
             process.stdin.close()
     try:
-        process.wait(timeout=timeout_seconds)
+        _wait_for_process_with_heartbeats(
+            process,
+            timeout_seconds=timeout_seconds,
+            on_heartbeat=on_heartbeat,
+        )
     except subprocess.TimeoutExpired as exc:
         _terminate_process_tree(process)
         process.wait()
@@ -1808,6 +1874,34 @@ def _default_command_runner(
         stdout_bytes=stdout or b"",
         stderr_bytes=stderr or b"",
     )
+
+
+def _wait_for_process_with_heartbeats(
+    process: subprocess.Popen[bytes],
+    *,
+    timeout_seconds: float | None,
+    on_heartbeat: CommandHeartbeatCallback | None,
+) -> None:
+    deadline = None if timeout_seconds is None else time.monotonic() + timeout_seconds
+    while True:
+        if process.poll() is not None:
+            return
+        wait_seconds = PROCESS_HEARTBEAT_INTERVAL_SECONDS
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                assert timeout_seconds is not None
+                raise subprocess.TimeoutExpired(process.args, timeout_seconds)
+            wait_seconds = min(wait_seconds, remaining)
+        try:
+            process.wait(timeout=wait_seconds)
+            return
+        except subprocess.TimeoutExpired:
+            if deadline is not None and time.monotonic() >= deadline:
+                assert timeout_seconds is not None
+                raise subprocess.TimeoutExpired(process.args, timeout_seconds) from None
+            if on_heartbeat is not None:
+                on_heartbeat()
 
 
 def _collect_process_pipe(
@@ -1961,8 +2055,10 @@ def compose_worker_prompt(request: WorkerLaunchRequest) -> str:
         (
             "Always include browser_smoke_results as an array. Use [] when no browser or UI "
             "smoke was run. When entries are present, include status, summary, tool, command, "
-            "exit_code, artifact, and url. Do not put ad hoc browser-smoke commands in tests_run "
-            "unless they are listed verification commands in the task contract."
+            "exit_code, url, and either one artifact path in `artifact` or multiple paths in "
+            "`artifacts`. Do not join artifact paths with semicolons or shell separators. Do not "
+            "put ad hoc browser-smoke commands in tests_run unless they are listed verification "
+            "commands in the task contract."
         ),
         (
             "If the task scope marks browser_smoke_required=true, browser_smoke_results must "

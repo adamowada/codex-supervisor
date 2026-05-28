@@ -27,6 +27,8 @@ graph.
   but not authoritative MCP inventory.
 - `WorkerBoundaryPolicy`: shared rule set separating product-worker paths from
   supervisor/controller-owned paths.
+- `CrossPlatformCI`: publication gate that proves Windows-local assumptions still hold under Linux
+  CI type-checking, path semantics, shell behavior, and clean-checkout evidence.
 
 ## Edges
 
@@ -50,3 +52,4 @@ graph.
 | `DesktopPluginRuntime` | authorizes full-AFK through | `ExecutionModeLedger` | `insights/workflow-patterns.md` 2026-05-26 todo-list-test-3 false canary RCA | confirmed | 2026-05-26 | Treat CLI/package preflight as diagnostics-only after live MCP failure, never as plugin full-AFK authority. |
 | `ToolSearchDiscovery` | is not inventory for | `DesktopPluginRuntime` | `insights/workflow-patterns.md` 2026-05-26 todo-list-test-4 false canary RCA | confirmed | 2026-05-26 | Let live MCP preflight self-inventory `list_mcp_tools`; use `canary`/semantic queries only to find callable tools. |
 | `WorkerBoundaryPolicy` | guards | `StoryLoop` | `insights/workflow-patterns.md` 2026-05-28 todo-list-test-14 RCA | confirmed | 2026-05-28 | Keep optional docs project-aware and block product workers from controller-owned paths unless the task role is controller/planning/promotion/source-lock. |
+| `CrossPlatformCI` | catches drift from | `CodexSupervisor` | `insights/cross-platform-ci.md`, GitHub Actions run `26552849566`, repair commit `9aed4a031b04634fdcb5711403cac24113176ca0` | confirmed | 2026-05-28 | Guard platform-specific APIs with typed adapter boundaries, feature probes, or cross-platform regression tests before publication. |

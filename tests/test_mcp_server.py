@@ -414,6 +414,7 @@ def test_mutating_mcp_tools_update_planning_state_by_default(tmp_path: Path) -> 
             "goal": "Create a production task through MCP.",
             "task_type": "AFK",
             "status": "ready",
+            "scope": {"review_skipped": True},
             "acceptance_criteria": ["MCP mutation works."],
             "verification_commands": ["uv run --no-sync python -B scripts/verify.py"],
             "allowed_paths": ["src/codex_supervisor/mcp_server.py"],

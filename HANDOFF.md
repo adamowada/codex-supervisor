@@ -8,12 +8,21 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 ## Current Snapshot
 
 - Current queue state: empty. `story-loop-status --json` reports no current AFK, HITL, or running
-  task after `plan-ci-linux-mypy-windll-20260528` was completed.
-- Latest completed checkpoint: `plan-ci-linux-mypy-windll-20260528` repaired GitHub Actions Verify
+  task after `plan-supervisor-smoke-fixes-20260528` was completed.
+- Latest completed checkpoint: `plan-supervisor-smoke-fixes-20260528` hardened the todo-list-test-15
+  supervisor smoke-test flow: typed controller mutation contracts, prelaunch dirty-path policy,
+  async controller orphan finalization, runtime preflight metadata, Worker Result artifact
+  normalization, browser smoke progress events, handoff freshness checks, review-skip policy, and
+  spawned-project loopback/process hygiene guidance. Focused tests, live CLI/Worker Result smokes,
+  and full `scripts/verify.py` passed locally.
+- Previous completed checkpoint: `plan-cross-platform-ci-insight-20260528` added
+  `insights/cross-platform-ci.md` to capture the repeated Windows-local vs Linux-CI assumption
+  pattern and linked it from `insights/README.md` and `insights/graph.md`.
+- Earlier completed checkpoint: `plan-ci-linux-mypy-windll-20260528` repaired GitHub Actions Verify
   run `26552849566`, where Linux mypy rejected direct `ctypes.windll` access in
   `src/codex_supervisor/story_loop.py`. Implementation commit:
   `9aed4a031b04634fdcb5711403cac24113176ca0`.
-- Previous completed checkpoint: `plan-supervisor-worker-boundary-cleanup-20260528` recorded the
+- Earlier completed checkpoint: `plan-supervisor-worker-boundary-cleanup-20260528` recorded the
   todo-list-test-14 RCA, implemented project-aware optional attribution context, shared
   product-worker/controller-owned path policy, planned-vs-actual evidence metadata, and
   product-worker prompt/runtime boundary guidance. Implementation commit:

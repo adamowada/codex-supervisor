@@ -143,6 +143,11 @@ def _worker_run_metadata(
             "ignore_user_config": ignore_user_config,
             "jsonl_required": not allow_degraded_jsonl,
         },
+        "runtime_preflight": {
+            "recorded_per_worker_run": True,
+            "worker_execution": canonical_worker_backend(task.worker_backend),
+            "evidence_mode": "degraded_jsonl" if allow_degraded_jsonl else "strict_jsonl",
+        },
         "worktree_path": layout.worktree_path,
         "raw_result_path": layout.raw_result_path,
         "planned_evidence_paths": layout.raw_evidence_paths(),

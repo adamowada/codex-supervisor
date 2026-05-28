@@ -10,6 +10,7 @@ from typing import Any
 from codex_supervisor.execution_surface import canonical_worker_backend
 
 CONTROLLER_TASK_ROLES = frozenset({"controller", "planning", "promotion", "source_lock"})
+CONTROLLER_MUTATION_KINDS = CONTROLLER_TASK_ROLES
 
 PROTECTED_SOURCE_OF_TRUTH_DOCUMENTS = frozenset(
     {
@@ -59,19 +60,15 @@ def task_allows_controller_owned_paths(
 ) -> bool:
     """Return whether a worker task is explicitly a controller-state task.
 
-    Broad booleans such as ``controller_owned_paths_allowed`` are intentionally not enough.
-    They caused product workers to receive supervisor-owned files as normal implementation
-    scope. A task must be role-shaped as controller/planning/promotion/source_lock, or marked
-    as an explicit controller task.
+    Broad booleans and legacy role labels such as ``controller_task`` are intentionally not enough.
+    They caused product workers to receive supervisor-owned files as normal implementation scope.
+    A task must declare a typed ``controller_mutation_kind`` value.
     """
 
     if canonical_worker_backend(worker_backend) != "codex_exec":
         return True
     parsed_scope = _json_object(scope)
-    if parsed_scope.get("controller_task") is True:
-        return True
-    role = parsed_scope.get("task_role", parsed_scope.get("worker_role"))
-    return role in CONTROLLER_TASK_ROLES
+    return _controller_mutation_kind(parsed_scope) in CONTROLLER_MUTATION_KINDS
 
 
 def controller_owned_allowed_path_violations(
@@ -85,6 +82,7 @@ def controller_owned_allowed_path_violations(
     normalized_paths = tuple(_normalize_path(value) for value in allowed_paths)
     normalized_paths = tuple(path for path in normalized_paths if path)
     violations: list[str] = []
+    legacy_controller_role = _legacy_controller_role(_json_object(scope))
 
     for path, forbidden in _worker_must_not_edit_overlaps(normalized_paths, scope):
         violations.append(f"{path}: allowed path overlaps worker_must_not_edit `{forbidden}`")
@@ -95,8 +93,19 @@ def controller_owned_allowed_path_violations(
     for path in normalized_paths:
         reason = controller_owned_path_reason(path)
         if reason is not None:
+            if legacy_controller_role is not None:
+                violations.append(
+                    f"{legacy_controller_role}: legacy controller role is ignored without "
+                    "controller_mutation_kind"
+                )
             violations.append(f"{path}: {reason}")
     return tuple(dict.fromkeys(violations))
+
+
+def task_uses_controller_worker_profile(scope: object) -> bool:
+    """Return whether a task should receive the controller-worker profile."""
+
+    return _controller_mutation_kind(_json_object(scope)) in CONTROLLER_MUTATION_KINDS
 
 
 def controller_owned_path_reason(path: object) -> str | None:
@@ -129,6 +138,20 @@ def _worker_must_not_edit_overlaps(
             if _patterns_may_overlap(allowed, forbidden):
                 overlaps.append((allowed, forbidden))
     return tuple(overlaps)
+
+
+def _controller_mutation_kind(scope: Mapping[str, Any]) -> str | None:
+    value = scope.get("controller_mutation_kind")
+    return value if isinstance(value, str) and value in CONTROLLER_MUTATION_KINDS else None
+
+
+def _legacy_controller_role(scope: Mapping[str, Any]) -> str | None:
+    if scope.get("controller_task") is True:
+        return "controller_task"
+    role = scope.get("task_role", scope.get("worker_role"))
+    if role in CONTROLLER_TASK_ROLES:
+        return f"task_role={role}" if scope.get("task_role") == role else f"worker_role={role}"
+    return None
 
 
 def _json_object(value: object) -> Mapping[str, Any]:

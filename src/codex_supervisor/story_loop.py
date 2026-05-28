@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Protocol
 
 from codex_supervisor.evidence_vocabulary import (
+    BROWSER_SMOKE_FAILED_EVENT,
+    BROWSER_SMOKE_PASSED_EVENT,
     WORKER_EVIDENCE_MANIFEST_ARTIFACT_RELATIONSHIP,
     WORKER_RESULT_ARTIFACT_RELATIONSHIP,
     WORKER_RESULT_NORMALIZED_ARTIFACT_RELATIONSHIP,
@@ -46,7 +48,10 @@ from codex_supervisor.queue_selection import (
     executable_afk_tasks,
     select_next_executable_afk_task,
 )
-from codex_supervisor.task_policy import controller_owned_allowed_path_violations
+from codex_supervisor.task_policy import (
+    controller_owned_allowed_path_violations,
+    task_uses_controller_worker_profile,
+)
 from codex_supervisor.worker_backends import (
     CodexExecBackend,
     CommandExecutionResult,
@@ -71,6 +76,16 @@ class WorkerBackend(Protocol):
 
     def run(self, request: WorkerLaunchRequest) -> WorkerLaunchResult:
         """Run one prepared worker request."""
+
+
+WORKER_CONTRACT_GIT_PATHS = (
+    "plans/planning.sqlite3",
+    "HANDOFF.md",
+    "AGENTS.md",
+    "PLANS.md",
+    "CONTRACTS.md",
+    ".agents/skills",
+)
 
 
 @dataclass(frozen=True)
@@ -147,6 +162,7 @@ class StoryLoopAsyncStartResult:
 
     status: str
     worker_run_id: str
+    controller_mode: str
     controller_pid: int
     planning_path: str
     repo_root: str
@@ -472,6 +488,7 @@ def start_story_loop_run_async(
     result = StoryLoopAsyncStartResult(
         status="started",
         worker_run_id=worker_run_id,
+        controller_mode="async_controller_subprocess",
         controller_pid=process.pid,
         planning_path=str(resolved_planning_path),
         repo_root=str(resolved_repo_root),
@@ -497,6 +514,7 @@ def poll_story_loop_run_async(
     worker_run_id: str,
     controller_pid: int | None = None,
     max_events: int = 5,
+    finalize_orphaned: bool = False,
     process_probe: Callable[[int], bool] | None = None,
 ) -> StoryLoopAsyncPollResult:
     """Poll planning SQLite, controller artifacts, and the liveness probe for one run."""
@@ -504,12 +522,11 @@ def poll_story_loop_run_async(
     resolved_repo_root = repo_root.resolve()
     resolved_planning_path = planning_path.resolve()
     max_events = max(0, max_events)
-    store = PlanningSQLiteStore(resolved_planning_path, read_only=True)
+    store = PlanningSQLiteStore(resolved_planning_path, read_only=not finalize_orphaned)
     worker_run = next(
         (run for run in store.list_worker_runs() if run.worker_run_id == worker_run_id),
         None,
     )
-    events = store.list_worker_run_events(worker_run_id=worker_run_id)
     layout = build_worktree_run_layout("story-loop-controller", worker_run_id)
     controller_stdout_path = f"{layout.run_directory}/controller.stdout.json"
     controller_stderr_path = f"{layout.run_directory}/controller.stderr.txt"
@@ -518,6 +535,36 @@ def poll_story_loop_run_async(
         None if controller_pid is None else (process_probe or _process_is_running)(controller_pid)
     )
     worker_run_status = worker_run.status if worker_run is not None else None
+    if finalize_orphaned and _is_orphaned_async_worker(worker_run_status, controller_running):
+        store.update_worker_run_status(
+            worker_run_id,
+            "failed",
+            failure_class="story_loop_controller_exited",
+        )
+        store.add_worker_run_event(
+            WorkerRunEventRecord(
+                event_id=f"{worker_run_id}-controller-exited",
+                worker_run_id=worker_run_id,
+                event_type="story_loop_controller_exited",
+                summary=(
+                    "Async Story Loop controller exited before the worker run reached a "
+                    "terminal state."
+                ),
+                details={
+                    "controller_pid": controller_pid,
+                    "previous_worker_run_status": worker_run_status,
+                    "finalized_status": "failed",
+                },
+                artifact_path=liveness_probe_path,
+                metadata={"failure_class": "story_loop_controller_exited"},
+            )
+        )
+        worker_run = next(
+            (run for run in store.list_worker_runs() if run.worker_run_id == worker_run_id),
+            worker_run,
+        )
+        worker_run_status = worker_run.status if worker_run is not None else None
+    events = store.list_worker_run_events(worker_run_id=worker_run_id)
     done = bool(
         worker_run_status in {"completed", "failed", "cancelled", "blocked", "needs_review"}
         or (controller_running is False and worker_run_status not in {"queued", "running"})
@@ -857,6 +904,12 @@ def run_live_story_loop_once(
             launch_result=launch_result,
             worker_result=ingested,
         )
+        _record_browser_smoke_progress_from_result(
+            store,
+            plan_id=claim.task.plan_id,
+            worker_run_id=worker_run_id,
+            worker_result=ingested,
+        )
         _create_review_task_for_review_required_result(
             store,
             source_task=claim.task,
@@ -977,6 +1030,12 @@ def _live_worker_run_metadata(
             "ignore_user_config": ignore_user_config,
             "jsonl_required": not allow_degraded_jsonl,
         },
+        "runtime_preflight": {
+            "recorded_per_worker_run": True,
+            "story_loop_status_checked": True,
+            "worker_execution": "codex_exec",
+            "evidence_mode": "degraded_jsonl" if allow_degraded_jsonl else "strict_jsonl",
+        },
         "codex_home": codex_home,
         "codex_config_path": codex_config_path,
         "model": model,
@@ -1014,8 +1073,7 @@ def _worker_contract_git_state(
             "status",
             "--porcelain=v1",
             "--",
-            "plans/planning.sqlite3",
-            "HANDOFF.md",
+            *WORKER_CONTRACT_GIT_PATHS,
         ),
         repo_root,
         {"GIT_OPTIONAL_LOCKS": "0"},
@@ -1031,8 +1089,7 @@ def _dirty_worker_contract_paths(status_stdout: str) -> tuple[str, ...]:
         path = path.strip().strip('"').replace("\\", "/")
         if " -> " in path:
             path = path.split(" -> ", 1)[1].strip().strip('"').replace("\\", "/")
-        if path in {"plans/planning.sqlite3", "HANDOFF.md"}:
-            dirty_paths.append(path)
+        dirty_paths.append(path)
     return tuple(dict.fromkeys(dirty_paths))
 
 
@@ -1047,14 +1104,7 @@ def _codex_exec_policy_violations(task: SupervisorTaskSummaryRecord) -> tuple[st
 
 
 def _worker_profile(task: SupervisorTaskSummaryRecord) -> str:
-    scope = task.scope if isinstance(task.scope, dict) else {}
-    role = scope.get("task_role", scope.get("worker_role"))
-    if scope.get("controller_task") is True or role in {
-        "controller",
-        "planning",
-        "promotion",
-        "source_lock",
-    }:
+    if task_uses_controller_worker_profile(task.scope):
         return "controller_worker"
     return "sanitized_product_worker"
 
@@ -1078,7 +1128,8 @@ def _record_preclaim_launch_failure(
             metadata={"launch_preflight": details},
         )
     )
-    store.update_supervisor_task_status(task_id, "ready")
+    if failure_class != "worker_contract_policy_violation":
+        store.update_supervisor_task_status(task_id, "ready")
     store.add_worker_run_event(
         WorkerRunEventRecord(
             event_id=f"{worker_run_id}-preclaim-failed",
@@ -1239,6 +1290,7 @@ def _async_start_payload(result: StoryLoopAsyncStartResult) -> dict[str, object]
     return {
         "status": result.status,
         "worker_run_id": result.worker_run_id,
+        "controller_mode": result.controller_mode,
         "controller_pid": result.controller_pid,
         "planning_path": result.planning_path,
         "repo_root": result.repo_root,
@@ -1263,10 +1315,19 @@ def _async_poll_status(
     if worker_run_status in {"failed", "cancelled", "blocked"}:
         return worker_run_status
     if worker_run_status in {"queued", "running"}:
+        if controller_running is False:
+            return "orphaned_running"
         return "running"
     if controller_running:
         return "controller_running"
     return "controller_exited" if done else "not_started"
+
+
+def _is_orphaned_async_worker(
+    worker_run_status: str | None,
+    controller_running: bool | None,
+) -> bool:
+    return controller_running is False and worker_run_status in {"queued", "running"}
 
 
 def _process_is_running(pid: int) -> bool:
@@ -1474,6 +1535,64 @@ def _link_completed_worker_evidence_artifacts(
         )
     for link in links:
         store.add_plan_artifact_link(link)
+
+
+def _record_browser_smoke_progress_from_result(
+    store: PlanningSQLiteStore,
+    *,
+    plan_id: str,
+    worker_run_id: str,
+    worker_result: WorkerResultRecord,
+) -> None:
+    entries = worker_result.raw_payload.get("browser_smoke_results")
+    if not isinstance(entries, list) or not entries:
+        return
+    statuses = tuple(
+        item.get("status") for item in entries if isinstance(item, dict) and item.get("status")
+    )
+    if not statuses:
+        return
+    event_type = (
+        BROWSER_SMOKE_PASSED_EVENT
+        if statuses and all(status == "passed" for status in statuses)
+        else BROWSER_SMOKE_FAILED_EVENT
+    )
+    artifacts = _browser_smoke_artifact_paths_from_entries(entries)
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id=f"{worker_run_id}-{event_type}",
+            plan_id=plan_id,
+            event_type=event_type,
+            summary=f"Worker run {worker_run_id} recorded {event_type.replace('_', ' ')}.",
+            details=json.dumps(
+                {
+                    "worker_run_id": worker_run_id,
+                    "worker_result_id": worker_result.result_id,
+                    "statuses": list(statuses),
+                    "artifacts": list(artifacts),
+                },
+                sort_keys=True,
+            ),
+        )
+    )
+
+
+def _browser_smoke_artifact_paths_from_entries(entries: list[object]) -> tuple[str, ...]:
+    paths: list[str] = []
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        artifact = item.get("artifact")
+        if isinstance(artifact, str) and artifact.strip():
+            paths.append(artifact.strip().replace("\\", "/"))
+        artifacts = item.get("artifacts")
+        if isinstance(artifacts, list):
+            paths.extend(
+                artifact.strip().replace("\\", "/")
+                for artifact in artifacts
+                if isinstance(artifact, str) and artifact.strip()
+            )
+    return tuple(dict.fromkeys(paths))
 
 
 def _review_task_id(source_task_id: str, worker_run_id: str) -> str:

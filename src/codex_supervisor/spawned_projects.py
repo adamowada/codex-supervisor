@@ -737,6 +737,7 @@ def _initialize_spawned_planning_database(
                 "scaffold_tiers": list(proposal.recommendation.tiers),
                 "controller_task": True,
                 "task_role": "controller",
+                "controller_mutation_kind": "controller",
             },
             acceptance_criteria=list(proposal.first_task.acceptance_criteria),
             verification_commands=list(proposal.first_task.verification_commands),
@@ -795,6 +796,9 @@ def _scaffold_file_content(
             "Loop workers. Run verification as separate command invocations instead of relying on "
             "shell-specific chained command lines. For JSON-heavy queue mutations, prefer "
             "repo-local input files, stdin, or typed `--*-json-file` surfaces when available. "
+            "Local memory services used by tests or smoke harnesses should bind to loopback "
+            "`127.0.0.1`, and smoke harnesses should record child process ids, ports, and cleanup "
+            "status in their artifacts. "
             "Keep source-of-truth docs stable, run `python -B scripts/verify.py` before "
             "publishing, and do not store secrets or local absolute roots in tracked "
             "state.\n"
@@ -994,17 +998,19 @@ def _project_bootstrap_skill(proposal: SpawnedProjectScaffoldProposal) -> str:
         "3. Execute one bounded vertical slice and update planning SQLite with durable evidence.\n"
         "4. If post-worker verification or browser smoke finds an issue, create a new supervisor "
         "repair task before editing files.\n"
-        "5. Record browser-smoke pass/fail as planning progress and link screenshots or logs when "
-        "present.\n"
-        "6. Use OS-neutral promotion steps such as file-list copy from worker output; avoid "
+        "5. Record browser-smoke pass/fail as planning progress and link screenshots or logs "
+        "when present.\n"
+        "6. Bind local memory services to `127.0.0.1` and record smoke child process ids, ports, "
+        "and cleanup status in smoke artifacts.\n"
+        "7. Use OS-neutral promotion steps such as file-list copy from worker output; avoid "
         "shell-specific pipeline promotion recipes when the main checkout also has planning "
         "mutations.\n"
-        "7. Prefer repo-local input files, stdin, or typed `--*-json-file` surfaces for "
+        "8. Prefer repo-local input files, stdin, or typed `--*-json-file` surfaces for "
         "JSON-heavy queue mutations.\n"
-        "8. Link the worker evidence manifest in planning SQLite and record a final commit link "
+        "9. Link the worker evidence manifest in planning SQLite and record a final commit link "
         "before declaring full-AFK work complete.\n"
-        "9. Run `uv run --no-sync python -B scripts/verify.py` before handoff or publication.\n"
-        "10. Keep reusable lessons in `insights/` and keep `HANDOFF.md` compact.\n"
+        "10. Run `uv run --no-sync python -B scripts/verify.py` before handoff or publication.\n"
+        "11. Keep reusable lessons in `insights/` and keep `HANDOFF.md` compact.\n"
     )
 
 

@@ -81,6 +81,23 @@ def test_contract_worker_backend_emits_contract_compatible_result(tmp_path):
     )
 
 
+def test_default_command_runner_emits_heartbeat_during_silent_process(tmp_path, monkeypatch):
+    monkeypatch.setattr(worker_backends, "PROCESS_HEARTBEAT_INTERVAL_SECONDS", 0.05)
+    heartbeats: list[str] = []
+
+    result = _default_command_runner(
+        (sys.executable, "-c", "import time; time.sleep(0.16); print('done')"),
+        tmp_path,
+        {},
+        timeout_seconds=2,
+        on_heartbeat=lambda: heartbeats.append("tick"),
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "done"
+    assert heartbeats
+
+
 def test_contract_worker_backend_can_return_failure_without_result_file(tmp_path):
     request = WorkerLaunchRequest(
         worker_run_id="run-worker",
@@ -683,14 +700,10 @@ def test_codex_exec_backend_launch_success_returns_result_path_and_preserves_fin
     assert schema["properties"]["browser_smoke_results"]["items"]["additionalProperties"] is False
     assert "browser_smoke_results" in schema["required"]
     assert set(schema["properties"]["browser_smoke_results"]["items"]["required"]) == {
-        "artifact",
-        "command",
-        "exit_code",
         "status",
         "summary",
-        "tool",
-        "url",
     }
+    assert "artifacts" in schema["properties"]["browser_smoke_results"]["items"]["properties"]
     assert (
         schema["properties"]["acceptance_results"]["properties"]["Criterion passes."][
             "additionalProperties"
@@ -722,13 +735,15 @@ def test_codex_exec_backend_copies_worker_support_artifacts_from_worktree(tmp_pa
         (worktree / "src").mkdir(parents=True)
         (worktree / "src" / "success.py").write_text("print('ok')\n", encoding="utf-8")
         smoke_path = worktree / "artifacts" / "browser" / "smoke.png"
+        log_path = worktree / "artifacts" / "browser" / "smoke.log"
         smoke_path.parent.mkdir(parents=True)
         smoke_path.write_bytes(b"png")
+        log_path.write_text("ok\n", encoding="utf-8")
         payload = _worker_result_payload(worker_run_id="run-worker", changed_file="src/success.py")
-        payload["artifacts"] = ["artifacts/browser/smoke.png"]
+        payload["artifacts"] = []
         payload["browser_smoke_results"] = [
             {
-                "artifact": "artifacts/browser/smoke.png",
+                "artifacts": ["artifacts/browser/smoke.log", "artifacts/browser/smoke.png"],
                 "command": "node tests/browser-smoke.mjs",
                 "exit_code": 0,
                 "status": "passed",
@@ -760,6 +775,7 @@ def test_codex_exec_backend_copies_worker_support_artifacts_from_worktree(tmp_pa
 
     assert result.status == "completed"
     assert (tmp_path / "artifacts" / "browser" / "smoke.png").read_bytes() == b"png"
+    assert (tmp_path / "artifacts" / "browser" / "smoke.log").read_text() == "ok\n"
 
 
 def test_codex_exec_backend_fails_closed_when_custom_result_schema_is_missing(tmp_path):
@@ -813,9 +829,16 @@ def test_codex_exec_backend_launch_success_requires_valid_worker_result(tmp_path
     ).run(request)
 
     assert result.status == "failed"
+    assert result.result_path == "artifacts/run-worker/worker-result.raw.json"
     assert result.failure_class == "worker_result_invalid"
     assert result.metadata["launch_decision"] == "worker_result_invalid"
+    assert result.metadata["evidence_manifest_path"] == (
+        "artifacts/run-worker/evidence-manifest.json"
+    )
     assert (tmp_path / "runs" / "run-worker" / "final-message.txt").read_text() == (
+        '{"status":"completed"}\n'
+    )
+    assert (tmp_path / "artifacts" / "run-worker" / "worker-result.raw.json").read_text() == (
         '{"status":"completed"}\n'
     )
 

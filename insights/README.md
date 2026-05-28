@@ -26,6 +26,8 @@ Use it for synthesized, provenance-backed knowledge about:
 - `goal-mode-and-ralph-loop.md`: synthesis of Codex Goals and Ralph-informed one-story loops.
 - `bootstrap-landmine-audit.md`: confirmed bootstrap drift and quality findings from six-lane
   explorer audits.
+- `cross-platform-ci.md`: confirmed lessons from Windows-local vs Linux-CI drift, including
+  platform-specific API, path, subprocess, and evidence assumptions.
 - `project-sop.md`: project bootstrap SOP distilled for spawned projects.
 - `release-readiness-evidence.md`: release-readiness policy for evidence-only ACP commits that
   validate a code or doctrine commit.

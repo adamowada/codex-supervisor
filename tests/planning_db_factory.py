@@ -47,6 +47,9 @@ def make_planning_db(tmp_path: Path) -> Path:
                 started_at text,
                 finished_at text
             );
+            create unique index attempts_one_nonterminal_per_task
+                on attempts(task_id)
+                where status in ('planned', 'running');
             create table evidence_bundles (
                 bundle_id text primary key,
                 task_id text not null references tasks(task_id) on delete cascade,

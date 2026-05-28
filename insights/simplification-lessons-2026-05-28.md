@@ -250,6 +250,29 @@ This is the broader state-space lesson from the refactor: surfaces may grow, but
 collapse back onto task intent, attempts, evidence, assurance, and acceptance. If an adapter cannot
 state that mapping, it is not ready to exist.
 
+## Compact Contract Repair
+
+The repair after the roadmap completion clarified an important rule: simplifying the target model is
+not enough if old entrypoints can still create or expect old state. Active commands must create,
+inspect, and mutate the same compact schema.
+
+The repaired contract is:
+
+1. `plan-init` creates the six-table compact schema.
+2. Kept planning inspection commands read compact tables directly.
+3. `attempt-transition` cannot mutate an attempt for a different task.
+4. Worker execution closes attempts even when the worker throws or returns an invalid status.
+5. Planning integrity checks open work relative to active plans, not globally.
+6. The attempt store rejects duplicate non-terminal attempts immediately.
+
+Integrity checks remain the audit layer, but write paths must reject invalid state before it lands.
+The database can also help: a partial unique index on non-terminal attempts makes the one-active-try
+rule durable.
+
+The design lesson is small but sharp: compatibility code is not neutral in a pre-MVP simplification.
+If an old path can still initialize, inspect, or mutate a different schema, it is part of the state
+space and must either be rewritten onto the compact contract or removed.
+
 ## Local Hygiene
 
 Ignored local artifacts should stay disposable. Development environments, caches, run outputs,

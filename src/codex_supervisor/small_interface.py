@@ -197,11 +197,11 @@ def _start_or_create_running_attempt(
     if attempt_id is None:
         active = store.list_active_attempts(task_id)
         if active:
-            return store.start_attempt(active[0].attempt_id, summary=summary)
+            return store.start_attempt(active[0].attempt_id, task_id=task_id, summary=summary)
         created = store.create_attempt(task_id=task_id, executor=executor, summary=summary)
-        return store.start_attempt(created.attempt_id, summary=summary)
+        return store.start_attempt(created.attempt_id, task_id=task_id, summary=summary)
     try:
-        return store.start_attempt(attempt_id, summary=summary)
+        return store.start_attempt(attempt_id, task_id=task_id, summary=summary)
     except LookupError:
         created = store.create_attempt(
             task_id=task_id,
@@ -209,7 +209,7 @@ def _start_or_create_running_attempt(
             summary=summary,
             attempt_id=attempt_id,
         )
-        return store.start_attempt(created.attempt_id, summary=summary)
+        return store.start_attempt(created.attempt_id, task_id=task_id, summary=summary)
 
 
 def _terminal_attempt(
@@ -224,7 +224,12 @@ def _terminal_attempt(
         if len(active) != 1:
             raise ValueError("terminal transitions require exactly one active attempt")
         attempt_id = active[0].attempt_id
-    return store.complete_attempt(attempt_id, status=target_status, summary=summary)
+    return store.complete_attempt(
+        attempt_id,
+        task_id=task_id,
+        status=target_status,
+        summary=summary,
+    )
 
 
 def _evaluate_transition(

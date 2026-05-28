@@ -12,6 +12,7 @@ import sys
 from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import fields, is_dataclass
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from typing import Any, cast
@@ -37,6 +38,14 @@ from codex_supervisor.codex_state_reconciliation import (
     CodexStateReconciliationApplyReport,
     apply_codex_state_reconciliation_report,
     codex_state_reconciliation_report_from_payload,
+)
+from codex_supervisor.compact_planning import (
+    compact_plan_summaries,
+    initialize_compact_planning_database,
+    list_compact_plans,
+    list_compact_tasks,
+    read_compact_task,
+    seed_compact_bootstrap_plan,
 )
 from codex_supervisor.evidence_vocabulary import (
     ISSUE_COMMENT_ARTIFACT_RELATIONSHIP,
@@ -99,7 +108,6 @@ from codex_supervisor.planning import (
     SupervisorTaskSummaryRecord,
     WorkerResultRecord,
     WorkerRunRecord,
-    initialize_planning_database,
     open_existing_planning_database,
     unresolved_task_blockers,
 )
@@ -1596,19 +1604,20 @@ def main(argv: list[str] | None = None) -> int:
         path = _planning_path_or_report(args.path)
         if path is None:
             return 1
-        store = initialize_planning_database(path)
+        initialize_compact_planning_database(path)
         if args.seed_bootstrap_plan:
-            seed_bootstrap_plan(store)
+            seed_compact_bootstrap_plan(path, created_at=_now_iso())
         print(f"Initialized planning database: {path}")
         return 0
 
     if args.command == "plan-list":
-        read_store = _open_read_store(args.path)
-        if read_store is None:
+        path = _planning_path_or_report(args.path)
+        if path is None:
             return 1
-        plan_store = read_store
-        plans = _read_or_report(lambda: plan_store.list_plans(status=args.status))
-        if plans is None:
+        try:
+            plans = list_compact_plans(path, status=args.status)
+        except (sqlite3.Error, ValueError) as exc:
+            print(f"Could not list compact plans: {exc}", file=sys.stderr)
             return 1
         if not plans:
             if args.json:
@@ -1620,46 +1629,45 @@ def main(argv: list[str] | None = None) -> int:
             _print_json(plans)
             return 0
         for plan in plans:
-            print(f"{plan.plan_id}\t{plan.status}\tpriority={plan.priority}\t{plan.title}")
+            print(
+                f"{plan['plan_id']}\t{plan['status']}\t"
+                f"priority={plan['priority']}\t{plan['title']}"
+            )
         return 0
 
     if args.command == "plan-summary":
-        read_store = _open_read_store(args.path)
-        if read_store is None:
+        path = _planning_path_or_report(args.path)
+        if path is None:
             return 1
-        snapshot = _read_or_report(read_store.read_summary_snapshot)
-        if snapshot is None:
-            return 1
-        if args.plan_id is not None:
-            plans = tuple(plan for plan in snapshot.plans if plan.plan_id == args.plan_id)
-            if not plans:
-                if args.json:
-                    _print_json(())
-                else:
-                    print(f"No plan found: {args.plan_id}")
-                return 1
-        elif args.active_only and args.current_queue:
+        if args.active_only and args.current_queue:
             print("--active-only and --current-queue are mutually exclusive", file=sys.stderr)
             return 1
-        elif args.current_queue:
-            plans = tuple(
-                plan for plan in snapshot.plans if plan.status in CURRENT_QUEUE_PLAN_STATUSES
+        try:
+            summaries = compact_plan_summaries(
+                path,
+                plan_id=args.plan_id,
+                active_only=args.active_only,
+                current_queue=args.current_queue,
             )
-        elif args.active_only:
-            plans = tuple(plan for plan in snapshot.plans if plan.status == "active")
-        else:
-            plans = snapshot.plans
-        summaries = tuple(_build_plan_summary_entry(snapshot, plan) for plan in plans)
+        except (sqlite3.Error, ValueError) as exc:
+            print(f"Could not summarize compact plans: {exc}", file=sys.stderr)
+            return 1
+        if args.plan_id is not None and not summaries:
+            if args.json:
+                _print_json(())
+            else:
+                print(f"No plan found: {args.plan_id}")
+            return 1
         if args.json:
             _print_json(summaries)
             return 0
         for summary in summaries:
-            _print_plan_summary(summary)
+            _print_compact_plan_summary(summary)
         return 0
 
     if args.command == "task-list":
-        read_store = _open_read_store(args.path)
-        if read_store is None:
+        path = _planning_path_or_report(args.path)
+        if path is None:
             return 1
         if args.active_plans_only and args.current_queue_plans_only:
             print(
@@ -1667,15 +1675,15 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
-        task_store = read_store
-        tasks = _read_or_report(
-            lambda: task_store.list_supervisor_tasks(
+        try:
+            tasks = list_compact_tasks(
+                path,
                 status=args.status,
                 active_plans_only=args.active_plans_only,
                 current_queue_plans_only=args.current_queue_plans_only,
             )
-        )
-        if tasks is None:
+        except (sqlite3.Error, ValueError) as exc:
+            print(f"Could not list compact tasks: {exc}", file=sys.stderr)
             return 1
         if not tasks:
             if args.json:
@@ -1688,33 +1696,32 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         for listed_task in tasks:
             print(
-                f"{listed_task.task_id}\t{listed_task.status}\t{listed_task.task_type}\t"
-                f"plan={listed_task.plan_id}({listed_task.plan_status})\t{listed_task.title}"
+                f"{listed_task['task_id']}\t{listed_task['status']}\t"
+                f"assurance={listed_task['assurance']}\t"
+                f"plan={listed_task['plan_id']}({listed_task['plan_status']})\t"
+                f"{listed_task['title']}"
             )
         return 0
 
     if args.command == "task-show":
-        read_store = _open_read_store(args.path)
-        if read_store is None:
+        path = _planning_path_or_report(args.path)
+        if path is None:
             return 1
-        task_store = read_store
-        tasks = _read_or_report(
-            lambda: tuple(
-                task for task in task_store.list_supervisor_tasks() if task.task_id == args.task_id
-            )
-        )
-        if tasks is None:
+        try:
+            task = read_compact_task(path, args.task_id)
+        except (sqlite3.Error, ValueError) as exc:
+            print(f"Could not read compact task: {exc}", file=sys.stderr)
             return 1
-        if not tasks:
+        if task is None:
             if args.json:
                 _print_json(None)
                 return 1
             print(f"No supervisor task found: {args.task_id}")
             return 1
         if args.json:
-            _print_json(tasks[0])
+            _print_json(task)
         else:
-            _print_task_detail(tasks[0])
+            _print_compact_task_detail(task)
         return 0
 
     if args.command == "worker-run-list":
@@ -3732,6 +3739,55 @@ def _spawned_project_brief_from_args(args: argparse.Namespace) -> SpawnedProject
 
 def _print_json(value: object) -> None:
     print(json.dumps(_to_jsonable(value), indent=2, sort_keys=True, default=str))
+
+
+def _now_iso() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _print_compact_plan_summary(summary: dict[str, object]) -> None:
+    plan = cast(dict[str, object], summary["plan"])
+    print(f"{plan['plan_id']}\t{plan['status']}\tpriority={plan['priority']}\t{plan['title']}")
+    print("tasks:")
+    tasks = cast(tuple[dict[str, object], ...], summary["tasks"])
+    if not tasks:
+        print("- none")
+    for task in tasks:
+        print(f"- {task['task_id']}\t{task['status']}\t{task['title']}")
+    print("attempts:")
+    attempts = cast(tuple[dict[str, object], ...], summary["attempts"])
+    if not attempts:
+        print("- none")
+    for attempt in attempts:
+        print(f"- {attempt['attempt_id']}\t{attempt['status']}\ttask={attempt['task_id']}")
+    print("evidence_bundles:")
+    evidence_bundles = cast(tuple[dict[str, object], ...], summary["evidence_bundles"])
+    if not evidence_bundles:
+        print("- none")
+    for evidence in evidence_bundles:
+        print(f"- {evidence['bundle_id']}\t{evidence['assurance']}\ttask={evidence['task_id']}")
+    print("decisions:")
+    decisions = cast(tuple[dict[str, object], ...], summary["decisions"])
+    if not decisions:
+        print("- none")
+    for decision in decisions:
+        print(f"- {decision['decision_id']}\t{decision['decision']}")
+    print("")
+
+
+def _print_compact_task_detail(task: dict[str, object]) -> None:
+    print(f"task: {task['task_id']}")
+    print(f"plan: {task['plan_id']} ({task['plan_status']})")
+    print(f"title: {task['title']}")
+    print(f"status: {task['status']}")
+    print(f"assurance: {task['assurance']}")
+    print(f"intent: {task['intent']}")
+    print("acceptance_criteria:")
+    criteria = cast(list[str], task["acceptance_criteria"])
+    if not criteria:
+        print("- none")
+    for criterion in criteria:
+        print(f"- {criterion}")
 
 
 def _parse_acceptance_results(values: Sequence[str]) -> dict[str, bool] | None:

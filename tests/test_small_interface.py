@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from planning_db_factory import make_planning_db
+import pytest
+from planning_db_factory import insert_task, make_planning_db
 
 from codex_supervisor.small_interface import attempt_transition, queue_next
 
@@ -69,3 +70,48 @@ def test_attempt_transition_blocks_when_acceptance_is_missing(tmp_path: Path) ->
     assert completed.task_status == "blocked"
     assert completed.acceptance is not None
     assert completed.acceptance["accepted"] is False
+
+
+def test_attempt_transition_rejects_cross_task_start(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+    insert_task(db_path, task_id="task-2", status="ready")
+    attempt_transition(
+        db_path,
+        task_id="task-2",
+        attempt_id="attempt-task-2",
+        status="planned",
+        summary="Task 2 attempt.",
+    )
+
+    with pytest.raises(ValueError, match="belongs to task"):
+        attempt_transition(
+            db_path,
+            task_id="task-1",
+            attempt_id="attempt-task-2",
+            status="running",
+            summary="Wrong task.",
+        )
+
+
+def test_attempt_transition_rejects_cross_task_terminal_transition(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+    insert_task(db_path, task_id="task-2", status="ready")
+    attempt_transition(
+        db_path,
+        task_id="task-2",
+        attempt_id="attempt-task-2",
+        status="running",
+        summary="Task 2 running.",
+    )
+
+    with pytest.raises(ValueError, match="belongs to task"):
+        attempt_transition(
+            db_path,
+            task_id="task-1",
+            attempt_id="attempt-task-2",
+            status="succeeded",
+            summary="Wrong task.",
+            checks=("pytest",),
+            artifacts=("artifact",),
+            acceptance_results={"Acceptance criterion": True},
+        )

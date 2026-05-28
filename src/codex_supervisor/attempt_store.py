@@ -66,6 +66,18 @@ class AttemptStore:
 
         with self._connect() as connection:
             self._require_task(connection, task_id)
+            active_attempt = connection.execute(
+                """select attempt_id from attempts
+                   where task_id = ?
+                     and status in ('planned', 'running')
+                   limit 1""",
+                (task_id,),
+            ).fetchone()
+            if active_attempt is not None:
+                raise ValueError(
+                    f"task {task_id!r} already has non-terminal attempt "
+                    f"{active_attempt['attempt_id']!r}"
+                )
             connection.execute(
                 """insert into attempts(
                        attempt_id, task_id, executor, status, summary, started_at, finished_at
@@ -86,6 +98,7 @@ class AttemptStore:
         self,
         attempt_id: str,
         *,
+        task_id: str | None = None,
         summary: str | None = None,
         started_at: str | None = None,
     ) -> RunAttempt:
@@ -94,6 +107,7 @@ class AttemptStore:
         started_at = started_at or _now()
         with self._connect() as connection:
             current = self._read_attempt(connection, attempt_id)
+            _validate_attempt_task(current, task_id)
             validate_attempt_transition(current.status, RunAttemptStatus.RUNNING)
             attempt = RunAttempt(
                 attempt_id=current.attempt_id,
@@ -123,6 +137,7 @@ class AttemptStore:
         *,
         status: str | RunAttemptStatus,
         summary: str,
+        task_id: str | None = None,
         finished_at: str | None = None,
     ) -> RunAttempt:
         """Move an attempt to a terminal status."""
@@ -134,6 +149,7 @@ class AttemptStore:
         finished_at = finished_at or _now()
         with self._connect() as connection:
             current = self._read_attempt(connection, attempt_id)
+            _validate_attempt_task(current, task_id)
             validate_attempt_transition(current.status, target_status)
             attempt = RunAttempt(
                 attempt_id=current.attempt_id,
@@ -335,6 +351,14 @@ def _attempt_from_row(row: sqlite3.Row) -> RunAttempt:
     )
     validate_attempt_timestamps(attempt)
     return attempt
+
+
+def _validate_attempt_task(attempt: RunAttempt, expected_task_id: str | None) -> None:
+    if expected_task_id is not None and attempt.task_id != expected_task_id:
+        raise ValueError(
+            f"attempt {attempt.attempt_id!r} belongs to task {attempt.task_id!r}, "
+            f"not {expected_task_id!r}"
+        )
 
 
 def _now() -> str:

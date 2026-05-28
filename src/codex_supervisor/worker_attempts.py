@@ -127,7 +127,18 @@ def run_fake_worker_attempt(
         status="running",
         summary="Fake Codex worker running.",
     )
-    worker_result = worker.execute(prompt=prompt, task=task, policy=policy)
+    try:
+        worker_result = worker.execute(prompt=prompt, task=task, policy=policy)
+    except Exception as exc:
+        worker_result = _blocked_worker_result(
+            summary=f"Worker execution failed: {exc}",
+            detail=f"worker-exception: {exc.__class__.__name__}",
+        )
+    if worker_result.status not in {"succeeded", "failed", "blocked"}:
+        worker_result = _blocked_worker_result(
+            summary=f"Worker returned invalid status: {worker_result.status}",
+            detail=f"worker-invalid-status: {worker_result.status}",
+        )
     transition = attempt_transition(
         database_path,
         task_id=task_id,
@@ -147,6 +158,17 @@ def run_fake_worker_attempt(
         prompt=prompt,
         transition=transition,
         worker_result=worker_result,
+    )
+
+
+def _blocked_worker_result(*, summary: str, detail: str) -> WorkerResult:
+    return WorkerResult(
+        status="blocked",
+        summary=summary,
+        checks=(detail,),
+        artifacts=("worker-output: blocked before valid result",),
+        acceptance_results={},
+        risks=("Worker attempt did not produce valid acceptance evidence.",),
     )
 
 

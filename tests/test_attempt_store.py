@@ -68,6 +68,25 @@ def test_attempt_store_rejects_invalid_transition(tmp_path: Path) -> None:
         )
 
 
+def test_attempt_store_rejects_second_nonterminal_attempt(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+    store = AttemptStore(db_path)
+    store.create_attempt(
+        task_id="task-1",
+        executor="manual",
+        summary="Manual attempt planned.",
+        attempt_id="attempt-1",
+    )
+
+    with pytest.raises(ValueError, match="already has non-terminal attempt"):
+        store.create_attempt(
+            task_id="task-1",
+            executor="manual",
+            summary="Second attempt planned.",
+            attempt_id="attempt-2",
+        )
+
+
 def test_attempt_store_rejects_evidence_for_another_task(tmp_path: Path) -> None:
     db_path = make_planning_db(tmp_path)
     store = AttemptStore(db_path)

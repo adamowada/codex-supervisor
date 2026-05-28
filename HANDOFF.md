@@ -53,6 +53,11 @@ Stage 6 is implemented in `src/codex_supervisor/adapter_contracts.py` and the re
 name task intent, attempt behavior, evidence behavior, assurance levels, acceptance behavior, state
 flow, and operator value before activation.
 
+The compact contract repair is complete. `plan-init`, `plan-list`, `plan-summary`, `task-list`, and
+`task-show` now use the compact planning schema. Attempt transitions validate task ownership,
+workers fail closed with blocker evidence, planning integrity checks open work per active plan, and
+the attempt store prevents multiple non-terminal attempts for a task.
+
 ## Roadmap
 
 1. Stage 1, Foundation Contract: align docs, planning SQLite, skill guidance, CI, insights, handoff,
@@ -66,8 +71,8 @@ flow, and operator value before activation.
 
 ## Next Action
 
-All roadmap stages are complete. The simplification plan is marked `done` in
-`plans/planning.sqlite3`.
+All roadmap stages and the compact contract repair are complete. The simplification and repair plans
+are marked `done` in `plans/planning.sqlite3`.
 
 Planning task:
 

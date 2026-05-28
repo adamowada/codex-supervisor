@@ -15,6 +15,11 @@ from codex_supervisor.worker_attempts import (
 )
 
 
+class ThrowingWorker(FakeCodexWorker):
+    def execute(self, **kwargs: object) -> WorkerResult:
+        raise RuntimeError("boom")
+
+
 def test_worker_prompt_includes_task_intent_and_assurance_policy(tmp_path: Path) -> None:
     db_path = _make_high_assurance_db(tmp_path)
     task = AttemptStore(db_path).read_task("task-1")
@@ -67,6 +72,52 @@ def test_high_assurance_worker_result_without_risk_blocks_task(tmp_path: Path) -
     assert result.transition.task_status == "blocked"
     assert result.transition.acceptance is not None
     assert "risk_notes" in result.transition.acceptance["missing_requirements"]
+
+
+def test_worker_exception_closes_attempt_as_blocked(tmp_path: Path) -> None:
+    db_path = _make_high_assurance_db(tmp_path)
+
+    result = run_fake_worker_attempt(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-worker-1",
+        worker=ThrowingWorker(),
+    )
+    attempt = AttemptStore(db_path).read_attempt("attempt-worker-1")
+
+    assert result.transition.task_status == "blocked"
+    assert attempt.status.value == "blocked"
+    assert attempt.finished_at is not None
+    assert result.transition.evidence is not None
+    assert "worker-exception" in result.transition.evidence["checks"][0]
+
+
+def test_worker_invalid_status_closes_attempt_as_blocked(tmp_path: Path) -> None:
+    db_path = _make_high_assurance_db(tmp_path)
+    worker = FakeCodexWorker(
+        WorkerResult(
+            status="confused",
+            summary="Worker returned a non-contract status.",
+            checks=("fake-worker: check",),
+            artifacts=("worker-output: fake result",),
+            acceptance_results={"Acceptance criterion": True},
+            risks=("Risk noted.",),
+        )
+    )
+
+    result = run_fake_worker_attempt(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-worker-1",
+        worker=worker,
+    )
+    attempt = AttemptStore(db_path).read_attempt("attempt-worker-1")
+
+    assert result.transition.task_status == "blocked"
+    assert attempt.status.value == "blocked"
+    assert attempt.finished_at is not None
+    assert result.transition.evidence is not None
+    assert "worker-invalid-status" in result.transition.evidence["checks"][0]
 
 
 def test_live_worker_verification_plan_is_bounded(tmp_path: Path) -> None:

@@ -24,6 +24,8 @@ Use it for synthesized, provenance-backed knowledge about:
 - `workflow-patterns.md`: recurring workflow patterns extracted from sources and Adam's projects.
 - `codex-usage-skill-synthesis.md`: aggregate `.codex` usage evidence behind repo-local skills.
 - `goal-mode-and-ralph-loop.md`: synthesis of Codex Goals and Ralph-informed one-story loops.
+- `live-smoke-lessons.md`: reusable lessons from todo-list supervisor smoke analysis, deterministic
+  e2e coverage, and broader real Codex Exec smoke runs.
 - `bootstrap-landmine-audit.md`: confirmed bootstrap drift and quality findings from six-lane
   explorer audits.
 - `cross-platform-ci.md`: confirmed lessons from Windows-local vs Linux-CI drift, including

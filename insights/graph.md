@@ -29,6 +29,8 @@ graph.
   supervisor/controller-owned paths.
 - `CrossPlatformCI`: publication gate that proves Windows-local assumptions still hold under Linux
   CI type-checking, path semantics, shell behavior, and clean-checkout evidence.
+- `LiveSmokeEvidence`: bounded real-environment validation using disposable repos, real Codex Exec,
+  strict JSONL, Worker Result artifacts, liveness, and planning evidence.
 
 ## Edges
 
@@ -53,3 +55,5 @@ graph.
 | `ToolSearchDiscovery` | is not inventory for | `DesktopPluginRuntime` | `insights/workflow-patterns.md` 2026-05-26 todo-list-test-4 false canary RCA | confirmed | 2026-05-26 | Let live MCP preflight self-inventory `list_mcp_tools`; use `canary`/semantic queries only to find callable tools. |
 | `WorkerBoundaryPolicy` | guards | `StoryLoop` | `insights/workflow-patterns.md` 2026-05-28 todo-list-test-14 RCA | confirmed | 2026-05-28 | Keep optional docs project-aware and block product workers from controller-owned paths unless the task role is controller/planning/promotion/source-lock. |
 | `CrossPlatformCI` | catches drift from | `CodexSupervisor` | `insights/cross-platform-ci.md`, GitHub Actions run `26552849566`, repair commit `9aed4a031b04634fdcb5711403cac24113176ca0` | confirmed | 2026-05-28 | Guard platform-specific APIs with typed adapter boundaries, feature probes, or cross-platform regression tests before publication. |
+| `LiveSmokeEvidence` | complements | `StoryLoop` | `insights/live-smoke-lessons.md`, `plan-broader-live-smoke-20260528`, `tests/test_story_loop_e2e.py` | confirmed | 2026-05-28 | Keep fake-Codex e2e tests in CI, then run narrow real Codex Exec smokes for API/schema/sandbox behavior. |
+| `LiveSmokeEvidence` | constrains | `CodexExecBackend` | `insights/live-smoke-lessons.md`, `src/codex_supervisor/worker_backends.py`, `tests/test_worker_backends.py` | confirmed | 2026-05-28 | Make model-facing output schemas strict-API compatible while preserving stronger repo-side validation. |

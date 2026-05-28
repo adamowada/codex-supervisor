@@ -229,6 +229,9 @@ FILE_PURPOSES = {
         "Goal Mode and Ralph loop synthesis", "check_public_repo_hygiene"
     ),
     "insights/graph.md": FilePurpose("markdown knowledge graph", "check_file_justification"),
+    "insights/live-smoke-lessons.md": FilePurpose(
+        "live supervisor smoke-test lessons", "check_file_justification"
+    ),
     "insights/project-sop.md": FilePurpose(
         "spawned-project SOP insight", "check_file_justification"
     ),

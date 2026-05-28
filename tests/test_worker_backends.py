@@ -697,13 +697,13 @@ def test_codex_exec_backend_launch_success_returns_result_path_and_preserves_fin
     assert schema["additionalProperties"] is False
     assert "worker_run_ids" not in schema["properties"]
     assert schema["properties"]["tests_run"]["items"]["additionalProperties"] is False
-    assert schema["properties"]["browser_smoke_results"]["items"]["additionalProperties"] is False
+    browser_smoke_schema = schema["properties"]["browser_smoke_results"]["items"]
+    assert browser_smoke_schema["additionalProperties"] is False
     assert "browser_smoke_results" in schema["required"]
-    assert set(schema["properties"]["browser_smoke_results"]["items"]["required"]) == {
-        "status",
-        "summary",
-    }
-    assert "artifacts" in schema["properties"]["browser_smoke_results"]["items"]["properties"]
+    assert set(browser_smoke_schema["required"]) == set(browser_smoke_schema["properties"])
+    assert browser_smoke_schema["properties"]["artifact"]["type"] == ["string", "null"]
+    assert browser_smoke_schema["properties"]["artifacts"]["type"] == ["array", "null"]
+    _assert_strict_object_required_properties(schema)
     assert (
         schema["properties"]["acceptance_results"]["properties"]["Criterion passes."][
             "additionalProperties"
@@ -1197,6 +1197,19 @@ def _codex_exec_request(tmp_path, **overrides) -> WorkerLaunchRequest:
     }
     values.update(overrides)
     return WorkerLaunchRequest(**values)
+
+
+def _assert_strict_object_required_properties(schema: object) -> None:
+    if isinstance(schema, dict):
+        properties = schema.get("properties")
+        if isinstance(properties, dict):
+            assert schema.get("additionalProperties") is False
+            assert set(schema.get("required", [])) == set(properties)
+        for value in schema.values():
+            _assert_strict_object_required_properties(value)
+    elif isinstance(schema, list):
+        for item in schema:
+            _assert_strict_object_required_properties(item)
 
 
 def _write_valid_worker_result(tmp_path, *, worker_run_id: str, changed_file: str) -> None:

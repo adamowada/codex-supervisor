@@ -8,8 +8,23 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 ## Current Snapshot
 
 - Current queue state: empty. `story-loop-status --json` reports no current AFK, HITL, or running
-  task after `plan-e2e-test-gap-closure-20260528` was completed.
-- Latest completed checkpoint: `plan-e2e-test-gap-closure-20260528` added deterministic e2e
+  task after `plan-live-smoke-insight-acp-20260528` was completed.
+- Latest completed checkpoint: `plan-live-smoke-insight-acp-20260528` added
+  `insights/live-smoke-lessons.md`, linked it from the insight wiki and graph, and registered the
+  file purpose for public justification. The insight captures the todo-list smoke analysis,
+  deterministic e2e follow-up, broader live Codex Exec smoke results, strict schema fix,
+  Windows `workspace-write` limitation, planning hygiene lesson, and ACP evidence loop.
+- Previous completed checkpoint: `plan-broader-live-smoke-20260528` ran a broader live Codex Exec
+  Story Loop smoke against disposable git/planning/worktree repos. The first live attempt exposed
+  an OpenAI strict structured-output schema incompatibility in the Worker Result schema for
+  `browser_smoke_results`; `src/codex_supervisor/worker_backends.py` now makes browser-smoke item
+  properties strict-schema-compatible by requiring every key and allowing `null` for optional
+  fields, with regression coverage in `tests/test_worker_backends.py`. The retry also showed
+  Windows `codex exec --sandbox workspace-write` rejecting write commands as read-only, while the
+  trusted isolated `danger-full-access` retry completed: real Codex edited `smoke.txt`, emitted
+  strict JSONL and final Worker Result evidence, produced an evidence manifest, and completed the
+  disposable queue. Focused worker/schema tests and planning integrity passed locally.
+- Previous completed checkpoint: `plan-e2e-test-gap-closure-20260528` added deterministic e2e
   coverage for the live-smoke gap: `tests/test_story_loop_e2e.py` now launches the real
   `story-loop-run-once` and `story-loop-start`/`story-loop-poll` CLI paths against a real temporary
   git repo, real worktree, and fake Codex executable, while `tests/test_mcp_stdio.py` covers a

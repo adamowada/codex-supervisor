@@ -42,7 +42,6 @@ Protected source-of-truth files:
 - `TESTING.md`
 - `DECISIONS.md`
 - `LICENSE`
-- `ATTRIBUTIONS.md`
 
 `HANDOFF.md` is mutable and current-only.
 

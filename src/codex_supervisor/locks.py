@@ -20,7 +20,6 @@ PROTECTED_FILES = (
     "TESTING.md",
     "DECISIONS.md",
     "LICENSE",
-    "ATTRIBUTIONS.md",
 )
 
 

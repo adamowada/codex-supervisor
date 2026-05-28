@@ -118,6 +118,12 @@ def check_planning_integrity(database_path: Path) -> tuple[str, ...]:
         if ready_tasks < 1:
             failures.append("expected at least one ready task")
 
+        for row in connection.execute("pragma foreign_key_check"):
+            failures.append(
+                "foreign key violation: "
+                f"table={row['table']} rowid={row['rowid']} parent={row['parent']}"
+            )
+
         for table, column in (
             ("tasks", "acceptance_json"),
             ("evidence_bundles", "checks_json"),
@@ -125,9 +131,19 @@ def check_planning_integrity(database_path: Path) -> tuple[str, ...]:
         ):
             for row in connection.execute(f"select rowid, {column} from {table}"):
                 try:
-                    json.loads(row[column])
+                    value = json.loads(row[column])
                 except json.JSONDecodeError as exc:
                     failures.append(f"{table}.{column} row {row['rowid']} is invalid JSON: {exc}")
+                    continue
+                if not isinstance(value, list):
+                    failures.append(f"{table}.{column} row {row['rowid']} is not a JSON array")
+                elif not all(isinstance(item, str) and item.strip() for item in value):
+                    failures.append(
+                        f"{table}.{column} row {row['rowid']} must contain non-empty strings"
+                    )
+
+        _check_attempt_timestamps(connection, failures)
+        _check_attempt_relationships(connection, failures)
     finally:
         connection.close()
 
@@ -146,6 +162,101 @@ def _check_values(
     invalid = sorted(row["value"] for row in rows if row["value"] not in allowed)
     if invalid:
         failures.append(f"{table}.{column} has invalid values {invalid}")
+
+
+def _check_attempt_timestamps(
+    connection: sqlite3.Connection,
+    failures: list[str],
+) -> None:
+    for row in connection.execute(
+        "select attempt_id, status, started_at, finished_at from attempts order by attempt_id"
+    ):
+        attempt_id = row["attempt_id"]
+        status = row["status"]
+        started_at = row["started_at"]
+        finished_at = row["finished_at"]
+        if status == "planned":
+            if started_at is not None or finished_at is not None:
+                failures.append(f"planned attempt {attempt_id} cannot have timestamps")
+        elif status == "running":
+            if started_at is None:
+                failures.append(f"running attempt {attempt_id} requires started_at")
+            if finished_at is not None:
+                failures.append(f"running attempt {attempt_id} cannot have finished_at")
+        elif status in {"succeeded", "failed", "blocked"}:
+            if started_at is None:
+                failures.append(f"terminal attempt {attempt_id} requires started_at")
+            if finished_at is None:
+                failures.append(f"terminal attempt {attempt_id} requires finished_at")
+            if started_at is not None and finished_at is not None and finished_at < started_at:
+                failures.append(f"attempt {attempt_id} finished_at cannot precede started_at")
+
+
+def _check_attempt_relationships(
+    connection: sqlite3.Connection,
+    failures: list[str],
+) -> None:
+    for row in connection.execute(
+        """select attempts.attempt_id
+           from attempts
+           left join tasks on tasks.task_id = attempts.task_id
+           where tasks.task_id is null"""
+    ):
+        failures.append(f"attempt {row['attempt_id']} references a missing task")
+
+    for row in connection.execute(
+        """select evidence_bundles.bundle_id
+           from evidence_bundles
+           left join tasks on tasks.task_id = evidence_bundles.task_id
+           where tasks.task_id is null"""
+    ):
+        failures.append(f"evidence bundle {row['bundle_id']} references a missing task")
+
+    for row in connection.execute(
+        """select evidence_bundles.bundle_id
+           from evidence_bundles
+           left join attempts on attempts.attempt_id = evidence_bundles.attempt_id
+           where evidence_bundles.attempt_id is not null
+             and attempts.attempt_id is null"""
+    ):
+        failures.append(f"evidence bundle {row['bundle_id']} references a missing attempt")
+
+    for row in connection.execute(
+        """select evidence_bundles.bundle_id,
+                  evidence_bundles.task_id,
+                  attempts.task_id as attempt_task_id
+           from evidence_bundles
+           join attempts on attempts.attempt_id = evidence_bundles.attempt_id
+           where evidence_bundles.attempt_id is not null
+             and evidence_bundles.task_id != attempts.task_id"""
+    ):
+        failures.append(
+            f"evidence bundle {row['bundle_id']} task {row['task_id']} does not match "
+            f"attempt task {row['attempt_task_id']}"
+        )
+
+    for row in connection.execute(
+        """select task_id, count(*) as active_attempts
+           from attempts
+           where status in ('planned', 'running')
+           group by task_id
+           having count(*) > 1"""
+    ):
+        failures.append(
+            f"task {row['task_id']} has {row['active_attempts']} non-terminal attempts"
+        )
+
+    for row in connection.execute(
+        """select tasks.task_id
+           from tasks
+           where tasks.status = 'running'
+             and not exists (
+                 select 1 from attempts
+                 where attempts.task_id = tasks.task_id
+                   and attempts.status in ('planned', 'running')
+             )"""
+    ):
+        failures.append(f"running task {row['task_id']} has no non-terminal attempt")
 
 
 if __name__ == "__main__":

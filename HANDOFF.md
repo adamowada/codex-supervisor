@@ -35,6 +35,10 @@ Stage 2 is implemented in `src/codex_supervisor/policy.py`. Assurance policy is 
 it maps task intent to `low`, `medium`, or `high`, defines evidence requirements, and evaluates task,
 attempt, and evidence records without importing CLI, MCP, plugin, worker, or SQLite layers.
 
+Stage 3 is implemented in `src/codex_supervisor/attempts.py` and
+`src/codex_supervisor/attempt_store.py`. Run attempts now have a pure status model, compact SQLite
+helpers, evidence attachment, and planning integrity checks for attempt/evidence relationships.
+
 ## Roadmap
 
 1. Stage 1, Foundation Contract: align docs, planning SQLite, skill guidance, CI, insights, handoff,
@@ -48,9 +52,9 @@ attempt, and evidence records without importing CLI, MCP, plugin, worker, or SQL
 
 ## Next Action
 
-Continue with Stage 3 from `ROADMAP.md`: define the simplified `RunAttempt` lifecycle and SQLite
-helpers for manual, shell, review, and future Codex execution.
+Continue with Stage 4 from `ROADMAP.md`: add one inspection command and one mutation command over
+the compact task, attempt, evidence, and acceptance model.
 
 Planning task:
 
-- `task-rebuild-execution-attempts-20260528`
+- `task-rebuild-small-interface-20260528`

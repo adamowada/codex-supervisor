@@ -158,6 +158,32 @@ The policy module can mention attempts without owning attempt lifecycle. Creatin
 them between statuses, attaching evidence, and writing SQLite rows belongs to the execution-attempt
 layer. That division keeps Stage 2 small and gives Stage 3 a clear job.
 
+## Stage 3 Execution Attempts
+
+Run attempts are now a core shape, not a worker backend mode. An attempt records one try, its
+executor name, its status, its summary, and its timestamps. The executor is transport information;
+the status model stays the same for manual work, shell work, review work, and future Codex workers.
+
+The compact lifecycle is:
+
+1. `planned`
+2. `running`
+3. one of `succeeded`, `failed`, or `blocked`
+
+The lifecycle belongs in a pure attempt model. SQLite helpers may create rows, start attempts,
+complete attempts, attach evidence, and update task status, but they should not decide how CLI, MCP,
+plugins, or workers expose those actions.
+
+Evidence attachment is deliberately simple in this stage: evidence bundles link a task, an optional
+attempt, assurance, summary, checks, artifacts, and creation time. More detailed acceptance payloads
+can earn structure later, but the first useful invariant is relationship integrity: attempts must
+point at real tasks, evidence must point at real tasks, evidence attached to an attempt must match
+that attempt's task, running tasks must have one non-terminal attempt, and attempts must have
+timestamps that match their status.
+
+This stage also sharpens the next interface rule: Stage 4 should build on the compact attempt store,
+not on the legacy planning store that still expects the old worker-run schema.
+
 ## Local Hygiene
 
 Ignored local artifacts should stay disposable. Development environments, caches, run outputs,

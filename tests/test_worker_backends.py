@@ -788,6 +788,74 @@ def test_codex_exec_backend_rejects_completed_result_without_reported_test_event
     }
 
 
+def test_codex_exec_backend_matches_power_shell_path_separator_variants(tmp_path):
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        if argv == ("C:/Tools/codex.exe", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+        payload = _worker_result_payload(
+            worker_run_id="run-worker",
+            changed_file="src/success.py",
+        )
+        payload["tests_run"] = [
+            {
+                "command": "python -B scripts/verify.py",
+                "exit_code": 0,
+                "summary": "passed",
+            }
+        ]
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "success.py").write_text("print('ok')\n", encoding="utf-8")
+        result_file = tmp_path / "artifacts" / "run-worker" / "worker-result.raw.json"
+        result_file.parent.mkdir(parents=True, exist_ok=True)
+        result_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        final_file = tmp_path / "runs" / "run-worker" / "final-message.txt"
+        final_file.parent.mkdir(parents=True, exist_ok=True)
+        final_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        events = [
+            {"event": "assistant.step"},
+            {
+                "type": "item.completed",
+                "item": {
+                    "id": "item-test",
+                    "type": "command_execution",
+                    "command": (
+                        '"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" '
+                        '-Command "python -B scripts\\verify.py"'
+                    ),
+                    "aggregated_output": "passed\n",
+                    "exit_code": 0,
+                    "status": "completed",
+                },
+            },
+        ]
+        (tmp_path / "runs" / "run-worker" / "events.jsonl").write_text(
+            "".join(json.dumps(event) + "\n" for event in events),
+            encoding="utf-8",
+        )
+        (tmp_path / "runs" / "run-worker" / "diff-summary.txt").write_text(
+            "src/success.py\n",
+            encoding="utf-8",
+        )
+        return CommandExecutionResult(exit_code=0, stdout='{"event":"done"}\n')
+
+    result = CodexExecBackend(
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=runner,
+        launch_enabled=True,
+    ).run(
+        _codex_exec_request(
+            tmp_path,
+            verification_commands=("python -B scripts/verify.py",),
+        )
+    )
+
+    assert result.status == "completed"
+
+
 def test_codex_exec_backend_copies_worker_support_artifacts_from_worktree(tmp_path):
     worktree = tmp_path / "worktrees" / "run-worker"
 

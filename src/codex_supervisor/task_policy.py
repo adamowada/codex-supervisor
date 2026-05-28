@@ -68,6 +68,8 @@ def task_allows_controller_owned_paths(
     if canonical_worker_backend(worker_backend) != "codex_exec":
         return True
     parsed_scope = _json_object(scope)
+    if _declares_product_surface(parsed_scope):
+        return False
     return _controller_mutation_kind(parsed_scope) in CONTROLLER_MUTATION_KINDS
 
 
@@ -82,10 +84,18 @@ def controller_owned_allowed_path_violations(
     normalized_paths = tuple(_normalize_path(value) for value in allowed_paths)
     normalized_paths = tuple(path for path in normalized_paths if path)
     violations: list[str] = []
-    legacy_controller_role = _legacy_controller_role(_json_object(scope))
+    parsed_scope = _json_object(scope)
+    legacy_controller_role = _legacy_controller_role(parsed_scope)
+    controller_mutation_kind = _controller_mutation_kind(parsed_scope)
 
     for path, forbidden in _worker_must_not_edit_overlaps(normalized_paths, scope):
         violations.append(f"{path}: allowed path overlaps worker_must_not_edit `{forbidden}`")
+
+    if controller_mutation_kind is not None and _declares_product_surface(parsed_scope):
+        violations.append(
+            f"controller_mutation_kind={controller_mutation_kind}: "
+            "product_surface tasks cannot use controller worker profile"
+        )
 
     if task_allows_controller_owned_paths(scope, worker_backend=worker_backend):
         return tuple(dict.fromkeys(violations))
@@ -105,7 +115,11 @@ def controller_owned_allowed_path_violations(
 def task_uses_controller_worker_profile(scope: object) -> bool:
     """Return whether a task should receive the controller-worker profile."""
 
-    return _controller_mutation_kind(_json_object(scope)) in CONTROLLER_MUTATION_KINDS
+    parsed_scope = _json_object(scope)
+    return (
+        not _declares_product_surface(parsed_scope)
+        and _controller_mutation_kind(parsed_scope) in CONTROLLER_MUTATION_KINDS
+    )
 
 
 def controller_owned_path_reason(path: object) -> str | None:
@@ -143,6 +157,11 @@ def _worker_must_not_edit_overlaps(
 def _controller_mutation_kind(scope: Mapping[str, Any]) -> str | None:
     value = scope.get("controller_mutation_kind")
     return value if isinstance(value, str) and value in CONTROLLER_MUTATION_KINDS else None
+
+
+def _declares_product_surface(scope: Mapping[str, Any]) -> bool:
+    value = scope.get("product_surface")
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _legacy_controller_role(scope: Mapping[str, Any]) -> str | None:

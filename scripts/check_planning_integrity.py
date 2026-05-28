@@ -396,6 +396,12 @@ def check_planning_integrity(db_path: Path) -> tuple[PlanningIntegrityFailure, .
             failures.extend(
                 _check_completed_worker_runs_preserve_indexed_evidence(connection, repo_root)
             )
+            failures.extend(
+                _check_completed_worker_runs_do_not_hide_failed_controller_results(
+                    connection,
+                    repo_root,
+                )
+            )
             failures.extend(_check_completed_afk_tasks_have_worker_evidence(connection))
             failures.extend(_check_completed_review_required_tasks_have_review_evidence(connection))
             failures.extend(_check_review_required_promotions_have_review_evidence(connection))
@@ -995,8 +1001,8 @@ def _check_completed_worker_runs_preserve_indexed_evidence(
 ) -> tuple[PlanningIntegrityFailure, ...]:
     rows = connection.execute(
         """
-        SELECT wr.worker_run_id, wr.backend, wr.prompt_path, wr.jsonl_path, wr.metadata_json,
-               st.scope_json, p.context_json
+        SELECT wr.worker_run_id, wr.backend, wr.prompt_path, wr.jsonl_path, wr.worktree_path,
+               wr.metadata_json, st.scope_json, p.context_json
         FROM worker_runs wr
         LEFT JOIN supervisor_tasks st ON st.task_id = wr.task_id
         LEFT JOIN plans p ON p.plan_id = st.plan_id
@@ -1010,6 +1016,7 @@ def _check_completed_worker_runs_preserve_indexed_evidence(
         backend,
         prompt_path,
         jsonl_path,
+        worktree_path,
         metadata_json,
         scope_json,
         context_json,
@@ -1021,18 +1028,62 @@ def _check_completed_worker_runs_preserve_indexed_evidence(
         if not isinstance(metadata, dict):
             continue
         raw_evidence_paths = metadata.get("raw_evidence_paths")
-        if (
-            canonical_worker_backend(str(backend)) == "codex_exec"
-            and _requires_final_commit(_json_object(scope_json), _json_object(context_json))
-            and not isinstance(raw_evidence_paths, dict)
-        ):
-            failures.append(
-                PlanningIntegrityFailure(
-                    "completed_codex_exec_run_without_raw_evidence_paths",
-                    f"{worker_run_id}: full-AFK codex_exec completion lacks raw_evidence_paths",
+        requires_codex_exec_evidence = canonical_worker_backend(
+            str(backend)
+        ) == "codex_exec" and _requires_final_commit(
+            _json_object(scope_json), _json_object(context_json)
+        )
+        if requires_codex_exec_evidence:
+            if not isinstance(raw_evidence_paths, dict):
+                failures.append(
+                    PlanningIntegrityFailure(
+                        "completed_codex_exec_run_without_raw_evidence_paths",
+                        f"{worker_run_id}: full-AFK codex_exec completion lacks raw_evidence_paths",
+                    )
                 )
+                continue
+            required_raw_evidence = (
+                "prompt",
+                "liveness_probe",
+                "jsonl",
+                "stdout",
+                "stderr",
+                "final_message",
+                "diff_summary",
+                "result",
+                "evidence_manifest",
             )
-            continue
+            missing_raw_evidence = tuple(
+                key
+                for key in required_raw_evidence
+                if not isinstance(raw_evidence_paths.get(key), str)
+                or not str(raw_evidence_paths.get(key)).strip()
+            )
+            if missing_raw_evidence:
+                failures.append(
+                    PlanningIntegrityFailure(
+                        "completed_codex_exec_run_missing_required_raw_evidence",
+                        f"{worker_run_id}: raw_evidence_paths missing required keys: "
+                        f"{', '.join(missing_raw_evidence)}",
+                    )
+                )
+            missing_indexed_evidence = tuple(
+                key
+                for key, value in (
+                    ("prompt_path", prompt_path),
+                    ("jsonl_path", jsonl_path),
+                    ("worktree_path", worktree_path),
+                )
+                if not isinstance(value, str) or not value.strip()
+            )
+            if missing_indexed_evidence:
+                failures.append(
+                    PlanningIntegrityFailure(
+                        "completed_codex_exec_run_missing_indexed_evidence",
+                        f"{worker_run_id}: completed codex_exec run missing indexed evidence: "
+                        f"{', '.join(missing_indexed_evidence)}",
+                    )
+                )
         if isinstance(raw_evidence_paths, dict):
             indexed_paths = {
                 "prompt": ("prompt_path", prompt_path),
@@ -1102,6 +1153,47 @@ def _check_completed_worker_runs_preserve_indexed_evidence(
                         manifest_path=manifest_path,
                     )
                 )
+    return tuple(failures)
+
+
+def _check_completed_worker_runs_do_not_hide_failed_controller_results(
+    connection: sqlite3.Connection,
+    repo_root: Path,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    rows = connection.execute(
+        """
+        SELECT worker_run_id
+        FROM worker_runs
+        WHERE status = 'completed'
+        ORDER BY worker_run_id
+        """
+    ).fetchall()
+    failures: list[PlanningIntegrityFailure] = []
+    for (worker_run_id,) in rows:
+        controller_path = repo_root / "runs" / str(worker_run_id) / "controller.stdout.json"
+        if not controller_path.is_file():
+            continue
+        try:
+            payload = json.loads(controller_path.read_text(encoding="utf-8"))
+        except OSError, json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict) or payload.get("status") != "failed":
+            continue
+        payload_worker_run_id = payload.get("worker_run_id")
+        if isinstance(payload_worker_run_id, str) and payload_worker_run_id != str(worker_run_id):
+            continue
+        failure_class = payload.get("failure_class")
+        failures.append(
+            PlanningIntegrityFailure(
+                "completed_worker_run_failed_controller_result",
+                f"{worker_run_id}: controller.stdout.json records failed status"
+                + (
+                    f" ({failure_class})"
+                    if isinstance(failure_class, str) and failure_class.strip()
+                    else ""
+                ),
+            )
+        )
     return tuple(failures)
 
 

@@ -257,6 +257,8 @@ def test_spawned_project_apply_writes_full_supervisor_scaffold(tmp_path: Path) -
         encoding="utf-8"
     )
     assert "completed_worker_run_changed_file_outside_allowed_paths" in integrity_text
+    assert "completed_codex_exec_run_missing_required_raw_evidence" in integrity_text
+    assert "completed_worker_run_failed_controller_result" in integrity_text
     assert "planning database requires at least one plan and one task" not in integrity_text
     license_text = (target / "LICENSE").read_text(encoding="utf-8")
     assert "Permission is hereby granted, free of charge" in license_text

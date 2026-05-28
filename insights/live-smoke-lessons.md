@@ -122,6 +122,66 @@ not live queue state. Current work still belongs in `plans/planning.sqlite3`.
   new claim types prove risky; current regression coverage and a real Codex smoke now prove
   `tests_run` claims must be backed by matching JSONL command events.
 
+### Evidence Matching Must Be Cross-Platform
+
+- `claim`: Worker Result evidence matching must normalize shell wrappers and path separators before
+  deciding a verification command is missing.
+- `confidence`: confirmed
+- `evidence`: todo-list-test-17 run `run-build-local-todo-app-20260528-0926` was rejected because
+  the Worker Result reported `python -B scripts/verify.py` while PowerShell JSONL observed
+  `python -B scripts\verify.py`; regression coverage now lives in
+  `tests/test_worker_backends.py`.
+- `scope`: Codex Exec Worker Result evidence gates, Windows shells, PowerShell command wrappers, and
+  live-smoke verification command matching.
+- `supersedes`: byte-for-byte command comparison between Worker Result `tests_run` entries and raw
+  JSONL command text.
+- `next action`: Keep adding normalization cases only when backed by observed JSONL evidence, and
+  continue rejecting commands that are genuinely absent from the event stream.
+
+### Failed Controllers Cannot Be Promoted In Place
+
+- `claim`: A Story Loop controller result that records `status=failed` is terminal evidence for that
+  worker run; later planning repair must create explicit recovery evidence, not overwrite the same
+  run into completed state.
+- `confidence`: confirmed
+- `evidence`: todo-list-test-17 `controller.stdout.json` recorded
+  `worker_result_evidence_mismatch` while the final planning row was later marked completed;
+  regression coverage now lives in `tests/test_planning_integrity.py`.
+- `scope`: Story Loop completion, worker-run status mutation, planning integrity, and live-smoke
+  recovery.
+- `supersedes`: treating post-run manual planning edits as equivalent to a successful controller
+  result.
+- `next action`: Keep planning integrity checking failed controller artifacts against completed
+  worker-run rows, and require separate recovery tasks/results for deliberate repair.
+
+### Product Surface Cancels Controller Worker Privileges
+
+- `claim`: A task that declares a `product_surface` must be treated as product work even if its
+  scope also contains `controller_mutation_kind`; controller-owned paths stay blocked.
+- `confidence`: confirmed
+- `evidence`: todo-list-test-17 launched a product todo-app task with `controller_worker` privileges;
+  regression coverage now lives in `tests/test_story_loop.py`.
+- `scope`: task policy, Story Loop preclaim, spawned app implementation tasks, and worker prompt
+  profile selection.
+- `supersedes`: using `controller_mutation_kind=controller` as an escape hatch for ordinary product
+  implementation.
+- `next action`: Keep controller/planning/promotion/source-lock tasks explicit and separate from
+  product implementation tasks.
+
+### JSON-Heavy CLI Mutations Need File Inputs
+
+- `claim`: JSON-heavy planning mutations should offer file-based inputs so workers do not have to
+  inline nested JSON through PowerShell quoting.
+- `confidence`: confirmed
+- `evidence`: todo-list-test-17 repeatedly failed `worker-run-upsert --metadata-json` due shell
+  quote loss; `worker-run-upsert --metadata-json-file` now has regression coverage in
+  `tests/test_planning.py`.
+- `scope`: Windows CLI ergonomics, planning SQLite mutation commands, worker evidence metadata, and
+  recovery flows.
+- `supersedes`: relying on inline JSON as the only CLI surface for complex metadata.
+- `next action`: Add file or stdin variants for other JSON-heavy mutation flags when live runs show
+  recurring quoting failures.
+
 ### Declared Support Artifacts Are Not Product Edits
 
 - `claim`: Browser and worker support artifacts under `artifacts/` must be copied and preserved, but

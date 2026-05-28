@@ -618,6 +618,153 @@ def test_planning_integrity_requires_full_afk_codex_exec_raw_evidence_paths(tmp_
     )
 
 
+def test_planning_integrity_requires_completed_codex_exec_core_raw_evidence_keys(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker",
+            slug="worker",
+            title="Worker Plan",
+            goal="Validate worker evidence.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-worker",
+            title="Worker task",
+            goal="Run.",
+            task_type="AFK",
+            status="completed",
+            scope={"full_afk": True},
+        )
+    )
+    result_id = _upsert_db_worker_result(store)
+    result_path = tmp_path / "artifacts" / "run-worker" / "worker-result.raw.json"
+    result_path.parent.mkdir(parents=True)
+    result_path.write_text(json_worker_result(), encoding="utf-8")
+    manifest_path = tmp_path / "artifacts" / "run-worker" / "evidence-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "worker_run_id": "run-worker",
+                "raw_evidence_paths": {
+                    "result": "artifacts/run-worker/worker-result.raw.json",
+                    "evidence_manifest": "artifacts/run-worker/evidence-manifest.json",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-worker",
+            task_id="task-worker",
+            backend="codex_exec",
+            status="completed",
+            result_id=result_id,
+            metadata={
+                "evidence_manifest_path": "artifacts/run-worker/evidence-manifest.json",
+                "raw_evidence_paths": {
+                    "result": "artifacts/run-worker/worker-result.raw.json",
+                    "evidence_manifest": "artifacts/run-worker/evidence-manifest.json",
+                },
+            },
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "completed_codex_exec_run_missing_required_raw_evidence"
+        and "prompt" in failure.reason
+        and "jsonl" in failure.reason
+        for failure in failures
+    )
+
+
+def test_planning_integrity_rejects_completed_run_when_controller_stdout_failed(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker",
+            slug="worker",
+            title="Worker Plan",
+            goal="Validate worker evidence.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-worker",
+            title="Worker task",
+            goal="Run.",
+            task_type="AFK",
+            status="completed",
+            scope={"full_afk": True},
+        )
+    )
+    result_id = _upsert_db_worker_result(store)
+    raw_evidence_paths = {
+        "prompt": "runs/run-worker/prompt.md",
+        "liveness_probe": "runs/run-worker/liveness.json",
+        "jsonl": "runs/run-worker/events.jsonl",
+        "stdout": "runs/run-worker/stdout.txt",
+        "stderr": "runs/run-worker/stderr.txt",
+        "final_message": "runs/run-worker/final-message.txt",
+        "diff_summary": "runs/run-worker/diff-summary.txt",
+        "result": "artifacts/run-worker/worker-result.raw.json",
+        "evidence_manifest": "artifacts/run-worker/evidence-manifest.json",
+    }
+    for relative_path in raw_evidence_paths.values():
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}\n", encoding="utf-8")
+    (tmp_path / "runs" / "run-worker" / "controller.stdout.json").write_text(
+        json.dumps(
+            {
+                "status": "failed",
+                "failure_class": "worker_result_evidence_mismatch",
+                "worker_run_id": "run-worker",
+                "task_id": "task-worker",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-worker",
+            task_id="task-worker",
+            backend="codex_exec",
+            status="completed",
+            result_id=result_id,
+            prompt_path="runs/run-worker/prompt.md",
+            jsonl_path="runs/run-worker/events.jsonl",
+            worktree_path="worktrees/run-worker",
+            metadata={
+                "evidence_manifest_path": "artifacts/run-worker/evidence-manifest.json",
+                "raw_evidence_paths": raw_evidence_paths,
+            },
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "completed_worker_run_failed_controller_result"
+        and "worker_result_evidence_mismatch" in failure.reason
+        for failure in failures
+    )
+
+
 def test_planning_integrity_rejects_running_codex_exec_without_story_loop_evidence_metadata(
     tmp_path,
 ):

@@ -1528,6 +1528,57 @@ def test_live_story_loop_policy_lint_requires_typed_controller_mutation_kind(tmp
     ]
 
 
+def test_live_story_loop_policy_lint_rejects_controller_profile_for_product_surface(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-live",
+            slug="live",
+            title="Live",
+            goal="Run a live worker.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-live",
+            plan_id="plan-live",
+            title="Build local todo app",
+            goal="Build product code, not controller state.",
+            task_type="AFK",
+            status="ready",
+            scope={
+                "product_surface": "three_tier_client_api_mongodb",
+                "controller_mutation_kind": "controller",
+                "full_afk": True,
+            },
+            acceptance_criteria=["done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["client/**", "server/**", "plans/planning.sqlite3"],
+            worker_backend="codex_exec",
+        )
+    )
+
+    result = run_live_story_loop_once(
+        store,
+        repo_root=tmp_path,
+        worker_run_id="run-policy-product-controller",
+        codex_executable="C:/Tools/codex.exe",
+    )
+
+    assert result.status == "failed"
+    assert result.failure_class == "worker_contract_policy_violation"
+    worker = open_existing_planning_database(db_path).list_worker_runs()[0]
+    assert worker.metadata["launch_preflight"]["violations"] == [
+        (
+            "controller_mutation_kind=controller: product_surface tasks cannot use controller "
+            "worker profile"
+        ),
+        "plans/planning.sqlite3: controller-owned path",
+    ]
+
+
 def test_live_story_loop_policy_lint_blocks_worker_must_not_edit_overlap(tmp_path):
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)

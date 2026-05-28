@@ -1829,7 +1829,13 @@ def _split_after_case_insensitive(value: str, marker: str) -> str | None:
 
 def _normalize_command_text(command: str) -> str:
     normalized = " ".join(command.strip().split())
-    while len(normalized) >= 2 and normalized[0] == normalized[-1] and normalized[0] in "'\"":
+    normalized = normalized.replace("\\", "/")
+    while (
+        len(normalized) >= 2
+        and normalized[0] == normalized[-1]
+        and normalized[0] in "'\""
+        and normalized.count(normalized[0]) == 2
+    ):
         normalized = normalized[1:-1].strip()
     return normalized
 

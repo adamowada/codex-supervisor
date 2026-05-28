@@ -1459,6 +1459,68 @@ def test_cli_worker_run_upsert_preserves_omitted_evidence_fields(tmp_path, capsy
     assert payload["metadata"] == {"kept": True}
 
 
+def test_cli_worker_run_upsert_accepts_metadata_json_file(tmp_path, capsys):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    metadata_path = tmp_path / "metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "evidence_manifest_path": "artifacts/run-safe/evidence-manifest.json",
+                "raw_evidence_paths": {"result": "artifacts/run-safe/worker-result.raw.json"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker-safe-upsert",
+            slug="worker-safe-upsert",
+            title="Worker Safe Upsert",
+            goal="Preserve worker evidence fields.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker-safe",
+            plan_id="plan-worker-safe-upsert",
+            title="Task",
+            goal="Run worker.",
+            task_type="AFK",
+            status="ready",
+        )
+    )
+
+    assert (
+        main(
+            [
+                "worker-run-upsert",
+                "--path",
+                str(db_path),
+                "--worker-run-id",
+                "run-safe",
+                "--task-id",
+                "task-worker-safe",
+                "--backend",
+                "codex_exec",
+                "--status",
+                "failed",
+                "--metadata-json-file",
+                str(metadata_path),
+                "--json",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["metadata"] == {
+        "evidence_manifest_path": "artifacts/run-safe/evidence-manifest.json",
+        "raw_evidence_paths": {"result": "artifacts/run-safe/worker-result.raw.json"},
+    }
+
+
 def test_cli_creation_commands_record_plan_milestone_and_criterion(tmp_path, capsys):
     db_path = tmp_path / "plans" / "planning.sqlite3"
     assert main(["plan-init", "--path", str(db_path)]) == 0

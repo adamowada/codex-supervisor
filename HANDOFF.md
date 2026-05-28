@@ -8,8 +8,18 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 ## Current Snapshot
 
 - Current queue state: empty. `story-loop-status --json` reports no current AFK, HITL, or running
-  task after `plan-test16-orchestration-regressions-20260528` was completed.
-- Latest completed checkpoint: `plan-test16-orchestration-regressions-20260528` added regression
+  task after `plan-test17-orchestration-regressions-20260528` was completed.
+- Latest completed checkpoint: `plan-test17-orchestration-regressions-20260528` added TDD
+  regression coverage and fixes for the todo-list-test-17 orchestration RCA: Worker Result
+  evidence matching now normalizes PowerShell path separator variants, planning integrity rejects
+  completed Codex Exec runs that lost core raw evidence or hide a failed `controller.stdout.json`,
+  product-surface tasks cannot acquire controller-worker privileges via `controller_mutation_kind`,
+  `worker-run-upsert` accepts `--metadata-json-file` for PowerShell-safe metadata updates, spawned
+  scaffold integrity copies include the new checks, and `insights/live-smoke-lessons.md` plus
+  `insights/graph.md` record the durable lessons. Focused verification passed across
+  `tests/test_worker_backends.py`, `tests/test_planning.py`, `tests/test_planning_integrity.py`,
+  `tests/test_story_loop.py`, and `tests/test_spawned_projects.py`.
+- Previous completed checkpoint: `plan-test16-orchestration-regressions-20260528` added regression
   coverage for the todo-list-test-16 orchestration failure mode: Codex Exec liveness now preserves
   last semantic file-change context across heartbeats, full-AFK runtime preflight blocks manual
   worker execution, Story Loop e2e polling covers a live file-change-plus-heartbeat worker, and

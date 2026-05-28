@@ -872,6 +872,7 @@ def main(argv: list[str] | None = None) -> int:
     worker_upsert_parser.add_argument("--completed-at", default=None)
     worker_upsert_parser.add_argument("--failure-class", default=None)
     worker_upsert_parser.add_argument("--metadata-json", type=_json_object_arg, default=None)
+    worker_upsert_parser.add_argument("--metadata-json-file", type=Path, default=None)
     worker_upsert_parser.add_argument(
         "--replace",
         action="store_true",
@@ -2408,6 +2409,20 @@ def main(argv: list[str] | None = None) -> int:
         if write_store is None:
             return 1
         worker_store = write_store
+        metadata_json = args.metadata_json
+        if args.metadata_json_file is not None:
+            if metadata_json is not None:
+                print(
+                    "Could not update planning database: use only one of "
+                    "--metadata-json or --metadata-json-file",
+                    file=sys.stderr,
+                )
+                return 1
+            metadata_json = _write_value_or_report(
+                lambda: _json_object_file_arg(args.metadata_json_file)
+            )
+            if metadata_json is None:
+                return 1
         worker_record = _write_value_or_report(
             lambda: _build_worker_run_upsert_record(
                 worker_store,
@@ -2423,7 +2438,7 @@ def main(argv: list[str] | None = None) -> int:
                 started_at=args.started_at,
                 completed_at=args.completed_at,
                 failure_class=args.failure_class,
-                metadata=args.metadata_json,
+                metadata=metadata_json,
                 replace=args.replace,
             )
         )
@@ -3332,6 +3347,17 @@ def _json_object_arg(value: str) -> dict[str, Any]:
         msg = "Expected JSON object"
         raise argparse.ArgumentTypeError(msg)
     return cast(dict[str, Any], parsed)
+
+
+def _json_object_file_arg(path: Path) -> dict[str, Any]:
+    try:
+        return _json_object_arg(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        msg = f"Could not read JSON object file {path}: {exc}"
+        raise ValueError(msg) from exc
+    except argparse.ArgumentTypeError as exc:
+        msg = f"Expected JSON object in {path}: {exc}"
+        raise ValueError(msg) from exc
 
 
 def _print_mutation_result(label: str, identifier: str, record: object, as_json: bool) -> None:

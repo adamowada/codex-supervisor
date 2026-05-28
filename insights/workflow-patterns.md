@@ -695,3 +695,21 @@ full-AFK completion gates.
 Next action: when adding evidence-path checks, distinguish "missing specific evidence inside an
 available runtime root" from "clean checkout without ignored runtime roots" so CI remains useful
 without weakening local evidence audits.
+
+## Full-History Subagent Forks Cannot Override Role
+
+Confidence: confirmed.
+
+Claim: When spawning role-specific read-only explorer subagents, do not combine a full-history fork
+with a role override. If the first spawn call bounces, retry with explicit explorer agents and
+self-contained prompts instead of full-context forks.
+
+Evidence: During the 2026-05-27 six-explorer RCA coordination run, the first spawn call bounced
+because full-history forks cannot also override the role. The successful retry spawned explicit
+explorer agents with self-contained prompts.
+
+Scope: subagent fanout, read-only explorer lanes, architecture/RCA audits, and multi-agent
+coordination from Codex Desktop.
+
+Next action: when using subagents for codebase exploration, make each explorer prompt independently
+actionable and reserve full-context forks for cases where inheriting the parent role is acceptable.

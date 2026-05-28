@@ -1,149 +1,35 @@
 # Standard Operating Procedure
 
-This SOP is the default structure for new projects spawned by `codex-supervisor`.
+## Start
 
-## New Project Bootstrap
+1. Check `git status --short`.
+2. Inspect the fresh planning database with `scripts/check_planning_integrity.py`.
+3. Read `HANDOFF.md`.
+4. Work from the highest-priority active task unless the user overrides it.
 
-Every non-trivial production-intended spawned project should start with this base scaffold:
+## Work
 
-```text
-README.md
-AGENTS.md
-PLANS.md
-ARCHITECTURE.md
-CONTRACTS.md
-ROADMAP.md
-TESTING.md
-DECISIONS.md
-SOP.md
-HANDOFF.md
-.gitignore
-.gitattributes
-scripts/verify.py
-insights/README.md
-```
+1. State the task intent.
+2. Choose an assurance level.
+3. Run one attempt.
+4. Capture evidence.
+5. Accept, block, or leave ready.
 
-Add supervisor-managed surfaces when the project needs unattended workers, protected source-of-truth
-checks, or a tracked operational queue:
+## Source Docs
 
-```text
-plans/planning.sqlite3
-scripts/print_protected_hashes.py
-scripts/check_protected_files.py
-scripts/check_file_justification.py
-scripts/check_planning_integrity.py
-```
+Rewrite source-of-truth docs when they are wrong. Do not build compatibility machinery to protect
+stale doctrine.
 
-Add publication-ready surfaces when the project will be public or shared beyond the local machine:
+## Skills
 
-```text
-LICENSE
-ATTRIBUTIONS.md
-scripts/check_public_repo_hygiene.py
-```
+Use repo-local skills as brief operating guidance only. Do not recreate a skill router, skill mesh,
+or nested workflow hierarchy.
 
-Add optional skill/source modules only when the project actually needs repo-local skills or OSS
-study sources:
+## CI
 
-```text
-scripts/check_skill_inventory.py
-scripts/check_source_inventory.py
-.agents/skills/
-sources/README.md
-```
+CI should guard the current simplified contract. It should not run historical tests just because
+they exist.
 
-Small throwaway prototypes may use a lighter structure, but the supervisor should prefer the base
-shape for production-intended apps and avoid creating empty optional surfaces.
+## Handoff
 
-## Planning Session
-
-Before code changes:
-
-1. Lock goals.
-2. Lock non-goals.
-3. Define users and workflows.
-4. Define contracts.
-5. Define acceptance criteria.
-6. Define verification commands.
-7. Identify risks.
-8. Split work into vertical slices.
-9. Mark each slice `AFK` or `HITL`.
-10. Draft Goal Contract fields for each `AFK` slice.
-11. Persist all durable planning state to SQLite.
-
-## Worker Execution
-
-For every AFK task:
-
-1. Create an isolated worktree.
-2. Render a Goal Contract and task prompt from source-of-truth docs and task row.
-3. Run the worker-launch preflight: `codex --version`, intended `CODEX_HOME`, `/goal` visibility, and
-   feature enablement when needed. Treat `${CODEX_HOME}/config.toml` edits and
-   `codex features enable goals` as setup mutations; use them only when Goal Mode setup is
-   explicitly in scope and writes to the intended Codex home are allowed. Record resolved Codex
-   executable, version output, config path, feature state, native-goal support for the selected
-   backend, and fallback decision in worker metadata.
-4. Launch a fresh-context Codex worker through the configured backend. If the environment cannot
-   launch the selected backend, record the blocker or create a HITL/manual-run task instead of
-   treating supervised-thread work as unattended worker execution.
-5. If native Goals are unavailable, include the Goal Contract in the worker prompt and do not write
-   Codex internal goal databases.
-6. Execute one vertical slice/story only.
-7. Capture raw logs and a transient structured result source, then ingest completion evidence into
-   planning SQLite.
-8. Run deterministic checks.
-9. Run automated review.
-10. Repair or mark blocked.
-11. Link supporting artifacts, learnings, progress events, and DB-backed worker result records.
-
-The loop may continue to the next ready task only after the current story has DB-backed evidence for
-completion or a recorded blocked state.
-
-## Control Tower Reconciliation
-
-On a recurring schedule or before a major supervision session:
-
-1. Read local Codex state databases in read-only mode.
-2. Summarize active and stale threads by project.
-3. Identify stale handoff snapshots, abandoned worktrees, repeated failures, and high-fanout thread
-   trees.
-4. Compare local Codex observations with `plans/planning.sqlite3`.
-5. Create proposed plan links, progress events, AFK tasks, or HITL tasks.
-6. Suggest Codex automations through official automation tooling when recurring checks would help.
-7. Record durable lessons in `insights/` when repeated patterns appear.
-
-Do not write directly to Codex internal SQLite databases. Use planning SQLite as the canonical queue
-and official Codex automation tooling as the scheduling surface.
-
-## Learning Loop
-
-When a task fails, stalls, or requires repeated human correction:
-
-1. Classify the failure.
-2. Record the lesson in `insights/`.
-3. Decide whether a skill should change.
-4. Propose a skill update.
-5. Test the skill against a small golden task.
-6. Promote or reject the skill update.
-
-## Human Role
-
-The human should focus on:
-
-- goals;
-- tradeoffs;
-- taste;
-- risk tolerance;
-- production decisions;
-- reviewing final diffs and releases.
-
-The supervisor should absorb:
-
-- task splitting;
-- context resets;
-- worker launch;
-- retry loops;
-- check execution;
-- review loops;
-- compact handoffs;
-- routine project bootstrap.
+`HANDOFF.md` must stay compact and current. It is not a changelog.

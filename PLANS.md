@@ -1,239 +1,140 @@
 # PLANS.md
 
-This file defines the planning system for `codex-supervisor`.
+`PLANS.md` defines the fresh planning database. The old database shape was deleted because it encoded
+the complexity we are removing.
 
-`PLANS.md` is immutable by default. Edit it only when the user specifically asks or when a clearly
-approved plan changes the planning contract.
+## Design Goal
 
-Operational execution plans, task progress, worker-run progress, and live queue state belong in
-`plans/planning.sqlite3`, not in markdown files. This document may define status vocabulary as part
-of the schema contract, but it must not mirror live stage or task progress.
+The planning database should answer five questions:
 
-## Planning Model
+1. What are we trying to do?
+2. What is the next task intent?
+3. What attempts have run?
+4. What evidence exists?
+5. What decisions changed the plan?
 
-The planning database is tracked in git and acts as operational state for Codex. It answers:
+It should not be a general-purpose audit warehouse, plugin ledger, release ledger, review ledger,
+or compatibility store.
 
-- what are we trying to do;
-- why are we doing it this way;
-- what remains blocked or unverified;
-- which tasks, worker runs, artifacts, reviews, and commits belong to the work;
-- which lessons should be promoted into skills or `insights/`.
+## Fresh Schema
 
-Markdown remains the source of truth for stable human-facing knowledge. Do not use planning tables
-as a private replacement for `README.md`, `AGENTS.md`, contracts, architecture, SOP, or insights.
-Likewise, do not use protected markdown as a private replacement for the planning database.
+### `meta`
 
-## Codex Local State Reconciliation
+Key-value repository planning metadata.
 
-Local Codex databases under `~/.codex` are observational inputs, not the project queue. The
-canonical queue remains `plans/planning.sqlite3`.
+- `key text primary key`
+- `value text not null`
 
-The supervisor may read local Codex state to propose updates:
+Required keys:
 
-- threads and spawn edges can become evidence for active, stale, or orphaned work;
-- thread goals can become candidate plans or plan context;
-- agent-job rows, if Codex begins using them, can map to candidate `supervisor_tasks` or
-  `worker_runs`;
-- automation and inbox rows can inform recurring work and follow-up triage;
-- logs can reveal repeated failures, slow checks, or skill improvement candidates.
-
-Imported observations must preserve provenance: source database, source table, source ID, observed
-timestamp, and confidence. Imports may create proposed plans, tasks, links, or progress events, but
-must not silently overwrite canonical planning rows.
-
-## Required Database
-
-Default path:
-
-```text
-plans/planning.sqlite3
-```
-
-The database is initialized by `codex_supervisor.planning.initialize_planning_database()`.
-
-Inspection commands and helpers must open the existing database read-only. Do not initialize,
-migrate, or create `plans/planning.sqlite3` just to answer orientation questions such as the current
-task, current-queue plans, decisions, or recent progress.
-
-Mutations must use typed helpers or CLI commands. `plan-upsert`, `milestone-upsert`, and
-`criterion-upsert` create or replace planning structure; lifecycle/status commands only update
-existing rows. `task-upsert` and `worker-run-upsert` preserve omitted optional contract/evidence
-fields when updating existing rows; pass `--replace` only when intentionally resetting omitted
-fields to empty/default values.
-
-For current-work discovery, `story-loop-status` is the state machine. It distinguishes ready AFK,
-running, HITL, blocked, completed, and empty queues across active and blocked current-queue plans by
-default; `--all` adds completed, abandoned, and superseded history. `task-next-afk
---after-story-loop-status` is the executable AFK selector; `task-current` is a legacy compatibility
-alias. A null `task-next-afk` result is not enough to say "there is no task" until
-`story-loop-status` also reports `completed` or `empty`; in `running` or `hitl`, inspect the
-reported `current_task_id` with `task-show`.
-
-Use `plan-summary --current-queue` and `task-list --current-queue-plans-only` for fresh-thread
-orientation. Use `--active-only` or `--active-plans-only` only when the task explicitly excludes
-blocked successor plans.
-
-## Required Tables
+- `schema_name`
+- `schema_version`
+- `reset_at`
+- `reset_reason`
 
 ### `plans`
 
-One row per active, completed, abandoned, or superseded plan.
+One active objective or coherent project phase.
 
-| Column | Meaning |
-| --- | --- |
-| `plan_id` | Stable unique ID, for example `plan-supervisor-mvp`. |
-| `slug` | Human-readable unique slug. |
-| `title` | Short display title. |
-| `goal` | Plain-language intended end state. |
-| `non_goals_json` | JSON object of explicit non-goals. |
-| `context_json` | JSON object with files, constraints, assumptions, and links. |
-| `status` | `active`, `blocked`, `completed`, `abandoned`, or `superseded`. |
-| `priority` | Integer sort key. Higher means more urgent. |
-| `owner_agent` | Current coordinator. |
-| `superseded_by_plan_id` | Replacement plan ID. |
-| `created_at` / `updated_at` | UTC timestamps. |
+- `plan_id text primary key`
+- `title text not null`
+- `status text not null`
+- `priority integer not null`
+- `goal text not null`
+- `created_at text not null`
+- `updated_at text not null`
 
-Terminal plan states (`completed`, `abandoned`, and `superseded`) must not hide open work. Before a
-plan enters a terminal state, child tasks must be terminal, milestones must be completed or
-cancelled, and acceptance criteria must be completed, failed, or cancelled.
+Allowed statuses:
 
-### `plan_milestones`
+- `active`
+- `blocked`
+- `done`
+- `dropped`
 
-Major work slices inside a plan.
+### `tasks`
 
-### `plan_acceptance_criteria`
+One intent that can be attempted.
 
-Explicit completion conditions with optional verification commands.
+- `task_id text primary key`
+- `plan_id text not null references plans(plan_id)`
+- `title text not null`
+- `status text not null`
+- `assurance text not null`
+- `intent text not null`
+- `acceptance_json text not null`
+- `created_at text not null`
+- `updated_at text not null`
 
-### `plan_decisions`
+Allowed statuses:
 
-Append-only decision log. Major architecture, source, safety, integration, workflow, and skill
-choices belong here before or during implementation.
+- `ready`
+- `running`
+- `blocked`
+- `done`
+- `dropped`
 
-### `plan_progress_events`
+Allowed assurance values:
 
-Append-only event log for starts, completions, blockers, unblocks, verification, failures, and
-handoffs.
+- `low`
+- `medium`
+- `high`
 
-### `plan_artifact_links`
+### `attempts`
 
-Links plans to artifacts such as prompts, JSONL logs, worker result files, review outputs, reports,
-and insight updates.
+One execution attempt against one task.
 
-### `plan_commit_links`
+- `attempt_id text primary key`
+- `task_id text not null references tasks(task_id)`
+- `executor text not null`
+- `status text not null`
+- `summary text not null`
+- `started_at text`
+- `finished_at text`
 
-Links plans to implementation, verification, or documentation commits.
+Allowed statuses:
 
-### `supervisor_tasks`
+- `planned`
+- `running`
+- `succeeded`
+- `failed`
+- `blocked`
 
-Machine-readable work queue compiled from plans. Tasks are vertical slices and must be classified as
-`AFK` or `HITL`.
+### `evidence_bundles`
 
-Until dedicated Goal Contract tables exist, task-level goal/story-loop metadata belongs in:
+Structured evidence produced by an attempt or accepted manually for a task.
 
-- `scope_json` for Goal Contract context, in-scope boundaries, story-loop policy, and source links;
-- `out_of_scope_json` for non-goals and blocked conditions;
-- `acceptance_criteria_json` for evidence-based stop conditions;
-- `verification_commands_json` for validation surfaces;
-- `plan_progress_events.details` for story-loop iteration metadata such as task/run IDs;
-- `worker_runs.metadata_json` for observed native Codex Goal state and worker execution metadata.
+- `bundle_id text primary key`
+- `task_id text not null references tasks(task_id)`
+- `attempt_id text references attempts(attempt_id)`
+- `assurance text not null`
+- `summary text not null`
+- `checks_json text not null`
+- `artifacts_json text not null`
+- `created_at text not null`
 
-Open AFK tasks on active or blocked plans must already carry executable contracts: nonempty
-acceptance criteria, cache-safe verification commands, and repo-relative allowed paths. A blocked
-task is not a parking lot for an unsafe future contract; it should be ready to execute once the
-blocker is resolved.
+### `decisions`
 
-### `worker_runs`
+Durable product or architecture decisions.
 
-One row per worker invocation, including backend, worktree, prompt, status, timing, DB-backed result
-id, and failure class.
+- `decision_id text primary key`
+- `plan_id text references plans(plan_id)`
+- `decision text not null`
+- `rationale text not null`
+- `created_at text not null`
 
-Use `task-claim` or the typed claim helper when a worker is taking ownership of the next ready AFK
-task. A claim must update the task to `running` and create the worker run in one transaction so two
-fresh threads cannot claim the same task.
+## Deleted Concepts
 
-Completed worker runs must point `result_id` at `worker_result_records` and have a matching
-`worker_result_run_links` row. `result_path` is a legacy/transient source path only and must be null
-for completed runs after ingestion. The record must satisfy the Worker Result Contract in
-`CONTRACTS.md`, including worker-run identity coverage, shared `worker_run_ids` entries linked to
-the same DB result, nonempty completed-run evidence fields, zero-exit structured test records, exact
-acceptance-criterion evidence, and `changed_files` entries limited to implementation or
-durable-documentation paths covered by task `allowed_paths_json`.
+The fresh schema intentionally does not include:
 
-Use `worker-result-ingest --worker-run-id <id> --result-path <json>` to ingest a transient worker
-JSON source into SQLite. The helper stores the raw JSON payload, structured fields, provenance, and
-run links in the database, then clears filesystem result paths. `worker-run-status ... --status
-completed --result-path <json>` remains a legacy compatibility path. Manual `artifact-link-add` is
-still useful for supporting reports, prompts, or non-result evidence.
+- separate AFK/HITL task types;
+- worker backend as a task identity field;
+- review-specific database tables;
+- historical progress event vocabularies;
+- artifact-link relationship taxonomies;
+- imported Codex local-state reconciliation rows;
+- plugin install ledgers;
+- release-readiness ledgers;
+- compatibility aliases.
 
-For `backend = "codex_exec"`, `metadata_json` stores launch preflight and evidence pointers that do
-not deserve first-class columns yet:
-
-- resolved Codex executable and `codex --version` output or failure class;
-- intended `CODEX_HOME`, config path, sandbox mode, approval policy, and Goal Mode feature state;
-- native-goal decision or prompt-rendered fallback decision;
-- argv list used for `codex exec`;
-- stdout, stderr, final-message, JSONL, diff-summary, and raw-result paths;
-- host platform and launch working directory.
-
-The backend may create or update a running row before all evidence paths exist, but a completed row
-must still satisfy the DB-backed Worker Result Contract. A failed or blocked row should preserve
-whatever evidence was captured and use `failure_class` plus progress events for retry guidance.
-
-### `worker_result_records` and `worker_result_run_links`
-
-`worker_result_records` is the durable home for worker completion/result evidence. Each record keeps
-the normalized status, summary, structured tests, acceptance results, changed files, supporting
-artifacts, risks, follow-up tasks, completion notes, raw payload JSON, source path/hash, source kind,
-import time, and metadata. Raw payloads preserve legacy imports even when their original filesystem
-JSON source is deleted.
-
-`worker_result_run_links` maps one DB result to one or more worker runs. Shared synthesized results
-must link every declared `worker_run_id`; completed worker runs are valid only when the link and the
-`worker_runs.result_id` agree.
-
-### `development_log_entries`
-
-`development_log_entries` is the durable home for imported operational history, completion notes,
-legacy HANDOFF sections, and future running-work records that are too detailed for the compact
-handoff snapshot. Entries can optionally reference a plan, task, worker run, or worker result.
-`HANDOFF.md` must not accumulate historical logs.
-
-## Correct Usage
-
-Create or update a plan when work:
-
-- spans multiple files or modules;
-- changes a contract, source-of-truth document, queue behavior, adapter, skill, or worker backend;
-- launches or coordinates multiple Codex workers;
-- changes how future projects are spawned;
-- touches source locks, planning DB schema, or the insights graph.
-
-For each active or blocked current-queue plan:
-
-- create a `plans` row before implementation;
-- add milestones and acceptance criteria;
-- append decisions as tradeoffs are resolved;
-- append progress events when work starts, completes, blocks, unblocks, verifies, or hands off;
-- link relevant Codex thread IDs, goal IDs, automation IDs, worker artifacts, and issue IDs as
-  evidence when available;
-- link artifacts and commits;
-- update markdown source-of-truth only when stable behavior changes;
-- update `insights/` when a reusable workflow lesson is learned.
-
-Do not:
-
-- use chat as the only memory for a multi-stage plan;
-- hide durable decisions only in worker logs;
-- create loose markdown plans in the repo root;
-- mark a plan completed until acceptance criteria are verified or waived;
-- mark a plan abandoned, completed, or superseded while it still has open child work;
-- edit locked top-level documents without updating the source lock guard.
-
-## Bootstrap Seed Contract
-
-The initial database seed should contain `plan-bootstrap-supervisor`, which covers the creation of
-this repo, source-of-truth documents, source clones, Python skeleton, and handoff for implementation.
-This is historical seed doctrine, not the live-work selector. Live work selection must always come
-from `story-loop-status`, then `task-show <current_task_id>` or
-`task-next-afk --after-story-loop-status` according to queue state.
+If one of those concepts returns, it must be expressed as task intent, attempt execution, evidence,
+or acceptance policy first.

@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "codex-supervisor"
-version = "0.1.1"
-description = "A Codex-native supervisor for agentic engineering factories."
+version = "0.2.0"
+description = "A pre-MVP Codex supervisor rebuilt around a small planning and evidence contract."
 readme = "README.md"
 requires-python = ">=3.14"
 license = "MIT"
 authors = [{ name = "Adam Owada" }]
-keywords = ["agentic-coding", "codex", "sqlite", "skills", "worktrees"]
+keywords = ["codex", "sqlite", "control-plane"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
@@ -25,9 +25,6 @@ dependencies = []
 [project.urls]
 Repository = "https://github.com/adamowada/codex-supervisor"
 Issues = "https://github.com/adamowada/codex-supervisor/issues"
-
-[project.scripts]
-codex-supervisor = "codex_supervisor.cli:main"
 
 [dependency-groups]
 dev = [

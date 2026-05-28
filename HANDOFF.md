@@ -8,8 +8,14 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 ## Current Snapshot
 
 - Current queue state: empty. `story-loop-status --json` reports no current AFK, HITL, or running
-  task after `plan-test20-high-leverage-orchestration-fixes-20260528` was completed.
-- Latest completed checkpoint: `plan-test20-high-leverage-orchestration-fixes-20260528` added TDD
+  task after `plan-architecture-deepening-fixes-20260528` was completed.
+- Latest completed checkpoint: `plan-architecture-deepening-fixes-20260528` fixed the four
+  architecture deepening candidates: worker-run stream events now persist through an explicit
+  `worker_evidence` sink, planning integrity is package-owned behind a thin script adapter while
+  spawned-project scaffolds remain self-contained, MCP read-only status derives from the operation
+  registry, and Story Loop launch-outcome persistence lives in `story_loop_outcomes.py`. Focused
+  regression coverage and full `uv run --no-sync python -B scripts/verify.py` passed locally.
+- Previous completed checkpoint: `plan-test20-high-leverage-orchestration-fixes-20260528` added TDD
   regression coverage and fixes for the todo-list-test-20-low-spark orchestration RCA:
   display-name model requests now resolve to CLI slugs before Codex Exec launch, required model and
   reasoning capabilities fail closed instead of falling back, task-scoped required capabilities

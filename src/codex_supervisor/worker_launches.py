@@ -9,6 +9,7 @@ from typing import Any
 from codex_supervisor.execution_surface import canonical_worker_backend
 from codex_supervisor.planning import SupervisorTaskRecord, SupervisorTaskSummaryRecord
 from codex_supervisor.worker_backends import WorkerLaunchRequest
+from codex_supervisor.worker_evidence import WorkerRunEventSink
 from codex_supervisor.worktree_artifacts import WorktreeRunLayout, build_worktree_run_layout
 
 JsonObject = dict[str, Any]
@@ -54,6 +55,7 @@ def prepare_worker_launch_request(
     allow_degraded_jsonl: bool = False,
     environment: dict[str, str] | None = None,
     metadata: JsonObject | None = None,
+    event_sink: WorkerRunEventSink | None = None,
 ) -> WorkerLaunchPreparation:
     """Prepare a WorkerLaunchRequest without touching the filesystem."""
 
@@ -117,6 +119,7 @@ def prepare_worker_launch_request(
         allow_degraded_jsonl=allow_degraded_jsonl,
         environment=environment or {},
         metadata=request_metadata,
+        event_sink=event_sink,
     )
     return WorkerLaunchPreparation(
         layout=layout,

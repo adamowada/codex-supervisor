@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from dataclasses import fields
 from pathlib import Path
 
 from codex_supervisor import mcp_server
@@ -26,6 +27,18 @@ def test_operation_registry_covers_cli_commands_and_mcp_tools() -> None:
 def test_operation_registry_matches_mcp_read_only_annotations() -> None:
     for tool_name, definition in mcp_server.TOOL_DEFINITIONS.items():
         assert operation_by_mcp_tool(tool_name).read_only is definition.read_only
+
+
+def test_mcp_tool_definition_derives_read_only_from_operation_registry() -> None:
+    read_only_field = next(
+        field for field in fields(mcp_server.McpToolDefinition) if field.name == "read_only"
+    )
+
+    assert read_only_field.init is False
+    assert (
+        mcp_server.TOOL_DEFINITIONS["codex_supervisor.task_upsert"].read_only
+        is operation_by_mcp_tool("codex_supervisor.task_upsert").read_only
+    )
 
 
 def test_operation_registry_owns_required_mcp_surfaces() -> None:

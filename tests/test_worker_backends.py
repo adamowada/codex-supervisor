@@ -21,6 +21,7 @@ from codex_supervisor.worker_backends import (
     _default_command_runner,
     _minimal_process_environment,
 )
+from codex_supervisor.worker_evidence import PlanningWorkerRunEventSink
 
 
 def test_contract_worker_backend_emits_contract_compatible_result(tmp_path):
@@ -399,7 +400,10 @@ def test_codex_exec_stream_observer_records_live_jsonl_liveness_and_events(tmp_p
             status="running",
         )
     )
-    request = _codex_exec_request(tmp_path, metadata={"planning_path": str(db_path)})
+    request = _codex_exec_request(
+        tmp_path,
+        event_sink=PlanningWorkerRunEventSink(db_path),
+    )
     preflight = worker_backends.CodexExecPreflightResult(
         executable_path="C:/Tools/codex.exe",
         resolution_method="configured",

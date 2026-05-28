@@ -24,8 +24,21 @@ from codex_supervisor.planning import (
     WorkerRunRecord,
     initialize_planning_database,
 )
+from codex_supervisor.planning_integrity import (
+    check_planning_integrity as package_check_planning_integrity,
+)
+from codex_supervisor.planning_integrity import (
+    main as package_main,
+)
 
 FULL_COMMIT_SHA = "0123456789abcdef0123456789abcdef01234567"
+
+
+def test_check_planning_integrity_script_reexports_package_entrypoints():
+    module = _load_planning_integrity_module()
+
+    assert module.check_planning_integrity is package_check_planning_integrity
+    assert module.main is package_main
 
 
 def test_planning_integrity_passes_for_valid_database(tmp_path):

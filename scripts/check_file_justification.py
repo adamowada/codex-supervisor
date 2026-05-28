@@ -356,6 +356,9 @@ FILE_PURPOSES = {
     ),
     "src/codex_supervisor/paths.py": FilePurpose("repo/planning path discovery", "pytest"),
     "src/codex_supervisor/planning.py": FilePurpose("SQLite planning store", "pytest"),
+    "src/codex_supervisor/planning_integrity.py": FilePurpose(
+        "importable planning SQLite integrity gate", "pytest"
+    ),
     "src/codex_supervisor/projects.py": FilePurpose(
         "project registry and generic adapter helpers",
         "pytest",
@@ -383,6 +386,9 @@ FILE_PURPOSES = {
         "spawned-project scaffold recommendation and apply contracts", "pytest"
     ),
     "src/codex_supervisor/story_loop.py": FilePurpose("Story Loop queue state machine", "pytest"),
+    "src/codex_supervisor/story_loop_outcomes.py": FilePurpose(
+        "Story Loop launch-result planning outcome application", "pytest"
+    ),
     "src/codex_supervisor/task_policy.py": FilePurpose(
         "shared task boundary policy for controller-owned and worker-owned files",
         "pytest",
@@ -392,6 +398,9 @@ FILE_PURPOSES = {
     ),
     "src/codex_supervisor/worker_backends.py": FilePurpose(
         "worker backend protocol and contract backend", "pytest"
+    ),
+    "src/codex_supervisor/worker_evidence.py": FilePurpose(
+        "worker stream event and evidence validation helpers", "pytest"
     ),
     "src/codex_supervisor/worker_launches.py": FilePurpose(
         "worker launch request preparation", "pytest"
@@ -536,9 +545,12 @@ REQUIRED_PYTHON_MARKERS = {
     "src/codex_supervisor/mcp_stdio.py": "serve_stdio",
     "src/codex_supervisor/paths.py": "default_planning_database_path",
     "src/codex_supervisor/planning.py": "PlanningSQLiteStore",
+    "src/codex_supervisor/planning_integrity.py": "check_planning_integrity",
     "src/codex_supervisor/release.py": "build_release_readiness_report",
     "src/codex_supervisor/runtime_preflight.py": "build_runtime_preflight_report",
     "src/codex_supervisor/story_loop.py": "build_story_loop_status",
+    "src/codex_supervisor/story_loop_outcomes.py": "apply_story_loop_launch_outcome",
+    "src/codex_supervisor/worker_evidence.py": "PlanningWorkerRunEventSink",
 }
 
 FOLDER_PURPOSE_RULES = (

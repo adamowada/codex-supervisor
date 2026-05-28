@@ -1180,7 +1180,16 @@ def _check_file_justification_script(proposal: SpawnedProjectScaffoldProposal) -
 
 def _check_planning_integrity_script() -> str:
     repo_root = Path(__file__).resolve().parents[2]
-    return (repo_root / "scripts" / "check_planning_integrity.py").read_text(encoding="utf-8")
+    script = (
+        (repo_root / "src" / "codex_supervisor" / "planning_integrity.py")
+        .read_text(encoding="utf-8")
+        .lstrip("\ufeff")
+    )
+    script = script.replace(
+        "REPO_ROOT = Path(__file__).resolve().parents[2]",
+        "REPO_ROOT = Path(__file__).resolve().parents[1]",
+    )
+    return "#!/usr/bin/env python3\n" + script
 
 
 def _check_public_repo_hygiene_script() -> str:

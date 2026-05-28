@@ -11,6 +11,7 @@ from codex_supervisor.worktree_artifacts import WorktreeArtifactError
 
 def test_prepare_worker_launch_request_uses_layout_paths_without_touching_files(tmp_path):
     task = _task_record()
+    event_sink = _EventSinkSpy()
 
     preparation = prepare_worker_launch_request(
         task,
@@ -29,6 +30,7 @@ def test_prepare_worker_launch_request_uses_layout_paths_without_touching_files(
         ignore_user_config=True,
         environment={"CODEX_HOME": "C:/codex-home"},
         metadata={"execution_mode": "inline_supervised_non_live"},
+        event_sink=event_sink,
     )
 
     layout = preparation.layout
@@ -53,6 +55,7 @@ def test_prepare_worker_launch_request_uses_layout_paths_without_touching_files(
     assert request.codex_home == "C:/codex-home"
     assert request.ignore_user_config is True
     assert request.environment == {"CODEX_HOME": "C:/codex-home"}
+    assert request.event_sink is event_sink
     assert not (tmp_path / "worktrees").exists()
     assert not (tmp_path / "runs").exists()
     assert not (tmp_path / "artifacts").exists()
@@ -206,3 +209,17 @@ def _task_record() -> SupervisorTaskRecord:
         worker_backend="codex_exec",
         review_required=True,
     )
+
+
+class _EventSinkSpy:
+    def record_stream_event(
+        self,
+        *,
+        worker_run_id: str,
+        event_index: int,
+        event_type: str,
+        summary: str,
+        details: dict[str, object],
+        artifact_path: str,
+    ) -> None:
+        _ = (worker_run_id, event_index, event_type, summary, details, artifact_path)

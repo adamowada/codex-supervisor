@@ -30,6 +30,7 @@ def test_orchestrate_worker_launch_runs_prepared_codex_backend_and_accepts_allow
     tmp_path: Path,
 ) -> None:
     calls: list[tuple[tuple[str, ...], Path, dict[str, str]]] = []
+    event_sink = _EventSinkSpy()
 
     def runner(
         argv: tuple[str, ...],
@@ -67,11 +68,13 @@ def test_orchestrate_worker_launch_runs_prepared_codex_backend_and_accepts_allow
         sandbox_mode="workspace-write",
         approval_policy="never",
         environment={"CODEX_HOME": "C:/codex-home"},
+        event_sink=event_sink,
     )
 
     assert len(backend.requests) == 1
     request = backend.requests[0]
     assert request == result.preparation.request
+    assert request.event_sink is event_sink
     assert request.worktree_path == (
         tmp_path / "worktrees" / "worker-run-stage7c-worker-orchestration-20260524"
     )
@@ -493,3 +496,17 @@ def _task_record() -> SupervisorTaskRecord:
         worker_backend="codex_exec",
         review_required=True,
     )
+
+
+class _EventSinkSpy:
+    def record_stream_event(
+        self,
+        *,
+        worker_run_id: str,
+        event_index: int,
+        event_type: str,
+        summary: str,
+        details: dict[str, object],
+        artifact_path: str,
+    ) -> None:
+        _ = (worker_run_id, event_index, event_type, summary, details, artifact_path)

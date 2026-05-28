@@ -17,6 +17,7 @@ from codex_supervisor.worker_backends import (
     WorkerLaunchResult,
     _minimal_process_environment,
 )
+from codex_supervisor.worker_evidence import WorkerRunEventSink
 from codex_supervisor.worker_launches import WorkerLaunchPreparation, prepare_worker_launch_request
 from codex_supervisor.worktree_artifacts import ChangedPathViolation, validate_changed_files
 from codex_supervisor.worktree_state import WorktreeStateSnapshot, inspect_worktree_state
@@ -64,6 +65,7 @@ def orchestrate_worker_launch(
     allow_degraded_jsonl: bool = False,
     environment: dict[str, str] | None = None,
     metadata: dict[str, object] | None = None,
+    event_sink: WorkerRunEventSink | None = None,
     require_git_changed_files: bool = False,
     git_command_runner: CommandRunner | None = None,
     git_base_ref: str = "HEAD",
@@ -90,6 +92,7 @@ def orchestrate_worker_launch(
         allow_degraded_jsonl=allow_degraded_jsonl,
         environment=environment,
         metadata=metadata,
+        event_sink=event_sink,
     )
     launch_result = backend.run(preparation.request)
     worktree_state: WorktreeStateSnapshot | None = None

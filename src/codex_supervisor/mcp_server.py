@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
+from codex_supervisor.operation_registry import operation_by_mcp_tool
 from codex_supervisor.paths import default_planning_database_path, find_repo_root
 from codex_supervisor.planning import (
     CLAIM_WORKER_RUN_STATUSES,
@@ -65,7 +66,10 @@ class McpToolDefinition:
     name: str
     description: str
     input_schema: JsonObject
-    read_only: bool = True
+    read_only: bool = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "read_only", operation_by_mcp_tool(self.name).read_only)
 
     def to_payload(self) -> JsonObject:
         payload: JsonObject = {
@@ -1340,7 +1344,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.plan_upsert": McpToolDefinition(
         name="codex_supervisor.plan_upsert",
         description="Create or update one planning record.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1362,7 +1365,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.plan_status": McpToolDefinition(
         name="codex_supervisor.plan_status",
         description="Update one plan status.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1377,7 +1379,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.milestone_upsert": McpToolDefinition(
         name="codex_supervisor.milestone_upsert",
         description="Create or update one plan milestone.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1395,7 +1396,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.milestone_status": McpToolDefinition(
         name="codex_supervisor.milestone_status",
         description="Update one plan milestone status.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1409,7 +1409,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.criterion_upsert": McpToolDefinition(
         name="codex_supervisor.criterion_upsert",
         description="Create or update one plan acceptance criterion.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1426,7 +1425,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.criterion_status": McpToolDefinition(
         name="codex_supervisor.criterion_status",
         description="Update one plan acceptance criterion status.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1440,7 +1438,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.decision_add": McpToolDefinition(
         name="codex_supervisor.decision_add",
         description="Record one plan decision.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1458,7 +1455,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.task_upsert": McpToolDefinition(
         name="codex_supervisor.task_upsert",
         description="Create or update one supervisor task.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1484,7 +1480,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.task_status": McpToolDefinition(
         name="codex_supervisor.task_status",
         description="Update one supervisor task status.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1498,7 +1493,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.task_claim": McpToolDefinition(
         name="codex_supervisor.task_claim",
         description="Atomically claim the current ready AFK task and create a worker run.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1518,7 +1512,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.task_compile": McpToolDefinition(
         name="codex_supervisor.task_compile",
         description="Compile open plan criteria or milestones into deterministic task drafts.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1537,7 +1530,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.progress_add": McpToolDefinition(
         name="codex_supervisor.progress_add",
         description="Record one plan progress event.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1555,7 +1547,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.artifact_link_add": McpToolDefinition(
         name="codex_supervisor.artifact_link_add",
         description="Link one durable plan artifact.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1570,7 +1561,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.story_loop_record": McpToolDefinition(
         name="codex_supervisor.story_loop_record",
         description="Record one Story Loop progress event and artifact links.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1592,7 +1582,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.worker_run_upsert": McpToolDefinition(
         name="codex_supervisor.worker_run_upsert",
         description="Create or update one worker run evidence record.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1617,7 +1606,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.worker_run_status": McpToolDefinition(
         name="codex_supervisor.worker_run_status",
         description="Update one worker run status.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1635,7 +1623,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.worker_result_ingest": McpToolDefinition(
         name="codex_supervisor.worker_result_ingest",
         description="Validate and ingest one Worker Result JSON for a worker run.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1652,7 +1639,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
             "Start one ready AFK task through the live Story Loop controller and return "
             "immediately with poll metadata."
         ),
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1681,7 +1667,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.story_loop_poll": McpToolDefinition(
         name="codex_supervisor.story_loop_poll",
         description="Poll one async Story Loop controller and worker run without relaunching it.",
-        read_only=True,
         input_schema={
             "type": "object",
             "properties": {
@@ -1698,7 +1683,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.story_loop_run_once": McpToolDefinition(
         name="codex_supervisor.story_loop_run_once",
         description="Run one ready AFK task through the production live Story Loop service.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1726,7 +1710,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.story_loop_advance": McpToolDefinition(
         name="codex_supervisor.story_loop_advance",
         description="Advance the Story Loop state machine by exactly one transition.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {
@@ -1754,7 +1737,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
     "codex_supervisor.review_result_ingest": McpToolDefinition(
         name="codex_supervisor.review_result_ingest",
         description="Validate and persist one structured review result.",
-        read_only=False,
         input_schema={
             "type": "object",
             "properties": {

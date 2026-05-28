@@ -473,6 +473,9 @@ FILE_PURPOSES = {
     "tests/test_evidence_vocabulary.py": FilePurpose(
         "planning evidence vocabulary tests", "pytest"
     ),
+    "tests/test_story_loop_e2e.py": FilePurpose(
+        "deterministic Story Loop CLI/git/worktree e2e tests", "pytest"
+    ),
     "tests/test_story_loop.py": FilePurpose("Story Loop tests", "pytest"),
     "tests/test_task_compiler.py": FilePurpose("plan-to-task compiler tests", "pytest"),
     "tests/test_worker_backends.py": FilePurpose("worker backend protocol tests", "pytest"),

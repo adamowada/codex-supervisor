@@ -113,12 +113,23 @@ def orchestrate_worker_launch(
         repo_root,
         launch_result.result_path,
     )
-    violations = validate_changed_files(changed_files, tuple(task.allowed_paths))
+    support_artifact_files = _reported_worker_result_support_artifact_files(
+        repo_root,
+        launch_result.result_path,
+    )
+    validation_changed_files = _without_declared_support_artifacts(
+        changed_files,
+        support_artifact_files,
+    )
+    violations = validate_changed_files(validation_changed_files, tuple(task.allowed_paths))
     gated_result = _apply_changed_path_gate(
         launch_result,
-        changed_files=changed_files,
+        changed_files=validation_changed_files,
         changed_files_source=source,
         reported_changed_files=reported_changed_files,
+        ignored_support_artifacts=tuple(
+            path for path in changed_files if path not in validation_changed_files
+        ),
         violations=violations,
         allowed_paths=tuple(task.allowed_paths),
         worktree_state=worktree_state,
@@ -126,7 +137,7 @@ def orchestrate_worker_launch(
     return WorkerOrchestrationResult(
         preparation=preparation,
         launch_result=gated_result,
-        changed_files=changed_files,
+        changed_files=validation_changed_files,
         changed_files_source=source,
         changed_path_violations=violations,
         worktree_state=worktree_state,
@@ -173,6 +184,7 @@ def _apply_changed_path_gate(
     changed_files: tuple[str, ...],
     changed_files_source: str,
     reported_changed_files: tuple[str, ...] | None,
+    ignored_support_artifacts: tuple[str, ...],
     violations: tuple[ChangedPathViolation, ...],
     allowed_paths: tuple[str, ...],
     worktree_state: WorktreeStateSnapshot | None,
@@ -186,6 +198,7 @@ def _apply_changed_path_gate(
                 None if reported_changed_files is None else list(reported_changed_files)
             ),
             "allowed_paths": list(allowed_paths),
+            "ignored_support_artifacts": list(ignored_support_artifacts),
             "violations": [_violation_payload(violation) for violation in violations],
         },
     }
@@ -302,6 +315,56 @@ def _reported_worker_result_changed_files(
     if not isinstance(changed_files, list):
         return None
     return tuple(path for path in changed_files if isinstance(path, str))
+
+
+def _reported_worker_result_support_artifact_files(
+    repo_root: Path,
+    result_path: str | None,
+) -> tuple[str, ...]:
+    if result_path is None:
+        return ()
+    try:
+        payload = json.loads((repo_root / result_path).read_text(encoding="utf-8"))
+    except OSError, json.JSONDecodeError:
+        return ()
+    if not isinstance(payload, dict):
+        return ()
+    paths: list[str] = []
+    artifacts = payload.get("artifacts")
+    if isinstance(artifacts, list):
+        paths.extend(path for path in artifacts if isinstance(path, str))
+    browser_smoke_results = payload.get("browser_smoke_results")
+    if isinstance(browser_smoke_results, list):
+        for item in browser_smoke_results:
+            if not isinstance(item, dict):
+                continue
+            artifact = item.get("artifact")
+            if isinstance(artifact, str):
+                paths.append(artifact)
+            browser_artifacts = item.get("artifacts")
+            if isinstance(browser_artifacts, list):
+                paths.extend(path for path in browser_artifacts if isinstance(path, str))
+    return tuple(dict.fromkeys(_normalize_support_artifact(path) for path in paths))
+
+
+def _without_declared_support_artifacts(
+    changed_files: tuple[str, ...],
+    support_artifact_files: tuple[str, ...],
+) -> tuple[str, ...]:
+    support_artifacts = {
+        path
+        for path in support_artifact_files
+        if path == "artifacts" or path.startswith("artifacts/")
+    }
+    if not support_artifacts:
+        return changed_files
+    return tuple(
+        path for path in changed_files if _normalize_support_artifact(path) not in support_artifacts
+    )
+
+
+def _normalize_support_artifact(path: str) -> str:
+    return path.strip().replace("\\", "/").strip("/")
 
 
 def _normalized_path_set(paths: tuple[str, ...]) -> set[str]:

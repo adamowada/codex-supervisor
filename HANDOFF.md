@@ -8,14 +8,22 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 ## Current Snapshot
 
 - Current queue state: empty. `story-loop-status --json` reports no current AFK, HITL, or running
-  task after `plan-supervisor-smoke-fixes-20260528` was completed.
-- Latest completed checkpoint: `plan-supervisor-smoke-fixes-20260528` hardened the todo-list-test-15
+  task after `plan-e2e-test-gap-closure-20260528` was completed.
+- Latest completed checkpoint: `plan-e2e-test-gap-closure-20260528` added deterministic e2e
+  coverage for the live-smoke gap: `tests/test_story_loop_e2e.py` now launches the real
+  `story-loop-run-once` and `story-loop-start`/`story-loop-poll` CLI paths against a real temporary
+  git repo, real worktree, and fake Codex executable, while `tests/test_mcp_stdio.py` covers a
+  mutating MCP stdio subprocess lifecycle. The new e2e test exposed support artifacts being treated
+  as product code changes; `src/codex_supervisor/worker_orchestration.py` now ignores declared
+  `artifacts/` support evidence for allowed-path validation while preserving raw worktree state.
+  Focused tests and full `scripts/verify.py` passed locally.
+- Previous completed checkpoint: `plan-supervisor-smoke-fixes-20260528` hardened the todo-list-test-15
   supervisor smoke-test flow: typed controller mutation contracts, prelaunch dirty-path policy,
   async controller orphan finalization, runtime preflight metadata, Worker Result artifact
   normalization, browser smoke progress events, handoff freshness checks, review-skip policy, and
   spawned-project loopback/process hygiene guidance. Focused tests, live CLI/Worker Result smokes,
   and full `scripts/verify.py` passed locally.
-- Previous completed checkpoint: `plan-cross-platform-ci-insight-20260528` added
+- Earlier completed checkpoint: `plan-cross-platform-ci-insight-20260528` added
   `insights/cross-platform-ci.md` to capture the repeated Windows-local vs Linux-CI assumption
   pattern and linked it from `insights/README.md` and `insights/graph.md`.
 - Earlier completed checkpoint: `plan-ci-linux-mypy-windll-20260528` repaired GitHub Actions Verify

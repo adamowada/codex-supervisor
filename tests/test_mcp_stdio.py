@@ -1,5 +1,8 @@
 import io
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +13,10 @@ from codex_supervisor.planning import (
     SupervisorTaskRecord,
     WorkerRunRecord,
     initialize_planning_database,
+    open_existing_planning_database,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_stdio_lifecycle_lists_tools_and_calls_read_only_dispatcher(tmp_path: Path) -> None:
@@ -243,6 +249,97 @@ def test_main_entrypoint_accepts_injected_streams(tmp_path: Path) -> None:
 
     assert exit_code == 0
     assert _parse_output(output)[0]["result"]["serverInfo"]["name"] == "codex-supervisor"
+
+
+def test_stdio_subprocess_mutating_lifecycle_updates_planning_state(tmp_path: Path) -> None:
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    initialize_planning_database(db_path)
+    messages = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "codex_supervisor.plan_upsert",
+                "arguments": {
+                    "plan_id": "plan-subprocess-mcp",
+                    "slug": "subprocess-mcp",
+                    "title": "Subprocess MCP",
+                    "goal": "Exercise mutating MCP over stdio subprocess.",
+                    "status": "active",
+                    "priority": 50,
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "codex_supervisor.task_upsert",
+                "arguments": {
+                    "task_id": "task-subprocess-mcp",
+                    "plan_id": "plan-subprocess-mcp",
+                    "title": "Mutate through subprocess MCP",
+                    "goal": "Create a task through the actual MCP stdio process.",
+                    "task_type": "AFK",
+                    "status": "ready",
+                    "scope": {"review_skipped": True},
+                    "acceptance_criteria": ["Subprocess MCP mutation works."],
+                    "verification_commands": ["uv run --no-sync python -B scripts/verify.py"],
+                    "allowed_paths": ["tests/test_mcp_stdio.py"],
+                    "review_required": False,
+                },
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {
+                "name": "codex_supervisor.task_show",
+                "arguments": {"task_id": "task-subprocess-mcp"},
+            },
+        },
+    ]
+    env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["PYTHONPATH"] = str(REPO_ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
+
+    completed = subprocess.run(
+        (
+            sys.executable,
+            "-B",
+            "-m",
+            "codex_supervisor.mcp_stdio",
+            "--repo-root",
+            str(tmp_path),
+            "--planning-path",
+            str(db_path),
+        ),
+        cwd=REPO_ROOT,
+        env=env,
+        input="\n".join(json.dumps(message) for message in messages) + "\n",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr + completed.stdout
+    responses = [json.loads(line) for line in completed.stdout.splitlines()]
+    assert [response["id"] for response in responses] == [1, 2, 3, 4]
+    assert responses[1]["result"]["structuredContent"]["data"]["plan_id"] == ("plan-subprocess-mcp")
+    assert responses[2]["result"]["structuredContent"]["data"]["task_id"] == ("task-subprocess-mcp")
+    shown = responses[3]["result"]["structuredContent"]["data"]
+    assert shown["status"] == "ready"
+    assert shown["scope"] == {"review_skipped": True}
+
+    store = open_existing_planning_database(db_path)
+    task = next(task for task in store.list_supervisor_tasks() if task.task_id == shown["task_id"])
+    assert task.worker_backend == "codex_exec"
+    assert task.review_required is False
 
 
 def _run_stdio(messages: list[dict[str, Any]], *, context: McpServerContext) -> list[JsonObject]:

@@ -43,6 +43,11 @@ Stage 4 is implemented in `src/codex_supervisor/small_interface.py` and exposed 
 commands: `queue-next` for inspection and `attempt-transition` for mutation. The commands use the
 compact task, attempt, evidence, and acceptance path.
 
+Stage 5 is implemented in `src/codex_supervisor/worker_attempts.py`. Worker prompts are generated
+from task intent plus assurance policy, fake Codex worker execution records ordinary attempts and
+evidence bundles, high-assurance worker results are policy-gated, and live execution has a bounded
+verification plan.
+
 ## Roadmap
 
 1. Stage 1, Foundation Contract: align docs, planning SQLite, skill guidance, CI, insights, handoff,
@@ -56,10 +61,9 @@ compact task, attempt, evidence, and acceptance path.
 
 ## Next Action
 
-Continue with Stage 5 from `ROADMAP.md`: connect fresh-context Codex workers as `RunAttempt`
-executors with policy-aware prompts, evidence bundles, fake-worker tests, and bounded live
-verification.
+Continue with Stage 6 from `ROADMAP.md`: grow one adapter operation only after declaring its task
+intent, attempt behavior, evidence, assurance, and acceptance contract.
 
 Planning task:
 
-- `task-integrate-codex-workers-20260528`
+- `task-grow-first-adapter-operation-20260528`

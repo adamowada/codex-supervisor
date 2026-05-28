@@ -205,6 +205,30 @@ and easy to inspect. MCP, plugin, automation, GitHub, CI, and spawned-project ad
 until Stage 6 and declare their task intent, attempt, evidence, assurance, and acceptance behavior
 one operation at a time.
 
+## Stage 5 Worker Integration
+
+Workers are executors, not a separate control plane. A worker run should use the same attempt,
+evidence, and acceptance path as manual or shell work.
+
+The compact worker path is:
+
+1. Read task intent and assurance policy.
+2. Build a fresh-context worker prompt from that policy.
+3. Start a `RunAttempt` with executor `codex`.
+4. Normalize worker output into checks, artifacts, acceptance results, risks, gaps, next actions,
+   and review evidence.
+5. Attach an evidence bundle.
+6. Evaluate acceptance with the same policy core.
+
+The first worker proof should be fake-worker-first. Fake execution is deterministic, fast, and
+strong enough to prove prompt shape, evidence normalization, and high-assurance rejection. Live
+Codex execution should enter only through a bounded verification plan that records the executable,
+timeout, prompt, worker result, evidence bundle, and acceptance evaluation.
+
+High assurance matters most here. A worker result that passes acceptance criteria but omits required
+risk evidence must block, because otherwise worker integration becomes a hidden bypass around the
+policy core.
+
 ## Local Hygiene
 
 Ignored local artifacts should stay disposable. Development environments, caches, run outputs,

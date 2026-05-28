@@ -595,6 +595,7 @@ def test_codex_exec_backend_records_windowsapps_access_denied_without_launching(
     assert "# Goal Contract" in prompt
     assert "Do the slice." in prompt
     assert "Worker Result JSON" in prompt
+    assert "schema constrains only the final assistant message" in prompt
     assert "Do not call `codex_supervisor` MCP tools" in prompt
     assert (tmp_path / "runs" / "run-worker" / "stderr.txt").read_text() == "Access is denied"
     assert (tmp_path / "runs" / "run-worker" / "final-message.txt").read_text() == (

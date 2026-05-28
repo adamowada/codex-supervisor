@@ -74,6 +74,23 @@ not live queue state. Current work still belongs in `plans/planning.sqlite3`.
 - `supersedes`: putting every semantic rule into the model schema.
 - `next action`: Keep schema generation and ingestion validation tested separately.
 
+### Worker Result Claims Need Event Evidence
+
+- `claim`: A live Worker Result can claim commands, acceptance, or file state that the worker never
+  actually observed; the controller should cross-check completed claims against JSONL tool events
+  and worktree state before treating them as evidence.
+- `confidence`: confirmed
+- `evidence`: `plan-multiturn-live-smoke-20260528`, `run-live-multiturn-turn2`,
+  `run-live-multiturn-turn2-retry`, and `run-live-multiturn-turn2-simple`. The compound retries
+  self-blocked before tool use, while the simplified retry emitted a passing Worker Result without
+  command-execution events and without the requested marker present in `smoke.txt`.
+- `scope`: live Codex Exec workers, Story Loop polling, Worker Result ingestion, and multi-turn
+  smoke tests.
+- `supersedes`: treating the final structured Worker Result as sufficient proof that listed
+  verification commands ran or that acceptance evidence was observed.
+- `next action`: Add a live-evidence gate that reconciles `tests_run` and acceptance claims against
+  JSONL command/file events and git worktree inspection, then cover the failure with e2e tests.
+
 ### Declared Support Artifacts Are Not Product Edits
 
 - `claim`: Browser and worker support artifacts under `artifacts/` must be copied and preserved, but

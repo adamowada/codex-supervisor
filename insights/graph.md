@@ -27,6 +27,8 @@ graph.
   but not authoritative MCP inventory.
 - `WorkerBoundaryPolicy`: shared rule set separating product-worker paths from
   supervisor/controller-owned paths.
+- `WorkerResultEvidenceGate`: controller validation that reconciles Worker Result claims with raw
+  JSONL tool events and inspected worktree state.
 - `CrossPlatformCI`: publication gate that proves Windows-local assumptions still hold under Linux
   CI type-checking, path semantics, shell behavior, and clean-checkout evidence.
 - `LiveSmokeEvidence`: bounded real-environment validation using disposable repos, real Codex Exec,
@@ -57,3 +59,4 @@ graph.
 | `CrossPlatformCI` | catches drift from | `CodexSupervisor` | `insights/cross-platform-ci.md`, GitHub Actions run `26552849566`, repair commit `9aed4a031b04634fdcb5711403cac24113176ca0` | confirmed | 2026-05-28 | Guard platform-specific APIs with typed adapter boundaries, feature probes, or cross-platform regression tests before publication. |
 | `LiveSmokeEvidence` | complements | `StoryLoop` | `insights/live-smoke-lessons.md`, `plan-broader-live-smoke-20260528`, `tests/test_story_loop_e2e.py` | confirmed | 2026-05-28 | Keep fake-Codex e2e tests in CI, then run narrow real Codex Exec smokes for API/schema/sandbox behavior. |
 | `LiveSmokeEvidence` | constrains | `CodexExecBackend` | `insights/live-smoke-lessons.md`, `src/codex_supervisor/worker_backends.py`, `tests/test_worker_backends.py` | confirmed | 2026-05-28 | Make model-facing output schemas strict-API compatible while preserving stronger repo-side validation. |
+| `WorkerResultEvidenceGate` | verifies claims from | `CodexExecBackend` | `insights/live-smoke-lessons.md`, `plan-multiturn-live-smoke-20260528`, live runs `run-live-multiturn-turn2`, `run-live-multiturn-turn2-retry`, and `run-live-multiturn-turn2-simple` | confirmed | 2026-05-28 | Cross-check `tests_run`, acceptance evidence, and changed files against JSONL command/file events plus git worktree state. |

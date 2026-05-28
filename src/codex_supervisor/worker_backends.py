@@ -2053,6 +2053,11 @@ def compose_worker_prompt(request: WorkerLaunchRequest) -> str:
             f"it into `{_worker_visible_result_path(request)}` for planning ingestion."
         ),
         (
+            "The structured output schema constrains only the final assistant message. It does "
+            "not prevent intermediate tool use, shell commands, file edits, or verification "
+            "commands needed to complete the task before that final JSON response."
+        ),
+        (
             "For normal implementation workers, planning SQLite and controller bookkeeping are "
             "read-only context. Do not edit or commit `plans/planning.sqlite3`, source-lock "
             "hashes, review tasks, promotion records, or final completion state unless the "

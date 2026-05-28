@@ -211,8 +211,11 @@ def _string_list(
     require_nonempty: bool,
 ) -> tuple[str, ...]:
     value = payload.get(key)
-    if not isinstance(value, list) or (require_nonempty and not value):
+    if not isinstance(value, list):
         msg = f"{key} must be a list"
+        raise WorkerResultError(msg)
+    if require_nonempty and not value:
+        msg = f"{key} must be a nonempty list"
         raise WorkerResultError(msg)
     strings = tuple(item for item in value if isinstance(item, str) and item.strip())
     if len(strings) != len(value):

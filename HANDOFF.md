@@ -8,8 +8,19 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 ## Current Snapshot
 
 - Current queue state: empty. `story-loop-status --json` reports no current AFK, HITL, or running
-  task after `plan-live-smoke-insight-acp-20260528` was completed.
-- Latest completed checkpoint: `plan-live-smoke-insight-acp-20260528` added
+  task after `plan-multiturn-live-smoke-20260528` was completed.
+- Latest completed checkpoint: `plan-multiturn-live-smoke-20260528` ran a broader multi-turn live
+  Codex Exec Story Loop smoke against a disposable git/planning/worktree repo. Turn 1 completed and
+  was promoted. The compound turn-2 retries self-blocked before tool use by treating the final
+  structured-output schema as a tool-use constraint, and the simplified retry emitted a passing
+  Worker Result without command-execution evidence or the requested marker in `smoke.txt`; the
+  supervisor rejected that result because completed results cannot have empty `changed_files`.
+  `src/codex_supervisor/worker_backends.py` now clarifies that the schema constrains only the final
+  assistant message, with focused coverage in `tests/test_worker_backends.py`, but live evidence
+  shows that prompt clarification alone is not enough. `insights/live-smoke-lessons.md` and
+  `insights/graph.md` now record the need to reconcile Worker Result claims with JSONL/tool events
+  and inspected worktree state.
+- Previous completed checkpoint: `plan-live-smoke-insight-acp-20260528` added
   `insights/live-smoke-lessons.md`, linked it from the insight wiki and graph, and registered the
   file purpose for public justification. The insight captures the todo-list smoke analysis,
   deterministic e2e follow-up, broader live Codex Exec smoke results, strict schema fix,

@@ -1,6 +1,6 @@
 # Contracts
 
-This file defines the current durable contracts for the simplified supervisor.
+This file defines the durable contracts for `codex-supervisor`.
 
 ## Task Intent
 
@@ -16,7 +16,7 @@ Required fields:
 - acceptance criteria;
 - status.
 
-Task intent does not include a permanent worker backend. Backend choice belongs to an attempt.
+Backend choice belongs to a run attempt.
 
 ## Run Attempt
 
@@ -31,8 +31,8 @@ Required fields:
 - summary;
 - start and finish timestamps when applicable.
 
-Executors may include `codex`, `manual`, `shell`, `review`, or future adapters. Executor names are
-not modes. They describe how the attempt ran.
+Executors may include `codex`, `manual`, `shell`, `review`, or future adapters. Executor names
+describe transport.
 
 ## Evidence Bundle
 
@@ -49,15 +49,15 @@ Required fields:
 - artifacts JSON;
 - timestamp.
 
-Evidence must be inspectable. Raw artifacts can live outside SQLite, but the bundle must say what
-exists and why it matters.
+Evidence is inspectable. Raw artifacts can live outside SQLite, while SQLite records what exists and
+why it matters.
 
 ## Acceptance Decision
 
-Acceptance is the policy decision that a task can move forward.
+Acceptance is the policy decision that a task can advance.
 
-For now, acceptance is represented by task status plus evidence bundle records. A dedicated
-acceptance table may be added only if it removes ambiguity without reintroducing mode sprawl.
+Task status plus evidence bundles represent acceptance in the active schema. A dedicated acceptance
+table can be added when repeated acceptance queries require it.
 
 ## Assurance Levels
 
@@ -71,7 +71,7 @@ Minimum evidence:
 - known risks or gaps;
 - next recommended action.
 
-Low assurance cannot close high-risk durable work.
+Low assurance advances exploratory work.
 
 ### Medium
 
@@ -97,17 +97,4 @@ Minimum evidence:
 - risk notes;
 - review evidence when review is the risk control.
 
-## Deleted Contracts
-
-The following old contracts are not active:
-
-- AFK/HITL as durable task types;
-- codex_exec as the primary product identity;
-- native Goal mode as an architectural dependency;
-- strict/degraded JSONL as a schema branch;
-- review mode taxonomy;
-- plugin full-AFK canary contract;
-- release-readiness evidence bundle;
-- spawned-project scaffold tiers.
-
-They may return only as smaller expressions of task, attempt, evidence, and acceptance.
+High assurance protects durable and high-risk changes.

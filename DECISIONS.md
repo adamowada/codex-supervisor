@@ -1,50 +1,45 @@
 # Decisions
 
-## D-0001: No Legacy Preservation
+## D-0001: Compact State Model
 
-Decision: Pre-MVP legacy behavior has zero preservation weight.
+Decision: The durable model is `TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision`.
 
-Rationale: No external users depend on the old state space. Preserving compatibility would preserve
-the complexity that made development feel like whack-a-mole.
+Rationale: A single transition model keeps the control plane small enough to reason about and test.
 
-## D-0002: Fresh Planning Schema
+## D-0002: Planning Schema
 
-Decision: Replace the historical planning schema with a smaller database centered on plans, tasks,
-attempts, evidence bundles, and decisions.
+Decision: Planning SQLite stores `meta`, `plans`, `tasks`, `attempts`, `evidence_bundles`, and
+`decisions`.
 
-Rationale: The old schema encoded too many accumulated operational incidents as permanent product
-concepts.
+Rationale: These tables answer the current operational questions directly.
 
 ## D-0003: Assurance Levels Are Policy
 
-Decision: `low`, `medium`, and `high` are assurance levels, not execution modes.
+Decision: `low`, `medium`, and `high` are assurance levels.
 
-Rationale: They should change evidence and acceptance requirements without multiplying backend,
-runtime, review, CLI, MCP, or schema paths.
+Rationale: Assurance changes evidence and acceptance requirements while the core model stays stable.
 
-## D-0004: Skills Are Guidance, Not Control Plane
+## D-0004: Skills Are Guidance
 
-Decision: The repo-local skill surface is reduced to a single simplified supervisor skill.
+Decision: The repo-local skill surface is one concise supervisor skill.
 
-Rationale: The old skill mesh routed work through many overlapping workflows and recreated the
-state-space problem outside the Python code.
+Rationale: Skills are most useful as operating reminders beside the source-of-truth contract.
 
-## D-0005: Plugin Surface Is Removed For Now
+## D-0005: Interfaces Follow The Core
 
-Decision: The packaged Desktop plugin is removed from the active repo surface.
+Decision: CLI, MCP, plugin, automation, and GitHub surfaces are adapters over the core model.
 
-Rationale: A plugin should be an adapter over a stable core. The core is being rebuilt.
+Rationale: Interfaces should make the core easier to use while preserving the same task, attempt,
+evidence, and acceptance semantics.
 
-## D-0006: CI Guards The Current Contract
+## D-0006: CI Guards The Active Contract
 
-Decision: CI runs the minimal verification gate for the simplified contract.
+Decision: CI runs the focused verification gate.
 
-Rationale: Running historical tests would turn deleted behavior back into requirements.
+Rationale: The gate should match the current architecture and grow with rebuilt behavior.
 
-## D-0007: Insights Are Curated, Not Historical Storage
+## D-0007: Insights Capture Design Lessons
 
-Decision: Historical insight files are replaced by current lessons from the simplification
-conversation.
+Decision: Insights record durable lessons that guide future design.
 
-Rationale: Durable learning should guide future design, not force the project to keep every
-incident-specific hardening rule.
+Rationale: The insight set should help future work preserve the compact control-plane shape.

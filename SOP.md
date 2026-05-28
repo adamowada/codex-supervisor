@@ -3,9 +3,9 @@
 ## Start
 
 1. Check `git status --short`.
-2. Inspect the fresh planning database with `scripts/check_planning_integrity.py`.
+2. Inspect the planning database with `scripts/check_planning_integrity.py`.
 3. Read `HANDOFF.md`.
-4. Work from the highest-priority active task unless the user overrides it.
+4. Work from the highest-priority active task, unless the user gives a direct task.
 
 ## Work
 
@@ -17,19 +17,17 @@
 
 ## Source Docs
 
-Rewrite source-of-truth docs when they are wrong. Do not build compatibility machinery to protect
-stale doctrine.
+Keep source-of-truth docs concise and present-tense. Update hashes after intentional protected-doc
+changes.
 
 ## Skills
 
-Use repo-local skills as brief operating guidance only. Do not recreate a skill router, skill mesh,
-or nested workflow hierarchy.
+Use repo-local skills as brief operating guidance.
 
 ## CI
 
-CI should guard the current simplified contract. It should not run historical tests just because
-they exist.
+CI guards the active contract.
 
 ## Handoff
 
-`HANDOFF.md` must stay compact and current. It is not a changelog.
+`HANDOFF.md` stays compact, current, and action-oriented.

@@ -1,7 +1,6 @@
 # Architecture
 
-`codex-supervisor` is being rebuilt around one state transition model and a deliberately small
-surface.
+`codex-supervisor` is organized around one state transition model and a narrow active surface.
 
 ## Core Flow
 
@@ -12,22 +11,17 @@ TaskIntent
   -> AcceptanceDecision
 ```
 
-The control plane is responsible for preserving that flow. Interfaces are allowed only when they
-delegate to it cleanly.
+The control plane preserves this flow across planning, execution, evidence, and acceptance.
 
 ## Layers
 
 ### Source Contracts
 
-Source-of-truth documents define the current contract. They are not sacred history. When the product
-direction changes, rewrite them and refresh hashes.
+Source-of-truth documents define the product contract. They stay concise and current.
 
 ### Planning Store
 
-`plans/planning.sqlite3` stores active operational state in the fresh schema from `PLANS.md`.
-
-The planning store should remain boring. If a feature needs many tables before it can ship, the
-feature is probably too large.
+`plans/planning.sqlite3` stores operational state using the schema in `PLANS.md`.
 
 ### Policy
 
@@ -37,34 +31,26 @@ Policy maps task intent to an assurance level:
 - `medium`
 - `high`
 
-Policy decides evidence and acceptance requirements. It must not fork the domain model.
+Policy sets evidence and acceptance requirements.
 
 ### Execution Boundary
 
-Execution is an attempt, not an identity. Codex, manual work, shell checks, review, or future MCP
-calls can all be represented as attempts if they produce evidence.
+Execution is recorded as an attempt. Codex, manual work, shell checks, review, and future adapters
+can all run attempts when they produce evidence.
 
 ### Evidence Boundary
 
-Evidence bundles contain summaries, checks, and artifact references. The database indexes evidence;
-it does not become a blob store.
+Evidence bundles contain summaries, checks, and artifact references. SQLite indexes evidence and
+points to supporting artifacts.
 
 ### Interfaces
 
-CLI, MCP, plugin, automation, and GitHub integrations are optional adapters. They are rebuilt only
-after the core model is small and proven.
+CLI, MCP, plugin, automation, and GitHub integrations are adapters over the core model. Each adapter
+operation declares the task intent, attempt, evidence, and acceptance behavior it supports.
 
-## Current Architectural Cuts
+## Build Rule
 
-- The packaged Desktop plugin was removed from the active surface.
-- The old repo-local skill mesh was removed.
-- The historical planning schema was replaced.
-- Old tests were removed as acceptance criteria.
-- CI now checks the smaller contract rather than the old factory.
-
-## Rebuild Rule
-
-Add back one public operation at a time. Each operation must declare:
+Add one operation at a time. Each operation declares:
 
 - task intent it can create or inspect;
 - attempts it can run;
@@ -72,4 +58,4 @@ Add back one public operation at a time. Each operation must declare:
 - assurance levels it can satisfy;
 - acceptance decision it can support.
 
-If that cannot be stated simply, the operation is not ready.
+Operations become part of the active surface after the core model and focused tests cover them.

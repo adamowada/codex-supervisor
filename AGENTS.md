@@ -2,33 +2,29 @@
 
 ## Repository Purpose
 
-This repository builds `codex-supervisor`: a small Python-first control plane for coordinating Codex
-work through explicit task intent, isolated attempts, evidence bundles, and acceptance decisions.
-
-The project is pre-MVP. Legacy behavior, historical tests, old queue rows, and old public surfaces
-have zero preservation weight.
+This repository builds `codex-supervisor`: a Python-first control plane for coordinating Codex work
+through task intent, run attempts, evidence bundles, and acceptance decisions.
 
 ## Operating Principles
 
-- Prefer a smaller state space over a richer feature matrix.
-- Treat every new axis as guilty until it proves it removes more complexity than it adds.
+- Keep the state space small.
+- Add a new axis only when it collapses more complexity than it creates.
 - Keep durable state in `plans/planning.sqlite3`.
-- Keep source-of-truth docs short, current, and willing to change.
-- Keep skills as thin operating guidance, not another orchestration layer.
-- Keep CI focused on the contracts that matter now.
-- Keep full-auto safety based on isolation, evidence, and acceptance, not approval prompts.
-- Do not preserve compatibility for non-existent users.
+- Keep source-of-truth docs short, current, and direct.
+- Keep skills as thin operating guidance.
+- Keep CI focused on the active contract.
+- Keep full-auto safety based on isolation, evidence, and acceptance.
+- Prefer one transition path over mode-specific branches.
 
 ## Active Model
 
-The only durable work model is:
+The durable work model is:
 
 ```text
 TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
 ```
 
-Assurance levels are `low`, `medium`, and `high`. They modify evidence and acceptance requirements.
-They are not task types, worker backends, runtime modes, review modes, or database schemas.
+Assurance levels are `low`, `medium`, and `high`. They set evidence and acceptance requirements.
 
 ## Source Of Truth
 
@@ -50,13 +46,10 @@ Protected source-of-truth files:
 
 `HANDOFF.md` is mutable and current-only.
 
-When protected docs intentionally change, update `scripts/check_protected_files.py` with fresh
+After intentional protected-doc edits, refresh `scripts/check_protected_files.py` with current
 hashes and rerun the lock check.
 
 ## Planning Database
-
-The fresh planning database is intentionally small. Do not reintroduce historical planning tables
-unless the current architecture explicitly needs them.
 
 Required tables:
 
@@ -67,18 +60,18 @@ Required tables:
 - `evidence_bundles`
 - `decisions`
 
-Do not recreate historical event-type vocabularies, artifact-link relationship vocabularies, or
-worker-result compatibility tables.
+The database records the current queue, attempts, evidence, and decisions. Keep additional detail in
+JSON fields until a repeated access pattern earns a dedicated table.
 
 ## Common Commands
 
-Use the small verification gate:
+Use the verification gate:
 
 ```sh
 uv run --no-sync python -B scripts/verify.py
 ```
 
-Run individual checks when useful:
+Focused checks:
 
 ```sh
 uv run --no-sync python -B scripts/check_planning_integrity.py
@@ -92,14 +85,13 @@ uv run --no-sync python -B scripts/check_protected_files.py
 - Use `pathlib.Path` for filesystem paths.
 - Keep side effects at boundaries.
 - Prefer structured data over prose-only state.
-- Prefer one transition path over mode-specific branches.
-- Add abstractions only when they collapse real duplication.
+- Add abstractions where they simplify repeated behavior.
 
 ## Definition Of Done
 
-- The fresh source-of-truth contract remains coherent.
-- The planning database passes the fresh schema check.
-- Minimal skills match the new operating model.
-- Minimal CI passes.
+- Source-of-truth docs match the active contract.
+- Planning SQLite passes the schema check.
+- Repo-local skill guidance matches the active model.
+- Verification passes.
 - `HANDOFF.md` names the current state and next action.
-- Source locks are refreshed for intentional protected-doc changes.
+- Source locks match intentional protected-doc changes.

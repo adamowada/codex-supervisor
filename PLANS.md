@@ -1,29 +1,25 @@
 # PLANS.md
 
-`PLANS.md` defines the fresh planning database. The old database shape was deleted because it encoded
-the complexity we are removing.
+`PLANS.md` defines the planning database for `codex-supervisor`.
 
 ## Design Goal
 
-The planning database should answer five questions:
+The planning database answers five questions:
 
 1. What are we trying to do?
-2. What is the next task intent?
+2. What task intent is next?
 3. What attempts have run?
 4. What evidence exists?
-5. What decisions changed the plan?
+5. What decisions shape the plan?
 
-It should not be a general-purpose audit warehouse, plugin ledger, release ledger, review ledger,
-or compatibility store.
-
-## Fresh Schema
+## Schema
 
 ### `meta`
 
-Key-value repository planning metadata.
+Repository planning metadata.
 
-- `key text primary key`
-- `value text not null`
+- `key`: primary key.
+- `value`: required text.
 
 Required keys:
 
@@ -36,13 +32,13 @@ Required keys:
 
 One active objective or coherent project phase.
 
-- `plan_id text primary key`
-- `title text not null`
-- `status text not null`
-- `priority integer not null`
-- `goal text not null`
-- `created_at text not null`
-- `updated_at text not null`
+- `plan_id`: primary key.
+- `title`: required text.
+- `status`: required status.
+- `priority`: required integer.
+- `goal`: required text.
+- `created_at`: required timestamp.
+- `updated_at`: required timestamp.
 
 Allowed statuses:
 
@@ -55,15 +51,15 @@ Allowed statuses:
 
 One intent that can be attempted.
 
-- `task_id text primary key`
-- `plan_id text not null references plans(plan_id)`
-- `title text not null`
-- `status text not null`
-- `assurance text not null`
-- `intent text not null`
-- `acceptance_json text not null`
-- `created_at text not null`
-- `updated_at text not null`
+- `task_id`: primary key.
+- `plan_id`: parent plan.
+- `title`: required text.
+- `status`: required status.
+- `assurance`: required assurance level.
+- `intent`: required text.
+- `acceptance_json`: required JSON array.
+- `created_at`: required timestamp.
+- `updated_at`: required timestamp.
 
 Allowed statuses:
 
@@ -83,13 +79,13 @@ Allowed assurance values:
 
 One execution attempt against one task.
 
-- `attempt_id text primary key`
-- `task_id text not null references tasks(task_id)`
-- `executor text not null`
-- `status text not null`
-- `summary text not null`
-- `started_at text`
-- `finished_at text`
+- `attempt_id`: primary key.
+- `task_id`: parent task.
+- `executor`: required text.
+- `status`: required status.
+- `summary`: required text.
+- `started_at`: optional timestamp.
+- `finished_at`: optional timestamp.
 
 Allowed statuses:
 
@@ -103,38 +99,26 @@ Allowed statuses:
 
 Structured evidence produced by an attempt or accepted manually for a task.
 
-- `bundle_id text primary key`
-- `task_id text not null references tasks(task_id)`
-- `attempt_id text references attempts(attempt_id)`
-- `assurance text not null`
-- `summary text not null`
-- `checks_json text not null`
-- `artifacts_json text not null`
-- `created_at text not null`
+- `bundle_id`: primary key.
+- `task_id`: parent task.
+- `attempt_id`: optional attempt.
+- `assurance`: required assurance level.
+- `summary`: required text.
+- `checks_json`: required JSON array.
+- `artifacts_json`: required JSON array.
+- `created_at`: required timestamp.
 
 ### `decisions`
 
 Durable product or architecture decisions.
 
-- `decision_id text primary key`
-- `plan_id text references plans(plan_id)`
-- `decision text not null`
-- `rationale text not null`
-- `created_at text not null`
+- `decision_id`: primary key.
+- `plan_id`: optional parent plan.
+- `decision`: required text.
+- `rationale`: required text.
+- `created_at`: required timestamp.
 
-## Deleted Concepts
+## Extension Rule
 
-The fresh schema intentionally does not include:
-
-- separate AFK/HITL task types;
-- worker backend as a task identity field;
-- review-specific database tables;
-- historical progress event vocabularies;
-- artifact-link relationship taxonomies;
-- imported Codex local-state reconciliation rows;
-- plugin install ledgers;
-- release-readiness ledgers;
-- compatibility aliases.
-
-If one of those concepts returns, it must be expressed as task intent, attempt execution, evidence,
-or acceptance policy first.
+Add a table when repeated queries need it. Until then, store task acceptance, evidence details, and
+attempt metadata in structured JSON fields attached to the core tables.

@@ -151,6 +151,22 @@ When the user has granted dangerous/full-auto operation, spend autonomy on throu
   deterministic apply step and the bootstrap plan as complete. Seed or compile the user's concrete
   implementation request as a new project-local plan/task before calling `story-loop-run-once`; do
   not launch a Codex worker merely to redo scaffold creation.
+- Private spawned projects do not require `ATTRIBUTIONS.md`. Include attribution files only when
+  the project is public, source-inspired, publication-ready, or the task explicitly asks for source
+  attribution. Do not list absent optional source-of-truth files in a product worker's Goal
+  Contract.
+- Keep product implementation workers out of supervisor/controller state. Product worker
+  `allowed_paths` should cover app source, package/config files, tests, bounded smoke harnesses,
+  and task-specific docs under worker-owned paths. Do not include `plans/planning.sqlite3`,
+  `HANDOFF.md`, source-lock scripts, protected top-level source-of-truth docs, `.agents/**`,
+  `runs/**`, `artifacts/**`, or `worktrees/**` unless the task is explicitly a
+  controller/planning/promotion/source-lock task. The controller records planning progress, refreshes
+  handoff, updates protected hashes, and performs final promotion/completion bookkeeping after the
+  worker result.
+- If a Story Loop product worker fails before producing an acceptable Worker Result, fail closed or
+  create a separate recorded repair/promotion task. Do not silently downgrade the original full-AFK
+  task into inline current-thread implementation or standalone Codex Exec unless that backend is
+  represented as a first-class worker run with the same evidence and path-policy gates.
 - For Desktop full-AFK Story Loop execution, prefer `story-loop-start` plus `story-loop-poll` over
   a blocking `story-loop-run-once` MCP call. Poll the controller, worker-run state, and
   `runs/<worker_run_id>/liveness.json`; do not launch a duplicate writer while the controller or

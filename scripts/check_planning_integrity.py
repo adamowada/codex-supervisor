@@ -48,6 +48,9 @@ try:
         unsafe_verification_command_reason,
         unsafe_worker_result_path_reason,
     )
+    from codex_supervisor.task_policy import (  # noqa: E402
+        controller_owned_allowed_path_violations,
+    )
 except ModuleNotFoundError:
     FINAL_STATE_COMMIT_RELATIONSHIPS = ("final-project-state", "final-state", "completion")
     PROMOTION_COMPLETED_EVENT = "promotion_completed"
@@ -59,6 +62,69 @@ except ModuleNotFoundError:
         return (
             "codex_exec" if worker_backend in {"codex_exec", "live_codex_exec"} else worker_backend
         )
+
+    def controller_owned_allowed_path_violations(
+        allowed_paths: Iterable[object],
+        *,
+        scope: object,
+        worker_backend: str = "codex_exec",
+    ) -> tuple[str, ...]:
+        protected_docs = {
+            ".gitignore",
+            ".gitattributes",
+            "README.md",
+            "AGENTS.md",
+            "PLANS.md",
+            "ARCHITECTURE.md",
+            "CONTRACTS.md",
+            "ROADMAP.md",
+            "SOP.md",
+            "TESTING.md",
+            "DECISIONS.md",
+            "LICENSE",
+            "ATTRIBUTIONS.md",
+        }
+        parsed_scope = scope if isinstance(scope, dict) else {}
+        role = parsed_scope.get("task_role", parsed_scope.get("worker_role"))
+        if parsed_scope.get("controller_task") is True or role in {
+            "controller",
+            "planning",
+            "promotion",
+            "source_lock",
+        }:
+            return ()
+        violations: list[str] = []
+        forbidden = tuple(
+            item.strip().replace("\\", "/")
+            for item in parsed_scope.get("worker_must_not_edit", [])
+            if isinstance(item, str) and item.strip()
+        )
+        for value in allowed_paths:
+            if not isinstance(value, str):
+                continue
+            normalized = value.strip().replace("\\", "/")
+            if normalized in forbidden:
+                violations.append(
+                    f"{normalized}: allowed path overlaps worker_must_not_edit `{normalized}`"
+                )
+            if normalized in {
+                "plans/planning.sqlite3",
+                "HANDOFF.md",
+                "scripts/**",
+                "scripts/check_file_justification.py",
+                "scripts/check_planning_integrity.py",
+                "scripts/check_protected_files.py",
+                "scripts/print_protected_hashes.py",
+                "scripts/verify.py",
+            }:
+                violations.append(f"{normalized}: controller-owned path")
+                continue
+            if normalized in protected_docs:
+                violations.append(f"{normalized}: protected source-of-truth doc")
+                continue
+            if normalized == ".agents/**" or normalized.startswith(".agents/"):
+                violations.append(f"{normalized}: controller-owned path")
+        return tuple(dict.fromkeys(violations))
 
     PLAN_STATUSES = frozenset({"active", "blocked", "completed", "abandoned", "superseded"})
     CURRENT_QUEUE_PLAN_STATUSES = frozenset({"active", "blocked"})
@@ -2809,15 +2875,17 @@ def _check_open_codex_exec_tasks_avoid_controller_owned_paths(
     for task_id, scope_json, paths_json, worker_backend in rows:
         if canonical_worker_backend(str(worker_backend)) != "codex_exec":
             continue
-        if _scope_allows_controller_owned_paths(scope_json):
-            continue
         try:
             allowed_paths = json.loads(str(paths_json))
         except json.JSONDecodeError:
             continue
         if not isinstance(allowed_paths, list):
             continue
-        for violation in _controller_owned_allowed_path_violations(allowed_paths):
+        for violation in controller_owned_allowed_path_violations(
+            allowed_paths,
+            scope=_json_object(scope_json),
+            worker_backend=str(worker_backend),
+        ):
             failures.append(
                 PlanningIntegrityFailure(
                     "open_codex_exec_task_allows_controller_owned_path",
@@ -2825,57 +2893,6 @@ def _check_open_codex_exec_tasks_avoid_controller_owned_paths(
                 )
             )
     return tuple(failures)
-
-
-def _scope_allows_controller_owned_paths(raw_scope: object) -> bool:
-    scope = _json_object(raw_scope)
-    if scope.get("controller_state_mutation_allowed") is True:
-        return True
-    if scope.get("controller_owned_paths_allowed") is True:
-        return True
-    if scope.get("controller_task") is True:
-        return True
-    return scope.get("task_role", scope.get("worker_role")) in {
-        "controller",
-        "planning",
-        "promotion",
-        "source_lock",
-    }
-
-
-def _controller_owned_allowed_path_violations(values: Iterable[object]) -> tuple[str, ...]:
-    protected_docs = {
-        "README.md",
-        "AGENTS.md",
-        "PLANS.md",
-        "ARCHITECTURE.md",
-        "CONTRACTS.md",
-        "ROADMAP.md",
-        "SOP.md",
-        "TESTING.md",
-        "DECISIONS.md",
-        "ATTRIBUTIONS.md",
-    }
-    violations: list[str] = []
-    for value in values:
-        if not isinstance(value, str):
-            continue
-        normalized = value.strip().replace("\\", "/")
-        if normalized in {"plans/planning.sqlite3", "scripts/**"}:
-            violations.append(f"{normalized} is controller-owned")
-            continue
-        if normalized in {
-            "scripts/check_protected_files.py",
-            "scripts/print_protected_hashes.py",
-        }:
-            violations.append(f"{normalized} is source-lock controller-owned")
-            continue
-        if normalized in protected_docs:
-            violations.append(f"{normalized} is protected source-of-truth")
-            continue
-        if normalized == ".agents/**" or normalized.startswith(".agents/"):
-            violations.append(f"{normalized} is repo-local skill state")
-    return tuple(violations)
 
 
 def _json_string_array(raw_value: str) -> tuple[str, ...]:

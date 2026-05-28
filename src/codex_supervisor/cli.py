@@ -1924,6 +1924,7 @@ def main(argv: list[str] | None = None) -> int:
         contract = render_goal_contract(
             contract_task,
             unresolved_blockers=unresolved_task_blockers(contract_task, all_tasks),
+            repo_root=Path(args.path).resolve(strict=False).parent.parent,
         )
         if args.json:
             _print_json(contract)

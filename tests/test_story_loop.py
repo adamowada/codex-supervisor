@@ -1424,6 +1424,92 @@ def test_live_story_loop_policy_lint_blocks_codex_exec_controller_owned_paths(tm
     ]
 
 
+def test_live_story_loop_policy_lint_does_not_trust_broad_controller_owned_flag(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-live",
+            slug="live",
+            title="Live",
+            goal="Run a live worker.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-live",
+            plan_id="plan-live",
+            title="Live task",
+            goal="Try to smuggle controller state into product scope.",
+            task_type="AFK",
+            status="ready",
+            scope={"controller_owned_paths_allowed": True},
+            acceptance_criteria=["done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["plans/planning.sqlite3"],
+            worker_backend="codex_exec",
+        )
+    )
+
+    result = run_live_story_loop_once(
+        store,
+        repo_root=tmp_path,
+        worker_run_id="run-policy-flag",
+        codex_executable="C:/Tools/codex.exe",
+    )
+
+    assert result.status == "failed"
+    assert result.failure_class == "worker_contract_policy_violation"
+    worker = open_existing_planning_database(db_path).list_worker_runs()[0]
+    assert worker.metadata["launch_preflight"]["violations"] == [
+        "plans/planning.sqlite3: controller-owned path"
+    ]
+
+
+def test_live_story_loop_policy_lint_blocks_worker_must_not_edit_overlap(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-live",
+            slug="live",
+            title="Live",
+            goal="Run a live worker.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-live",
+            plan_id="plan-live",
+            title="Live task",
+            goal="Try contradictory scope.",
+            task_type="AFK",
+            status="ready",
+            scope={"worker_must_not_edit": ["src/**"]},
+            acceptance_criteria=["done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            worker_backend="codex_exec",
+        )
+    )
+
+    result = run_live_story_loop_once(
+        store,
+        repo_root=tmp_path,
+        worker_run_id="run-policy-overlap",
+        codex_executable="C:/Tools/codex.exe",
+    )
+
+    assert result.status == "failed"
+    assert result.failure_class == "worker_contract_policy_violation"
+    worker = open_existing_planning_database(db_path).list_worker_runs()[0]
+    assert worker.metadata["launch_preflight"]["violations"] == [
+        "src/**: allowed path overlaps worker_must_not_edit `src/**`"
+    ]
+
+
 def test_live_story_loop_preserves_rejected_worker_result_when_changed_paths_fail(tmp_path):
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = _live_story_loop_store(db_path)

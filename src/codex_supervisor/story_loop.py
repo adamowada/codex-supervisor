@@ -23,11 +23,7 @@ from codex_supervisor.execution_surface import (
     SUPPORTED_LIVE_STORY_LOOP_BACKENDS,
     canonical_worker_backend,
 )
-from codex_supervisor.goal_contracts import (
-    STABLE_CONTEXT_DOCUMENTS,
-    render_goal_contract,
-    render_goal_contract_markdown,
-)
+from codex_supervisor.goal_contracts import render_goal_contract, render_goal_contract_markdown
 from codex_supervisor.planning import (
     CURRENT_QUEUE_PLAN_STATUSES,
     OPEN_CRITERION_STATUSES,
@@ -50,6 +46,7 @@ from codex_supervisor.queue_selection import (
     executable_afk_tasks,
     select_next_executable_afk_task,
 )
+from codex_supervisor.task_policy import controller_owned_allowed_path_violations
 from codex_supervisor.worker_backends import (
     CodexExecBackend,
     CommandExecutionResult,
@@ -654,6 +651,10 @@ def run_live_story_loop_once(
                 "violations": list(policy_violations),
             },
         )
+    worker_profile = _worker_profile(task)
+    effective_ignore_user_config = (
+        ignore_user_config or worker_profile == "sanitized_product_worker"
+    )
     contract_state = _worker_contract_git_state(
         git_command_runner or _default_git_command_runner,
         repo_root,
@@ -708,8 +709,9 @@ def run_live_story_loop_once(
             reasoning_effort=reasoning_effort,
             service_tier=service_tier,
             native_goal_mode=native_goal_mode,
-            ignore_user_config=ignore_user_config,
+            ignore_user_config=effective_ignore_user_config,
             allow_degraded_jsonl=allow_degraded_jsonl,
+            worker_profile=worker_profile,
         ),
     )
     if claim is None:
@@ -758,7 +760,7 @@ def run_live_story_loop_once(
             changed_files_source=None,
         )
 
-    goal_contract = render_goal_contract(task)
+    goal_contract = render_goal_contract(task, repo_root=repo_root)
     rendered_goal_contract = render_goal_contract_markdown(goal_contract)
     active_backend = backend or CodexExecBackend(
         codex_executable=codex_executable,
@@ -781,12 +783,13 @@ def run_live_story_loop_once(
         reasoning_effort=reasoning_effort,
         service_tier=service_tier,
         native_goal_mode=native_goal_mode,
-        ignore_user_config=ignore_user_config,
+        ignore_user_config=effective_ignore_user_config,
         allow_degraded_jsonl=allow_degraded_jsonl,
         environment=environment,
         metadata={
             "launch_mode": "live_story_loop_run",
             "planning_path": str(store.path),
+            "worker_profile": worker_profile,
         },
         require_git_changed_files=True,
         git_command_runner=git_command_runner,
@@ -959,10 +962,12 @@ def _live_worker_run_metadata(
     native_goal_mode: bool,
     ignore_user_config: bool,
     allow_degraded_jsonl: bool,
+    worker_profile: str,
 ) -> dict[str, object]:
     return {
         "backend": "codex_exec",
         "worker_run_id": layout.worker_run_id,
+        "worker_profile": worker_profile,
         "launch_preparation": {
             "mode": "live_story_loop_run",
             "result_schema_path": result_schema_path,
@@ -979,7 +984,7 @@ def _live_worker_run_metadata(
         "service_tier": service_tier,
         "worktree_path": layout.worktree_path,
         "raw_result_path": layout.raw_result_path,
-        "raw_evidence_paths": layout.raw_evidence_paths(),
+        "planned_evidence_paths": layout.raw_evidence_paths(),
     }
 
 
@@ -1034,39 +1039,24 @@ def _dirty_worker_contract_paths(status_stdout: str) -> tuple[str, ...]:
 def _codex_exec_policy_violations(task: SupervisorTaskSummaryRecord) -> tuple[str, ...]:
     if canonical_worker_backend(task.worker_backend) != CODEX_EXEC_BACKEND:
         return ()
-    if _task_allows_controller_owned_paths(task.scope):
-        return ()
-    violations: list[str] = []
-    for allowed_path in task.allowed_paths:
-        normalized = allowed_path.strip().replace("\\", "/")
-        if normalized in {"plans/planning.sqlite3", "scripts/**"}:
-            violations.append(f"{normalized}: controller-owned path")
-            continue
-        if normalized in {
-            "scripts/check_protected_files.py",
-            "scripts/print_protected_hashes.py",
-        }:
-            violations.append(f"{normalized}: source-lock update is controller-owned")
-            continue
-        if normalized in STABLE_CONTEXT_DOCUMENTS:
-            violations.append(f"{normalized}: protected source-of-truth doc")
-            continue
-        if normalized == ".agents/**" or normalized.startswith(".agents/"):
-            violations.append(f"{normalized}: repo-local skill surface is controller-owned")
-    return tuple(violations)
+    return controller_owned_allowed_path_violations(
+        task.allowed_paths,
+        scope=task.scope,
+        worker_backend=task.worker_backend,
+    )
 
 
-def _task_allows_controller_owned_paths(scope: object) -> bool:
-    if not isinstance(scope, dict):
-        return False
-    if scope.get("controller_state_mutation_allowed") is True:
-        return True
-    if scope.get("controller_owned_paths_allowed") is True:
-        return True
-    if scope.get("controller_task") is True:
-        return True
+def _worker_profile(task: SupervisorTaskSummaryRecord) -> str:
+    scope = task.scope if isinstance(task.scope, dict) else {}
     role = scope.get("task_role", scope.get("worker_role"))
-    return role in {"controller", "planning", "promotion", "source_lock"}
+    if scope.get("controller_task") is True or role in {
+        "controller",
+        "planning",
+        "promotion",
+        "source_lock",
+    }:
+        return "controller_worker"
+    return "sanitized_product_worker"
 
 
 def _record_preclaim_launch_failure(

@@ -1919,9 +1919,23 @@ def compose_worker_prompt(request: WorkerLaunchRequest) -> str:
     acceptance = "\n".join(f"- {criterion}" for criterion in request.acceptance_criteria)
     verification = "\n".join(f"- `{command}`" for command in request.verification_commands)
     allowed_paths = "\n".join(f"- `{path}`" for path in request.allowed_paths)
+    worker_profile = str(request.metadata.get("worker_profile", "implementation_worker"))
+    controller_boundary = (
+        "Controller-state mutation is in scope for this worker profile; use typed supervisor "
+        "helpers and preserve raw evidence for every mutation."
+        if worker_profile == "controller_worker"
+        else (
+            "Do not call `codex_supervisor` MCP tools, run supervisor CLI mutation commands, "
+            "reverse-engineer planning SQLite schemas, or repair supervisor scaffolding from a "
+            "product implementation worker. If controller state is required, return a blocked "
+            "Worker Result JSON with the precise missing controller action."
+        )
+    )
     sections = (
         "# Goal Contract",
         request.rendered_goal_contract.strip() or "No rendered Goal Contract supplied.",
+        "# Worker Profile",
+        worker_profile,
         "# Worker Instructions",
         request.prompt.strip(),
         "# Required Worker Result",
@@ -1939,6 +1953,7 @@ def compose_worker_prompt(request: WorkerLaunchRequest) -> str:
             "task explicitly lists those paths and marks controller-state mutation as in scope. "
             "Return the evidence in Worker Result JSON; the controller records durable state."
         ),
+        controller_boundary,
         (
             "The JSON must include worker_run_id, status, summary, changed_files, tests_run, "
             "acceptance_results, risks, follow_up_tasks, artifacts, and completion_notes."
@@ -2367,6 +2382,7 @@ def _codex_exec_metadata(
         "reasoning_effort": request.reasoning_effort,
         "capability_mappings": _codex_exec_capability_mappings(request),
         "service_tier": request.service_tier,
+        "worker_profile": request.metadata.get("worker_profile"),
         "version_gated_options": _version_gated_options(request),
         "host_platform": platform.platform(),
         "working_directory": _repo_relative_or_placeholder(

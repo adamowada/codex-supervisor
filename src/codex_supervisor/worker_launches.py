@@ -145,5 +145,5 @@ def _worker_run_metadata(
         },
         "worktree_path": layout.worktree_path,
         "raw_result_path": layout.raw_result_path,
-        "raw_evidence_paths": layout.raw_evidence_paths(),
+        "planned_evidence_paths": layout.raw_evidence_paths(),
     }

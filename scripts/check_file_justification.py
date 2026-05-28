@@ -377,6 +377,10 @@ FILE_PURPOSES = {
         "spawned-project scaffold recommendation and apply contracts", "pytest"
     ),
     "src/codex_supervisor/story_loop.py": FilePurpose("Story Loop queue state machine", "pytest"),
+    "src/codex_supervisor/task_policy.py": FilePurpose(
+        "shared task boundary policy for controller-owned and worker-owned files",
+        "pytest",
+    ),
     "src/codex_supervisor/task_compiler.py": FilePurpose(
         "deterministic plan-to-task compiler", "pytest"
     ),

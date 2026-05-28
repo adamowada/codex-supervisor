@@ -49,6 +49,11 @@ orientation needs dependency setup.
    that skill's Goal Mode preflight and `${CODEX_HOME}/config.toml` fallback before relying on
    `/goal`.
 11. Create an isolated worktree or fresh-context worker prompt.
+    Product implementation workers must not receive supervisor/controller state as writable scope:
+    exclude `plans/planning.sqlite3`, `HANDOFF.md`, source-lock/check scripts, protected
+    top-level source-of-truth docs, `.agents/**`, `runs/**`, `artifacts/**`, and `worktrees/**`.
+    If those files need mutation, create a separate controller/planning/promotion/source-lock task
+    or perform that bookkeeping after ingesting the product worker result.
 12. Execute only that story.
 13. Run the task verification commands.
 14. Run review when required.

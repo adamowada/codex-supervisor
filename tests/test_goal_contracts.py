@@ -43,6 +43,7 @@ def test_goal_contract_renderer_produces_required_sections():
 
     assert contract.objective == "Render a worker-ready contract."
     assert contract.context_to_read_first[0] == "README.md"
+    assert "ATTRIBUTIONS.md" not in contract.context_to_read_first
     assert contract.in_scope["plan"]["plan_id"] == "plan-contract"
     assert contract.in_scope["scope"] == {"area": "planning"}
     assert contract.constraints["allowed_paths"] == ["src/**", "tests/**"]
@@ -176,6 +177,7 @@ def test_cli_goal_contract_render_defaults_to_current_ready_afk_task(tmp_path, c
         "uv run --no-sync python -B -m pytest -p no:cacheprovider"
     ]
     assert "README.md" in contract_json["context_to_read_first"]
+    assert "ATTRIBUTIONS.md" not in contract_json["context_to_read_first"]
 
 
 def test_cli_goal_contract_render_omits_resolved_dependency_blockers(tmp_path, capsys):
@@ -221,3 +223,44 @@ def test_cli_goal_contract_render_omits_resolved_dependency_blockers(tmp_path, c
     assert contract_json["task_id"] == "task-child"
     assert "Proceed unless" in contract_json["blocked_condition"]
     assert "task-parent" not in contract_json["blocked_condition"]
+
+
+def test_goal_contract_includes_attributions_only_when_project_has_it(tmp_path):
+    task = SupervisorTaskSummaryRecord(
+        task_id="task-contract",
+        plan_id="plan-contract",
+        plan_title="Contract Plan",
+        plan_status="active",
+        plan_priority=50,
+        title="Render contract",
+        goal="Render a worker-ready contract.",
+        task_type="AFK",
+        status="ready",
+        scope={},
+        out_of_scope={},
+        acceptance_criteria=["done"],
+        verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+        allowed_paths=["src/**"],
+        blocked_by=[],
+        worker_backend="codex_exec",
+        review_required=False,
+        created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:01Z",
+    )
+
+    private_contract = render_goal_contract(task, repo_root=tmp_path)
+
+    assert "ATTRIBUTIONS.md" not in private_contract.context_to_read_first
+    assert (
+        "ATTRIBUTIONS.md"
+        not in private_contract.execution_surface["source_authority"]["stable_context"]
+    )
+
+    (tmp_path / "ATTRIBUTIONS.md").write_text("# Attributions\n", encoding="utf-8")
+
+    public_contract = render_goal_contract(task, repo_root=tmp_path)
+
+    assert "ATTRIBUTIONS.md" in public_contract.context_to_read_first
+    assert (
+        "ATTRIBUTIONS.md" in public_contract.execution_surface["source_authority"]["stable_context"]
+    )

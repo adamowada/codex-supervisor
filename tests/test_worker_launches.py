@@ -85,7 +85,7 @@ def test_prepare_worker_launch_request_exposes_worker_run_metadata():
         "ignore_user_config": False,
         "jsonl_required": True,
     }
-    assert metadata["raw_evidence_paths"] == preparation.layout.raw_evidence_paths()
+    assert metadata["planned_evidence_paths"] == preparation.layout.raw_evidence_paths()
     assert metadata["raw_result_path"] == preparation.layout.raw_result_path
     assert preparation.worker_run_fields() == {
         "worktree_path": preparation.layout.worktree_path,
@@ -93,7 +93,9 @@ def test_prepare_worker_launch_request_exposes_worker_run_metadata():
         "jsonl_path": preparation.layout.jsonl_path,
         "metadata": metadata,
     }
-    assert preparation.request.metadata["raw_evidence_paths"] == metadata["raw_evidence_paths"]
+    assert (
+        preparation.request.metadata["planned_evidence_paths"] == metadata["planned_evidence_paths"]
+    )
 
 
 def test_prepare_worker_launch_request_rejects_unsafe_worker_run_id(tmp_path):
@@ -120,7 +122,7 @@ def _task_record() -> SupervisorTaskRecord:
         status="running",
         acceptance_criteria=[
             "Worker launch preparation builds WorkerLaunchRequest.",
-            "Worker-run metadata exposes raw evidence paths.",
+            "Worker-run metadata exposes planned evidence paths.",
         ],
         verification_commands=[
             "uv run --no-sync python -B -m pytest tests/test_worker_launches.py -q "

@@ -25,6 +25,8 @@ graph.
   infrastructure modes before supervised execution begins.
 - `ToolSearchDiscovery`: relevance-ranked Codex tool discovery surface; useful for finding tools,
   but not authoritative MCP inventory.
+- `WorkerBoundaryPolicy`: shared rule set separating product-worker paths from
+  supervisor/controller-owned paths.
 
 ## Edges
 
@@ -47,3 +49,4 @@ graph.
 | `DesktopPluginRuntime` | requires refresh evidence for | `CodexSupervisor` | `insights/workflow-patterns.md` 2026-05-26 stale cache smoke | confirmed | 2026-05-26 | Version-bump or refresh cache before treating source skill changes as live. |
 | `DesktopPluginRuntime` | authorizes full-AFK through | `ExecutionModeLedger` | `insights/workflow-patterns.md` 2026-05-26 todo-list-test-3 false canary RCA | confirmed | 2026-05-26 | Treat CLI/package preflight as diagnostics-only after live MCP failure, never as plugin full-AFK authority. |
 | `ToolSearchDiscovery` | is not inventory for | `DesktopPluginRuntime` | `insights/workflow-patterns.md` 2026-05-26 todo-list-test-4 false canary RCA | confirmed | 2026-05-26 | Let live MCP preflight self-inventory `list_mcp_tools`; use `canary`/semantic queries only to find callable tools. |
+| `WorkerBoundaryPolicy` | guards | `StoryLoop` | `insights/workflow-patterns.md` 2026-05-28 todo-list-test-14 RCA | confirmed | 2026-05-28 | Keep optional docs project-aware and block product workers from controller-owned paths unless the task role is controller/planning/promotion/source-lock. |

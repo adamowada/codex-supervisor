@@ -696,6 +696,32 @@ Next action: when adding evidence-path checks, distinguish "missing specific evi
 available runtime root" from "clean checkout without ignored runtime roots" so CI remains useful
 without weakening local evidence audits.
 
+## Product Workers Need A Clean Controller Boundary
+
+Confidence: confirmed.
+
+Claim: Full-AFK product workers should receive app implementation scope, not supervisor/controller
+scope. Optional source-of-truth files such as `ATTRIBUTIONS.md` must be project-aware, and
+controller-owned files such as `plans/planning.sqlite3`, `HANDOFF.md`, source-lock scripts,
+protected top-level docs, `.agents/**`, `runs/**`, `artifacts/**`, and `worktrees/**` should be
+mutated only by controller/planning/promotion/source-lock tasks.
+
+Evidence: The `todo-list-test-14` Desktop smoke showed a private spawned project worker trying to
+read a missing `ATTRIBUTIONS.md`, spending long stretches on planning schema and supervisor
+bookkeeping, and finally failing because a worktree-local `plans/planning.sqlite3` commit was
+outside the intended product output. Six read-only explorer lanes traced the common root cause to
+Goal Contract context drift, product prompts that exposed controller work, broad
+`controller_owned_paths_allowed` bypasses, and planned evidence paths being treated like actual raw
+evidence before the worker produced files.
+
+Scope: Goal Contract rendering, Story Loop launch policy, planning integrity, spawned-project
+full-AFK tasks, Desktop plugin smokes, and product-worker prompt composition.
+
+Next action: keep optional documents conditional on project files or publication/source-attribution
+scope, enforce controller-owned path policy from shared code, treat preclaim evidence paths as
+planned until a manifest proves actual files exist, and fail closed into a separate recorded repair
+or promotion task instead of silently converting full-AFK work into current-thread implementation.
+
 ## Full-History Subagent Forks Cannot Override Role
 
 Confidence: confirmed.

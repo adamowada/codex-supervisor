@@ -2491,6 +2491,114 @@ def test_planning_integrity_rejects_open_codex_exec_controller_owned_paths(tmp_p
     )
 
 
+def test_planning_integrity_rejects_controller_owned_paths_despite_broad_flag(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-ready",
+            slug="ready",
+            title="Ready Plan",
+            goal="Validate ready task contracts.",
+            status="active",
+        )
+    )
+    store.upsert_plan_milestone(
+        PlanMilestoneRecord(
+            milestone_id="milestone-ready",
+            plan_id="plan-ready",
+            title="Milestone",
+            status="pending",
+        )
+    )
+    store.upsert_plan_acceptance_criterion(
+        PlanAcceptanceCriterionRecord(
+            criterion_id="criterion-ready",
+            plan_id="plan-ready",
+            description="done",
+            status="pending",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-ready",
+            plan_id="plan-ready",
+            title="Ready task",
+            goal="Broad flag cannot make a product worker controller-owned.",
+            task_type="AFK",
+            status="ready",
+            scope={"controller_owned_paths_allowed": True},
+            acceptance_criteria=["done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["plans/planning.sqlite3"],
+            worker_backend="live_codex_exec",
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "open_codex_exec_task_allows_controller_owned_path"
+        and "plans/planning.sqlite3" in failure.reason
+        for failure in failures
+    )
+
+
+def test_planning_integrity_rejects_worker_must_not_edit_overlap(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-ready",
+            slug="ready",
+            title="Ready Plan",
+            goal="Validate ready task contracts.",
+            status="active",
+        )
+    )
+    store.upsert_plan_milestone(
+        PlanMilestoneRecord(
+            milestone_id="milestone-ready",
+            plan_id="plan-ready",
+            title="Milestone",
+            status="pending",
+        )
+    )
+    store.upsert_plan_acceptance_criterion(
+        PlanAcceptanceCriterionRecord(
+            criterion_id="criterion-ready",
+            plan_id="plan-ready",
+            description="done",
+            status="pending",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-ready",
+            plan_id="plan-ready",
+            title="Ready task",
+            goal="Contradictory paths cannot launch.",
+            task_type="AFK",
+            status="ready",
+            scope={"worker_must_not_edit": ["src/**"]},
+            acceptance_criteria=["done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            worker_backend="live_codex_exec",
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "open_codex_exec_task_allows_controller_owned_path"
+        and "worker_must_not_edit" in failure.reason
+        for failure in failures
+    )
+
+
 def test_planning_integrity_rejects_blank_ready_afk_contract_values(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"

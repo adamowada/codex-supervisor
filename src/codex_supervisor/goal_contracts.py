@@ -6,6 +6,7 @@ import copy
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from codex_supervisor.execution_surface import (
@@ -13,8 +14,9 @@ from codex_supervisor.execution_surface import (
     worker_backend_execution_surface,
 )
 from codex_supervisor.planning import JsonObject, SupervisorTaskSummaryRecord
+from codex_supervisor.task_policy import controller_owned_allowed_path_violations
 
-STABLE_CONTEXT_DOCUMENTS = (
+REQUIRED_STABLE_CONTEXT_DOCUMENTS = (
     "README.md",
     "AGENTS.md",
     "PLANS.md",
@@ -24,8 +26,9 @@ STABLE_CONTEXT_DOCUMENTS = (
     "SOP.md",
     "TESTING.md",
     "DECISIONS.md",
-    "ATTRIBUTIONS.md",
 )
+OPTIONAL_STABLE_CONTEXT_DOCUMENTS = ("ATTRIBUTIONS.md",)
+STABLE_CONTEXT_DOCUMENTS = (*REQUIRED_STABLE_CONTEXT_DOCUMENTS, *OPTIONAL_STABLE_CONTEXT_DOCUMENTS)
 QUEUE_AUTHORITY_DOCUMENTS = ("plans/planning.sqlite3",)
 MUTABLE_HANDOFF_DOCUMENTS = ("HANDOFF.md",)
 
@@ -56,12 +59,14 @@ def render_goal_contract(
     task: SupervisorTaskSummaryRecord,
     *,
     unresolved_blockers: tuple[str, ...] | None = None,
+    repo_root: Path | None = None,
 ) -> GoalContract:
     """Render a deterministic Goal Contract from a supervisor task summary."""
 
     acceptance_criteria = _string_tuple(task.acceptance_criteria)
     verification = _string_tuple(task.verification_commands)
     allowed_paths = _string_tuple(task.allowed_paths)
+    context_documents = _context_documents(task, repo_root=repo_root)
     blocked_by = _string_tuple(
         task.blocked_by if unresolved_blockers is None else unresolved_blockers
     )
@@ -90,6 +95,13 @@ def render_goal_contract(
         "worker_backend": worker_backend,
         "review_required": task.review_required,
         "controller_owned_paths": list(controller_owned_paths),
+        "controller_owned_path_policy": list(
+            controller_owned_allowed_path_violations(
+                allowed_paths,
+                scope=task.scope,
+                worker_backend=worker_backend,
+            )
+        ),
         "planning_sqlite_access": (
             "read_only_worker_context"
             if worker_backend == "codex_exec" and "plans/planning.sqlite3" not in allowed_paths
@@ -103,7 +115,7 @@ def render_goal_contract(
         title=task.title,
         objective=task.goal,
         context_to_read_first=(
-            *STABLE_CONTEXT_DOCUMENTS,
+            *context_documents,
             *QUEUE_AUTHORITY_DOCUMENTS,
             *MUTABLE_HANDOFF_DOCUMENTS,
         ),
@@ -133,7 +145,7 @@ def render_goal_contract(
             "source_authority": {
                 "durable_doctrine": "locked source-of-truth docs",
                 "execution_order": "plans/planning.sqlite3",
-                "stable_context": list(STABLE_CONTEXT_DOCUMENTS),
+                "stable_context": list(context_documents),
                 "queue_authority": list(QUEUE_AUTHORITY_DOCUMENTS),
                 "handoff": (
                     "mutable snapshot; read only after live queue inspection and follow "
@@ -317,6 +329,40 @@ def _record_update_contract(
         "Link changed artifacts with artifact-link-add or story-loop-record.",
         "Update task, criterion, milestone, and plan statuses through typed helpers or CLI.",
         "Report verification commands, changed artifacts, and residual risk in handoff.",
+    )
+
+
+def _context_documents(
+    task: SupervisorTaskSummaryRecord,
+    *,
+    repo_root: Path | None,
+) -> tuple[str, ...]:
+    documents = list(REQUIRED_STABLE_CONTEXT_DOCUMENTS)
+    include_optional = {
+        document for document in OPTIONAL_STABLE_CONTEXT_DOCUMENTS if document in task.allowed_paths
+    }
+    if _scope_requires_attribution(task.scope):
+        include_optional.update(OPTIONAL_STABLE_CONTEXT_DOCUMENTS)
+    if repo_root is not None:
+        for document in OPTIONAL_STABLE_CONTEXT_DOCUMENTS:
+            if (repo_root / document).exists():
+                include_optional.add(document)
+    documents.extend(
+        document for document in OPTIONAL_STABLE_CONTEXT_DOCUMENTS if document in include_optional
+    )
+    return tuple(documents)
+
+
+def _scope_requires_attribution(scope: JsonObject) -> bool:
+    return any(
+        scope.get(key) is True
+        for key in (
+            "publication_required",
+            "publication_ready",
+            "public_repo",
+            "source_attribution_required",
+            "requires_attribution",
+        )
     )
 
 

@@ -652,10 +652,7 @@ def test_codex_exec_backend_launch_success_returns_result_path_and_preserves_fin
             worker_run_id="run-worker",
             changed_file="src/success.py",
         )
-        (tmp_path / "runs" / "run-worker" / "events.jsonl").write_text(
-            '{"event":"assistant.step"}\n',
-            encoding="utf-8",
-        )
+        _write_test_command_event_jsonl(tmp_path)
         (tmp_path / "runs" / "run-worker" / "diff-summary.txt").write_text(
             "src/success.py\n",
             encoding="utf-8",
@@ -722,6 +719,42 @@ def test_codex_exec_backend_launch_success_returns_result_path_and_preserves_fin
     assert "codex_exec.completed" in jsonl
 
 
+def test_codex_exec_backend_rejects_completed_result_without_reported_test_event(tmp_path):
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        if argv == ("C:/Tools/codex.exe", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+        _write_valid_worker_result(
+            tmp_path,
+            worker_run_id="run-worker",
+            changed_file="src/success.py",
+        )
+        (tmp_path / "runs" / "run-worker" / "events.jsonl").write_text(
+            '{"event":"assistant.step"}\n',
+            encoding="utf-8",
+        )
+        return CommandExecutionResult(exit_code=0, stdout='{"event":"done"}\n')
+
+    result = CodexExecBackend(
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=runner,
+        launch_enabled=True,
+    ).run(_codex_exec_request(tmp_path))
+
+    assert result.status == "failed"
+    assert result.failure_class == "worker_result_evidence_mismatch"
+    reason = "Worker Result tests_run commands were not observed in Codex JSONL command events."
+    assert result.metadata["worker_result_evidence_validation"] == {
+        "failure_class": "worker_result_evidence_mismatch",
+        "missing_tests_run_commands": ["python -B -m pytest -p no:cacheprovider"],
+        "path": "runs/run-worker/events.jsonl",
+        "reason": reason,
+    }
+
+
 def test_codex_exec_backend_copies_worker_support_artifacts_from_worktree(tmp_path):
     worktree = tmp_path / "worktrees" / "run-worker"
 
@@ -756,10 +789,7 @@ def test_codex_exec_backend_copies_worker_support_artifacts_from_worktree(tmp_pa
         final_file = tmp_path / "runs" / "run-worker" / "final-message.txt"
         final_file.parent.mkdir(parents=True, exist_ok=True)
         final_file.write_text(json.dumps(payload), encoding="utf-8")
-        (tmp_path / "runs" / "run-worker" / "events.jsonl").write_text(
-            '{"event":"assistant.step"}\n',
-            encoding="utf-8",
-        )
+        _write_test_command_event_jsonl(tmp_path)
         (tmp_path / "runs" / "run-worker" / "diff-summary.txt").write_text(
             "src/success.py\n",
             encoding="utf-8",
@@ -1009,10 +1039,7 @@ def test_codex_exec_backend_retries_with_cli_defaults_when_model_is_rejected(tmp
             worker_run_id="run-worker",
             changed_file="src/success.py",
         )
-        (tmp_path / "runs" / "run-worker" / "events.jsonl").write_text(
-            '{"event":"assistant.step"}\n',
-            encoding="utf-8",
-        )
+        _write_test_command_event_jsonl(tmp_path)
         (tmp_path / "runs" / "run-worker" / "diff-summary.txt").write_text(
             "src/success.py\n",
             encoding="utf-8",
@@ -1063,10 +1090,7 @@ def test_codex_exec_backend_retries_without_reasoning_mapping_when_cli_rejects_i
             worker_run_id="run-worker",
             changed_file="src/success.py",
         )
-        (tmp_path / "runs" / "run-worker" / "events.jsonl").write_text(
-            '{"event":"assistant.step"}\n',
-            encoding="utf-8",
-        )
+        _write_test_command_event_jsonl(tmp_path)
         (tmp_path / "runs" / "run-worker" / "diff-summary.txt").write_text(
             "src/success.py\n",
             encoding="utf-8",
@@ -1225,6 +1249,32 @@ def _write_valid_worker_result(tmp_path, *, worker_run_id: str, changed_file: st
     final_file = tmp_path / "runs" / worker_run_id / "final-message.txt"
     final_file.parent.mkdir(parents=True, exist_ok=True)
     final_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def _write_test_command_event_jsonl(tmp_path) -> None:
+    events_file = tmp_path / "runs" / "run-worker" / "events.jsonl"
+    events_file.parent.mkdir(parents=True, exist_ok=True)
+    events = [
+        {"event": "assistant.step"},
+        {
+            "type": "item.completed",
+            "item": {
+                "id": "item-test",
+                "type": "command_execution",
+                "command": (
+                    '"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" '
+                    "-Command 'python -B -m pytest -p no:cacheprovider'"
+                ),
+                "aggregated_output": "passed\n",
+                "exit_code": 0,
+                "status": "completed",
+            },
+        },
+    ]
+    events_file.write_text(
+        "".join(json.dumps(event) + "\n" for event in events),
+        encoding="utf-8",
+    )
 
 
 def _worker_result_payload(*, worker_run_id: str, changed_file: str) -> dict[str, object]:

@@ -862,6 +862,61 @@ class CodexExecBackend:
                 failure_class=jsonl_failure["failure_class"],
                 metadata=metadata,
             )
+        evidence_failure = _worker_result_evidence_validation_failure(request, worker_result)
+        if evidence_failure is not None:
+            metadata = _codex_exec_launch_metadata(
+                preflight,
+                launch_decision="worker_result_evidence_mismatch",
+                exec_exit_code=exec_result.exit_code,
+                duration_seconds=duration_seconds,
+            )
+            metadata["worker_result_evidence_validation"] = evidence_failure
+            _write_codex_exec_evidence(
+                request,
+                event="codex_exec.worker_result_evidence_mismatch",
+                stdout=exec_result.stdout,
+                stderr=exec_result.stderr,
+                final_message=(
+                    "Codex Exec produced a Worker Result whose claims were not supported by "
+                    "raw JSONL evidence.\n"
+                ),
+                preflight=preflight,
+                extra_event={
+                    "exec_exit_code": exec_result.exit_code,
+                    "failure_class": "worker_result_evidence_mismatch",
+                    "result_path": request.final_message_path,
+                },
+                process_jsonl=exec_result.stdout,
+                process_jsonl_bytes=exec_result.stdout_bytes,
+                preserve_existing_final_message=True,
+                preserve_existing_jsonl=True,
+                preserve_existing_diff_summary=True,
+                stdout_bytes=exec_result.stdout_bytes,
+                stderr_bytes=exec_result.stderr_bytes,
+            )
+            _copy_rejected_worker_result_source(request)
+            _add_evidence_manifest_metadata(
+                request,
+                metadata,
+                status="failed",
+                launch_decision="worker_result_evidence_mismatch",
+            )
+            return WorkerLaunchResult(
+                worker_run_id=request.worker_run_id,
+                task_id=request.task_id,
+                status="failed",
+                result_path=request.result_path,
+                exit_code=1,
+                duration_seconds=duration_seconds,
+                prompt_path=request.prompt_path,
+                jsonl_path=request.jsonl_path,
+                stdout_path=request.stdout_path,
+                stderr_path=request.stderr_path,
+                final_message_path=request.final_message_path,
+                diff_summary_path=request.diff_summary_path,
+                failure_class="worker_result_evidence_mismatch",
+                metadata=metadata,
+            )
         _copy_worker_result_support_artifacts(request, worker_result)
         _copy_canonical_worker_result(request)
         metadata = _codex_exec_launch_metadata(
@@ -1660,6 +1715,120 @@ def _jsonl_validation_failure(request: WorkerLaunchRequest) -> JsonObject | None
             "reason": "Codex JSONL evidence file has no events.",
         }
     return None
+
+
+def _worker_result_evidence_validation_failure(
+    request: WorkerLaunchRequest,
+    worker_result: WorkerResult,
+) -> JsonObject | None:
+    if request.allow_degraded_jsonl or worker_result.status not in {"completed", "needs_review"}:
+        return None
+    reported_tests = _worker_result_tests_run_commands(worker_result.payload)
+    if not reported_tests:
+        return None
+    observed_commands = _observed_completed_command_events(request)
+    missing_commands = [
+        command
+        for command, exit_code in reported_tests
+        if not _reported_test_was_observed(command, exit_code, observed_commands)
+    ]
+    if not missing_commands:
+        return None
+    return {
+        "failure_class": "worker_result_evidence_mismatch",
+        "missing_tests_run_commands": missing_commands,
+        "path": request.jsonl_path,
+        "reason": (
+            "Worker Result tests_run commands were not observed in Codex JSONL command events."
+        ),
+    }
+
+
+def _worker_result_tests_run_commands(payload: JsonObject) -> tuple[tuple[str, int], ...]:
+    commands: list[tuple[str, int]] = []
+    tests_run = payload.get("tests_run")
+    if not isinstance(tests_run, list):
+        return ()
+    for item in tests_run:
+        if not isinstance(item, dict):
+            continue
+        command = item.get("command")
+        exit_code = item.get("exit_code")
+        if isinstance(command, str) and command.strip() and isinstance(exit_code, int):
+            commands.append((command, exit_code))
+    return tuple(commands)
+
+
+def _observed_completed_command_events(request: WorkerLaunchRequest) -> tuple[tuple[str, int], ...]:
+    path = request.repo_root / request.jsonl_path
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ()
+    commands: list[tuple[str, int]] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        item = payload.get("item")
+        if not isinstance(item, dict):
+            continue
+        if payload.get("type") != "item.completed" or item.get("type") != "command_execution":
+            continue
+        command = item.get("command")
+        exit_code = item.get("exit_code")
+        if isinstance(command, str) and command.strip() and isinstance(exit_code, int):
+            commands.append((command, exit_code))
+    return tuple(commands)
+
+
+def _reported_test_was_observed(
+    reported_command: str,
+    reported_exit_code: int,
+    observed_commands: tuple[tuple[str, int], ...],
+) -> bool:
+    for observed_command, observed_exit_code in observed_commands:
+        if observed_exit_code != reported_exit_code:
+            continue
+        if _command_text_matches_reported_test(reported_command, observed_command):
+            return True
+    return False
+
+
+def _command_text_matches_reported_test(reported_command: str, observed_command: str) -> bool:
+    reported = _normalize_command_text(reported_command)
+    if not reported:
+        return False
+    return reported in _observed_command_variants(observed_command)
+
+
+def _observed_command_variants(command: str) -> tuple[str, ...]:
+    normalized = _normalize_command_text(command)
+    variants = [normalized]
+    for marker in ("-command", "/c"):
+        suffix = _split_after_case_insensitive(normalized, marker)
+        if suffix is not None:
+            variants.append(_normalize_command_text(suffix))
+    return tuple(dict.fromkeys(variant for variant in variants if variant))
+
+
+def _split_after_case_insensitive(value: str, marker: str) -> str | None:
+    index = value.lower().find(marker)
+    if index == -1:
+        return None
+    return value[index + len(marker) :].strip()
+
+
+def _normalize_command_text(command: str) -> str:
+    normalized = " ".join(command.strip().split())
+    while len(normalized) >= 2 and normalized[0] == normalized[-1] and normalized[0] in "'\"":
+        normalized = normalized[1:-1].strip()
+    return normalized
 
 
 def _ensure_result_schema_available(request: WorkerLaunchRequest) -> str | None:

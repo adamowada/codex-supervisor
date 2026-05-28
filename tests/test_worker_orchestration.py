@@ -444,7 +444,20 @@ def _write_backend_success(tmp_path: Path, *, worker_run_id: str, changed_file: 
     final_file.parent.mkdir(parents=True, exist_ok=True)
     final_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     (tmp_path / "runs" / worker_run_id / "events.jsonl").write_text(
-        '{"event":"assistant.step"}\n',
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {
+                    "id": "item-test",
+                    "type": "command_execution",
+                    "command": payload["tests_run"][0]["command"],
+                    "aggregated_output": "passed\n",
+                    "exit_code": 0,
+                    "status": "completed",
+                },
+            }
+        )
+        + "\n",
         encoding="utf-8",
     )
     _write_diff_summary(tmp_path, worker_run_id=worker_run_id, changed_file=changed_file)

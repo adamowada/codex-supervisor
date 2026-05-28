@@ -88,8 +88,9 @@ not live queue state. Current work still belongs in `plans/planning.sqlite3`.
   smoke tests.
 - `supersedes`: treating the final structured Worker Result as sufficient proof that listed
   verification commands ran or that acceptance evidence was observed.
-- `next action`: Add a live-evidence gate that reconciles `tests_run` and acceptance claims against
-  JSONL command/file events and git worktree inspection, then cover the failure with e2e tests.
+- `next action`: Keep expanding the live-evidence gate beyond `tests_run` command reconciliation as
+  new claim types prove risky; current regression coverage and a real Codex smoke now prove
+  `tests_run` claims must be backed by matching JSONL command events.
 
 ### Declared Support Artifacts Are Not Product Edits
 

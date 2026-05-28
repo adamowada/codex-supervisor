@@ -85,6 +85,53 @@ def test_story_loop_run_once_cli_executes_fake_codex_through_real_git_worktree(
     ).read_text(encoding="utf-8")
 
 
+def test_story_loop_run_once_cli_rejects_worker_result_without_test_event(
+    tmp_path: Path,
+) -> None:
+    project = _seed_story_loop_project(tmp_path)
+    fake_codex = _write_fake_codex_executable(tmp_path, emit_test_command_event=False)
+
+    completed = _run_cli(
+        "story-loop-run-once",
+        "--path",
+        str(project / "plans" / "planning.sqlite3"),
+        "--repo-root",
+        str(project),
+        "--worker-run-id",
+        "run-evidence-gap",
+        "--codex-executable",
+        str(fake_codex),
+        "--json",
+        cwd=REPO_ROOT,
+    )
+
+    assert completed.returncode == 1, completed.stderr + completed.stdout
+    payload = json.loads(completed.stdout)
+    assert payload["status"] == "failed"
+    assert payload["failure_class"] == "worker_result_evidence_mismatch"
+    assert payload["result_id"]
+
+    store = open_existing_planning_database(project / "plans" / "planning.sqlite3")
+    run = next(run for run in store.list_worker_runs() if run.worker_run_id == "run-evidence-gap")
+    task = next(task for task in store.list_supervisor_tasks() if task.task_id == "task-e2e")
+    launch_event = next(
+        event
+        for event in store.list_worker_run_events(worker_run_id="run-evidence-gap")
+        if event.event_type == "codex_exec_launch_result"
+    )
+
+    assert run.status == "failed"
+    assert run.failure_class == "worker_result_evidence_mismatch"
+    assert task.status == "failed"
+    reason = "Worker Result tests_run commands were not observed in Codex JSONL command events."
+    assert launch_event.metadata["worker_result_evidence_validation"] == {
+        "failure_class": "worker_result_evidence_mismatch",
+        "missing_tests_run_commands": [VERIFY_COMMAND],
+        "path": "runs/run-evidence-gap/events.jsonl",
+        "reason": reason,
+    }
+
+
 def test_story_loop_start_and_poll_cli_complete_fake_codex_controller_subprocess(
     tmp_path: Path,
 ) -> None:
@@ -189,12 +236,15 @@ def _seed_story_loop_project(tmp_path: Path) -> Path:
     return project
 
 
-def _write_fake_codex_executable(tmp_path: Path) -> Path:
+def _write_fake_codex_executable(
+    tmp_path: Path,
+    *,
+    emit_test_command_event: bool = True,
+) -> Path:
     tool_dir = tmp_path / "tools"
     tool_dir.mkdir()
     script = tool_dir / "fake_codex.py"
-    script.write_text(
-        """
+    script_template = """
 from __future__ import annotations
 
 import json
@@ -203,6 +253,7 @@ from pathlib import Path
 
 ACCEPTANCE = "Live Story Loop e2e completes."
 VERIFY_COMMAND = "python -B -m pytest -p no:cacheprovider tests/test_fake.py"
+EMIT_TEST_COMMAND_EVENT = __EMIT_TEST_COMMAND_EVENT__
 
 
 def main() -> int:
@@ -267,6 +318,18 @@ def main() -> int:
         "completion_notes": "Ready for deterministic e2e assertions.",
     }
     final_message.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    if EMIT_TEST_COMMAND_EVENT:
+        print(json.dumps({
+            "type": "item.completed",
+            "item": {
+                "id": "item-test",
+                "type": "command_execution",
+                "command": VERIFY_COMMAND,
+                "aggregated_output": "passed\\n",
+                "exit_code": 0,
+                "status": "completed",
+            },
+        }))
     print(json.dumps({"event": "assistant.step", "summary": "fake codex wrote result"}))
     return 0
 
@@ -278,7 +341,12 @@ def _arg_value(args: list[str], flag: str) -> str:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-""".lstrip(),
+""".lstrip()
+    script.write_text(
+        script_template.replace(
+            "__EMIT_TEST_COMMAND_EVENT__",
+            repr(emit_test_command_event),
+        ),
         encoding="utf-8",
     )
     if os.name == "nt":

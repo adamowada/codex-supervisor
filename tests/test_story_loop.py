@@ -1750,4 +1750,20 @@ def _write_live_worker_result(repo_root, *, worker_run_id, browser_smoke=False):
     final_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     jsonl_file = repo_root / "runs" / worker_run_id / "events.jsonl"
     jsonl_file.parent.mkdir(parents=True, exist_ok=True)
-    jsonl_file.write_text('{"event":"assistant.step"}\n', encoding="utf-8")
+    jsonl_file.write_text(
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {
+                    "id": "item-test",
+                    "type": "command_execution",
+                    "command": "python -B -m pytest -p no:cacheprovider",
+                    "aggregated_output": "passed\n",
+                    "exit_code": 0,
+                    "status": "completed",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )

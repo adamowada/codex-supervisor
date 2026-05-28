@@ -8,8 +8,15 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 ## Current Snapshot
 
 - Current queue state: empty. `story-loop-status --json` reports no current AFK, HITL, or running
-  task after `plan-multiturn-live-smoke-20260528` was completed.
-- Latest completed checkpoint: `plan-multiturn-live-smoke-20260528` ran a broader multi-turn live
+  task after `plan-live-evidence-gate-loop-20260528` was completed.
+- Latest completed checkpoint: `plan-live-evidence-gate-loop-20260528` adds a Codex Exec evidence
+  gate that rejects completed worker-result claims whose `tests_run` commands were not observed in raw
+  JSONL command-execution events. Regression coverage now includes backend unit coverage and a real
+  CLI Story Loop e2e rejection path. A real Codex MCP Story Loop smoke,
+  `run-evidence-gate-live-smoke`, passed with strict JSONL, `git_worktree` changed files, and
+  matching `git status --short` command evidence. Full `scripts/verify.py` passed locally after the
+  implementation.
+- Previous completed checkpoint: `plan-multiturn-live-smoke-20260528` ran a broader multi-turn live
   Codex Exec Story Loop smoke against a disposable git/planning/worktree repo. Turn 1 completed and
   was promoted. The compound turn-2 retries self-blocked before tool use by treating the final
   structured-output schema as a tool-use constraint, and the simplified retry emitted a passing

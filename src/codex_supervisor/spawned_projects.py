@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -263,6 +265,61 @@ def apply_spawned_project_scaffold(
 
     proposal = build_spawned_project_scaffold_proposal(brief)
     root = target_root.resolve()
+    if _can_apply_spawned_project_scaffold_atomically(root):
+        return _apply_spawned_project_scaffold_atomically(
+            brief,
+            proposal,
+            root=root,
+            reported_root=target_root,
+        )
+
+    return _apply_spawned_project_scaffold_to_root(
+        brief,
+        proposal,
+        root=root,
+        reported_root=target_root,
+    )
+
+
+def _can_apply_spawned_project_scaffold_atomically(root: Path) -> bool:
+    if not root.exists():
+        return True
+    if not root.is_dir():
+        return False
+    return not any(root.iterdir())
+
+
+def _apply_spawned_project_scaffold_atomically(
+    brief: SpawnedProjectBrief,
+    proposal: SpawnedProjectScaffoldProposal,
+    *,
+    root: Path,
+    reported_root: Path,
+) -> SpawnedProjectScaffoldApplyResult:
+    root.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f".{root.name}.seed-", dir=root.parent) as stage:
+        stage_root = Path(stage) / root.name
+        result = _apply_spawned_project_scaffold_to_root(
+            brief,
+            proposal,
+            root=stage_root,
+            reported_root=reported_root,
+        )
+        if root.exists():
+            for item in stage_root.iterdir():
+                shutil.move(str(item), str(root / item.name))
+        else:
+            stage_root.rename(root)
+        return result
+
+
+def _apply_spawned_project_scaffold_to_root(
+    brief: SpawnedProjectBrief,
+    proposal: SpawnedProjectScaffoldProposal,
+    *,
+    root: Path,
+    reported_root: Path,
+) -> SpawnedProjectScaffoldApplyResult:
     root.mkdir(parents=True, exist_ok=True)
     created: list[str] = []
     existing: list[str] = []
@@ -323,7 +380,7 @@ def apply_spawned_project_scaffold(
     git_baseline = _ensure_full_afk_git_baseline(brief, proposal, root)
     return SpawnedProjectScaffoldApplyResult(
         project_name=proposal.project_name,
-        project_root=str(target_root),
+        project_root=str(reported_root),
         created_files=tuple(created),
         existing_files=tuple(existing),
         planning_db_path=planning_db_path,

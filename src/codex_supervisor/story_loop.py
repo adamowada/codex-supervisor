@@ -698,6 +698,26 @@ def run_live_story_loop_once(
                 "violations": list(policy_violations),
             },
         )
+    integrity_state = _project_planning_integrity_state(repo_root)
+    if integrity_state is not None and integrity_state.exit_code != 0:
+        return _record_preclaim_launch_failure(
+            store,
+            worker_run_id=worker_run_id,
+            task_id=task.task_id,
+            backend=task.worker_backend,
+            failure_class="project_planning_integrity_failed",
+            details={
+                "task_id": task.task_id,
+                "command": [
+                    sys.executable,
+                    "-B",
+                    "scripts/check_planning_integrity.py",
+                ],
+                "exit_code": integrity_state.exit_code,
+                "stdout": integrity_state.stdout,
+                "stderr": integrity_state.stderr,
+            },
+        )
     worker_profile = _worker_profile(task)
     effective_ignore_user_config = (
         ignore_user_config or worker_profile == "sanitized_product_worker"
@@ -1077,6 +1097,37 @@ def _worker_contract_git_state(
         ),
         repo_root,
         {"GIT_OPTIONAL_LOCKS": "0"},
+    )
+
+
+def _project_planning_integrity_state(repo_root: Path) -> CommandExecutionResult | None:
+    script_path = repo_root / "scripts" / "check_planning_integrity.py"
+    if not script_path.is_file():
+        return None
+    command = (sys.executable, "-B", "scripts/check_planning_integrity.py")
+    try:
+        result = subprocess.run(
+            command,
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+        stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+        return CommandExecutionResult(
+            exit_code=124,
+            stdout=stdout,
+            stderr=f"{stderr}\nplanning integrity preflight timed out after {exc.timeout} seconds",
+        )
+    except OSError as exc:
+        return CommandExecutionResult(exit_code=1, stderr=str(exc))
+    return CommandExecutionResult(
+        exit_code=result.returncode,
+        stdout=result.stdout,
+        stderr=result.stderr,
     )
 
 

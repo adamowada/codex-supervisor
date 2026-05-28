@@ -37,6 +37,10 @@ graph.
   links required when controller/manual repair promotes worker output.
 - `ArtifactLinkLedger`: repo-visible plan artifact references, distinct from DB-only Worker Result
   source paths.
+- `WorkerCapabilityLedger`: requested, resolved, and required model/reasoning capability evidence
+  for worker launches.
+- `SpawnedProjectSeedTransaction`: staged scaffold/project queue publication that must pass
+  project-local integrity before Story Loop workers can launch.
 - `CrossPlatformCI`: publication gate that proves Windows-local assumptions still hold under Linux
   CI type-checking, path semantics, shell behavior, and clean-checkout evidence.
 - `LiveSmokeEvidence`: bounded real-environment validation using disposable repos, real Codex Exec,
@@ -77,3 +81,5 @@ graph.
 | `PromotionEvidenceLedger` | completes evidence for | `StoryLoop` | `insights/live-smoke-lessons.md`, todo-list-test-18-low RCA, `scripts/check_planning_integrity.py`, and `tests/test_planning_integrity.py` | confirmed | 2026-05-28 | Require promotion progress, browser-smoke progress, worker artifact links, and final commit links when controller/manual repair promotes worker output. |
 | `ArtifactLinkLedger` | separates repo-visible evidence from | `PlanningSQLite` | `insights/live-smoke-lessons.md`, `src/codex_supervisor/planning.py`, `scripts/check_planning_integrity.py`, `scripts/check_public_repo_hygiene.py`, `tests/test_planning.py`, `tests/test_planning_integrity.py`, and `tests/test_public_repo_hygiene.py` | confirmed | 2026-05-28 | Do not create plan artifact links for legacy `worker-results/` source paths; allow ignored runtime evidence links under `artifacts/` and `runs/` without staging them. |
 | `WorkerResultEvidenceGate` | rejects stale blockers in | `PlanningSQLite` | `insights/live-smoke-lessons.md`, todo-list-test-18-low RCA, `src/codex_supervisor/worker_results.py`, `scripts/check_planning_integrity.py`, `tests/test_worker_results.py`, and `tests/test_planning_integrity.py` | confirmed | 2026-05-28 | Do not shallow-edit blocked Worker Results into completed results with stale risks or follow-ups. |
+| `WorkerCapabilityLedger` | constrains | `CodexExecBackend` | `insights/live-smoke-lessons.md`, todo-list-test-20-low-spark RCA, `src/codex_supervisor/worker_backends.py`, `src/codex_supervisor/worker_launches.py`, `tests/test_worker_backends.py`, and `tests/test_worker_launches.py` | confirmed | 2026-05-28 | Normalize display names to CLI slugs, record requested/resolved capabilities, and fail closed when required model or reasoning capability is unavailable. |
+| `SpawnedProjectSeedTransaction` | gates worker launch through | `StoryLoop` | `insights/live-smoke-lessons.md`, todo-list-test-20-low-spark RCA, `src/codex_supervisor/spawned_projects.py`, `src/codex_supervisor/story_loop.py`, `tests/test_spawned_projects.py`, and `tests/test_story_loop.py` | confirmed | 2026-05-28 | Publish fresh target scaffolds only after verification and run project-local planning integrity before claim/worktree/worker launch. |

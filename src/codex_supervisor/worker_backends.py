@@ -62,7 +62,9 @@ class WorkerLaunchRequest:
     codex_home: str | None = None
     codex_config_path: str | None = None
     model: str | None = None
+    model_required: bool = False
     reasoning_effort: str | None = None
+    reasoning_effort_required: bool = False
     service_tier: str | None = None
     native_goal_mode: bool = False
     ignore_user_config: bool = False
@@ -229,8 +231,12 @@ class CodexExecBackend:
                         version_result.stderr,
                     )
         if failure_class is None and executable_path is not None:
-            capability_probe = _probe_codex_launch_capabilities(
+            effective_request = _resolve_codex_model_request(
                 request,
+                environment_result.environment,
+            )
+            capability_probe = _probe_codex_launch_capabilities(
+                effective_request,
                 executable_path=executable_path,
                 environment=environment_result.environment,
                 command_runner=self.command_runner,
@@ -261,6 +267,9 @@ class CodexExecBackend:
             "model": effective_request.model,
             "reasoning_effort": effective_request.reasoning_effort,
         }
+        metadata["model_required"] = effective_request.model_required
+        metadata["reasoning_effort_required"] = effective_request.reasoning_effort_required
+        metadata["model_resolution"] = _model_resolution_metadata(request, effective_request)
         metadata["capability_preflight"] = capability_probe.metadata
         return CodexExecPreflightResult(
             executable_path=executable_path,
@@ -2333,6 +2342,79 @@ def _codex_exec_capability_mappings(request: WorkerLaunchRequest) -> JsonObject:
     )
 
 
+def _resolve_codex_model_request(
+    request: WorkerLaunchRequest,
+    environment: dict[str, str],
+) -> WorkerLaunchRequest:
+    if request.model is None:
+        return request
+    resolved = _model_slug_from_cache(request.model, request=request, environment=environment)
+    if resolved is None or resolved == request.model:
+        return request
+    return replace(request, model=resolved)
+
+
+def _model_slug_from_cache(
+    requested_model: str,
+    *,
+    request: WorkerLaunchRequest,
+    environment: dict[str, str],
+) -> str | None:
+    cache_path = _models_cache_path(request, environment)
+    if cache_path is None:
+        return None
+    try:
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except OSError, UnicodeDecodeError, json.JSONDecodeError:
+        return None
+    models = payload.get("models")
+    if not isinstance(models, list):
+        return None
+    requested = requested_model.casefold()
+    for item in models:
+        if not isinstance(item, dict):
+            continue
+        slug = item.get("slug")
+        display_name = item.get("display_name")
+        if not isinstance(slug, str) or not slug.strip():
+            continue
+        candidates = tuple(
+            value.casefold()
+            for value in (slug, display_name)
+            if isinstance(value, str) and value.strip()
+        )
+        if requested in candidates:
+            return slug.strip()
+    return None
+
+
+def _models_cache_path(
+    request: WorkerLaunchRequest,
+    environment: dict[str, str],
+) -> Path | None:
+    codex_home = request.codex_home or environment.get("CODEX_HOME")
+    if codex_home:
+        return Path(codex_home) / "models_cache.json"
+    try:
+        return Path.home() / ".codex" / "models_cache.json"
+    except RuntimeError:
+        return None
+
+
+def _model_resolution_metadata(
+    original_request: WorkerLaunchRequest,
+    effective_request: WorkerLaunchRequest,
+) -> JsonObject:
+    if original_request.model is None:
+        return {"requested": None, "resolved": None, "source": "not_requested"}
+    source = "models_cache" if original_request.model != effective_request.model else "unchanged"
+    return {
+        "requested": original_request.model,
+        "resolved": effective_request.model,
+        "source": source,
+    }
+
+
 def _probe_codex_launch_capabilities(
     request: WorkerLaunchRequest,
     *,
@@ -2460,11 +2542,45 @@ def _probe_codex_launch_capabilities(
 
         removed_this_attempt: list[str] = []
         if effective_model is not None and _looks_like_unsupported_model_failure(result):
+            if request.model_required:
+                metadata = {
+                    "status": "failed_required_model",
+                    "failure_class": "codex_required_model_unavailable",
+                    "requested_model": request.model,
+                    "requested_reasoning_effort": request.reasoning_effort,
+                    "resolved_model": effective_model,
+                    "resolved_reasoning_effort": effective_reasoning_effort,
+                    "removed_options": removed_options,
+                    "attempts": attempts,
+                }
+                return CodexCapabilityProbeResult(
+                    request=probe_request,
+                    failure_class="codex_required_model_unavailable",
+                    stderr=result.stderr or result.stdout,
+                    metadata=metadata,
+                )
             effective_model = None
             removed_this_attempt.append("model")
         if effective_reasoning_effort is not None and _looks_like_unsupported_reasoning_failure(
             result
         ):
+            if request.reasoning_effort_required:
+                metadata = {
+                    "status": "failed_required_reasoning_effort",
+                    "failure_class": "codex_required_reasoning_effort_unavailable",
+                    "requested_model": request.model,
+                    "requested_reasoning_effort": request.reasoning_effort,
+                    "resolved_model": effective_model,
+                    "resolved_reasoning_effort": effective_reasoning_effort,
+                    "removed_options": removed_options,
+                    "attempts": attempts,
+                }
+                return CodexCapabilityProbeResult(
+                    request=probe_request,
+                    failure_class="codex_required_reasoning_effort_unavailable",
+                    stderr=result.stderr or result.stdout,
+                    metadata=metadata,
+                )
             effective_reasoning_effort = None
             removed_this_attempt.append("reasoning_effort")
         if not removed_this_attempt:
@@ -2551,9 +2667,13 @@ def _codex_exec_capability_retry(
     model = request.model
     reasoning_effort = request.reasoning_effort
     if model is not None and _looks_like_unsupported_model_failure(exec_result):
+        if request.model_required:
+            return None
         model = None
         removed_options.append("model")
     if reasoning_effort is not None and _looks_like_unsupported_reasoning_failure(exec_result):
+        if request.reasoning_effort_required:
+            return None
         reasoning_effort = None
         removed_options.append("reasoning_effort")
     if not removed_options:

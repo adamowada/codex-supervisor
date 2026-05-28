@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from types import SimpleNamespace
 
 from codex_supervisor.cli import main
@@ -1382,6 +1383,60 @@ def test_live_story_loop_refuses_uncommitted_worker_contract_before_claim(tmp_pa
     assert worker.metadata["launch_preflight"]["dirty_contract_paths"] == ["plans/planning.sqlite3"]
     events = read_store.list_worker_run_events(worker_run_id="run-dirty-contract")
     assert events[0].event_type == "worker_launch_preflight_failed"
+
+
+def test_live_story_loop_refuses_project_integrity_failure_before_claim(tmp_path):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = _live_story_loop_store(db_path)
+    integrity_script = tmp_path / "scripts" / "check_planning_integrity.py"
+    integrity_script.parent.mkdir(parents=True)
+    integrity_script.write_text(
+        "import sys\n"
+        "print('Planning integrity checks failed')\n"
+        "print('missing current-queue criterion', file=sys.stderr)\n"
+        "raise SystemExit(1)\n",
+        encoding="utf-8",
+    )
+    codex_calls: list[tuple[str, ...]] = []
+    git_calls: list[tuple[str, ...]] = []
+
+    def codex_runner(argv, cwd, environment):
+        codex_calls.append(argv)
+        return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+
+    def git_runner(argv, cwd, environment):
+        git_calls.append(argv)
+        return CommandExecutionResult(exit_code=0, stdout="")
+
+    result = run_live_story_loop_once(
+        store,
+        repo_root=tmp_path,
+        worker_run_id="run-integrity",
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=codex_runner,
+        git_command_runner=git_runner,
+    )
+
+    assert result.status == "failed"
+    assert result.failure_class == "project_planning_integrity_failed"
+    assert result.worktree_created is False
+    assert codex_calls == []
+    assert git_calls == []
+
+    read_store = open_existing_planning_database(db_path)
+    task = next(task for task in read_store.list_supervisor_tasks() if task.task_id == "task-live")
+    worker = next(
+        run for run in read_store.list_worker_runs() if run.worker_run_id == "run-integrity"
+    )
+    assert task.status == "ready"
+    assert worker.status == "failed"
+    assert worker.metadata["launch_preflight"]["command"] == [
+        sys.executable,
+        "-B",
+        "scripts/check_planning_integrity.py",
+    ]
+    assert "Planning integrity checks failed" in worker.metadata["launch_preflight"]["stdout"]
+    assert "missing current-queue criterion" in worker.metadata["launch_preflight"]["stderr"]
 
 
 def test_live_story_loop_policy_lint_blocks_codex_exec_controller_owned_paths(tmp_path):

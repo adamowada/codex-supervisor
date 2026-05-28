@@ -248,6 +248,52 @@ not live queue state. Current work still belongs in `plans/planning.sqlite3`.
 - `next action`: Add file or stdin variants for other JSON-heavy mutation flags when live runs show
   recurring quoting failures.
 
+### Display Model Names Must Resolve To CLI Slugs
+
+- `claim`: Worker launch code must normalize Codex model display names to CLI slugs before probing
+  or launching `codex exec`; otherwise a valid model such as `GPT-5.3-Codex-Spark` can be rejected
+  even though its slug is available locally.
+- `confidence`: confirmed
+- `evidence`: todo-list-test-20-low-spark RCA found the display-name launch failed while
+  `gpt-5.3-codex-spark` succeeded; regression coverage now lives in
+  `tests/test_worker_backends.py`.
+- `scope`: Codex Exec model selection, Desktop plugin launches, live smoke tests, and worker
+  capability metadata.
+- `supersedes`: passing human-facing model labels directly to the CLI.
+- `next action`: Keep launch metadata recording both requested and resolved capabilities so future
+  RCA can tell whether the supervisor used the intended model.
+
+### Required Worker Capabilities Fail Closed
+
+- `claim`: Task-scoped required worker capabilities, especially model and reasoning effort, are a
+  contract: launch defaults must not override them, and CLI rejection must block the run instead of
+  silently falling back.
+- `confidence`: confirmed
+- `evidence`: todo-list-test-20-low-spark RCA, `src/codex_supervisor/worker_launches.py`,
+  `src/codex_supervisor/worker_backends.py`, `tests/test_worker_launches.py`, and
+  `tests/test_worker_backends.py`.
+- `scope`: Story Loop worker launch preparation, Codex Exec capability probes, live smoke
+  reproducibility, and model-constrained worker fleets.
+- `supersedes`: best-effort fallback when the task said a specific worker model or reasoning level
+  was required.
+- `next action`: Add required capability fields deliberately in task scope and treat probe failures
+  as useful blocked evidence, not as permission to downgrade the worker.
+
+### Seeded Target Projects Must Pass Integrity Before Launch
+
+- `claim`: Fresh spawned-project seeding should be transactional for empty targets and a Story Loop
+  worker must not launch until the target project's own planning integrity gate passes.
+- `confidence`: confirmed
+- `evidence`: todo-list-test-20-low-spark produced an invalid target queue shape before worker
+  orchestration; regression coverage now lives in `tests/test_spawned_projects.py` and
+  `tests/test_story_loop.py`.
+- `scope`: spawned-project scaffold apply, product-slice seeding, Story Loop preclaim checks, and
+  live todo-list smoke tests.
+- `supersedes`: writing partial scaffold/planning state directly into a fresh target and letting
+  the first worker discover structural queue defects.
+- `next action`: Keep project-local `scripts/check_planning_integrity.py` as a launch preflight for
+  supervisor-managed targets and publish fresh scaffolds only after local verification succeeds.
+
 ### Declared Support Artifacts Are Not Product Edits
 
 - `claim`: Browser and worker support artifacts under `artifacts/` must be copied and preserved, but

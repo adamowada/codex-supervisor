@@ -58,6 +58,10 @@ def prepare_worker_launch_request(
     """Prepare a WorkerLaunchRequest without touching the filesystem."""
 
     layout = build_worktree_run_layout(task.task_id, worker_run_id)
+    required_model = _required_worker_model(task)
+    required_reasoning_effort = _required_reasoning_effort(task)
+    effective_model = required_model or model
+    effective_reasoning_effort = required_reasoning_effort or reasoning_effort
     worker_run_metadata = _worker_run_metadata(
         task,
         layout=layout,
@@ -67,14 +71,16 @@ def prepare_worker_launch_request(
         native_goal_mode=native_goal_mode,
         ignore_user_config=ignore_user_config,
         allow_degraded_jsonl=allow_degraded_jsonl,
+        required_model=required_model,
+        required_reasoning_effort=required_reasoning_effort,
         extra_metadata=metadata or {},
     )
     request_metadata = {
         **worker_run_metadata,
         "codex_home": codex_home,
         "codex_config_path": codex_config_path,
-        "model": model,
-        "reasoning_effort": reasoning_effort,
+        "model": effective_model,
+        "reasoning_effort": effective_reasoning_effort,
         "service_tier": service_tier,
     }
     request = WorkerLaunchRequest(
@@ -101,8 +107,10 @@ def prepare_worker_launch_request(
         browser_smoke_required=task.scope.get("browser_smoke_required") is True,
         codex_home=codex_home,
         codex_config_path=codex_config_path,
-        model=model,
-        reasoning_effort=reasoning_effort,
+        model=effective_model,
+        model_required=required_model is not None,
+        reasoning_effort=effective_reasoning_effort,
+        reasoning_effort_required=required_reasoning_effort is not None,
         service_tier=service_tier,
         native_goal_mode=native_goal_mode,
         ignore_user_config=ignore_user_config,
@@ -127,9 +135,11 @@ def _worker_run_metadata(
     native_goal_mode: bool,
     ignore_user_config: bool,
     allow_degraded_jsonl: bool,
+    required_model: str | None,
+    required_reasoning_effort: str | None,
     extra_metadata: JsonObject,
 ) -> JsonObject:
-    return {
+    metadata = {
         **extra_metadata,
         "backend": canonical_worker_backend(task.worker_backend),
         "task_id": task.task_id,
@@ -152,3 +162,29 @@ def _worker_run_metadata(
         "raw_result_path": layout.raw_result_path,
         "planned_evidence_paths": layout.raw_evidence_paths(),
     }
+    required_capabilities = _required_capabilities(required_model, required_reasoning_effort)
+    if required_capabilities:
+        metadata["required_capabilities"] = required_capabilities
+    return metadata
+
+
+def _required_capabilities(
+    required_model: str | None,
+    required_reasoning_effort: str | None,
+) -> JsonObject:
+    capabilities: JsonObject = {}
+    if required_model is not None:
+        capabilities["model"] = required_model
+    if required_reasoning_effort is not None:
+        capabilities["reasoning_effort"] = required_reasoning_effort
+    return capabilities
+
+
+def _required_worker_model(task: TaskRecord) -> str | None:
+    value = task.scope.get("worker_model_required")
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _required_reasoning_effort(task: TaskRecord) -> str | None:
+    value = task.scope.get("reasoning_effort_required")
+    return value.strip() if isinstance(value, str) and value.strip() else None

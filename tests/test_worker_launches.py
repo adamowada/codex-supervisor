@@ -98,6 +98,76 @@ def test_prepare_worker_launch_request_exposes_worker_run_metadata():
     )
 
 
+def test_prepare_worker_launch_request_promotes_required_worker_model_from_task_scope(tmp_path):
+    task = _task_record()
+    task.scope["worker_model_required"] = "GPT-5.3-Codex-Spark"
+
+    preparation = prepare_worker_launch_request(
+        task,
+        worker_run_id="worker-run-required-model",
+        repo_root=tmp_path,
+        result_schema_path="schemas/worker-result.schema.json",
+        prompt="Do the slice.",
+        rendered_goal_contract="Goal Contract",
+        sandbox_mode="workspace-write",
+        approval_policy="never",
+    )
+
+    assert preparation.request.model == "GPT-5.3-Codex-Spark"
+    assert preparation.request.model_required is True
+    assert preparation.worker_run_metadata["required_capabilities"] == {
+        "model": "GPT-5.3-Codex-Spark"
+    }
+
+
+def test_prepare_worker_launch_request_promotes_required_reasoning_from_task_scope(tmp_path):
+    task = _task_record()
+    task.scope["reasoning_effort_required"] = "xhigh"
+
+    preparation = prepare_worker_launch_request(
+        task,
+        worker_run_id="worker-run-required-reasoning",
+        repo_root=tmp_path,
+        result_schema_path="schemas/worker-result.schema.json",
+        prompt="Do the slice.",
+        rendered_goal_contract="Goal Contract",
+        sandbox_mode="workspace-write",
+        approval_policy="never",
+    )
+
+    assert preparation.request.reasoning_effort == "xhigh"
+    assert preparation.request.reasoning_effort_required is True
+    assert preparation.worker_run_metadata["required_capabilities"] == {"reasoning_effort": "xhigh"}
+
+
+def test_prepare_worker_launch_request_required_capabilities_override_launch_defaults(tmp_path):
+    task = _task_record()
+    task.scope["worker_model_required"] = "gpt-5.3-codex-spark"
+    task.scope["reasoning_effort_required"] = "xhigh"
+
+    preparation = prepare_worker_launch_request(
+        task,
+        worker_run_id="worker-run-required-capabilities",
+        repo_root=tmp_path,
+        result_schema_path="schemas/worker-result.schema.json",
+        prompt="Do the slice.",
+        rendered_goal_contract="Goal Contract",
+        sandbox_mode="workspace-write",
+        approval_policy="never",
+        model="gpt-5.5",
+        reasoning_effort="low",
+    )
+
+    assert preparation.request.model == "gpt-5.3-codex-spark"
+    assert preparation.request.model_required is True
+    assert preparation.request.reasoning_effort == "xhigh"
+    assert preparation.request.reasoning_effort_required is True
+    assert preparation.worker_run_metadata["required_capabilities"] == {
+        "model": "gpt-5.3-codex-spark",
+        "reasoning_effort": "xhigh",
+    }
+
+
 def test_prepare_worker_launch_request_rejects_unsafe_worker_run_id(tmp_path):
     with pytest.raises(WorktreeArtifactError):
         prepare_worker_launch_request(

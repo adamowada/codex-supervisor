@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import codex_supervisor.spawned_projects as spawned_projects
 from codex_supervisor.cli import main
 from codex_supervisor.spawned_projects import (
     SpawnedProjectBrief,
@@ -342,6 +343,36 @@ def test_spawned_project_apply_writes_full_supervisor_scaffold(tmp_path: Path) -
     )
     assert git_log.returncode == 0, git_log.stderr + git_log.stdout
     assert "Bootstrap supervisor-managed scaffold" in git_log.stdout
+
+
+def test_spawned_project_apply_keeps_fresh_target_empty_when_integrity_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "ops-platform"
+
+    def fail_verification(root: Path):
+        raise RuntimeError("spawned project scaffold verification failed: invalid queue")
+
+    monkeypatch.setattr(
+        spawned_projects,
+        "_run_spawned_scaffold_verification",
+        fail_verification,
+    )
+
+    with pytest.raises(RuntimeError, match="invalid queue"):
+        apply_spawned_project_scaffold(
+            SpawnedProjectBrief(
+                name="ops platform",
+                complexity="production",
+                unattended_workers=True,
+                durable_queue=True,
+            ),
+            target_root=target,
+        )
+
+    assert not target.exists()
+    assert not tuple(tmp_path.glob(".ops-platform.seed-*"))
 
 
 def test_spawned_project_apply_writes_usable_prototype_verify_script(tmp_path: Path) -> None:

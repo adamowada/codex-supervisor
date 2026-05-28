@@ -8,8 +8,16 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 ## Current Snapshot
 
 - Current queue state: empty. `story-loop-status --json` reports no current AFK, HITL, or running
-  task after `plan-test18-orchestration-regressions-20260528` was completed.
-- Latest completed checkpoint: `plan-test18-orchestration-regressions-20260528` added TDD
+  task after `plan-test20-high-leverage-orchestration-fixes-20260528` was completed.
+- Latest completed checkpoint: `plan-test20-high-leverage-orchestration-fixes-20260528` added TDD
+  regression coverage and fixes for the todo-list-test-20-low-spark orchestration RCA:
+  display-name model requests now resolve to CLI slugs before Codex Exec launch, required model and
+  reasoning capabilities fail closed instead of falling back, task-scoped required capabilities
+  override launch defaults, fresh empty spawned-project targets are seeded transactionally, and live
+  Story Loop launch refuses project-local planning integrity failures before claim, git worktree, or
+  worker execution. Durable lessons were saved in `insights/live-smoke-lessons.md` and
+  `insights/graph.md`. Full `uv run --no-sync python -B scripts/verify.py` passed locally.
+- Previous completed checkpoint: `plan-test18-orchestration-regressions-20260528` added TDD
   regression coverage and fixes for the todo-list-test-18-low orchestration RCA: review-required
   tasks cannot silently drop review obligations after worker/review history exists, live review
   accepted findings now route repair instead of completing source work, planning integrity requires

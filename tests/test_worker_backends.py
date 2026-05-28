@@ -1168,6 +1168,142 @@ def test_codex_exec_backend_retries_with_cli_defaults_when_model_is_rejected(tmp
     assert "capability_retry" not in result.metadata
 
 
+def test_codex_exec_backend_normalizes_model_display_name_from_cache(tmp_path):
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    (codex_home / "models_cache.json").write_text(
+        json.dumps(
+            {
+                "models": [
+                    {
+                        "slug": "gpt-5.3-codex-spark",
+                        "display_name": "GPT-5.3-Codex-Spark",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls: list[tuple[str, ...]] = []
+
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        calls.append(argv)
+        if argv == ("C:/Tools/codex.exe", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+        return CommandExecutionResult(exit_code=0, stdout='{"event":"probe.ok"}\n')
+
+    request = _codex_exec_request(
+        tmp_path,
+        codex_home=str(codex_home),
+        model="GPT-5.3-Codex-Spark",
+        reasoning_effort="xhigh",
+        ignore_user_config=True,
+    )
+
+    preflight = CodexExecBackend(
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=runner,
+        launch_enabled=True,
+    ).preflight(request)
+
+    exec_calls = [argv for argv in calls if len(argv) > 1 and argv[1] == "exec"]
+    assert exec_calls
+    assert exec_calls[0][exec_calls[0].index("--model") + 1] == "gpt-5.3-codex-spark"
+    assert preflight.argv[preflight.argv.index("--model") + 1] == "gpt-5.3-codex-spark"
+    assert preflight.metadata["requested_capabilities"]["model"] == "GPT-5.3-Codex-Spark"
+    assert preflight.metadata["resolved_capabilities"]["model"] == "gpt-5.3-codex-spark"
+    assert preflight.metadata["model_resolution"] == {
+        "requested": "GPT-5.3-Codex-Spark",
+        "resolved": "gpt-5.3-codex-spark",
+        "source": "models_cache",
+    }
+
+
+def test_codex_exec_backend_required_model_blocks_instead_of_fallback(tmp_path):
+    calls: list[tuple[str, ...]] = []
+
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        calls.append(argv)
+        if argv == ("C:/Tools/codex.exe", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+        return CommandExecutionResult(
+            exit_code=1,
+            stdout=(
+                '{"type":"error","message":"invalid_request_error: '
+                'model gpt-required is not supported"}\n'
+            ),
+        )
+
+    request = _codex_exec_request(
+        tmp_path,
+        model="gpt-required",
+        model_required=True,
+        reasoning_effort="xhigh",
+    )
+
+    result = CodexExecBackend(
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=runner,
+        launch_enabled=True,
+    ).run(request)
+
+    exec_calls = [argv for argv in calls if len(argv) > 1 and argv[1] == "exec"]
+    assert len(exec_calls) == 1
+    assert "--model" in exec_calls[0]
+    assert result.status == "failed"
+    assert result.failure_class == "codex_required_model_unavailable"
+    assert result.metadata["capability_preflight"]["status"] == "failed_required_model"
+    assert result.metadata["capability_preflight"]["removed_options"] == []
+    assert result.metadata["resolved_capabilities"]["model"] == "gpt-required"
+
+
+def test_codex_exec_backend_required_reasoning_blocks_instead_of_fallback(tmp_path):
+    calls: list[tuple[str, ...]] = []
+
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        calls.append(argv)
+        if argv == ("C:/Tools/codex.exe", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+        return CommandExecutionResult(
+            exit_code=1,
+            stderr="error: unknown option '--model-reasoning-effort'\n",
+        )
+
+    request = _codex_exec_request(
+        tmp_path,
+        model="gpt-5.3-codex-spark",
+        reasoning_effort="xhigh",
+        reasoning_effort_required=True,
+    )
+
+    result = CodexExecBackend(
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=runner,
+        launch_enabled=True,
+    ).run(request)
+
+    exec_calls = [argv for argv in calls if len(argv) > 1 and argv[1] == "exec"]
+    assert len(exec_calls) == 1
+    assert f"model_reasoning_effort={json.dumps('xhigh')}" in exec_calls[0]
+    assert result.status == "failed"
+    assert result.failure_class == "codex_required_reasoning_effort_unavailable"
+    assert result.metadata["capability_preflight"]["status"] == "failed_required_reasoning_effort"
+    assert result.metadata["capability_preflight"]["removed_options"] == []
+    assert result.metadata["resolved_capabilities"]["reasoning_effort"] == "xhigh"
+
+
 def test_codex_exec_backend_retries_without_reasoning_mapping_when_cli_rejects_it(tmp_path):
     calls: list[tuple[str, ...]] = []
 

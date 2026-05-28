@@ -184,6 +184,27 @@ timestamps that match their status.
 This stage also sharpens the next interface rule: Stage 4 should build on the compact attempt store,
 not on the legacy planning store that still expects the old worker-run schema.
 
+## Stage 4 Small Interface
+
+The first rebuilt interface is intentionally tiny. It has one inspection command and one mutation
+command:
+
+- `queue-next`
+- `attempt-transition`
+
+`queue-next` answers the operator's next-state question from the compact planning schema. It reports
+the selected task, active attempt, latest evidence, acceptance state when it can be evaluated, and
+the next transition hint.
+
+`attempt-transition` performs one transition. It can create or start an attempt, complete an
+attempt, attach evidence, evaluate acceptance, and update task status. This is enough surface to
+operate the current model without preserving the old compatibility commands.
+
+The important lesson is sequencing: CLI can be the first proof surface because it is cheap to test
+and easy to inspect. MCP, plugin, automation, GitHub, CI, and spawned-project adapters should wait
+until Stage 6 and declare their task intent, attempt, evidence, assurance, and acceptance behavior
+one operation at a time.
+
 ## Local Hygiene
 
 Ignored local artifacts should stay disposable. Development environments, caches, run outputs,

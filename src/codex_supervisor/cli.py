@@ -142,6 +142,12 @@ from codex_supervisor.skill_promotion import (
     SkillPromotionProposal,
     validate_skill_promotion_payload,
 )
+from codex_supervisor.small_interface import (
+    AttemptTransitionResult,
+    QueueNextResult,
+    attempt_transition,
+    queue_next,
+)
 from codex_supervisor.spawned_projects import (
     PROJECT_COMPLEXITIES,
     TRUST_POLICIES,
@@ -1170,7 +1176,87 @@ def main(argv: list[str] | None = None) -> int:
     cleanup_plan_parser.add_argument("--reason", default="orphaned_runtime_path")
     cleanup_plan_parser.add_argument("--json", action="store_true", default=False)
 
+    queue_next_parser = subparsers.add_parser(
+        "queue-next",
+        help="Inspect the next task in the compact control-plane queue",
+    )
+    queue_next_parser.add_argument("--path", type=Path, default=None)
+    queue_next_parser.add_argument("--plan-id", default=None)
+    queue_next_parser.add_argument("--task-status", default="ready")
+    queue_next_parser.add_argument("--json", action="store_true", default=False)
+
+    attempt_transition_parser = subparsers.add_parser(
+        "attempt-transition",
+        help="Apply one compact attempt transition and optional evidence bundle",
+    )
+    attempt_transition_parser.add_argument("--path", type=Path, default=None)
+    attempt_transition_parser.add_argument("--task-id", required=True)
+    attempt_transition_parser.add_argument("--attempt-id", default=None)
+    attempt_transition_parser.add_argument("--executor", default="manual")
+    attempt_transition_parser.add_argument(
+        "--status",
+        choices=("planned", "running", "succeeded", "failed", "blocked"),
+        required=True,
+    )
+    attempt_transition_parser.add_argument("--summary", required=True)
+    attempt_transition_parser.add_argument("--check", action="append", default=[])
+    attempt_transition_parser.add_argument("--artifact", action="append", default=[])
+    attempt_transition_parser.add_argument("--acceptance-result", action="append", default=[])
+    attempt_transition_parser.add_argument("--risk", action="append", default=[])
+    attempt_transition_parser.add_argument("--gap", action="append", default=[])
+    attempt_transition_parser.add_argument("--next-action", action="append", default=[])
+    attempt_transition_parser.add_argument("--review-evidence", action="append", default=[])
+    attempt_transition_parser.add_argument("--json", action="store_true", default=False)
+
     args = parser.parse_args(argv)
+
+    if args.command == "queue-next":
+        resolved_path = _planning_path_or_report(args.path)
+        if resolved_path is None:
+            return 1
+        try:
+            result = queue_next(
+                resolved_path,
+                plan_id=args.plan_id,
+                task_status=args.task_status,
+            )
+        except (sqlite3.Error, ValueError) as exc:
+            print(f"Could not inspect compact queue: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            _print_json(result)
+        else:
+            _print_queue_next(result)
+        return 0
+
+    if args.command == "attempt-transition":
+        resolved_path = _planning_path_or_report(args.path)
+        if resolved_path is None:
+            return 1
+        try:
+            result = attempt_transition(
+                resolved_path,
+                task_id=args.task_id,
+                attempt_id=args.attempt_id,
+                executor=args.executor,
+                status=args.status,
+                summary=args.summary,
+                checks=tuple(args.check),
+                artifacts=tuple(args.artifact),
+                acceptance_results=_parse_acceptance_results(args.acceptance_result),
+                risks=tuple(args.risk),
+                gaps=tuple(args.gap),
+                next_actions=tuple(args.next_action),
+                review_evidence=tuple(args.review_evidence),
+            )
+        except (LookupError, sqlite3.Error, ValueError) as exc:
+            print(f"Could not apply attempt transition: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            _print_json(result)
+        else:
+            _print_attempt_transition(result)
+        return 0
 
     if args.command == "plan-migrate-schema":
         resolved_path = _planning_path_or_report(args.path)
@@ -3646,6 +3732,57 @@ def _spawned_project_brief_from_args(args: argparse.Namespace) -> SpawnedProject
 
 def _print_json(value: object) -> None:
     print(json.dumps(_to_jsonable(value), indent=2, sort_keys=True, default=str))
+
+
+def _parse_acceptance_results(values: Sequence[str]) -> dict[str, bool] | None:
+    if not values:
+        return None
+    parsed: dict[str, bool] = {}
+    for raw in values:
+        criterion, separator, status = raw.partition("=")
+        if not separator:
+            raise ValueError("--acceptance-result must use CRITERION=pass|fail")
+        normalized_status = status.strip().casefold()
+        if normalized_status in {"pass", "passed", "true", "yes", "ok"}:
+            parsed[criterion.strip()] = True
+        elif normalized_status in {"fail", "failed", "false", "no"}:
+            parsed[criterion.strip()] = False
+        else:
+            raise ValueError("--acceptance-result status must be pass or fail")
+        if not criterion.strip():
+            raise ValueError("--acceptance-result criterion must be non-empty")
+    return parsed
+
+
+def _print_queue_next(result: QueueNextResult) -> None:
+    if result.task is None:
+        print("queue_next: none")
+        return
+    task = result.task
+    print(f"task: {task['task_id']}")
+    print(f"title: {task['title']}")
+    print(f"status: {task['status']}")
+    print(f"assurance: {task['assurance']}")
+    print(f"next_transition: {result.next_transition}")
+    if result.active_attempt is not None:
+        attempt = result.active_attempt
+        print(f"active_attempt: {attempt['attempt_id']} ({attempt['status']})")
+    if result.latest_evidence is not None:
+        evidence = result.latest_evidence
+        print(f"latest_evidence: {evidence['bundle_id']} ({evidence['assurance']})")
+    if result.acceptance is not None:
+        accepted = result.acceptance["accepted"]
+        print(f"accepted: {accepted}")
+
+
+def _print_attempt_transition(result: AttemptTransitionResult) -> None:
+    print(f"task: {result.task['task_id']}")
+    print(f"task_status: {result.task_status}")
+    print(f"attempt: {result.attempt['attempt_id']} ({result.attempt['status']})")
+    if result.evidence is not None:
+        print(f"evidence: {result.evidence['bundle_id']}")
+    if result.acceptance is not None:
+        print(f"accepted: {result.acceptance['accepted']}")
 
 
 def _print_worker_result_record(worker_result: WorkerResultRecord) -> None:

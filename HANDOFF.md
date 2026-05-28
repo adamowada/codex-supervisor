@@ -39,6 +39,10 @@ Stage 3 is implemented in `src/codex_supervisor/attempts.py` and
 `src/codex_supervisor/attempt_store.py`. Run attempts now have a pure status model, compact SQLite
 helpers, evidence attachment, and planning integrity checks for attempt/evidence relationships.
 
+Stage 4 is implemented in `src/codex_supervisor/small_interface.py` and exposed through two CLI
+commands: `queue-next` for inspection and `attempt-transition` for mutation. The commands use the
+compact task, attempt, evidence, and acceptance path.
+
 ## Roadmap
 
 1. Stage 1, Foundation Contract: align docs, planning SQLite, skill guidance, CI, insights, handoff,
@@ -52,9 +56,10 @@ helpers, evidence attachment, and planning integrity checks for attempt/evidence
 
 ## Next Action
 
-Continue with Stage 4 from `ROADMAP.md`: add one inspection command and one mutation command over
-the compact task, attempt, evidence, and acceptance model.
+Continue with Stage 5 from `ROADMAP.md`: connect fresh-context Codex workers as `RunAttempt`
+executors with policy-aware prompts, evidence bundles, fake-worker tests, and bounded live
+verification.
 
 Planning task:
 
-- `task-rebuild-small-interface-20260528`
+- `task-integrate-codex-workers-20260528`

@@ -176,6 +176,33 @@ def test_publication_ready_rejects_ignored_source_artifacts(tmp_path):
     assert any("not repo-local" in failure for failure in failures)
 
 
+def test_publication_ready_allows_ignored_runtime_evidence_artifacts(tmp_path):
+    module = _load_hygiene_module()
+    (tmp_path / "plans").mkdir()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "CREATE TABLE plan_artifact_links (plan_id TEXT, artifact_id TEXT, relationship TEXT)"
+        )
+        connection.execute("CREATE TABLE plan_progress_events (linked_artifact_id TEXT)")
+        connection.execute(
+            """
+            INSERT INTO plan_artifact_links
+            VALUES ('plan', 'artifacts/run-worker/worker-result.raw.json', 'worker-result')
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO plan_progress_events
+            VALUES ('runs/run-worker/events.jsonl')
+            """
+        )
+
+    failures = module._check_planning_artifacts_indexed(tmp_path, set())
+
+    assert failures == ()
+
+
 def test_publication_ready_rejects_drive_relative_artifact_paths(tmp_path):
     module = _load_hygiene_module()
     (tmp_path / "plans").mkdir()

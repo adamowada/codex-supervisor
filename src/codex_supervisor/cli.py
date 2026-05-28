@@ -827,7 +827,9 @@ def main(argv: list[str] | None = None) -> int:
     task_upsert_parser.add_argument("--task-type", choices=sorted(TASK_TYPES), required=True)
     task_upsert_parser.add_argument("--status", choices=sorted(TASK_STATUSES), required=True)
     task_upsert_parser.add_argument("--scope-json", type=_json_object_arg, default=None)
+    task_upsert_parser.add_argument("--scope-json-file", type=Path, default=None)
     task_upsert_parser.add_argument("--out-of-scope-json", type=_json_object_arg, default=None)
+    task_upsert_parser.add_argument("--out-of-scope-json-file", type=Path, default=None)
     task_upsert_parser.add_argument("--acceptance-criterion", action="append", default=None)
     task_upsert_parser.add_argument("--verification-command", action="append", default=None)
     task_upsert_parser.add_argument("--allowed-path", action="append", default=None)
@@ -2372,6 +2374,32 @@ def main(argv: list[str] | None = None) -> int:
         if write_store is None:
             return 1
         task_store = write_store
+        scope_json = args.scope_json
+        if args.scope_json_file is not None:
+            if scope_json is not None:
+                print(
+                    "Could not update planning database: use only one of "
+                    "--scope-json or --scope-json-file",
+                    file=sys.stderr,
+                )
+                return 1
+            scope_json = _write_value_or_report(lambda: _json_object_file_arg(args.scope_json_file))
+            if scope_json is None:
+                return 1
+        out_of_scope_json = args.out_of_scope_json
+        if args.out_of_scope_json_file is not None:
+            if out_of_scope_json is not None:
+                print(
+                    "Could not update planning database: use only one of "
+                    "--out-of-scope-json or --out-of-scope-json-file",
+                    file=sys.stderr,
+                )
+                return 1
+            out_of_scope_json = _write_value_or_report(
+                lambda: _json_object_file_arg(args.out_of_scope_json_file)
+            )
+            if out_of_scope_json is None:
+                return 1
         task_record = _write_value_or_report(
             lambda: _build_task_upsert_record(
                 task_store,
@@ -2381,8 +2409,8 @@ def main(argv: list[str] | None = None) -> int:
                 goal=args.goal,
                 task_type=args.task_type,
                 status=args.status,
-                scope=args.scope_json,
-                out_of_scope=args.out_of_scope_json,
+                scope=scope_json,
+                out_of_scope=out_of_scope_json,
                 acceptance_criteria=args.acceptance_criterion,
                 verification_commands=args.verification_command,
                 allowed_paths=args.allowed_path,

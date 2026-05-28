@@ -401,6 +401,55 @@ def test_planning_integrity_accepts_completed_full_afk_task_with_commit_link(tmp
     )
 
 
+def test_planning_integrity_requires_commit_link_for_completed_product_worker_profile(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-product-worker",
+            slug="product-worker",
+            title="Product Worker Plan",
+            goal="Product worker completions need final commit evidence.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-product-worker",
+            title="Completed task",
+            goal="Finish product work.",
+            task_type="AFK",
+            status="completed",
+            scope={"review_skipped": True},
+            acceptance_criteria=["criterion"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            worker_backend="codex_exec",
+            review_required=False,
+        )
+    )
+    result_id = _upsert_db_worker_result(store)
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-product-worker",
+            task_id="task-worker",
+            backend="codex_exec",
+            status="completed",
+            result_id=result_id,
+            metadata={"worker_profile": "sanitized_product_worker"},
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "completed_product_worker_task_without_commit_link"
+        for failure in failures
+    )
+
+
 def test_planning_integrity_requires_final_state_commit_relationship(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
@@ -1166,6 +1215,45 @@ def test_planning_integrity_allows_completed_manual_promotion_task_with_progress
     )
 
 
+def test_planning_integrity_rejects_completed_hitl_promotion_task_without_progress(
+    tmp_path,
+):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-promotion",
+            slug="promotion",
+            title="Promotion Plan",
+            goal="Require controller promotion bookkeeping evidence.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-promote-worker-output",
+            plan_id="plan-promotion",
+            title="Promote worker output",
+            goal="Promote the completed worker output into the main checkout.",
+            task_type="HITL",
+            status="completed",
+            acceptance_criteria=["promotion done"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["plans/planning.sqlite3"],
+            worker_backend="manual",
+            review_required=False,
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "completed_promotion_task_without_promotion_progress"
+        for failure in failures
+    )
+
+
 def test_planning_integrity_rejects_promotion_of_review_required_source_without_review(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
@@ -1273,6 +1361,55 @@ def test_planning_integrity_rejects_completed_review_required_task_without_revie
 
     assert any(
         failure.check_name == "completed_review_required_task_without_review_result"
+        for failure in failures
+    )
+
+
+def test_planning_integrity_rejects_completed_codex_exec_task_without_review_or_waiver(
+    tmp_path,
+):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-review-required",
+            slug="review-required",
+            title="Review Required Plan",
+            goal="Do not allow completed codex_exec work to erase review posture.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-review-required",
+            title="Completed task",
+            goal="Should declare review posture.",
+            task_type="AFK",
+            status="completed",
+            acceptance_criteria=["criterion"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["runs/**"],
+            worker_backend="codex_exec",
+            review_required=False,
+        )
+    )
+    result_id = _upsert_db_worker_result(store)
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-worker",
+            task_id="task-worker",
+            backend="codex_exec",
+            status="completed",
+            result_id=result_id,
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "completed_codex_exec_task_without_review_or_waiver"
         for failure in failures
     )
 
@@ -1451,6 +1588,144 @@ def test_planning_integrity_requires_worker_result_run_link(tmp_path):
     failures = module.check_planning_integrity(db_path)
 
     assert not any(failure.check_name == "worker_result_without_run_link" for failure in failures)
+
+
+def test_planning_integrity_requires_completed_worker_artifact_links(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker",
+            slug="worker",
+            title="Worker Plan",
+            goal="Validate worker artifact links.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-worker",
+            title="Worker task",
+            goal="Run.",
+            task_type="AFK",
+            status="completed",
+            scope={"review_skipped": True},
+            acceptance_criteria=["done"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            worker_backend="codex_exec",
+            review_required=False,
+        )
+    )
+    payload = json.loads(json_worker_result())
+    store.upsert_worker_result_record(
+        WorkerResultRecord(
+            result_id="worker-result-run-worker",
+            status="completed",
+            summary="Recorded.",
+            raw_payload=payload,
+            tests_run=payload["tests_run"],
+            acceptance_results=payload["acceptance_results"],
+            changed_files=payload["changed_files"],
+            artifacts=payload["artifacts"],
+            risks=payload["risks"],
+            follow_up_tasks=payload["follow_up_tasks"],
+            completion_notes=payload.get("completion_notes", payload.get("handoff_notes")),
+            source_path="artifacts/run-worker/worker-result.controller-completed.json",
+            source_kind="worker-result-json",
+            metadata={
+                "normalized_result_path": (
+                    "artifacts/run-worker/worker-result.controller-completed.normalized.json"
+                )
+            },
+        )
+    )
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-worker",
+            task_id="task-worker",
+            backend="codex_exec",
+            status="completed",
+            result_id="worker-result-run-worker",
+            metadata={
+                "planned_evidence_paths": {
+                    "evidence_manifest": "artifacts/run-worker/evidence-manifest.json"
+                }
+            },
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "completed_worker_run_missing_artifact_links" for failure in failures
+    )
+
+
+def test_planning_integrity_does_not_require_links_for_legacy_worker_results_paths(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker",
+            slug="worker",
+            title="Worker Plan",
+            goal="Validate legacy worker result paths.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-worker",
+            title="Worker task",
+            goal="Run.",
+            task_type="AFK",
+            status="completed",
+            scope={"review_skipped": True},
+            acceptance_criteria=["done"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            worker_backend="codex_exec",
+            review_required=False,
+        )
+    )
+    payload = json.loads(json_worker_result())
+    store.upsert_worker_result_record(
+        WorkerResultRecord(
+            result_id="worker-result-run-worker",
+            status="completed",
+            summary="Recorded.",
+            raw_payload=payload,
+            tests_run=payload["tests_run"],
+            acceptance_results=payload["acceptance_results"],
+            changed_files=payload["changed_files"],
+            artifacts=payload["artifacts"],
+            risks=payload["risks"],
+            follow_up_tasks=payload["follow_up_tasks"],
+            completion_notes=payload.get("completion_notes", payload.get("handoff_notes")),
+            source_path="worker-results/legacy-worker-result.json",
+            source_kind="worker-result-json",
+        )
+    )
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-worker",
+            task_id="task-worker",
+            backend="codex_exec",
+            status="completed",
+            result_id="worker-result-run-worker",
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert not any(
+        failure.check_name == "completed_worker_run_missing_artifact_links" for failure in failures
+    )
 
 
 def test_planning_integrity_rejects_completed_run_that_lost_indexed_evidence_paths(tmp_path):
@@ -3053,6 +3328,118 @@ def test_planning_integrity_requires_browser_smoke_for_marked_completed_task(tmp
 
     assert any(
         failure.check_name == "completed_worker_run_missing_browser_smoke" for failure in failures
+    )
+
+
+def test_planning_integrity_requires_progress_for_passed_browser_smoke(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker",
+            slug="worker",
+            title="Worker Plan",
+            goal="Require UI progress evidence.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-worker",
+            title="Worker",
+            goal="Build a UI.",
+            task_type="AFK",
+            status="completed",
+            scope={"review_skipped": True},
+            acceptance_criteria=["criterion"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            worker_backend="codex_exec",
+            review_required=False,
+        )
+    )
+    payload = json.loads(json_worker_result())
+    payload["browser_smoke_results"] = [
+        {
+            "status": "passed",
+            "summary": "Browser smoke passed.",
+            "tool": "playwright",
+            "command": "node scripts/smoke-browser.mjs",
+            "exit_code": 0,
+            "url": "http://127.0.0.1:4173",
+            "artifact": "artifacts/browser-smoke.json",
+            "artifacts": None,
+        }
+    ]
+    result_id = _upsert_db_worker_result(store, payload=payload)
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-worker",
+            task_id="task-worker",
+            backend="codex_exec",
+            status="completed",
+            result_id=result_id,
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "completed_worker_run_missing_browser_smoke_progress"
+        for failure in failures
+    )
+
+
+def test_planning_integrity_rejects_completed_worker_result_with_stale_blockers(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker",
+            slug="worker",
+            title="Worker Plan",
+            goal="Reject stale completed result blockers.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-worker",
+            title="Worker",
+            goal="Build a UI.",
+            task_type="AFK",
+            status="completed",
+            scope={"review_skipped": True},
+            acceptance_criteria=["criterion"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            worker_backend="codex_exec",
+            review_required=False,
+        )
+    )
+    payload = json.loads(json_worker_result())
+    payload["risks"] = [
+        "`uv run --no-sync python -B scripts/verify.py` remains blocked by planning metadata."
+    ]
+    result_id = _upsert_db_worker_result(store, payload=payload)
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-worker",
+            task_id="task-worker",
+            backend="codex_exec",
+            status="completed",
+            result_id=result_id,
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "completed_worker_run_stale_result_blocker" for failure in failures
     )
 
 

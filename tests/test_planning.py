@@ -1206,6 +1206,122 @@ def test_cli_write_commands_record_planning_rows(tmp_path, capsys):
     assert summary[0]["worker_runs"][0]["worker_run_id"] == "run-write"
 
 
+def test_cli_task_upsert_accepts_scope_json_file(tmp_path, capsys):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    scope_path = tmp_path / "scope.json"
+    scope_path.write_text(
+        json.dumps(
+            {
+                "full_afk": True,
+                "publication_required": True,
+                "final_commit_required": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert main(["plan-init", "--path", str(db_path)]) == 0
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "plan-upsert",
+                "--path",
+                str(db_path),
+                "--plan-id",
+                "plan-write",
+                "--slug",
+                "write",
+                "--title",
+                "Write Plan",
+                "--goal",
+                "Write durable task state.",
+                "--status",
+                "active",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    assert (
+        main(
+            [
+                "task-upsert",
+                "--path",
+                str(db_path),
+                "--task-id",
+                "task-write",
+                "--plan-id",
+                "plan-write",
+                "--title",
+                "Write task",
+                "--goal",
+                "Write durable task state.",
+                "--task-type",
+                "AFK",
+                "--status",
+                "ready",
+                "--scope-json-file",
+                str(scope_path),
+                "--acceptance-criterion",
+                "Task exists.",
+                "--verification-command",
+                "python -B -m pytest -p no:cacheprovider",
+                "--allowed-path",
+                "src/**",
+                "--review-required",
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    task_json = json.loads(capsys.readouterr().out)
+    assert task_json["scope"] == {
+        "full_afk": True,
+        "publication_required": True,
+        "final_commit_required": True,
+    }
+
+
+def test_cli_task_upsert_rejects_scope_json_and_scope_json_file_together(tmp_path, capsys):
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    scope_path = tmp_path / "scope.json"
+    scope_path.write_text('{"full_afk":true}', encoding="utf-8")
+    assert main(["plan-init", "--path", str(db_path)]) == 0
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "task-upsert",
+                "--path",
+                str(db_path),
+                "--task-id",
+                "task-write",
+                "--plan-id",
+                "plan-write",
+                "--title",
+                "Write task",
+                "--goal",
+                "Write durable task state.",
+                "--task-type",
+                "AFK",
+                "--status",
+                "ready",
+                "--scope-json",
+                '{"review_skipped":true}',
+                "--scope-json-file",
+                str(scope_path),
+                "--review-required",
+                "--json",
+            ]
+        )
+        == 1
+    )
+    assert "use only one of --scope-json or --scope-json-file" in capsys.readouterr().err
+
+
 def test_cli_ci_run_record_persists_progress_and_commit_link(tmp_path, capsys):
     db_path = tmp_path / "plans" / "planning.sqlite3"
     store = initialize_planning_database(db_path)
@@ -3321,6 +3437,63 @@ def test_task_status_requires_review_evidence_for_review_required_completion(tmp
     assert store.list_supervisor_tasks()[0].status == "completed"
 
 
+def test_task_upsert_rejects_dropping_review_required_after_worker_history(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Keep review gates durable after worker evidence exists.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-test",
+            plan_id="plan-test",
+            title="Task",
+            goal="Do the task.",
+            task_type="AFK",
+            status="reviewing",
+            acceptance_criteria=["Criterion"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            review_required=True,
+        )
+    )
+    _upsert_worker_result_record(store, "result-review")
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-review",
+            task_id="task-test",
+            backend="codex_exec",
+            status="completed",
+            result_id="result-review",
+        )
+    )
+
+    with pytest.raises(ValueError, match="cannot clear review_required"):
+        store.upsert_supervisor_task(
+            SupervisorTaskRecord(
+                task_id="task-test",
+                plan_id="plan-test",
+                title="Task",
+                goal="Do the task.",
+                task_type="AFK",
+                status="completed",
+                acceptance_criteria=["Criterion"],
+                verification_commands=["python -B -m pytest -p no:cacheprovider"],
+                allowed_paths=["src/**"],
+                review_required=False,
+            )
+        )
+
+    task = store.list_supervisor_tasks()[0]
+    assert task.review_required is True
+    assert task.status == "reviewing"
+
+
 @pytest.mark.parametrize("status", ["ready", "running", "blocked", "reviewing"])
 def test_task_status_rejects_open_afk_state_without_execution_contract(tmp_path, status):
     store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
@@ -4461,6 +4634,19 @@ def test_worker_result_ingestion_completes_after_validation(tmp_path):
     (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
     claim = store.claim_next_ready_afk_task(worker_run_id="run-test", backend="codex_exec")
     assert claim is not None
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-test",
+            task_id="task-test",
+            backend="codex_exec",
+            status="running",
+            metadata={
+                "raw_evidence_paths": {
+                    "evidence_manifest": "artifacts/run-test/evidence-manifest.json"
+                }
+            },
+        )
+    )
     request = WorkerLaunchRequest(
         worker_run_id="run-test",
         task_id="task-test",
@@ -4497,6 +4683,15 @@ def test_worker_result_ingestion_completes_after_validation(tmp_path):
     assert run.result_id == result.result_id
     assert run.result_id.startswith("worker-result-artifacts-run-test-worker-result.raw.json-")
     assert read_store.list_worker_result_run_links()[0].result_id == run.result_id
+    artifact_links = {
+        (link.artifact_id, link.relationship)
+        for link in read_store.list_plan_artifact_links(plan_id="plan-test")
+    }
+    assert artifact_links == {
+        ("artifacts/run-test/worker-result.raw.json", "worker-result"),
+        ("artifacts/run-test/worker-result.normalized.json", "worker-result-normalized"),
+        ("artifacts/run-test/evidence-manifest.json", "worker-evidence-manifest"),
+    }
 
 
 def test_worker_result_ids_include_source_path_for_repeated_filenames(tmp_path):

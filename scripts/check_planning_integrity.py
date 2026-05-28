@@ -25,11 +25,14 @@ if str(SRC) not in sys.path:
 
 try:
     from codex_supervisor.evidence_vocabulary import (  # noqa: E402
+        BROWSER_SMOKE_PASSED_EVENT,
         FINAL_STATE_COMMIT_RELATIONSHIPS,
         PROMOTION_COMPLETED_EVENT,
         REVIEW_ENFORCEMENT_ENABLED_EVENT,
         REVIEW_RESULT_RECORDED_EVENT,
+        WORKER_EVIDENCE_MANIFEST_ARTIFACT_RELATIONSHIP,
         WORKER_RESULT_ARTIFACT_RELATIONSHIP,
+        WORKER_RESULT_NORMALIZED_ARTIFACT_RELATIONSHIP,
     )
     from codex_supervisor.execution_surface import canonical_worker_backend  # noqa: E402
     from codex_supervisor.paths import default_planning_database_path  # noqa: E402
@@ -50,13 +53,29 @@ try:
     )
     from codex_supervisor.task_policy import (  # noqa: E402
         controller_owned_allowed_path_violations,
+        task_uses_controller_worker_profile,
+    )
+    from codex_supervisor.worker_results import (  # noqa: E402
+        STALE_COMPLETED_RESULT_BLOCKER_PHRASES,
     )
 except ModuleNotFoundError:
+    BROWSER_SMOKE_PASSED_EVENT = "browser_smoke_passed"
     FINAL_STATE_COMMIT_RELATIONSHIPS = ("final-project-state", "final-state", "completion")
     PROMOTION_COMPLETED_EVENT = "promotion_completed"
     REVIEW_ENFORCEMENT_ENABLED_EVENT = "review_enforcement_enabled"
     REVIEW_RESULT_RECORDED_EVENT = "review_result_recorded"
+    WORKER_EVIDENCE_MANIFEST_ARTIFACT_RELATIONSHIP = "worker-evidence-manifest"
     WORKER_RESULT_ARTIFACT_RELATIONSHIP = "worker-result"
+    WORKER_RESULT_NORMALIZED_ARTIFACT_RELATIONSHIP = "worker-result-normalized"
+    STALE_COMPLETED_RESULT_BLOCKER_PHRASES = (
+        "remains blocked",
+        "still blocked",
+        "is blocked by",
+        "broad supervisor gate is blocked",
+        "verification remains blocked",
+        "should repair planning",
+        "create the required separate afk review task",
+    )
 
     def canonical_worker_backend(worker_backend: str) -> str:
         return (
@@ -145,6 +164,15 @@ except ModuleNotFoundError:
                     )
                 violations.append(f"{normalized}: controller-owned path")
         return tuple(dict.fromkeys(violations))
+
+    def task_uses_controller_worker_profile(scope: object) -> bool:
+        parsed_scope = scope if isinstance(scope, dict) else {}
+        return parsed_scope.get("controller_mutation_kind") in {
+            "controller",
+            "planning",
+            "promotion",
+            "source_lock",
+        }
 
     PLAN_STATUSES = frozenset({"active", "blocked", "completed", "abandoned", "superseded"})
     CURRENT_QUEUE_PLAN_STATUSES = frozenset({"active", "blocked"})
@@ -381,6 +409,7 @@ def check_planning_integrity(db_path: Path) -> tuple[PlanningIntegrityFailure, .
             failures.extend(
                 _check_completed_publication_required_tasks_have_commit_links(connection)
             )
+            failures.extend(_check_completed_product_worker_runs_have_commit_links(connection))
             failures.extend(_check_current_queue_plans_have_operational_structure(connection))
             failures.extend(_check_completed_plans_have_completed_criteria(connection))
             failures.extend(_check_completed_plans_have_no_open_tasks(connection))
@@ -403,10 +432,14 @@ def check_planning_integrity(db_path: Path) -> tuple[PlanningIntegrityFailure, .
                 )
             )
             failures.extend(_check_completed_afk_tasks_have_worker_evidence(connection))
+            failures.extend(_check_completed_codex_exec_tasks_have_review_posture(connection))
+            failures.extend(_check_completed_promotion_tasks_have_progress(connection))
             failures.extend(_check_completed_review_required_tasks_have_review_evidence(connection))
             failures.extend(_check_review_required_promotions_have_review_evidence(connection))
             failures.extend(_check_worker_result_records_have_run_links(connection))
+            failures.extend(_check_completed_worker_runs_have_artifact_links(connection))
             failures.extend(_check_worker_result_records_have_valid_payloads(connection, repo_root))
+            failures.extend(_check_passed_browser_smoke_has_progress(connection))
             failures.extend(_check_worker_result_records_align_with_runs(connection))
             failures.extend(_check_worker_results_not_stored_as_public_files(connection, repo_root))
             failures.extend(_check_handoff_snapshot_is_compact(repo_root))
@@ -854,6 +887,56 @@ def _check_completed_publication_required_tasks_have_commit_links(
     return tuple(failures)
 
 
+def _check_completed_product_worker_runs_have_commit_links(
+    connection: sqlite3.Connection,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    rows = connection.execute(
+        """
+        SELECT st.task_id, st.plan_id, wr.worker_run_id, wr.metadata_json
+        FROM worker_runs wr
+        JOIN supervisor_tasks st ON st.task_id = wr.task_id
+        WHERE st.status = 'completed'
+          AND wr.status = 'completed'
+          AND wr.backend IN ('codex_exec', 'live_codex_exec')
+        ORDER BY st.task_id, wr.worker_run_id
+        """
+    ).fetchall()
+    failures: list[PlanningIntegrityFailure] = []
+    for task_id, plan_id, worker_run_id, metadata_json in rows:
+        try:
+            metadata = json.loads(str(metadata_json or "{}"))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(metadata, dict):
+            continue
+        if metadata.get("worker_profile") != "sanitized_product_worker":
+            continue
+        if _plan_has_final_state_commit_link(connection, str(plan_id)):
+            continue
+        failures.append(
+            PlanningIntegrityFailure(
+                "completed_product_worker_task_without_commit_link",
+                f"{task_id} on {plan_id} via {worker_run_id} requires a final commit link",
+            )
+        )
+    return tuple(failures)
+
+
+def _plan_has_final_state_commit_link(connection: sqlite3.Connection, plan_id: str) -> bool:
+    relationship_placeholders = ", ".join("?" for _ in FINAL_STATE_COMMIT_RELATIONSHIPS)
+    row = connection.execute(
+        f"""
+        SELECT 1
+        FROM plan_commit_links
+        WHERE plan_id = ?
+          AND relationship IN ({relationship_placeholders})
+        LIMIT 1
+        """,
+        (plan_id, *FINAL_STATE_COMMIT_RELATIONSHIPS),
+    ).fetchone()
+    return row is not None
+
+
 def _json_object(raw_value: object) -> dict[object, object]:
     try:
         value = json.loads(str(raw_value))
@@ -1247,6 +1330,97 @@ def _check_completed_afk_tasks_have_worker_evidence(
             )
         )
     return tuple(failures)
+
+
+def _check_completed_codex_exec_tasks_have_review_posture(
+    connection: sqlite3.Connection,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    rows = connection.execute(
+        """
+        SELECT st.task_id, st.plan_id, st.scope_json
+        FROM supervisor_tasks st
+        WHERE st.task_type = 'AFK'
+          AND st.status = 'completed'
+          AND st.review_required = 0
+          AND EXISTS (
+              SELECT 1
+              FROM worker_runs wr
+              WHERE wr.task_id = st.task_id
+                AND wr.status = 'completed'
+                AND wr.result_id IS NOT NULL
+                AND trim(wr.result_id) != ''
+                AND wr.backend IN ('codex_exec', 'live_codex_exec')
+          )
+        ORDER BY st.task_id
+        """
+    ).fetchall()
+    failures: list[PlanningIntegrityFailure] = []
+    for task_id, plan_id, scope_json in rows:
+        scope = _json_object(scope_json)
+        if _scope_review_waived(scope) or task_uses_controller_worker_profile(scope):
+            continue
+        failures.append(
+            PlanningIntegrityFailure(
+                "completed_codex_exec_task_without_review_or_waiver",
+                f"{task_id} on plan {plan_id} completed without review_required or waiver",
+            )
+        )
+    return tuple(failures)
+
+
+def _scope_review_waived(scope: dict[object, object]) -> bool:
+    return scope.get("review_skipped") is True or scope.get("review_gate") == "review_skipped"
+
+
+def _check_completed_promotion_tasks_have_progress(
+    connection: sqlite3.Connection,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    rows = connection.execute(
+        """
+        SELECT task_id, plan_id, title, goal, scope_json, worker_backend
+        FROM supervisor_tasks
+        WHERE status = 'completed'
+        ORDER BY task_id
+        """
+    ).fetchall()
+    failures: list[PlanningIntegrityFailure] = []
+    for task_id, plan_id, title, goal, scope_json, worker_backend in rows:
+        if canonical_worker_backend(str(worker_backend)) != "manual":
+            continue
+        if not _is_promotion_task(
+            task_id=str(task_id),
+            title=str(title or ""),
+            goal=str(goal or ""),
+            scope=_json_object(scope_json),
+        ):
+            continue
+        if _promotion_progress_for_task(connection, str(plan_id), str(task_id)) is not None:
+            continue
+        failures.append(
+            PlanningIntegrityFailure(
+                "completed_promotion_task_without_promotion_progress",
+                f"{task_id} on plan {plan_id} completed without {PROMOTION_COMPLETED_EVENT}",
+            )
+        )
+    return tuple(failures)
+
+
+def _is_promotion_task(
+    *,
+    task_id: str,
+    title: str,
+    goal: str,
+    scope: dict[object, object],
+) -> bool:
+    if task_id.startswith("task-promote"):
+        return True
+    if (
+        scope.get("task_role") == "promotion"
+        or scope.get("controller_mutation_kind") == "promotion"
+    ):
+        return True
+    text = f"{title} {goal}".lower()
+    return "promote" in text and "worker" in text
 
 
 def _worker_evidence_manifest_hash_failures(
@@ -1678,6 +1852,122 @@ def _check_worker_result_records_have_run_links(
     )
 
 
+def _check_completed_worker_runs_have_artifact_links(
+    connection: sqlite3.Connection,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    rows = connection.execute(
+        """
+        SELECT wr.worker_run_id, st.plan_id, wr.metadata_json, result.source_path,
+               result.metadata_json
+        FROM worker_runs wr
+        JOIN supervisor_tasks st ON st.task_id = wr.task_id
+        JOIN worker_result_run_links link ON link.worker_run_id = wr.worker_run_id
+        JOIN worker_result_records result ON result.result_id = link.result_id
+        WHERE wr.status = 'completed'
+        ORDER BY wr.worker_run_id
+        """
+    ).fetchall()
+    failures: list[PlanningIntegrityFailure] = []
+    for worker_run_id, plan_id, run_metadata_json, source_path, result_metadata_json in rows:
+        expected_links = _expected_completed_worker_artifact_links(
+            source_path=source_path,
+            result_metadata_json=result_metadata_json,
+            run_metadata_json=run_metadata_json,
+        )
+        missing = tuple(
+            f"{relationship}:{artifact_id}"
+            for artifact_id, relationship in expected_links
+            if not _plan_artifact_link_exists(
+                connection,
+                plan_id=str(plan_id),
+                artifact_id=artifact_id,
+                relationship=relationship,
+            )
+        )
+        if not missing:
+            continue
+        failures.append(
+            PlanningIntegrityFailure(
+                "completed_worker_run_missing_artifact_links",
+                f"{worker_run_id} on {plan_id} missing artifact links: {', '.join(missing)}",
+            )
+        )
+    return tuple(failures)
+
+
+def _expected_completed_worker_artifact_links(
+    *,
+    source_path: object,
+    result_metadata_json: object,
+    run_metadata_json: object,
+) -> tuple[tuple[str, str], ...]:
+    links: list[tuple[str, str]] = []
+    source_artifact_id = _worker_result_linkable_artifact_id(source_path)
+    if source_artifact_id is not None:
+        links.append((source_artifact_id, WORKER_RESULT_ARTIFACT_RELATIONSHIP))
+    result_metadata = _json_object(result_metadata_json)
+    normalized_path = result_metadata.get("normalized_result_path")
+    normalized_artifact_id = _worker_result_linkable_artifact_id(normalized_path)
+    if normalized_artifact_id is not None:
+        links.append(
+            (
+                normalized_artifact_id,
+                WORKER_RESULT_NORMALIZED_ARTIFACT_RELATIONSHIP,
+            )
+        )
+    run_metadata = _json_object(run_metadata_json)
+    manifest_path = _worker_run_evidence_manifest_path(run_metadata)
+    manifest_artifact_id = _worker_result_linkable_artifact_id(manifest_path)
+    if manifest_artifact_id is not None:
+        links.append((manifest_artifact_id, WORKER_EVIDENCE_MANIFEST_ARTIFACT_RELATIONSHIP))
+    return tuple(dict.fromkeys(links))
+
+
+def _worker_result_linkable_artifact_id(value: object) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    normalized = _normalize_repo_path(value)
+    if normalized.startswith("worker-results/"):
+        return None
+    return normalized
+
+
+def _worker_run_evidence_manifest_path(metadata: dict[object, object]) -> str | None:
+    for key in ("evidence_manifest_path", "evidence_manifest"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    for parent_key in ("raw_evidence_paths", "planned_evidence_paths"):
+        parent = metadata.get(parent_key)
+        if not isinstance(parent, dict):
+            continue
+        value = parent.get("evidence_manifest")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _plan_artifact_link_exists(
+    connection: sqlite3.Connection,
+    *,
+    plan_id: str,
+    artifact_id: str,
+    relationship: str,
+) -> bool:
+    row = connection.execute(
+        """
+        SELECT 1
+        FROM plan_artifact_links
+        WHERE plan_id = ?
+          AND artifact_id = ?
+          AND relationship = ?
+        LIMIT 1
+        """,
+        (plan_id, artifact_id, relationship),
+    ).fetchone()
+    return row is not None
+
+
 def _check_worker_result_records_have_valid_payloads(
     connection: sqlite3.Connection,
     repo_root: Path,
@@ -1760,6 +2050,9 @@ def _check_worker_result_records_have_valid_payloads(
             )
         if status == "completed":
             failures.extend(_completed_worker_result_evidence_failures(str(result_id), payload))
+            failures.extend(
+                _completed_worker_result_stale_blocker_failures(str(result_id), payload)
+            )
         failures.extend(_completed_worker_result_test_run_failures(str(result_id), payload))
         failures.extend(_completed_worker_result_browser_smoke_failures(str(result_id), payload))
         failures.extend(
@@ -1805,6 +2098,78 @@ def _check_worker_result_records_have_valid_payloads(
                     )
                 )
     return tuple(failures)
+
+
+def _check_passed_browser_smoke_has_progress(
+    connection: sqlite3.Connection,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    rows = connection.execute(
+        """
+        SELECT wr.worker_run_id, st.plan_id, result.raw_payload_json
+        FROM worker_result_records result
+        JOIN worker_result_run_links link ON link.result_id = result.result_id
+        JOIN worker_runs wr ON wr.worker_run_id = link.worker_run_id
+        JOIN supervisor_tasks st ON st.task_id = wr.task_id
+        WHERE wr.status = 'completed'
+          AND result.status = 'completed'
+        ORDER BY wr.worker_run_id
+        """
+    ).fetchall()
+    failures: list[PlanningIntegrityFailure] = []
+    for worker_run_id, plan_id, raw_payload_json in rows:
+        try:
+            payload = json.loads(str(raw_payload_json or "{}"))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if not _payload_has_passed_browser_smoke(payload):
+            continue
+        if _has_browser_smoke_passed_progress(
+            connection,
+            plan_id=str(plan_id),
+            worker_run_id=str(worker_run_id),
+        ):
+            continue
+        failures.append(
+            PlanningIntegrityFailure(
+                "completed_worker_run_missing_browser_smoke_progress",
+                f"{worker_run_id} on {plan_id} has passed browser smoke without progress event",
+            )
+        )
+    return tuple(failures)
+
+
+def _payload_has_passed_browser_smoke(payload: dict[object, object]) -> bool:
+    entries = payload.get("browser_smoke_results")
+    if not isinstance(entries, list):
+        return False
+    return any(isinstance(entry, dict) and entry.get("status") == "passed" for entry in entries)
+
+
+def _has_browser_smoke_passed_progress(
+    connection: sqlite3.Connection,
+    *,
+    plan_id: str,
+    worker_run_id: str,
+) -> bool:
+    rows = connection.execute(
+        """
+        SELECT details
+        FROM plan_progress_events
+        WHERE plan_id = ?
+          AND event_type = ?
+        """,
+        (plan_id, BROWSER_SMOKE_PASSED_EVENT),
+    ).fetchall()
+    for (details_json,) in rows:
+        try:
+            details = json.loads(str(details_json or "{}"))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(details, dict) and details.get("worker_run_id") == worker_run_id:
+            return True
+    return False
 
 
 def _check_worker_result_records_align_with_runs(
@@ -2512,6 +2877,38 @@ def _completed_worker_result_evidence_failures(
             )
         )
     return tuple(failures)
+
+
+def _completed_worker_result_stale_blocker_failures(
+    worker_run_id: str,
+    payload: dict[object, object],
+) -> tuple[PlanningIntegrityFailure, ...]:
+    failures: list[PlanningIntegrityFailure] = []
+    for key in ("risks", "follow_up_tasks"):
+        value = payload.get(key)
+        if not isinstance(value, list):
+            continue
+        for index, item in enumerate(value):
+            if not isinstance(item, str):
+                continue
+            phrase = _stale_completed_result_blocker_phrase(item)
+            if phrase is None:
+                continue
+            failures.append(
+                PlanningIntegrityFailure(
+                    "completed_worker_run_stale_result_blocker",
+                    f"{worker_run_id}: {key}[{index}] contains stale blocker phrase: {phrase}",
+                )
+            )
+    return tuple(failures)
+
+
+def _stale_completed_result_blocker_phrase(value: str) -> str | None:
+    normalized = value.lower()
+    return next(
+        (phrase for phrase in STALE_COMPLETED_RESULT_BLOCKER_PHRASES if phrase in normalized),
+        None,
+    )
 
 
 def _completed_worker_result_test_run_failures(

@@ -262,6 +262,8 @@ def record_review_result(
     review_result: ReviewResult,
     review_result_artifact_id: str,
     review_artifact_ids: tuple[str, ...] = (),
+    target_task_id: str | None = None,
+    review_target: str | None = None,
 ) -> ReviewResultPersistenceRecord:
     """Record one validated review result as planning progress and artifact links."""
 
@@ -270,7 +272,14 @@ def record_review_result(
         plan_id=plan_id,
         event_type=REVIEW_RESULT_RECORDED_EVENT,
         summary=_summary(review_result),
-        details=json.dumps(_details(review_result), sort_keys=True),
+        details=json.dumps(
+            _details(
+                review_result,
+                target_task_id=target_task_id,
+                review_target=review_target,
+            ),
+            sort_keys=True,
+        ),
         linked_artifact_id=review_result_artifact_id,
     )
     artifact_links = (
@@ -373,11 +382,15 @@ def run_live_review_for_task(
         review_result=review_result,
         review_result_artifact_id=review_result_artifact_id,
         review_artifact_ids=review_artifact_ids,
+        target_task_id=source_task_id or task_id,
+        review_target=review_result.target,
     )
     repair_result = apply_repair_task_plan(store, repair_plan) if repair_plan is not None else None
     review_promotion: ReviewPromotionRecord | None = None
     if _needs_hitl_findings(review_result):
         status = "needs_hitl"
+    elif _accepted(review_result):
+        status = "needs_repair"
     elif source_task_id is not None:
         review_promotion = store.promote_reviewed_task_completion(
             source_task_id=source_task_id,
@@ -483,11 +496,16 @@ def _persist_failed_review_launch(
     return ReviewResultPersistenceRecord(progress=progress, artifact_links=artifact_links)
 
 
-def _details(review_result: ReviewResult) -> dict[str, object]:
-    return {
+def _details(
+    review_result: ReviewResult,
+    *,
+    target_task_id: str | None = None,
+    review_target: str | None = None,
+) -> dict[str, object]:
+    details: dict[str, object] = {
         "review_id": review_result.review_id,
         "mode": review_result.mode,
-        "target": review_result.target,
+        "target": target_task_id or review_result.target,
         "finding_counts": _finding_counts(review_result),
         "accepted_findings": tuple(
             _finding_summary(finding) for finding in _accepted(review_result)
@@ -502,6 +520,9 @@ def _details(review_result: ReviewResult) -> dict[str, object]:
             _verification_summary(evidence) for evidence in review_result.verification_evidence
         ),
     }
+    if review_target is not None and review_target != details["target"]:
+        details["review_target"] = review_target
+    return details
 
 
 def _finding_counts(review_result: ReviewResult) -> dict[str, int]:

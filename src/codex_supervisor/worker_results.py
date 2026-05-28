@@ -29,6 +29,16 @@ WORKER_RESULT_PAYLOAD_KEYS = frozenset(
         "worker_run_ids",
     }
 )
+
+STALE_COMPLETED_RESULT_BLOCKER_PHRASES = (
+    "remains blocked",
+    "still blocked",
+    "is blocked by",
+    "broad supervisor gate is blocked",
+    "verification remains blocked",
+    "should repair planning",
+    "create the required separate afk review task",
+)
 UNBOUNDED_BROWSER_SMOKE_COMMAND_PATTERNS = (
     re.compile(r"(^|[;&|]\s*)(npm|pnpm|yarn)\s+(run\s+)?dev\b", re.IGNORECASE),
     re.compile(r"(^|[;&|]\s*)vite\b", re.IGNORECASE),
@@ -138,6 +148,8 @@ def validate_worker_result_payload(
     _require_completion_notes(payload)
     _require_list(payload, "risks")
     _require_nonempty_list(payload, "follow_up_tasks", allow_empty=True)
+    if completed:
+        _validate_completed_result_narrative(payload)
     _validate_tests_run(payload, verification_commands, require_success=completed)
     support_root = artifact_root or repo_root
     _validate_browser_smoke_results(
@@ -252,6 +264,29 @@ def _require_nonempty_list(payload: JsonObject, key: str, *, allow_empty: bool =
     if not isinstance(value, list) or (not value and not allow_empty):
         msg = f"{key} must be a list"
         raise WorkerResultError(msg)
+
+
+def _validate_completed_result_narrative(payload: JsonObject) -> None:
+    for key in ("risks", "follow_up_tasks"):
+        value = payload.get(key)
+        if not isinstance(value, list):
+            continue
+        for index, item in enumerate(value):
+            if not isinstance(item, str):
+                continue
+            phrase = _stale_completed_result_blocker_phrase(item)
+            if phrase is None:
+                continue
+            msg = f"{key}[{index}] contains stale blocker phrase for completed result: {phrase}"
+            raise WorkerResultError(msg)
+
+
+def _stale_completed_result_blocker_phrase(value: str) -> str | None:
+    normalized = value.lower()
+    return next(
+        (phrase for phrase in STALE_COMPLETED_RESULT_BLOCKER_PHRASES if phrase in normalized),
+        None,
+    )
 
 
 def _validate_tests_run(

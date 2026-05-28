@@ -42,6 +42,30 @@ def test_worker_result_validation_accepts_completed_contract(tmp_path):
     assert result.artifacts == ("artifacts/run-worker/worker-result.raw.json",)
 
 
+def test_worker_result_validation_rejects_completed_result_with_stale_blockers(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
+    payload = _worker_result()
+    payload["risks"] = [
+        "`uv run --no-sync python -B scripts/verify.py` remains blocked by planning metadata."
+    ]
+    payload["follow_up_tasks"] = [
+        "Create the required separate AFK review task for this review-required "
+        "implementation slice."
+    ]
+
+    with pytest.raises(WorkerResultError, match="stale blocker"):
+        validate_worker_result_payload(
+            payload,
+            repo_root=tmp_path,
+            result_path="artifacts/run-worker/worker-result.raw.json",
+            worker_run_id="run-worker",
+            allowed_paths=("src/**",),
+            verification_commands=("python -B -m pytest -p no:cacheprovider",),
+            acceptance_criteria=("Criterion passes.",),
+        )
+
+
 def test_worker_result_validation_checks_changed_files_in_worktree_root(tmp_path):
     worktree = tmp_path / "worktrees" / "run-worker"
     (worktree / "src").mkdir(parents=True)

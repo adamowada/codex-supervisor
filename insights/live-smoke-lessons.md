@@ -168,14 +168,80 @@ not live queue state. Current work still belongs in `plans/planning.sqlite3`.
 - `next action`: Keep controller/planning/promotion/source-lock tasks explicit and separate from
   product implementation tasks.
 
+### Review Gates Are Durable Obligations
+
+- `claim`: Once a review-required worker task has worker or review history, ordinary task upserts
+  must not be allowed to clear `review_required`; planning integrity should also reject completed
+  Codex Exec tasks that have no review requirement, explicit waiver, or controller scope.
+- `confidence`: confirmed
+- `evidence`: todo-list-test-18-low completed `task-build-local-todo-product` after rewriting
+  `review_required=false`; regression coverage now lives in `tests/test_planning.py`,
+  `tests/test_review_persistence.py`, and `tests/test_planning_integrity.py`.
+- `scope`: review-required AFK work, direct live reviews, Story Loop recovery, and planning SQLite
+  mutation commands.
+- `supersedes`: treating the current task row as the whole review contract after worker evidence
+  already exists.
+- `next action`: Keep review-gate checks both at mutation time and in broad planning integrity so
+  legacy or manually repaired databases fail closed.
+
+### Promotion Paths Must Replay Evidence Hooks
+
+- `claim`: When a blocked worker result is later promoted by controller/manual repair, promotion
+  must create durable `promotion_completed`, browser-smoke progress, worker evidence artifact links,
+  and final commit links; it cannot rely only on a synthesized completed Worker Result.
+- `confidence`: confirmed
+- `evidence`: todo-list-test-18-low had passed browser smoke, review artifacts, and a final commit,
+  but planning SQLite lacked `browser_smoke_passed`, `promotion_completed`, worker evidence artifact
+  links, and commit links; regression coverage now lives in `tests/test_planning_integrity.py`.
+- `scope`: controller promotion, manual/HITL promotion tasks, Worker Result ingestion, browser
+  smoke evidence, and ACP publication readiness.
+- `supersedes`: considering post-worker verification output sufficient without replaying the same
+  planning ledger hooks used by a clean Story Loop completion.
+- `next action`: Prefer a typed promotion helper for controller repairs so evidence links and
+  progress events are created atomically.
+
+### Artifact Links Are Not DB Source Paths
+
+- `claim`: Planning artifact links are repo-visible evidence references, while DB-backed Worker
+  Result `source_path` values can include legacy internal source locations such as
+  `worker-results/`; integrity checks must not require or create forbidden public artifact links for
+  those legacy source paths, and publication hygiene must allow ignored runtime evidence links under
+  `artifacts/` and `runs/` without requiring those runtime files to be staged.
+- `confidence`: confirmed
+- `evidence`: The test18 broad verifier exposed historical Worker Result records whose
+  `source_path` values lived under `worker-results/`; the new integrity gate now skips those paths
+  while still requiring artifact links for `artifacts/**` raw, normalized, and manifest evidence.
+  Publication-ready verification then exposed that runtime evidence links need a hygiene exception
+  because AGENTS forbids staging worker runs and artifacts.
+- `scope`: planning SQLite integrity, Worker Result ingestion, artifact links, and public repo
+  hygiene.
+- `supersedes`: treating every Worker Result source path as a plan artifact link candidate.
+- `next action`: Keep DB source references and public artifact links as separate ledgers in future
+  migrations and repair helpers.
+
+### Completed Worker Results Cannot Carry Stale Blockers
+
+- `claim`: A completed Worker Result must not retain blocker-language risks or follow-ups copied
+  from a blocked result; stale blocker text should fail at ingestion and in planning integrity.
+- `confidence`: confirmed
+- `evidence`: todo-list-test-18-low synthesized a completed result from a blocked raw result while
+  keeping follow-ups such as required review-task creation and risks saying verification remained
+  blocked; regression coverage now lives in `tests/test_worker_results.py` and
+  `tests/test_planning_integrity.py`.
+- `scope`: Worker Result ingestion, controller-completed result synthesis, and broad verification.
+- `supersedes`: shallow-editing a blocked Worker Result into a completed Worker Result.
+- `next action`: Construct promotion results from explicit completion evidence, or clear/relocate
+  historical blocked notes before ingestion.
+
 ### JSON-Heavy CLI Mutations Need File Inputs
 
 - `claim`: JSON-heavy planning mutations should offer file-based inputs so workers do not have to
   inline nested JSON through PowerShell quoting.
 - `confidence`: confirmed
 - `evidence`: todo-list-test-17 repeatedly failed `worker-run-upsert --metadata-json` due shell
-  quote loss; `worker-run-upsert --metadata-json-file` now has regression coverage in
-  `tests/test_planning.py`.
+  quote loss, and todo-list-test-18-low lost task scope after inline JSON friction;
+  `worker-run-upsert --metadata-json-file` and `task-upsert --scope-json-file` now have regression
+  coverage in `tests/test_planning.py`.
 - `scope`: Windows CLI ergonomics, planning SQLite mutation commands, worker evidence metadata, and
   recovery flows.
 - `supersedes`: relying on inline JSON as the only CLI surface for complex metadata.

@@ -294,6 +294,8 @@ def _check_planning_artifacts_indexed(repo_root: Path, indexed: set[str]) -> tup
         if _is_unsafe_repo_relative_path(normalized):
             failures.append(f"planning artifact path is not repo-local: {artifact_id}")
             continue
+        if _is_ignored_runtime_artifact(normalized):
+            continue
         path = repo_root / normalized
         if not path.exists():
             failures.append(f"planning artifact does not exist on disk: {artifact_id}")
@@ -316,6 +318,10 @@ def _is_unsafe_repo_relative_path(normalized_path: str) -> bool:
     return (
         path.is_absolute() or bool(re.match(r"^[A-Za-z]:", normalized_path)) or ".." in path.parts
     )
+
+
+def _is_ignored_runtime_artifact(normalized_path: str) -> bool:
+    return normalized_path.split("/", 1)[0] in {"artifacts", "runs"}
 
 
 if __name__ == "__main__":

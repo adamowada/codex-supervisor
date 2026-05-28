@@ -8,8 +8,19 @@ evidence, and operational progress are in `plans/planning.sqlite3`.
 ## Current Snapshot
 
 - Current queue state: empty. `story-loop-status --json` reports no current AFK, HITL, or running
-  task after `plan-test17-orchestration-regressions-20260528` was completed.
-- Latest completed checkpoint: `plan-test17-orchestration-regressions-20260528` added TDD
+  task after `plan-test18-orchestration-regressions-20260528` was completed.
+- Latest completed checkpoint: `plan-test18-orchestration-regressions-20260528` added TDD
+  regression coverage and fixes for the todo-list-test-18-low orchestration RCA: review-required
+  tasks cannot silently drop review obligations after worker/review history exists, live review
+  accepted findings now route repair instead of completing source work, planning integrity requires
+  promotion/browser-smoke/worker-evidence/commit ledgers for controller promotions, Worker Result
+  validation rejects stale blocker text in completed results, `task-upsert --scope-json-file` avoids
+  PowerShell JSON loss, completed result ingestion auto-links repo-visible raw/normalized/manifest
+  evidence while skipping legacy `worker-results/` source paths, and historical planning evidence
+  was backfilled with explicit artifact links/review waivers where appropriate. Durable lessons were
+  saved in `insights/live-smoke-lessons.md` and `insights/graph.md`. Full
+  `uv run --no-sync python -B scripts/verify.py` passed locally.
+- Previous completed checkpoint: `plan-test17-orchestration-regressions-20260528` added TDD
   regression coverage and fixes for the todo-list-test-17 orchestration RCA: Worker Result
   evidence matching now normalizes PowerShell path separator variants, planning integrity rejects
   completed Codex Exec runs that lost core raw evidence or hide a failed `controller.stdout.json`,

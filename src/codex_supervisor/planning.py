@@ -23,8 +23,10 @@ from codex_supervisor.evidence_vocabulary import (
     PR_HEAD_COMMIT_RELATIONSHIP,
     PULL_REQUEST_RECORDED_EVENT,
     REVIEW_RESULT_RECORDED_EVENT,
+    WORKER_EVIDENCE_MANIFEST_ARTIFACT_RELATIONSHIP,
     WORKER_RESULT_ARTIFACT_RELATIONSHIP,
     WORKER_RESULT_JSON_SOURCE_KIND,
+    WORKER_RESULT_NORMALIZED_ARTIFACT_RELATIONSHIP,
     WORKER_RESULT_REVIEW_PROMOTED_EVENT,
 )
 from codex_supervisor.execution_surface import canonical_worker_backend
@@ -1283,7 +1285,7 @@ class PlanningSQLiteStore:
         with self.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
-                "SELECT plan_id FROM supervisor_tasks WHERE task_id = ?",
+                "SELECT plan_id, review_required FROM supervisor_tasks WHERE task_id = ?",
                 (record.task_id,),
             ).fetchone()
             previous_plan_id = str(existing["plan_id"]) if existing is not None else None
@@ -1298,6 +1300,24 @@ class PlanningSQLiteStore:
                         f"to plan {record.plan_id} while worker history exists"
                     )
                     raise ValueError(msg)
+            if (
+                existing is not None
+                and bool(existing["review_required"])
+                and not stored_record.review_required
+                and (
+                    _task_has_worker_history(connection, record.task_id)
+                    or _has_review_result_for_task(
+                        connection,
+                        plan_id=previous_plan_id or record.plan_id,
+                        task_id=record.task_id,
+                    )
+                )
+            ):
+                msg = (
+                    f"cannot clear review_required for task {record.task_id} after worker "
+                    "or review history exists"
+                )
+                raise ValueError(msg)
             if record.status not in TASK_STATUSES_ALLOWED_WITH_NONTERMINAL_WORKER_RUN:
                 active_run = _first_nonterminal_worker_run_for_task(connection, record.task_id)
                 if active_run is not None:
@@ -2620,6 +2640,7 @@ class PlanningSQLiteStore:
         }
         if result.redacted_payload_keys:
             metadata["redacted_raw_payload_keys"] = list(result.redacted_payload_keys)
+        normalized_source_path = source_path.replace("\\", "/")
         record = WorkerResultRecord(
             result_id=result_id,
             status=result.status,
@@ -2632,7 +2653,7 @@ class PlanningSQLiteStore:
             risks=_json_array_field(result.payload, "risks"),
             follow_up_tasks=_json_array_field(result.payload, "follow_up_tasks"),
             completion_notes=completion_notes,
-            source_path=source_path.replace("\\", "/"),
+            source_path=normalized_source_path,
             source_sha256=source_sha256,
             source_kind=source_kind,
             imported_at=now,
@@ -2643,7 +2664,7 @@ class PlanningSQLiteStore:
             _insert_worker_result_record(connection, record)
             for linked_worker_run_id in result.worker_run_ids:
                 row = connection.execute(
-                    "SELECT task_id FROM worker_runs WHERE worker_run_id = ?",
+                    "SELECT task_id, metadata_json FROM worker_runs WHERE worker_run_id = ?",
                     (linked_worker_run_id,),
                 ).fetchone()
                 _raise_missing(
@@ -2651,6 +2672,7 @@ class PlanningSQLiteStore:
                     "worker_run",
                     linked_worker_run_id,
                 )
+                task_id = str(row["task_id"])
                 _replace_worker_result_run_link(
                     connection,
                     result_id=result_id,
@@ -2680,10 +2702,18 @@ class PlanningSQLiteStore:
                 )
                 _sync_task_and_plan_for_worker_run(
                     connection,
-                    str(row["task_id"]),
+                    task_id,
                     result.status,
                     now,
                 )
+                if result.status == "completed":
+                    _link_completed_worker_result_artifacts(
+                        connection,
+                        task_id=task_id,
+                        source_path=normalized_source_path,
+                        normalized_path=normalized_path,
+                        worker_run_metadata=_load_json_object(str(row["metadata_json"])),
+                    )
         return record
 
     def record_rejected_worker_result_attempt(
@@ -4501,6 +4531,19 @@ def _task_has_completed_worker_result(connection: sqlite3.Connection, task_id: s
     return row is not None
 
 
+def _task_has_worker_history(connection: sqlite3.Connection, task_id: str) -> bool:
+    row = connection.execute(
+        """
+        SELECT 1
+        FROM worker_runs
+        WHERE task_id = ?
+        LIMIT 1
+        """,
+        (task_id,),
+    ).fetchone()
+    return row is not None
+
+
 def _has_review_result_for_task(
     connection: sqlite3.Connection,
     *,
@@ -5612,6 +5655,65 @@ def _link_worker_result_artifact(
         """,
         (str(row["plan_id"]), result_path, WORKER_RESULT_ARTIFACT_RELATIONSHIP),
     )
+
+
+def _link_completed_worker_result_artifacts(
+    connection: sqlite3.Connection,
+    *,
+    task_id: str,
+    source_path: str,
+    normalized_path: str,
+    worker_run_metadata: JsonObject,
+) -> None:
+    row = connection.execute(
+        "SELECT plan_id FROM supervisor_tasks WHERE task_id = ?",
+        (task_id,),
+    ).fetchone()
+    _raise_missing(0 if row is None else 1, "task", task_id)
+    plan_id = str(row["plan_id"])
+    links: list[tuple[str, str]] = []
+    source_artifact_id = _worker_result_linkable_artifact_id(source_path)
+    if source_artifact_id is not None:
+        links.append((source_artifact_id, WORKER_RESULT_ARTIFACT_RELATIONSHIP))
+    normalized_artifact_id = _worker_result_linkable_artifact_id(normalized_path)
+    if normalized_artifact_id is not None:
+        links.append((normalized_artifact_id, WORKER_RESULT_NORMALIZED_ARTIFACT_RELATIONSHIP))
+    manifest_path = _worker_run_evidence_manifest_path(worker_run_metadata)
+    manifest_artifact_id = _worker_result_linkable_artifact_id(manifest_path)
+    if manifest_artifact_id is not None:
+        links.append((manifest_artifact_id, WORKER_EVIDENCE_MANIFEST_ARTIFACT_RELATIONSHIP))
+    for artifact_id, relationship in dict.fromkeys(links):
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO plan_artifact_links(plan_id, artifact_id, relationship)
+            VALUES (?, ?, ?)
+            """,
+            (plan_id, artifact_id, relationship),
+        )
+
+
+def _worker_result_linkable_artifact_id(value: str | None) -> str | None:
+    if value is None or not value.strip():
+        return None
+    normalized = value.strip().replace("\\", "/")
+    if normalized.startswith("worker-results/"):
+        return None
+    return normalized
+
+
+def _worker_run_evidence_manifest_path(metadata: JsonObject) -> str | None:
+    for key in ("evidence_manifest_path", "evidence_manifest"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    for parent_key in ("raw_evidence_paths", "planned_evidence_paths"):
+        parent = metadata.get(parent_key)
+        if not isinstance(parent, dict):
+            continue
+        value = parent.get("evidence_manifest")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 def _task_status_for_worker_status(

@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from codex_supervisor.planning import PlanRecord, SupervisorTaskRecord, initialize_planning_database
+from codex_supervisor.planning import (
+    PlanRecord,
+    SupervisorTaskRecord,
+    WorkerResultRecord,
+    WorkerRunRecord,
+    initialize_planning_database,
+)
 from codex_supervisor.review_loop import (
     ReviewFinding,
     ReviewLocation,
@@ -26,6 +32,10 @@ from codex_supervisor.review_persistence import (
     run_live_review_for_task,
 )
 from codex_supervisor.worker_backends import CommandExecutionResult
+
+REVIEW_PERSISTENCE_TEST_COMMAND = (
+    "uv run --no-sync python -B -m pytest -p no:cacheprovider tests/test_review_persistence.py"
+)
 
 
 def test_record_review_result_persists_progress_details_and_artifact_links(tmp_path) -> None:
@@ -112,7 +122,7 @@ def test_record_review_result_does_not_create_repair_tasks(tmp_path) -> None:
     assert store.list_supervisor_tasks() == ()
 
 
-def test_run_live_review_for_task_persists_review_routes_repairs_and_completes_task(
+def test_run_live_review_for_task_routes_accepted_findings_without_completing_task(
     tmp_path,
 ) -> None:
     store = _store(tmp_path)
@@ -156,10 +166,10 @@ def test_run_live_review_for_task_persists_review_routes_repairs_and_completes_t
     progress = store.list_plan_progress(plan_id="plan-review")
 
     assert isinstance(result, LiveReviewRunResult)
-    assert result.status == "completed"
+    assert result.status == "needs_repair"
     assert backend.requests[0].task_id == "task-source-review"
     assert backend.requests[0].review_id == "review-live-001"
-    assert source_task.status == "completed"
+    assert source_task.status == "reviewing"
     assert repair_task.status == "ready"
     assert repair_task.scope["source_review_id"] == "review-live-001"
     assert repair_task.scope["source_finding_id"] == "finding-accepted"
@@ -201,6 +211,45 @@ def test_run_live_review_for_task_keeps_task_reviewing_when_hitl_is_needed(tmp_p
     assert result.status == "needs_hitl"
     assert source_task.status == "reviewing"
     assert result.created_repair_task_ids == ()
+
+
+def test_run_live_review_for_task_maps_dot_target_to_source_task_review_gate(tmp_path) -> None:
+    store = _store(tmp_path)
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-source-review",
+            plan_id="plan-review",
+            title="Source Review",
+            goal="Provide completed review evidence.",
+            task_type="AFK",
+            status="reviewing",
+            acceptance_criteria=("Review completed.",),
+            verification_commands=("uv run --no-sync python -B scripts/verify.py",),
+            allowed_paths=("src/codex_supervisor/review_persistence.py",),
+            review_required=True,
+        )
+    )
+    _record_completed_worker_result(store, task_id="task-source-review")
+    backend = StaticReviewBackend(_waived_review_result(review_id="review-dot-001", target="."))
+
+    result = run_live_review_for_task(
+        store,
+        task_id="task-source-review",
+        review_id="review-dot-001",
+        repo_root=tmp_path,
+        target=".",
+        backend=backend,
+        review_result_artifact_id="insights/review-result.md",
+    )
+
+    source_task = store.list_supervisor_tasks()[0]
+    progress = store.list_plan_progress(plan_id="plan-review")[0]
+    details = json.loads(progress.details or "{}")
+
+    assert result.status == "completed"
+    assert source_task.status == "completed"
+    assert details["target"] == "task-source-review"
+    assert details["review_target"] == "."
 
 
 def test_run_live_review_for_task_persists_failed_review_attempt(tmp_path) -> None:
@@ -539,6 +588,38 @@ def _review_result_payload(review_result: ReviewResult) -> dict[str, object]:
     }
 
 
+def _waived_review_result(
+    *,
+    review_id: str = "review-waived-001",
+    target: str = "task-source-review",
+) -> ReviewResult:
+    return ReviewResult(
+        review_id=review_id,
+        mode="everything",
+        target=target,
+        findings=(
+            ReviewFinding(
+                finding_id="finding-waived",
+                mode="architecture",
+                severity="P3",
+                status="waived",
+                title="No blocking finding",
+                evidence="The finding is explicitly waived.",
+                location=ReviewLocation(scope="review persistence helper"),
+                recommendation="No repair needed.",
+                waiver_rationale="No current ownership risk.",
+            ),
+        ),
+        verification_evidence=(
+            ReviewVerificationEvidence(
+                command=REVIEW_PERSISTENCE_TEST_COMMAND,
+                exit_code=0,
+                summary="passed",
+            ),
+        ),
+    )
+
+
 def _hitl_review_result() -> ReviewResult:
     return ReviewResult(
         review_id="review-hitl-001",
@@ -563,4 +644,56 @@ def _hitl_review_result() -> ReviewResult:
                 summary="passed",
             ),
         ),
+    )
+
+
+def _record_completed_worker_result(store, *, task_id: str) -> None:
+    result_id = f"result-{task_id}"
+    store.upsert_worker_result_record(
+        WorkerResultRecord(
+            result_id=result_id,
+            status="completed",
+            summary="Worker completed.",
+            raw_payload={
+                "worker_run_id": f"run-{task_id}",
+                "status": "completed",
+                "summary": "Worker completed.",
+                "changed_files": ["src/codex_supervisor/review_persistence.py"],
+                "tests_run": [
+                    {
+                        "command": REVIEW_PERSISTENCE_TEST_COMMAND,
+                        "exit_code": 0,
+                        "summary": "passed",
+                    }
+                ],
+                "acceptance_results": {"Review completed.": {"status": "passed", "evidence": "ok"}},
+                "risks": [],
+                "follow_up_tasks": [],
+                "artifacts": [],
+                "completion_notes": "Ready.",
+            },
+            tests_run=[
+                {
+                    "command": REVIEW_PERSISTENCE_TEST_COMMAND,
+                    "exit_code": 0,
+                    "summary": "passed",
+                }
+            ],
+            acceptance_results={"Review completed.": {"status": "passed", "evidence": "ok"}},
+            changed_files=["src/codex_supervisor/review_persistence.py"],
+            artifacts=[],
+            risks=[],
+            follow_up_tasks=[],
+            completion_notes="Ready.",
+            source_kind="test",
+        )
+    )
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id=f"run-{task_id}",
+            task_id=task_id,
+            backend="codex_exec",
+            status="completed",
+            result_id=result_id,
+        )
     )

@@ -31,6 +31,12 @@ graph.
   JSONL tool events and inspected worktree state.
 - `WorkerLivenessEvidence`: live Codex Exec liveness state that preserves semantic events across
   heartbeat updates.
+- `ReviewGateLedger`: planning SQLite invariants that preserve review obligations after worker or
+  review evidence exists.
+- `PromotionEvidenceLedger`: planning progress, artifact links, browser-smoke events, and commit
+  links required when controller/manual repair promotes worker output.
+- `ArtifactLinkLedger`: repo-visible plan artifact references, distinct from DB-only Worker Result
+  source paths.
 - `CrossPlatformCI`: publication gate that proves Windows-local assumptions still hold under Linux
   CI type-checking, path semantics, shell behavior, and clean-checkout evidence.
 - `LiveSmokeEvidence`: bounded real-environment validation using disposable repos, real Codex Exec,
@@ -67,3 +73,7 @@ graph.
 | `WorkerBoundaryPolicy` | denies controller privileges to | `ProjectAdapter` | `insights/live-smoke-lessons.md`, todo-list-test-17 task scope, `src/codex_supervisor/task_policy.py`, and `tests/test_story_loop.py` | confirmed | 2026-05-28 | Treat `product_surface` as product work even when a task also carries `controller_mutation_kind`. |
 | `WorkerLivenessEvidence` | informs | `StoryLoop` | `insights/live-smoke-lessons.md`, `src/codex_supervisor/worker_backends.py`, `scripts/check_planning_integrity.py`, `tests/test_worker_backends.py`, and `tests/test_story_loop_e2e.py` | confirmed | 2026-05-28 | Preserve last semantic events across heartbeats and reject stalled classifications that conflict with file-change evidence. |
 | `ExecutionModeLedger` | blocks manual fallback for | `StoryLoop` | `insights/live-smoke-lessons.md`, `src/codex_supervisor/runtime_preflight.py`, and `tests/test_runtime_preflight.py` | confirmed | 2026-05-28 | In full-AFK, record HITL/blocker evidence instead of direct/manual worker execution. |
+| `ReviewGateLedger` | preserves obligations in | `PlanningSQLite` | `insights/live-smoke-lessons.md`, todo-list-test-18-low RCA, `src/codex_supervisor/planning.py`, `src/codex_supervisor/review_persistence.py`, `tests/test_planning.py`, `tests/test_review_persistence.py`, and `tests/test_planning_integrity.py` | confirmed | 2026-05-28 | Reject review-gate weakening after worker history and map review targets back to the source task for completion checks. |
+| `PromotionEvidenceLedger` | completes evidence for | `StoryLoop` | `insights/live-smoke-lessons.md`, todo-list-test-18-low RCA, `scripts/check_planning_integrity.py`, and `tests/test_planning_integrity.py` | confirmed | 2026-05-28 | Require promotion progress, browser-smoke progress, worker artifact links, and final commit links when controller/manual repair promotes worker output. |
+| `ArtifactLinkLedger` | separates repo-visible evidence from | `PlanningSQLite` | `insights/live-smoke-lessons.md`, `src/codex_supervisor/planning.py`, `scripts/check_planning_integrity.py`, `scripts/check_public_repo_hygiene.py`, `tests/test_planning.py`, `tests/test_planning_integrity.py`, and `tests/test_public_repo_hygiene.py` | confirmed | 2026-05-28 | Do not create plan artifact links for legacy `worker-results/` source paths; allow ignored runtime evidence links under `artifacts/` and `runs/` without staging them. |
+| `WorkerResultEvidenceGate` | rejects stale blockers in | `PlanningSQLite` | `insights/live-smoke-lessons.md`, todo-list-test-18-low RCA, `src/codex_supervisor/worker_results.py`, `scripts/check_planning_integrity.py`, `tests/test_worker_results.py`, and `tests/test_planning_integrity.py` | confirmed | 2026-05-28 | Do not shallow-edit blocked Worker Results into completed results with stale risks or follow-ups. |

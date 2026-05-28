@@ -31,6 +31,7 @@ try:
         REVIEW_RESULT_RECORDED_EVENT,
         WORKER_RESULT_ARTIFACT_RELATIONSHIP,
     )
+    from codex_supervisor.execution_surface import canonical_worker_backend  # noqa: E402
     from codex_supervisor.paths import default_planning_database_path  # noqa: E402
     from codex_supervisor.planning import (  # noqa: E402
         CRITERION_STATUSES,
@@ -53,6 +54,12 @@ except ModuleNotFoundError:
     REVIEW_ENFORCEMENT_ENABLED_EVENT = "review_enforcement_enabled"
     REVIEW_RESULT_RECORDED_EVENT = "review_result_recorded"
     WORKER_RESULT_ARTIFACT_RELATIONSHIP = "worker-result"
+
+    def canonical_worker_backend(worker_backend: str) -> str:
+        return (
+            "codex_exec" if worker_backend in {"codex_exec", "live_codex_exec"} else worker_backend
+        )
+
     PLAN_STATUSES = frozenset({"active", "blocked", "completed", "abandoned", "superseded"})
     CURRENT_QUEUE_PLAN_STATUSES = frozenset({"active", "blocked"})
     MILESTONE_STATUSES = frozenset({"pending", "active", "blocked", "completed", "cancelled"})
@@ -294,12 +301,14 @@ def check_planning_integrity(db_path: Path) -> tuple[PlanningIntegrityFailure, .
             failures.extend(_check_nonterminal_worker_runs_match_task_state(connection))
             failures.extend(_check_open_afk_tasks_have_execution_contracts(connection))
             failures.extend(_check_open_afk_task_contract_values(connection))
+            failures.extend(_check_open_codex_exec_tasks_avoid_controller_owned_paths(connection))
             failures.extend(_check_completed_worker_runs_have_result_records(connection))
             failures.extend(
                 _check_completed_worker_runs_preserve_indexed_evidence(connection, repo_root)
             )
             failures.extend(_check_completed_afk_tasks_have_worker_evidence(connection))
             failures.extend(_check_completed_review_required_tasks_have_review_evidence(connection))
+            failures.extend(_check_review_required_promotions_have_review_evidence(connection))
             failures.extend(_check_worker_result_records_have_run_links(connection))
             failures.extend(_check_worker_result_records_have_valid_payloads(connection, repo_root))
             failures.extend(_check_worker_result_records_align_with_runs(connection))
@@ -690,6 +699,10 @@ def _requires_final_commit(scope: dict[object, object], context: dict[object, ob
     return any(scope.get(key) is True or context.get(key) is True for key in keys)
 
 
+def _scope_requires_browser_smoke(raw_scope: object) -> bool:
+    return _json_object(raw_scope).get("browser_smoke_required") is True
+
+
 def _repo_has_git_metadata(repo_root: Path) -> bool:
     return (repo_root / ".git").exists()
 
@@ -841,7 +854,7 @@ def _check_completed_worker_runs_preserve_indexed_evidence(
             continue
         raw_evidence_paths = metadata.get("raw_evidence_paths")
         if (
-            str(backend) == "codex_exec"
+            canonical_worker_backend(str(backend)) == "codex_exec"
             and _requires_final_commit(_json_object(scope_json), _json_object(context_json))
             and not isinstance(raw_evidence_paths, dict)
         ):
@@ -1070,7 +1083,7 @@ def _completed_afk_review_task_has_review_evidence(
     scope_json: str,
     worker_backend: str,
 ) -> bool:
-    if worker_backend != "codex_review":
+    if canonical_worker_backend(worker_backend) != "codex_review":
         return False
     try:
         scope = json.loads(scope_json)
@@ -1093,9 +1106,41 @@ def _completed_afk_manual_task_has_progress_evidence(
     task_id: str,
     worker_backend: str,
 ) -> bool:
-    if worker_backend != "manual":
+    if canonical_worker_backend(worker_backend) != "manual":
         return False
-    return _promotion_progress_for_task(connection, plan_id, task_id) is not None
+    promotion = _promotion_progress_for_task(connection, plan_id, task_id)
+    if promotion is None:
+        return False
+    _, details = promotion
+    source_task_id = details.get("source_task_id")
+    if not isinstance(source_task_id, str) or not source_task_id.strip():
+        return False
+    if not _source_task_is_review_required(connection, plan_id, source_task_id):
+        return True
+    return _review_progress_for_task(connection, plan_id, source_task_id) is not None or (
+        details.get("hitl_authority_required") is True
+        and (
+            details.get("hitl_authority_accepted") is True
+            or details.get("hitl_authority") == "accepted"
+        )
+    )
+
+
+def _source_task_is_review_required(
+    connection: sqlite3.Connection,
+    plan_id: str,
+    source_task_id: str,
+) -> bool:
+    row = connection.execute(
+        """
+        SELECT review_required
+        FROM supervisor_tasks
+        WHERE plan_id = ?
+          AND task_id = ?
+        """,
+        (plan_id, source_task_id),
+    ).fetchone()
+    return row is not None and bool(row[0])
 
 
 def _check_completed_review_required_tasks_have_review_evidence(
@@ -1201,7 +1246,7 @@ def _has_afk_review_task_for_source(
         (plan_id,),
     ).fetchall()
     for task_type, worker_backend, scope_json in rows:
-        if task_type != "AFK" or worker_backend != "codex_review":
+        if task_type != "AFK" or canonical_worker_backend(str(worker_backend)) != "codex_review":
             continue
         try:
             scope = json.loads(str(scope_json))
@@ -1215,6 +1260,47 @@ def _has_afk_review_task_for_source(
         ):
             return True
     return False
+
+
+def _check_review_required_promotions_have_review_evidence(
+    connection: sqlite3.Connection,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    rows = connection.execute(
+        """
+        SELECT progress.progress_id, progress.plan_id, progress.details
+        FROM plan_progress_events progress
+        WHERE progress.event_type = ?
+        ORDER BY progress.plan_id, progress.progress_id
+        """,
+        (PROMOTION_COMPLETED_EVENT,),
+    ).fetchall()
+    failures: list[PlanningIntegrityFailure] = []
+    for progress_id, plan_id, details_json in rows:
+        try:
+            details = json.loads(str(details_json or "{}"))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(details, dict):
+            continue
+        source_task_id = details.get("source_task_id")
+        if not isinstance(source_task_id, str) or not source_task_id.strip():
+            continue
+        if not _source_task_is_review_required(connection, str(plan_id), source_task_id):
+            continue
+        if _review_progress_for_task(connection, str(plan_id), source_task_id) is not None:
+            continue
+        if details.get("hitl_authority_required") is True and (
+            details.get("hitl_authority_accepted") is True
+            or details.get("hitl_authority") == "accepted"
+        ):
+            continue
+        failures.append(
+            PlanningIntegrityFailure(
+                "promotion_of_review_required_task_without_review_result",
+                f"{progress_id} promotes {source_task_id} without review result or HITL authority",
+            )
+        )
+    return tuple(failures)
 
 
 def _review_progress_for_task(
@@ -1489,7 +1575,8 @@ def _check_worker_result_records_align_with_runs(
             wr.status,
             st.verification_commands_json,
             st.acceptance_criteria_json,
-            st.allowed_paths_json
+            st.allowed_paths_json,
+            st.scope_json
         FROM worker_result_records result
         JOIN worker_result_run_links link ON link.result_id = result.result_id
         LEFT JOIN worker_runs wr ON wr.worker_run_id = link.worker_run_id
@@ -1510,6 +1597,7 @@ def _check_worker_result_records_align_with_runs(
         verification_json,
         acceptance_json,
         allowed_paths_json,
+        scope_json,
     ) in rows:
         try:
             payload = json.loads(str(raw_payload_json))
@@ -1571,6 +1659,13 @@ def _check_worker_result_records_align_with_runs(
                     str(acceptance_json),
                 )
             )
+        failures.extend(
+            _completed_worker_result_browser_smoke_failures(
+                str(worker_run_id),
+                payload,
+                required=_scope_requires_browser_smoke(scope_json),
+            )
+        )
     return tuple(failures)
 
 
@@ -1827,7 +1922,8 @@ def _check_completed_worker_json_results(
             wr.result_path,
             st.verification_commands_json,
             st.acceptance_criteria_json,
-            st.allowed_paths_json
+            st.allowed_paths_json,
+            st.scope_json
         FROM worker_runs wr
         JOIN supervisor_tasks st ON st.task_id = wr.task_id
         WHERE wr.status = 'completed'
@@ -1841,7 +1937,14 @@ def _check_completed_worker_json_results(
         str(worker_run_id): _normalize_repo_path(str(result_path))
         for worker_run_id, result_path, *_ in rows
     }
-    for worker_run_id, result_path, verification_json, acceptance_json, allowed_paths_json in rows:
+    for (
+        worker_run_id,
+        result_path,
+        verification_json,
+        acceptance_json,
+        allowed_paths_json,
+        scope_json,
+    ) in rows:
         path = _artifact_path(repo_root, str(result_path))
         if path is None or path.suffix.lower() != ".json" or not path.exists():
             continue
@@ -1914,6 +2017,13 @@ def _check_completed_worker_json_results(
                 payload,
                 str(verification_json),
                 str(acceptance_json),
+            )
+        )
+        failures.extend(
+            _completed_worker_result_browser_smoke_failures(
+                str(worker_run_id),
+                payload,
+                required=_scope_requires_browser_smoke(scope_json),
             )
         )
     return tuple(failures)
@@ -2202,9 +2312,18 @@ def _completed_worker_result_test_run_failures(
 def _completed_worker_result_browser_smoke_failures(
     worker_run_id: str,
     payload: dict[object, object],
+    *,
+    required: bool = False,
 ) -> tuple[PlanningIntegrityFailure, ...]:
     browser_smoke_results = payload.get("browser_smoke_results")
     if browser_smoke_results is None:
+        if required and payload.get("status") == "completed":
+            return (
+                PlanningIntegrityFailure(
+                    "completed_worker_run_missing_browser_smoke",
+                    f"{worker_run_id}: browser_smoke_results are required",
+                ),
+            )
         return ()
     if not isinstance(browser_smoke_results, list):
         return (
@@ -2215,6 +2334,13 @@ def _completed_worker_result_browser_smoke_failures(
         )
     failures: list[PlanningIntegrityFailure] = []
     completed = payload.get("status") == "completed"
+    if required and completed and not browser_smoke_results:
+        failures.append(
+            PlanningIntegrityFailure(
+                "completed_worker_run_missing_browser_smoke",
+                f"{worker_run_id}: browser_smoke_results must include a passed entry",
+            )
+        )
     for index, value in enumerate(browser_smoke_results):
         if not isinstance(value, dict):
             failures.append(
@@ -2662,6 +2788,94 @@ def _check_open_afk_task_contract_values(
                         )
                     )
     return tuple(failures)
+
+
+def _check_open_codex_exec_tasks_avoid_controller_owned_paths(
+    connection: sqlite3.Connection,
+) -> tuple[PlanningIntegrityFailure, ...]:
+    rows = connection.execute(
+        f"""
+        SELECT st.task_id, st.scope_json, st.allowed_paths_json, st.worker_backend
+        FROM supervisor_tasks st
+        JOIN plans p ON p.plan_id = st.plan_id
+        WHERE p.status IN ({", ".join("?" for _ in CONTRACT_PLAN_STATUSES)})
+          AND st.task_type = 'AFK'
+          AND st.status IN ({", ".join("?" for _ in CONTRACT_TASK_STATUSES)})
+        ORDER BY st.task_id
+        """,
+        (*CONTRACT_PLAN_STATUSES, *CONTRACT_TASK_STATUSES),
+    ).fetchall()
+    failures: list[PlanningIntegrityFailure] = []
+    for task_id, scope_json, paths_json, worker_backend in rows:
+        if canonical_worker_backend(str(worker_backend)) != "codex_exec":
+            continue
+        if _scope_allows_controller_owned_paths(scope_json):
+            continue
+        try:
+            allowed_paths = json.loads(str(paths_json))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(allowed_paths, list):
+            continue
+        for violation in _controller_owned_allowed_path_violations(allowed_paths):
+            failures.append(
+                PlanningIntegrityFailure(
+                    "open_codex_exec_task_allows_controller_owned_path",
+                    f"{task_id}: {violation}",
+                )
+            )
+    return tuple(failures)
+
+
+def _scope_allows_controller_owned_paths(raw_scope: object) -> bool:
+    scope = _json_object(raw_scope)
+    if scope.get("controller_state_mutation_allowed") is True:
+        return True
+    if scope.get("controller_owned_paths_allowed") is True:
+        return True
+    if scope.get("controller_task") is True:
+        return True
+    return scope.get("task_role", scope.get("worker_role")) in {
+        "controller",
+        "planning",
+        "promotion",
+        "source_lock",
+    }
+
+
+def _controller_owned_allowed_path_violations(values: Iterable[object]) -> tuple[str, ...]:
+    protected_docs = {
+        "README.md",
+        "AGENTS.md",
+        "PLANS.md",
+        "ARCHITECTURE.md",
+        "CONTRACTS.md",
+        "ROADMAP.md",
+        "SOP.md",
+        "TESTING.md",
+        "DECISIONS.md",
+        "ATTRIBUTIONS.md",
+    }
+    violations: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        normalized = value.strip().replace("\\", "/")
+        if normalized in {"plans/planning.sqlite3", "scripts/**"}:
+            violations.append(f"{normalized} is controller-owned")
+            continue
+        if normalized in {
+            "scripts/check_protected_files.py",
+            "scripts/print_protected_hashes.py",
+        }:
+            violations.append(f"{normalized} is source-lock controller-owned")
+            continue
+        if normalized in protected_docs:
+            violations.append(f"{normalized} is protected source-of-truth")
+            continue
+        if normalized == ".agents/**" or normalized.startswith(".agents/"):
+            violations.append(f"{normalized} is repo-local skill state")
+    return tuple(violations)
 
 
 def _json_string_array(raw_value: str) -> tuple[str, ...]:

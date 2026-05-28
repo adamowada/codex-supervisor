@@ -58,6 +58,7 @@ class WorkerLaunchRequest:
     allowed_paths: tuple[str, ...]
     verification_commands: tuple[str, ...]
     acceptance_criteria: tuple[str, ...]
+    browser_smoke_required: bool = False
     codex_home: str | None = None
     codex_config_path: str | None = None
     model: str | None = None
@@ -657,10 +658,12 @@ class CodexExecBackend:
                         failure_class="worker_evidence_missing",
                         metadata=metadata,
                     )
+                metadata["supervisor_acceptance_status"] = "failed"
+                metadata["worker_result_status"] = completed_worker_result.status
                 return WorkerLaunchResult(
                     worker_run_id=request.worker_run_id,
                     task_id=request.task_id,
-                    status=completed_worker_result.status,
+                    status="failed",
                     result_path=request.result_path,
                     exit_code=exec_result.exit_code,
                     duration_seconds=duration_seconds,
@@ -671,11 +674,7 @@ class CodexExecBackend:
                     stderr_path=request.stderr_path,
                     final_message_path=request.final_message_path,
                     diff_summary_path=request.diff_summary_path,
-                    failure_class=(
-                        None
-                        if completed_worker_result.status in {"completed", "needs_review"}
-                        else completed_worker_result.status
-                    ),
+                    failure_class="codex_exec_nonzero_with_worker_result",
                     metadata={
                         **metadata,
                         "worker_result_source": "output_last_message",
@@ -776,6 +775,7 @@ class CodexExecBackend:
                 allowed_paths=request.allowed_paths,
                 verification_commands=request.verification_commands,
                 acceptance_criteria=request.acceptance_criteria,
+                browser_smoke_required=request.browser_smoke_required,
             )
         except (OSError, WorkerResultError, json.JSONDecodeError) as exc:
             metadata = _codex_exec_launch_metadata(
@@ -1122,6 +1122,7 @@ def _load_canonical_worker_result(request: WorkerLaunchRequest) -> WorkerResult 
             allowed_paths=request.allowed_paths,
             verification_commands=request.verification_commands,
             acceptance_criteria=request.acceptance_criteria,
+            browser_smoke_required=request.browser_smoke_required,
         )
     except OSError, WorkerResultError, json.JSONDecodeError:
         return None
@@ -1932,6 +1933,13 @@ def compose_worker_prompt(request: WorkerLaunchRequest) -> str:
             f"it into `{_worker_visible_result_path(request)}` for planning ingestion."
         ),
         (
+            "For normal implementation workers, planning SQLite and controller bookkeeping are "
+            "read-only context. Do not edit or commit `plans/planning.sqlite3`, source-lock "
+            "hashes, review tasks, promotion records, or final completion state unless the "
+            "task explicitly lists those paths and marks controller-state mutation as in scope. "
+            "Return the evidence in Worker Result JSON; the controller records durable state."
+        ),
+        (
             "The JSON must include worker_run_id, status, summary, changed_files, tests_run, "
             "acceptance_results, risks, follow_up_tasks, artifacts, and completion_notes."
         ),
@@ -1940,6 +1948,12 @@ def compose_worker_prompt(request: WorkerLaunchRequest) -> str:
             "smoke was run. When entries are present, include status, summary, tool, command, "
             "exit_code, artifact, and url. Do not put ad hoc browser-smoke commands in tests_run "
             "unless they are listed verification commands in the task contract."
+        ),
+        (
+            "If the task scope marks browser_smoke_required=true, browser_smoke_results must "
+            "contain at least one passed bounded browser/UI smoke entry."
+            if request.browser_smoke_required
+            else "If no browser or UI exists for this task, browser_smoke_results may be []."
         ),
         (
             "Browser or UI smoke must be bounded: use a harness that starts any API/client "

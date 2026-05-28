@@ -290,6 +290,53 @@ def test_worker_result_validation_accepts_bounded_browser_smoke_harness(tmp_path
     assert result.payload["browser_smoke_results"][0]["command"] == "node scripts/smoke-browser.mjs"
 
 
+def test_worker_result_validation_requires_browser_smoke_when_task_demands_it(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")
+    payload = _worker_result()
+    payload["browser_smoke_results"] = []
+
+    with pytest.raises(WorkerResultError, match="browser_smoke_results"):
+        validate_worker_result_payload(
+            payload,
+            repo_root=tmp_path,
+            result_path="artifacts/run-worker/worker-result.raw.json",
+            worker_run_id="run-worker",
+            allowed_paths=("src/**",),
+            verification_commands=("python -B -m pytest -p no:cacheprovider",),
+            acceptance_criteria=("Criterion passes.",),
+            browser_smoke_required=True,
+        )
+
+
+def test_worker_result_validation_normalizes_legacy_handoff_notes(tmp_path):
+    payload = {
+        "worker_run_id": "run-worker",
+        "status": "blocked",
+        "summary": "Needs follow-up.",
+        "changed_files": [],
+        "tests_run": [],
+        "acceptance_results": {},
+        "risks": [],
+        "follow_up_tasks": [],
+        "artifacts": [],
+        "handoff_notes": "Legacy note.",
+    }
+
+    result = validate_worker_result_payload(
+        payload,
+        repo_root=tmp_path,
+        result_path="artifacts/run-worker/worker-result.raw.json",
+        worker_run_id="run-worker",
+        allowed_paths=("src/**",),
+        verification_commands=("python -B -m pytest -p no:cacheprovider",),
+        acceptance_criteria=("Criterion passes.",),
+    )
+
+    assert result.payload["completion_notes"] == "Legacy note."
+    assert "handoff_notes" not in result.payload
+
+
 def test_worker_result_validation_requires_changed_files_within_allowed_paths(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "worker.py").write_text("print('ok')\n", encoding="utf-8")

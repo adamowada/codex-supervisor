@@ -27,6 +27,7 @@ from codex_supervisor.evidence_vocabulary import (
     WORKER_RESULT_JSON_SOURCE_KIND,
     WORKER_RESULT_REVIEW_PROMOTED_EVENT,
 )
+from codex_supervisor.execution_surface import canonical_worker_backend
 from codex_supervisor.worker_results import (
     WorkerResult,
     WorkerResultError,
@@ -1268,7 +1269,11 @@ class PlanningSQLiteStore:
         _validate_string_array(record.allowed_paths, "allowed_paths")
         canonical_allowed_paths = canonicalize_repo_relative_path_patterns(record.allowed_paths)
         _validate_repo_relative_path_patterns(canonical_allowed_paths, "allowed_paths")
-        stored_record = replace(record, allowed_paths=canonical_allowed_paths)
+        stored_record = replace(
+            record,
+            allowed_paths=canonical_allowed_paths,
+            worker_backend=canonical_worker_backend(record.worker_backend),
+        )
         _validate_string_array(record.blocked_by, "blocked_by")
         now = _format_datetime(_utc_now())
         with self.connect() as connection:
@@ -1337,7 +1342,7 @@ class PlanningSQLiteStore:
                     _dump_json(record.verification_commands),
                     _dump_json(canonical_allowed_paths),
                     _dump_json(record.blocked_by),
-                    record.worker_backend,
+                    stored_record.worker_backend,
                     int(record.review_required),
                     now,
                     now,
@@ -1376,6 +1381,12 @@ class PlanningSQLiteStore:
                     raise ValueError(msg)
             if status == "completed" and bool(row["review_required"]):
                 _validate_task_review_completion_evidence(
+                    connection,
+                    plan_id=str(row["plan_id"]),
+                    task_id=task_id,
+                )
+            if status == "cancelled" and bool(row["review_required"]):
+                _validate_review_required_cancellation_not_promoted(
                     connection,
                     plan_id=str(row["plan_id"]),
                     task_id=task_id,
@@ -2457,6 +2468,7 @@ class PlanningSQLiteStore:
                 allowed_paths=tuple(task.allowed_paths),
                 verification_commands=tuple(task.verification_commands),
                 acceptance_criteria=tuple(task.acceptance_criteria),
+                browser_smoke_required=_task_scope_requires_browser_smoke(task.scope),
             )
         except WorkerResultError as exc:
             self.update_worker_run_status(
@@ -2517,6 +2529,7 @@ class PlanningSQLiteStore:
                 allowed_paths=tuple(task.allowed_paths),
                 verification_commands=tuple(task.verification_commands),
                 acceptance_criteria=tuple(task.acceptance_criteria),
+                browser_smoke_required=_task_scope_requires_browser_smoke(task.scope),
             )
         except WorkerResultError as exc:
             self.upsert_worker_run(
@@ -2669,6 +2682,85 @@ class PlanningSQLiteStore:
                 )
         return record
 
+    def record_rejected_worker_result_attempt(
+        self,
+        *,
+        worker_run_id: str,
+        source_path: str,
+        failure_class: str,
+        rejection_metadata: JsonObject | None = None,
+    ) -> WorkerResultRecord:
+        """Persist a valid-looking Worker Result that a supervisor gate rejected."""
+
+        _validate_required(worker_run_id, "worker_run_id")
+        _validate_required(source_path, "source_path")
+        _validate_required(failure_class, "failure_class")
+        repo_root = self.path.parent.parent
+        source_file = repo_root / source_path
+        try:
+            raw_bytes = source_file.read_bytes()
+        except FileNotFoundError as exc:
+            msg = f"rejected worker result does not exist: {source_path}"
+            raise ValueError(msg) from exc
+        source_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+        try:
+            parsed_payload = json.loads(raw_bytes.decode("utf-8"))
+        except UnicodeDecodeError, json.JSONDecodeError:
+            parsed_payload = {}
+        if not isinstance(parsed_payload, dict):
+            parsed_payload = {}
+        original_status = parsed_payload.get("status")
+        payload = _rejected_worker_result_payload(
+            worker_run_id=worker_run_id,
+            source_path=source_path,
+            failure_class=failure_class,
+            parsed_payload=parsed_payload,
+        )
+        now = _format_datetime(_utc_now())
+        result_id = "rejected-" + _worker_result_id(source_path, source_sha256)
+        metadata: JsonObject = {
+            "primary_worker_run_id": worker_run_id,
+            "supervisor_acceptance_status": "failed",
+            "failure_class": failure_class,
+            "original_worker_result_status": original_status,
+        }
+        if rejection_metadata:
+            metadata["rejection"] = rejection_metadata
+        record = WorkerResultRecord(
+            result_id=result_id,
+            status="failed",
+            summary=str(payload["summary"]),
+            raw_payload=sanitize_worker_result_payload(payload),
+            tests_run=_json_array_field(payload, "tests_run"),
+            acceptance_results=_json_object_field(payload, "acceptance_results"),
+            changed_files=_json_array_field(payload, "changed_files"),
+            artifacts=_json_array_field(payload, "artifacts"),
+            risks=_json_array_field(payload, "risks"),
+            follow_up_tasks=_json_array_field(payload, "follow_up_tasks"),
+            completion_notes=str(payload["completion_notes"]),
+            source_path=source_path.replace("\\", "/"),
+            source_sha256=source_sha256,
+            source_kind="rejected-worker-result-json",
+            imported_at=now,
+            metadata=metadata,
+        )
+        with self.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT 1 FROM worker_runs WHERE worker_run_id = ?",
+                (worker_run_id,),
+            ).fetchone()
+            _raise_missing(0 if row is None else 1, "worker_run", worker_run_id)
+            _insert_worker_result_record(connection, record)
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO worker_result_run_links(result_id, worker_run_id)
+                VALUES (?, ?)
+                """,
+                (result_id, worker_run_id),
+            )
+        return record
+
     def promote_reviewed_task_completion(
         self,
         *,
@@ -2703,7 +2795,18 @@ class PlanningSQLiteStore:
                 progress_id=review_progress_id,
             )
             _validate_review_progress_is_promotable(review_progress, source_task_id)
+            review_progress_details = _load_review_progress_details(review_progress)
             effective_review_progress_id = str(review_progress["progress_id"])
+            if (
+                review_task_id is None
+                and str(source_task["task_type"]) == "AFK"
+                and not review_progress_details.get("hitl_authority_required")
+            ):
+                msg = (
+                    "review_task_id is required when promoting AFK review-required work "
+                    f"for task {source_task_id}"
+                )
+                raise ValueError(msg)
             if review_task_id is not None:
                 review_task = connection.execute(
                     "SELECT * FROM supervisor_tasks WHERE task_id = ?",
@@ -4117,6 +4220,17 @@ def _validate_plan_can_enter_status(
                 f"{missing_review_task['task_id']} has no review result"
             )
             raise ValueError(msg)
+        missing_promotion_review = _first_review_required_promotion_without_review_evidence(
+            connection,
+            plan_id,
+        )
+        if missing_promotion_review is not None:
+            msg = (
+                f"cannot set plan {plan_id} to completed while promoted review-required task "
+                f"{missing_promotion_review['source_task_id']} has no review result or HITL "
+                "authority"
+            )
+            raise ValueError(msg)
 
 
 def _first_open_task_for_plan(connection: sqlite3.Connection, plan_id: str) -> sqlite3.Row | None:
@@ -4245,6 +4359,97 @@ def _validate_task_review_completion_evidence(
         return
     msg = f"review result is required before completing review-required task {task_id}"
     raise ValueError(msg)
+
+
+def _validate_review_required_cancellation_not_promoted(
+    connection: sqlite3.Connection,
+    *,
+    plan_id: str,
+    task_id: str,
+) -> None:
+    for details in _promotion_progress_details_for_source(connection, plan_id, task_id):
+        if _promotion_review_gate_satisfied(connection, plan_id, task_id, details):
+            continue
+        msg = (
+            f"cannot cancel review-required task {task_id} after its output was promoted "
+            "without review result or HITL authority"
+        )
+        raise ValueError(msg)
+
+
+def _first_review_required_promotion_without_review_evidence(
+    connection: sqlite3.Connection,
+    plan_id: str,
+) -> JsonObject | None:
+    rows = connection.execute(
+        """
+        SELECT task_id
+        FROM supervisor_tasks
+        WHERE plan_id = ?
+          AND review_required = 1
+        ORDER BY task_id
+        """,
+        (plan_id,),
+    ).fetchall()
+    for row in rows:
+        source_task_id = str(row["task_id"])
+        for details in _promotion_progress_details_for_source(
+            connection,
+            plan_id,
+            source_task_id,
+        ):
+            if not _promotion_review_gate_satisfied(
+                connection,
+                plan_id,
+                source_task_id,
+                details,
+            ):
+                return {"source_task_id": source_task_id, "promotion": details}
+    return None
+
+
+def _promotion_progress_details_for_source(
+    connection: sqlite3.Connection,
+    plan_id: str,
+    source_task_id: str,
+) -> tuple[JsonObject, ...]:
+    rows = connection.execute(
+        """
+        SELECT details
+        FROM plan_progress_events
+        WHERE plan_id = ?
+          AND event_type = 'promotion_completed'
+        ORDER BY occurred_at DESC, progress_id DESC
+        """,
+        (plan_id,),
+    ).fetchall()
+    details_rows: list[JsonObject] = []
+    for (details_json,) in rows:
+        try:
+            details = _load_json_object(str(details_json or "{}"))
+        except json.JSONDecodeError, TypeError, ValueError:
+            continue
+        if details.get("source_task_id") == source_task_id:
+            details_rows.append(details)
+    return tuple(details_rows)
+
+
+def _promotion_review_gate_satisfied(
+    connection: sqlite3.Connection,
+    plan_id: str,
+    source_task_id: str,
+    promotion_details: JsonObject,
+) -> bool:
+    if _has_review_result_for_task(connection, plan_id=plan_id, task_id=source_task_id):
+        return True
+    return _has_hitl_authority_for_promotion(promotion_details)
+
+
+def _has_hitl_authority_for_promotion(details: JsonObject) -> bool:
+    return details.get("hitl_authority_required") is True and (
+        details.get("hitl_authority_accepted") is True
+        or details.get("hitl_authority") == "accepted"
+    )
 
 
 def _task_has_completed_worker_result(connection: sqlite3.Connection, task_id: str) -> bool:
@@ -4887,6 +5092,35 @@ def _replace_worker_result_run_link(
 
 def _legacy_result_source_hash(source_path: str) -> str:
     return hashlib.sha256(source_path.replace("\\", "/").encode("utf-8")).hexdigest()
+
+
+def _rejected_worker_result_payload(
+    *,
+    worker_run_id: str,
+    source_path: str,
+    failure_class: str,
+    parsed_payload: JsonObject,
+) -> JsonObject:
+    payload = sanitize_worker_result_payload(parsed_payload)
+    payload["worker_run_id"] = worker_run_id
+    payload["status"] = "failed"
+    if not isinstance(payload.get("summary"), str) or not str(payload["summary"]).strip():
+        payload["summary"] = f"Worker Result rejected by supervisor gate: {failure_class}."
+    for key in ("changed_files", "tests_run", "risks", "follow_up_tasks", "artifacts"):
+        if not isinstance(payload.get(key), list):
+            payload[key] = []
+    if not isinstance(payload.get("acceptance_results"), dict):
+        payload["acceptance_results"] = {}
+    completion_notes = _worker_result_completion_notes(payload)
+    if completion_notes is None:
+        completion_notes = f"Rejected worker result attempt from {source_path}: {failure_class}."
+    payload["completion_notes"] = completion_notes
+    payload.pop("handoff_notes", None)
+    return payload
+
+
+def _task_scope_requires_browser_smoke(scope: JsonObject) -> bool:
+    return scope.get("browser_smoke_required") is True
 
 
 def _worker_result_completion_notes(payload: JsonObject) -> str | None:

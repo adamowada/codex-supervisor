@@ -36,6 +36,7 @@ def test_list_mcp_tools_exposes_read_and_default_on_mutating_schemas(tmp_path: P
     )
     assert "Desktop full-AFK canary and runtime preflight" in runtime_preflight["description"]
     assert "codex_supervisor.runtime_preflight" in runtime_preflight["description"]
+    assert "approval_policy" not in runtime_preflight["inputSchema"]["properties"]
     read_tools = [tool for tool in tools if tool["name"] == "codex_supervisor.task_show"]
     assert all(tool["annotations"]["readOnlyHint"] is True for tool in read_tools)
     mutating_tool = next(tool for tool in tools if tool["name"] == "codex_supervisor.task_upsert")
@@ -132,6 +133,7 @@ def test_runtime_preflight_tool_accepts_desktop_tool_name_aliases(tmp_path: Path
             "worker_execution": "codex_exec",
             "story_loop_status_checked": True,
             "task_current_requested": True,
+            "evidence_mode": "strict_jsonl",
         },
         context=context,
     )
@@ -164,6 +166,7 @@ def test_runtime_preflight_tool_uses_live_inventory_when_tool_search_snapshot_is
             "worker_execution": "codex_exec",
             "story_loop_status_checked": True,
             "task_current_requested": True,
+            "evidence_mode": "strict_jsonl",
         },
         context=context,
     )
@@ -200,6 +203,7 @@ def test_runtime_preflight_tool_ignores_tool_search_as_startup_diagnostic(
             "story_loop_status_checked": True,
             "task_current_requested": True,
             "mcp_startup_diagnostic": "runtime_preflight tool discovered via tool_search",
+            "evidence_mode": "strict_jsonl",
         },
         context=context,
     )
@@ -370,12 +374,18 @@ def test_dispatch_reports_validation_unknown_and_missing_errors(tmp_path: Path) 
         {"status": "wat"},
         context=context,
     )
+    preflight_launch_field = dispatch_mcp_tool(
+        "codex_supervisor.runtime_preflight",
+        {"approval_policy": "never"},
+        context=context,
+    )
 
     assert missing_argument["error"]["code"] == "validation_error"
     assert unknown_tool["error"]["code"] == "unknown_tool"
     assert current_without_status["error"]["code"] == "story_loop_status_required"
     assert not_found["error"]["code"] == "not_found"
     assert invalid_status["error"]["code"] == "validation_error"
+    assert preflight_launch_field["error"]["code"] == "validation_error"
 
 
 def test_mutating_mcp_tools_update_planning_state_by_default(tmp_path: Path) -> None:

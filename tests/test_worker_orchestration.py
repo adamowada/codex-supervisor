@@ -136,7 +136,9 @@ def test_orchestrate_worker_launch_rejects_completed_result_with_out_of_scope_di
     )
 
     assert result.launch_result.status == "failed"
-    assert result.launch_result.result_path is None
+    assert result.launch_result.result_path == (
+        "artifacts/worker-run-stage7c-worker-orchestration-20260524/worker-result.raw.json"
+    )
     assert result.launch_result.exit_code == 1
     assert result.launch_result.failure_class == "changed_paths_out_of_scope"
     assert result.changed_files == ("README.md",)

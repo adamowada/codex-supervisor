@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from codex_supervisor.execution_surface import canonical_worker_backend
 from codex_supervisor.planning import SupervisorTaskRecord, SupervisorTaskSummaryRecord
 from codex_supervisor.worker_backends import WorkerLaunchRequest
 from codex_supervisor.worktree_artifacts import WorktreeRunLayout, build_worktree_run_layout
@@ -97,6 +98,7 @@ def prepare_worker_launch_request(
         allowed_paths=tuple(task.allowed_paths),
         verification_commands=tuple(task.verification_commands),
         acceptance_criteria=tuple(task.acceptance_criteria),
+        browser_smoke_required=task.scope.get("browser_smoke_required") is True,
         codex_home=codex_home,
         codex_config_path=codex_config_path,
         model=model,
@@ -129,7 +131,7 @@ def _worker_run_metadata(
 ) -> JsonObject:
     return {
         **extra_metadata,
-        "backend": task.worker_backend,
+        "backend": canonical_worker_backend(task.worker_backend),
         "task_id": task.task_id,
         "worker_run_id": layout.worker_run_id,
         "launch_preparation": {

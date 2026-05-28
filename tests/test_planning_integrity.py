@@ -870,6 +870,71 @@ def test_planning_integrity_allows_completed_manual_promotion_task_with_progress
     )
 
 
+def test_planning_integrity_rejects_promotion_of_review_required_source_without_review(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-promotion",
+            slug="promotion",
+            title="Promotion Plan",
+            goal="Require review before promotion closes reviewed work.",
+            status="blocked",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-source",
+            plan_id="plan-promotion",
+            title="Source task",
+            goal="Produce review-required work.",
+            task_type="AFK",
+            status="cancelled",
+            acceptance_criteria=["done"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            review_required=True,
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-promote",
+            plan_id="plan-promotion",
+            title="Promote worker output",
+            goal="Copy reviewed worker output into the main checkout.",
+            task_type="AFK",
+            status="completed",
+            acceptance_criteria=["promotion done"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["plans/planning.sqlite3"],
+            worker_backend="manual",
+        )
+    )
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id="progress-promotion-completed",
+            plan_id="plan-promotion",
+            event_type="promotion_completed",
+            summary="Promotion copied worker output into the main checkout.",
+            details=json.dumps(
+                {
+                    "task_id": "task-promote",
+                    "source_task_id": "task-source",
+                    "commit_sha": FULL_COMMIT_SHA,
+                }
+            ),
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "promotion_of_review_required_task_without_review_result"
+        for failure in failures
+    )
+
+
 def test_planning_integrity_rejects_completed_review_required_task_without_review_result(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
@@ -2373,6 +2438,59 @@ def test_planning_integrity_requires_ready_afk_execution_contract(tmp_path):
     )
 
 
+def test_planning_integrity_rejects_open_codex_exec_controller_owned_paths(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-ready",
+            slug="ready",
+            title="Ready Plan",
+            goal="Validate ready task contracts.",
+            status="active",
+        )
+    )
+    store.upsert_plan_milestone(
+        PlanMilestoneRecord(
+            milestone_id="milestone-ready",
+            plan_id="plan-ready",
+            title="Milestone",
+            status="pending",
+        )
+    )
+    store.upsert_plan_acceptance_criterion(
+        PlanAcceptanceCriterionRecord(
+            criterion_id="criterion-ready",
+            plan_id="plan-ready",
+            description="done",
+            status="pending",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-ready",
+            plan_id="plan-ready",
+            title="Ready task",
+            goal="Looks ready but owns controller state.",
+            task_type="AFK",
+            status="ready",
+            acceptance_criteria=["done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["plans/planning.sqlite3"],
+            worker_backend="live_codex_exec",
+        )
+    )
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "open_codex_exec_task_allows_controller_owned_path"
+        and "plans/planning.sqlite3" in failure.reason
+        for failure in failures
+    )
+
+
 def test_planning_integrity_rejects_blank_ready_afk_contract_values(tmp_path):
     module = _load_planning_integrity_module()
     db_path = tmp_path / "plans" / "planning.sqlite3"
@@ -2453,6 +2571,46 @@ def test_planning_integrity_rejects_bad_string_array_elements_on_historical_task
         failure.check_name == "invalid_json_string_array_value"
         and "blocked_by_json" in failure.reason
         for failure in failures
+    )
+
+
+def test_planning_integrity_requires_browser_smoke_for_marked_completed_task(tmp_path):
+    module = _load_planning_integrity_module()
+    db_path = tmp_path / "plans" / "planning.sqlite3"
+    store = initialize_planning_database(db_path)
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-worker",
+            slug="worker",
+            title="Worker Plan",
+            goal="Require UI evidence.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-worker",
+            plan_id="plan-worker",
+            title="Worker",
+            goal="Build a UI.",
+            task_type="AFK",
+            status="completed",
+            scope={"browser_smoke_required": True},
+            acceptance_criteria=["criterion"],
+            verification_commands=["uv run --no-sync python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**", "runs/run-worker/result.json"],
+        )
+    )
+    result_path = tmp_path / "runs" / "run-worker" / "result.json"
+    result_path.parent.mkdir(parents=True)
+    result_path.write_text(json_worker_result(), encoding="utf-8")
+    result_id = _upsert_db_worker_result(store)
+    _complete_worker_run_with_result(store, result_id=result_id)
+
+    failures = module.check_planning_integrity(db_path)
+
+    assert any(
+        failure.check_name == "completed_worker_run_missing_browser_smoke" for failure in failures
     )
 
 

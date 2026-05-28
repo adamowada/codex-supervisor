@@ -71,7 +71,7 @@ def build_runtime_preflight_report(
     task_next_afk_requested: bool = False,
     scaffold_tier: str = "supervisor_managed",
     database_mode: str = "persistent_mongodb",
-    evidence_mode: str = "strict_jsonl",
+    evidence_mode: str = "missing",
     mutation_policy: str = "allowed",
     setup_mutations: tuple[str, ...] = (),
     allow_setup_mutations: bool = False,

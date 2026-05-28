@@ -735,6 +735,8 @@ def _initialize_spawned_planning_database(
                 "source": "codex-supervisor spawned-project scaffold apply",
                 "project_name": proposal.project_name,
                 "scaffold_tiers": list(proposal.recommendation.tiers),
+                "controller_task": True,
+                "task_role": "controller",
             },
             acceptance_criteria=list(proposal.first_task.acceptance_criteria),
             verification_commands=list(proposal.first_task.verification_commands),

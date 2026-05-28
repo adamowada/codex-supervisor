@@ -130,9 +130,12 @@ When the user has granted dangerous/full-auto operation, spend autonomy on throu
 - Treat native Codex Goals as execution contracts, not as the canonical queue.
 - Treat native Codex Goals as allowed only when linked to a supervisor task and rendered Goal
   Contract.
-- For full-AFK work, run the callable runtime preflight first. If it reports skill-only mode,
-  current-thread worker fallback, missing supervisor backend, memory database fallback, degraded
-  evidence, or unapproved setup mutations, record a blocker/HITL decision instead of implementing.
+- For full-AFK work, run the callable runtime preflight first with explicit
+  `evidence_mode=strict_jsonl`. If it reports skill-only mode, current-thread worker fallback,
+  missing supervisor backend, memory database fallback, degraded evidence, missing evidence mode, or
+  unapproved setup mutations, record a blocker/HITL decision instead of implementing.
+- Do not pass launch-only fields such as `approval_policy` to `runtime_preflight`; pass approval
+  policy only to Story Loop launch surfaces such as `story-loop-start` or `story-loop-run-once`.
 - Desktop plugin full-AFK work must be authorized by a live MCP `runtime_preflight` canary in the
   current Desktop session. CLI preflight can diagnose package/cache/startup problems after MCP
   failure, but it cannot approve plugin full-AFK readiness or override a successful live MCP canary.

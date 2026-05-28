@@ -14,9 +14,12 @@ Use this skill when Codex Desktop is operating the `codex-supervisor` plugin.
 - Use `uv run --no-sync python -B -m codex_supervisor.cli ...` as the reference queue mutation and
   evidence workflow when MCP is unavailable or an operation needs CLI-only flags.
 - Before full-AFK, project bootstrap, worker launch, or next-AFK selection, call
-  `codex_supervisor.runtime_preflight` through MCP. Use canonical dotted MCP tool names in
-  `mcp_tools`, for example `codex_supervisor.runtime_preflight`, not Desktop callable aliases such
-  as `codex_supervisor_runtime_preflight`.
+  `codex_supervisor.runtime_preflight` through MCP with explicit `evidence_mode=strict_jsonl`.
+  Use canonical dotted MCP tool names in `mcp_tools`, for example
+  `codex_supervisor.runtime_preflight`, not Desktop callable aliases such as
+  `codex_supervisor_runtime_preflight`.
+- Do not pass launch-only fields such as `approval_policy` to `runtime_preflight`; approval policy
+  belongs on Story Loop launch surfaces such as `story-loop-start` and `story-loop-run-once`.
 - Treat `tool_search` as discovery, not inventory. It may return only a subset of exposed MCP
   tools; do not block a plugin full-AFK run merely because `tool_search` omitted a required tool.
   The live MCP `runtime_preflight` handler inventories the actual server tool surface. When

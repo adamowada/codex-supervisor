@@ -819,6 +819,30 @@ def test_codex_exec_backend_launch_success_requires_valid_worker_result(tmp_path
     )
 
 
+def test_codex_exec_backend_rejects_nonzero_exit_even_with_valid_worker_result(tmp_path):
+    def runner(
+        argv: tuple[str, ...],
+        cwd,
+        environment: dict[str, str],
+    ) -> CommandExecutionResult:
+        if argv == ("C:/Tools/codex.exe", "--version"):
+            return CommandExecutionResult(exit_code=0, stdout="codex 1.2.3\n")
+        _write_valid_worker_result(tmp_path, worker_run_id="run-worker", changed_file="src/ok.py")
+        return CommandExecutionResult(exit_code=2, stdout='{"event":"done"}\n')
+
+    result = CodexExecBackend(
+        codex_executable="C:/Tools/codex.exe",
+        command_runner=runner,
+        launch_enabled=True,
+    ).run(_codex_exec_request(tmp_path))
+
+    assert result.status == "failed"
+    assert result.result_path == "artifacts/run-worker/worker-result.raw.json"
+    assert result.failure_class == "codex_exec_nonzero_with_worker_result"
+    assert result.metadata["supervisor_acceptance_status"] == "failed"
+    assert result.metadata["worker_result_status"] == "completed"
+
+
 def test_codex_exec_backend_blocks_completion_on_malformed_jsonl(tmp_path):
     def runner(
         argv: tuple[str, ...],

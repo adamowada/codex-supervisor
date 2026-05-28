@@ -8,6 +8,10 @@ from typing import Any
 JsonObject = dict[str, Any]
 
 CODEX_EXEC_BACKEND = "codex_exec"
+CODEX_EXEC_BACKEND_ALIASES = frozenset({CODEX_EXEC_BACKEND, "live_codex_exec"})
+CODEX_REVIEW_BACKEND = "codex_review"
+MANUAL_BACKEND = "manual"
+SUPPORTED_LIVE_STORY_LOOP_BACKENDS = frozenset({CODEX_EXEC_BACKEND, CODEX_REVIEW_BACKEND})
 CODEX_EXEC_BACKEND_STATUS = "available"
 CODEX_EXEC_EXECUTION_MODE = CODEX_EXEC_BACKEND
 CODEX_EXEC_NATIVE_GOAL_SUPPORT = "prompt_rendered_fallback_only"
@@ -52,15 +56,27 @@ CODEX_EXEC_SURFACE = WorkerBackendExecutionSurface(
 
 
 def worker_backend_execution_surface(worker_backend: str) -> WorkerBackendExecutionSurface:
-    if worker_backend == CODEX_EXEC_BACKEND:
+    canonical_backend = canonical_worker_backend(worker_backend)
+    if canonical_backend == CODEX_EXEC_BACKEND:
         return CODEX_EXEC_SURFACE
     return WorkerBackendExecutionSurface(
-        name=worker_backend,
+        name=canonical_backend,
         backend_status="backend_specific_preflight_required",
         execution_mode="use_backend_only_after_preflight",
         native_goal_support="backend_specific_preflight_required",
         official_noninteractive_native_goal_path=False,
     )
+
+
+def canonical_worker_backend(worker_backend: str) -> str:
+    normalized = worker_backend.strip()
+    if normalized in CODEX_EXEC_BACKEND_ALIASES:
+        return CODEX_EXEC_BACKEND
+    return normalized
+
+
+def is_codex_exec_backend(worker_backend: str) -> bool:
+    return canonical_worker_backend(worker_backend) == CODEX_EXEC_BACKEND
 
 
 def goal_mode_decision(*, native_goal_mode: bool) -> str:

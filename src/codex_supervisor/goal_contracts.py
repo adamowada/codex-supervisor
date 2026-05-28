@@ -8,7 +8,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from codex_supervisor.execution_surface import worker_backend_execution_surface
+from codex_supervisor.execution_surface import (
+    canonical_worker_backend,
+    worker_backend_execution_surface,
+)
 from codex_supervisor.planning import JsonObject, SupervisorTaskSummaryRecord
 
 STABLE_CONTEXT_DOCUMENTS = (
@@ -80,10 +83,18 @@ def render_goal_contract(
         },
         "scope": _copy_json_object(task.scope),
     }
+    worker_backend = canonical_worker_backend(task.worker_backend)
+    controller_owned_paths = _controller_owned_paths(task)
     constraints = {
         "allowed_paths": list(allowed_paths),
-        "worker_backend": task.worker_backend,
+        "worker_backend": worker_backend,
         "review_required": task.review_required,
+        "controller_owned_paths": list(controller_owned_paths),
+        "planning_sqlite_access": (
+            "read_only_worker_context"
+            if worker_backend == "codex_exec" and "plans/planning.sqlite3" not in allowed_paths
+            else "explicitly_allowed_by_task"
+        ),
     }
 
     return GoalContract(
@@ -117,12 +128,7 @@ def render_goal_contract(
             "allowed_paths": list(allowed_paths),
             "review_required": task.review_required,
         },
-        record_updates=(
-            "Record progress with story-loop-record or progress-add.",
-            "Link changed artifacts with artifact-link-add or story-loop-record.",
-            "Update task, criterion, milestone, and plan statuses through typed helpers or CLI.",
-            "Report verification commands, changed artifacts, and residual risk in handoff.",
-        ),
+        record_updates=(*_record_update_contract(task, worker_backend),),
         execution_surface={
             "source_authority": {
                 "durable_doctrine": "locked source-of-truth docs",
@@ -151,7 +157,7 @@ def render_goal_contract(
                     "worker prompt."
                 ),
             },
-            "worker_backend": worker_backend_execution_surface(task.worker_backend).as_json(),
+            "worker_backend": worker_backend_execution_surface(worker_backend).as_json(),
         },
     )
 
@@ -235,9 +241,15 @@ def _stop_condition(
     review_text = ""
     if task.review_required:
         review_text = " Required review findings must be fixed or explicitly accepted by HITL."
+    planning_text = (
+        "the Worker Result JSON reports progress/completion for controller ingestion"
+        if canonical_worker_backend(task.worker_backend) == "codex_exec"
+        and "plans/planning.sqlite3" not in task.allowed_paths
+        else "planning SQLite records the task progress/completion"
+    )
     return (
-        f"Stop only when {criteria_text}, {verification_text}, planning SQLite records the "
-        f"task progress/completion, and the handoff names changed artifacts and residual risk."
+        f"Stop only when {criteria_text}, {verification_text}, {planning_text}, and the "
+        "handoff names changed artifacts and residual risk."
         f"{review_text}"
     )
 
@@ -275,9 +287,44 @@ def _blocked_condition(
         )
     return (
         "Proceed unless the work requires out-of-scope edits, unsafe permissions, missing context, "
-        "or a user decision; if blocked, record the blocker in planning SQLite and hand off to "
-        "HITL."
+        "or a user decision; if blocked, report the blocker in Worker Result JSON so the "
+        "controller can record it in planning SQLite and hand off to HITL."
     )
+
+
+def _record_update_contract(
+    task: SupervisorTaskSummaryRecord,
+    worker_backend: str,
+) -> tuple[str, ...]:
+    if worker_backend == "codex_exec" and "plans/planning.sqlite3" not in task.allowed_paths:
+        return (
+            "Treat plans/planning.sqlite3 as read-only context unless it is explicitly allowed.",
+            (
+                "Do not update task, criterion, milestone, plan, source-lock, or review state "
+                "directly."
+            ),
+            (
+                "Report verification commands, changed artifacts, residual risk, and any blocker "
+                "in the Worker Result JSON."
+            ),
+            (
+                "The controller owns planning SQLite updates, review task creation, source-lock "
+                "refresh, promotion, and final completion records."
+            ),
+        )
+    return (
+        "Record progress with story-loop-record or progress-add.",
+        "Link changed artifacts with artifact-link-add or story-loop-record.",
+        "Update task, criterion, milestone, and plan statuses through typed helpers or CLI.",
+        "Report verification commands, changed artifacts, and residual risk in handoff.",
+    )
+
+
+def _controller_owned_paths(task: SupervisorTaskSummaryRecord) -> tuple[str, ...]:
+    paths = ["plans/planning.sqlite3"]
+    if "plans/planning.sqlite3" in task.allowed_paths:
+        return ()
+    return tuple(paths)
 
 
 def _string_tuple(values: Iterable[Any]) -> tuple[str, ...]:

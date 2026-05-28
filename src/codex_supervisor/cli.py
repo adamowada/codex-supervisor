@@ -483,7 +483,7 @@ def main(argv: list[str] | None = None) -> int:
     runtime_preflight_parser.add_argument(
         "--evidence-mode",
         choices=("strict_jsonl", "degraded_jsonl", "missing"),
-        default="strict_jsonl",
+        default="missing",
     )
     runtime_preflight_parser.add_argument(
         "--mutation-policy",

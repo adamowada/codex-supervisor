@@ -210,6 +210,30 @@ def _apply_changed_path_gate(
         and worktree_state is not None
         and worktree_state.status == "completed"
     ):
+        if violations:
+            metadata["changed_path_violations"] = [
+                _violation_payload(violation) for violation in violations
+            ]
+            if reported_changed_files is None:
+                metadata["changed_files_mismatch"] = {
+                    "git_detected_files": list(changed_files),
+                    "worker_result_changed_files": None,
+                }
+            elif _normalized_path_set(reported_changed_files) != _normalized_path_set(
+                changed_files
+            ):
+                metadata["changed_files_mismatch"] = {
+                    "git_detected_files": list(changed_files),
+                    "worker_result_changed_files": list(reported_changed_files),
+                }
+            return replace(
+                launch_result,
+                status="failed",
+                exit_code=_failed_exit_code(launch_result.exit_code),
+                changed_files=changed_files,
+                failure_class="changed_paths_out_of_scope",
+                metadata=metadata,
+            )
         if reported_changed_files is None:
             metadata["changed_files_mismatch"] = {
                 "git_detected_files": list(changed_files),
@@ -218,7 +242,6 @@ def _apply_changed_path_gate(
             return replace(
                 launch_result,
                 status="failed",
-                result_path=None,
                 exit_code=_failed_exit_code(launch_result.exit_code),
                 changed_files=changed_files,
                 failure_class="changed_files_mismatch",
@@ -232,7 +255,6 @@ def _apply_changed_path_gate(
             return replace(
                 launch_result,
                 status="failed",
-                result_path=None,
                 exit_code=_failed_exit_code(launch_result.exit_code),
                 changed_files=changed_files,
                 failure_class="changed_files_mismatch",
@@ -246,7 +268,6 @@ def _apply_changed_path_gate(
         return replace(
             launch_result,
             status="failed",
-            result_path=None,
             exit_code=_failed_exit_code(launch_result.exit_code),
             changed_files=changed_files,
             failure_class="changed_paths_out_of_scope",

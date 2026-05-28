@@ -17,7 +17,17 @@ from codex_supervisor.evidence_vocabulary import (
     WORKER_RESULT_ARTIFACT_RELATIONSHIP,
     WORKER_RESULT_NORMALIZED_ARTIFACT_RELATIONSHIP,
 )
-from codex_supervisor.goal_contracts import render_goal_contract, render_goal_contract_markdown
+from codex_supervisor.execution_surface import (
+    CODEX_EXEC_BACKEND,
+    CODEX_REVIEW_BACKEND,
+    SUPPORTED_LIVE_STORY_LOOP_BACKENDS,
+    canonical_worker_backend,
+)
+from codex_supervisor.goal_contracts import (
+    STABLE_CONTEXT_DOCUMENTS,
+    render_goal_contract,
+    render_goal_contract_markdown,
+)
 from codex_supervisor.planning import (
     CURRENT_QUEUE_PLAN_STATUSES,
     OPEN_CRITERION_STATUSES,
@@ -580,7 +590,8 @@ def run_live_story_loop_once(
             changed_files_source=None,
             worktree_created=False,
         )
-    if task.worker_backend == "codex_review":
+    canonical_backend = canonical_worker_backend(task.worker_backend)
+    if canonical_backend == CODEX_REVIEW_BACKEND:
         return LiveStoryLoopRunResult(
             status="review_task_ready",
             task_id=task.task_id,
@@ -594,6 +605,20 @@ def run_live_story_loop_once(
             changed_files=(),
             changed_files_source=None,
             worktree_created=False,
+        )
+    if canonical_backend not in SUPPORTED_LIVE_STORY_LOOP_BACKENDS:
+        return _record_preclaim_launch_failure(
+            store,
+            worker_run_id=worker_run_id,
+            task_id=task.task_id,
+            backend=task.worker_backend,
+            failure_class="worker_backend_unsupported",
+            details={
+                "task_id": task.task_id,
+                "worker_backend": task.worker_backend,
+                "canonical_backend": canonical_backend,
+                "supported_backends": sorted(SUPPORTED_LIVE_STORY_LOOP_BACKENDS),
+            },
         )
     unsafe_allowed_paths = tuple(
         violation
@@ -614,6 +639,20 @@ def run_live_story_loop_once(
             changed_files=(),
             changed_files_source=None,
             worktree_created=False,
+        )
+    policy_violations = _codex_exec_policy_violations(task)
+    if policy_violations:
+        return _record_preclaim_launch_failure(
+            store,
+            worker_run_id=worker_run_id,
+            task_id=task.task_id,
+            backend=task.worker_backend,
+            failure_class="worker_contract_policy_violation",
+            details={
+                "task_id": task.task_id,
+                "worker_backend": task.worker_backend,
+                "violations": list(policy_violations),
+            },
         )
     contract_state = _worker_contract_git_state(
         git_command_runner or _default_git_command_runner,
@@ -652,7 +691,7 @@ def run_live_story_loop_once(
     )
     claim = store.claim_next_ready_afk_task(
         worker_run_id=worker_run_id,
-        backend=task.worker_backend,
+        backend=canonical_backend,
         task_id=task.task_id,
         status="running",
         worktree_path=layout.worktree_path,
@@ -844,6 +883,37 @@ def run_live_story_loop_once(
         failure_class=launch_result.failure_class,
         result_path=launch_result.result_path,
     )
+    rejected_result = None
+    if launch_result.result_path is not None and launch_result.failure_class is not None:
+        rejected_result = store.record_rejected_worker_result_attempt(
+            worker_run_id=worker_run_id,
+            source_path=launch_result.result_path,
+            failure_class=launch_result.failure_class,
+            rejection_metadata={
+                "changed_files": list(orchestration.changed_files),
+                "changed_files_source": orchestration.changed_files_source,
+                "changed_path_violations": [
+                    {"path": violation.path, "reason": violation.reason}
+                    for violation in orchestration.changed_path_violations
+                ],
+                "launch_result_metadata": launch_result.metadata,
+            },
+        )
+        store.add_worker_run_event(
+            WorkerRunEventRecord(
+                event_id=f"{worker_run_id}-worker-result-rejected",
+                worker_run_id=worker_run_id,
+                event_type="worker_result_rejected",
+                summary="Supervisor rejected a Worker Result after launch acceptance gates.",
+                details={
+                    "result_id": rejected_result.result_id,
+                    "source_path": rejected_result.source_path,
+                    "failure_class": launch_result.failure_class,
+                },
+                artifact_path=launch_result.result_path,
+                metadata={"supervisor_acceptance_status": "failed"},
+            )
+        )
     return LiveStoryLoopRunResult(
         status=terminal_status,
         task_id=claim.task.task_id,
@@ -852,7 +922,7 @@ def run_live_story_loop_once(
         prompt_path=layout.prompt_path,
         jsonl_path=layout.jsonl_path,
         result_path=launch_result.result_path,
-        result_id=None,
+        result_id=rejected_result.result_id if rejected_result is not None else None,
         failure_class=launch_result.failure_class,
         changed_files=orchestration.changed_files,
         changed_files_source=orchestration.changed_files_source,
@@ -959,6 +1029,44 @@ def _dirty_worker_contract_paths(status_stdout: str) -> tuple[str, ...]:
         if path in {"plans/planning.sqlite3", "HANDOFF.md"}:
             dirty_paths.append(path)
     return tuple(dict.fromkeys(dirty_paths))
+
+
+def _codex_exec_policy_violations(task: SupervisorTaskSummaryRecord) -> tuple[str, ...]:
+    if canonical_worker_backend(task.worker_backend) != CODEX_EXEC_BACKEND:
+        return ()
+    if _task_allows_controller_owned_paths(task.scope):
+        return ()
+    violations: list[str] = []
+    for allowed_path in task.allowed_paths:
+        normalized = allowed_path.strip().replace("\\", "/")
+        if normalized in {"plans/planning.sqlite3", "scripts/**"}:
+            violations.append(f"{normalized}: controller-owned path")
+            continue
+        if normalized in {
+            "scripts/check_protected_files.py",
+            "scripts/print_protected_hashes.py",
+        }:
+            violations.append(f"{normalized}: source-lock update is controller-owned")
+            continue
+        if normalized in STABLE_CONTEXT_DOCUMENTS:
+            violations.append(f"{normalized}: protected source-of-truth doc")
+            continue
+        if normalized == ".agents/**" or normalized.startswith(".agents/"):
+            violations.append(f"{normalized}: repo-local skill surface is controller-owned")
+    return tuple(violations)
+
+
+def _task_allows_controller_owned_paths(scope: object) -> bool:
+    if not isinstance(scope, dict):
+        return False
+    if scope.get("controller_state_mutation_allowed") is True:
+        return True
+    if scope.get("controller_owned_paths_allowed") is True:
+        return True
+    if scope.get("controller_task") is True:
+        return True
+    role = scope.get("task_role", scope.get("worker_role"))
+    return role in {"controller", "planning", "promotion", "source_lock"}
 
 
 def _record_preclaim_launch_failure(

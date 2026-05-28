@@ -225,7 +225,7 @@ def _handle_runtime_preflight(arguments: JsonObject, context: McpServerContext) 
         task_next_afk_requested=bool(arguments.get("task_next_afk_requested", False)),
         scaffold_tier=str(arguments.get("scaffold_tier") or "supervisor_managed"),
         database_mode=str(arguments.get("database_mode") or "persistent_mongodb"),
-        evidence_mode=str(arguments.get("evidence_mode") or "strict_jsonl"),
+        evidence_mode=str(arguments.get("evidence_mode") or "missing"),
         mutation_policy=str(arguments.get("mutation_policy") or "allowed"),
         setup_mutations=tuple(
             item
@@ -1215,7 +1215,9 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
         description=(
             "Desktop full-AFK canary and runtime preflight: build a fail-closed "
             "codex_supervisor.runtime_preflight execution-mode ledger and verify the live "
-            "Supervisor MCP tool surface."
+            "Supervisor MCP tool surface. For full-AFK callers must explicitly pass "
+            "evidence_mode=strict_jsonl; launch-only fields such as approval_policy belong on "
+            "story-loop launch tools, not this canary."
         ),
         input_schema={
             "type": "object",

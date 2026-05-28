@@ -272,8 +272,44 @@ def _runtime_preflight_tool_definition() -> JsonObject:
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {},
-            "additionalProperties": True,
+            "properties": {
+                "full_afk": {"type": "boolean"},
+                "plugin_invocation": {"type": "boolean"},
+                "plugin_full_afk": {"type": "boolean"},
+                "supervisor_backend": {
+                    "type": "string",
+                    "enum": ["mcp", "cli", "unavailable", "skill_only"],
+                },
+                "mcp_tools": {"type": "array", "items": {"type": "string"}},
+                "cli_available": {"type": "boolean"},
+                "worker_execution": {
+                    "type": "string",
+                    "enum": ["codex_exec", "current_thread", "blocked", "manual"],
+                },
+                "native_goal_mode": {"type": "boolean"},
+                "supervisor_task_id": {"type": "string"},
+                "goal_contract_linked": {"type": "boolean"},
+                "story_loop_status_checked": {"type": "boolean"},
+                "task_current_requested": {"type": "boolean"},
+                "task_next_afk_requested": {"type": "boolean"},
+                "scaffold_tier": {
+                    "type": "string",
+                    "enum": ["supervisor_managed", "base", "prototype_light", "unknown"],
+                },
+                "database_mode": {
+                    "type": "string",
+                    "enum": ["persistent_mongodb", "memory_mongodb", "none", "unknown"],
+                },
+                "evidence_mode": {
+                    "type": "string",
+                    "enum": ["strict_jsonl", "degraded_jsonl", "missing"],
+                },
+                "mutation_policy": {"type": "string", "enum": ["allowed", "read_only"]},
+                "setup_mutations": {"type": "array", "items": {"type": "string"}},
+                "allow_setup_mutations": {"type": "boolean"},
+                "mcp_startup_diagnostic": {"type": "string"},
+            },
+            "additionalProperties": False,
         },
         "annotations": {"readOnlyHint": True},
     }

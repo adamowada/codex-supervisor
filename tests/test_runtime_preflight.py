@@ -69,6 +69,7 @@ def test_runtime_preflight_normalizes_desktop_callable_mcp_tool_names(tmp_path: 
         worker_execution="codex_exec",
         story_loop_status_checked=True,
         task_current_requested=True,
+        evidence_mode="strict_jsonl",
     )
 
     assert report.ok is True
@@ -148,6 +149,8 @@ def test_runtime_preflight_cli_is_diagnostic_only_for_plugin_full_afk(
                 "codex_supervisor.story_loop_start",
                 "--mcp-tool",
                 "codex_supervisor.story_loop_poll",
+                "--evidence-mode",
+                "strict_jsonl",
                 "--json",
             ]
         )
@@ -163,6 +166,36 @@ def test_runtime_preflight_cli_is_diagnostic_only_for_plugin_full_afk(
     assert {issue["code"] for issue in payload["issues"]} == {
         "cli_diagnostic_not_plugin_full_afk_authority"
     }
+
+
+def test_runtime_preflight_requires_explicit_strict_evidence_for_full_afk(
+    tmp_path: Path,
+) -> None:
+    initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+
+    report = build_runtime_preflight_report(
+        repo_root=tmp_path,
+        full_afk=True,
+        plugin_invocation=True,
+        plugin_full_afk=True,
+        supervisor_backend="mcp",
+        mcp_tools=(
+            "codex_supervisor.runtime_preflight",
+            "codex_supervisor.story_loop_status",
+            "codex_supervisor.task_current",
+            "codex_supervisor.task_next_afk",
+            "codex_supervisor.task_claim",
+            "codex_supervisor.story_loop_run_once",
+            "codex_supervisor.story_loop_start",
+            "codex_supervisor.story_loop_poll",
+        ),
+        story_loop_status_checked=True,
+        task_next_afk_requested=True,
+    )
+
+    assert report.ok is False
+    assert report.ledger.evidence_mode == "missing"
+    assert {issue.code for issue in report.issues} == {"degraded_evidence_blocked"}
 
 
 def test_runtime_preflight_cli_returns_json_and_nonzero_on_blocker(tmp_path, capsys) -> None:

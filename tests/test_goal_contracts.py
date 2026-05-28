@@ -46,6 +46,8 @@ def test_goal_contract_renderer_produces_required_sections():
     assert contract.in_scope["plan"]["plan_id"] == "plan-contract"
     assert contract.in_scope["scope"] == {"area": "planning"}
     assert contract.constraints["allowed_paths"] == ["src/**", "tests/**"]
+    assert contract.constraints["controller_owned_paths"] == ["plans/planning.sqlite3"]
+    assert contract.constraints["planning_sqlite_access"] == "read_only_worker_context"
     assert contract.out_of_scope == {"edits": ["backend launch"]}
     assert contract.acceptance_criteria == (
         "Objective is present.",
@@ -78,7 +80,7 @@ def test_goal_contract_renderer_produces_required_sections():
         "planning SQLite remains canonical"
         in contract.execution_surface["native_goal_mode"]["authority"]
     )
-    assert "planning SQLite records the task progress/completion" in contract.stop_condition
+    assert "Worker Result JSON reports progress/completion" in contract.stop_condition
     assert "Proceed unless" in contract.blocked_condition
     for heading in (
         "## Objective",

@@ -94,6 +94,7 @@ def validate_worker_result_file(
     allowed_paths: tuple[str, ...],
     verification_commands: tuple[str, ...],
     acceptance_criteria: tuple[str, ...],
+    browser_smoke_required: bool = False,
 ) -> WorkerResult:
     """Load and validate a Worker Result Contract artifact."""
 
@@ -107,6 +108,7 @@ def validate_worker_result_file(
         allowed_paths=allowed_paths,
         verification_commands=verification_commands,
         acceptance_criteria=acceptance_criteria,
+        browser_smoke_required=browser_smoke_required,
     )
 
 
@@ -121,6 +123,7 @@ def validate_worker_result_payload(
     allowed_paths: tuple[str, ...],
     verification_commands: tuple[str, ...],
     acceptance_criteria: tuple[str, ...],
+    browser_smoke_required: bool = False,
 ) -> WorkerResult:
     """Validate a Worker Result Contract object against a task contract."""
 
@@ -142,6 +145,7 @@ def validate_worker_result_payload(
         repo_root,
         support_root,
         require_success=completed,
+        require_present=completed and browser_smoke_required,
     )
     _validate_acceptance_results(payload, acceptance_criteria, require_passed=completed)
     _validate_artifacts(repo_root, support_root, artifacts, result_path=result_path)
@@ -159,7 +163,13 @@ def validate_worker_result_payload(
 def sanitize_worker_result_payload(payload: JsonObject) -> JsonObject:
     """Return only Worker Result Contract fields safe to persist in tracked SQLite."""
 
-    return {key: payload[key] for key in sorted(WORKER_RESULT_PAYLOAD_KEYS) if key in payload}
+    sanitized = {key: payload[key] for key in sorted(WORKER_RESULT_PAYLOAD_KEYS) if key in payload}
+    if "completion_notes" not in sanitized:
+        handoff_notes = sanitized.get("handoff_notes")
+        if isinstance(handoff_notes, str) and handoff_notes.strip():
+            sanitized["completion_notes"] = handoff_notes.strip()
+    sanitized.pop("handoff_notes", None)
+    return sanitized
 
 
 def worker_result_unknown_payload_keys(payload: JsonObject) -> tuple[str, ...]:
@@ -282,12 +292,19 @@ def _validate_browser_smoke_results(
     artifact_root: Path,
     *,
     require_success: bool,
+    require_present: bool,
 ) -> None:
     value = payload.get("browser_smoke_results")
     if value is None:
+        if require_present:
+            msg = "browser_smoke_results are required for this task"
+            raise WorkerResultError(msg)
         return
     if not isinstance(value, list):
         msg = "browser_smoke_results must be a list"
+        raise WorkerResultError(msg)
+    if require_present and not value:
+        msg = "browser_smoke_results must include a passed browser smoke entry"
         raise WorkerResultError(msg)
     for index, item in enumerate(value):
         if not isinstance(item, dict):

@@ -74,6 +74,36 @@ def test_task_upsert_canonicalizes_directory_allowed_paths(tmp_path):
     assert task.allowed_paths == ["client/**", "server/**"]
 
 
+def test_task_upsert_canonicalizes_legacy_codex_exec_backend_alias(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Normalize task contracts.",
+            status="active",
+        )
+    )
+
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-test",
+            plan_id="plan-test",
+            title="Task",
+            goal="Use legacy backend label.",
+            task_type="AFK",
+            status="ready",
+            acceptance_criteria=["done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            worker_backend="live_codex_exec",
+        )
+    )
+
+    assert store.list_supervisor_tasks()[0].worker_backend == "codex_exec"
+
+
 def test_task_upsert_rejects_noncanonical_allowed_paths(tmp_path):
     store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
     store.upsert_plan(
@@ -3825,6 +3855,183 @@ def test_review_promotion_promotes_needs_review_result_and_closes_tasks(tmp_path
     assert read_store.list_worker_run_events(worker_run_id="run-source")[0].event_type == (
         "worker_result_review_promoted"
     )
+
+
+def test_review_promotion_requires_review_task_for_afk_review_required_source(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Review before completion.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-source",
+            plan_id="plan-test",
+            title="Source Task",
+            goal="Do the work.",
+            task_type="AFK",
+            status="reviewing",
+            acceptance_criteria=["done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            review_required=True,
+        )
+    )
+    _upsert_worker_result_record(store, "result-source", status="needs_review")
+    store.upsert_worker_run(
+        WorkerRunRecord(
+            worker_run_id="run-source",
+            task_id="task-source",
+            backend="codex_exec",
+            status="needs_review",
+            result_id="result-source",
+        )
+    )
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id="progress-review",
+            plan_id="plan-test",
+            event_type="review_result_recorded",
+            summary="Review passed.",
+            details=json.dumps(
+                {
+                    "target": "task-source",
+                    "finding_counts": {"accepted": 0, "waived": 0, "needs_hitl": 0},
+                }
+            ),
+        )
+    )
+
+    with pytest.raises(ValueError, match="review_task_id is required"):
+        store.promote_reviewed_task_completion(
+            source_task_id="task-source",
+            review_task_id=None,
+            worker_run_id="run-source",
+            review_progress_id="progress-review",
+        )
+
+
+def test_task_cancel_rejects_review_required_promotion_without_review_or_hitl(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Keep review gates explicit.",
+            status="active",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-source",
+            plan_id="plan-test",
+            title="Source Task",
+            goal="Do the work.",
+            task_type="AFK",
+            status="reviewing",
+            acceptance_criteria=["done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            review_required=True,
+        )
+    )
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id="progress-promotion",
+            plan_id="plan-test",
+            event_type="promotion_completed",
+            summary="Promoted source task output.",
+            details=json.dumps(
+                {
+                    "source_task_id": "task-source",
+                    "promotion_task_id": "task-promote",
+                }
+            ),
+        )
+    )
+
+    with pytest.raises(ValueError, match="without review result or HITL authority"):
+        store.update_supervisor_task_status("task-source", "cancelled")
+
+
+def test_plan_completion_rejects_review_required_promotion_without_review_or_hitl(tmp_path):
+    store = initialize_planning_database(tmp_path / "plans" / "planning.sqlite3")
+    store.upsert_plan(
+        PlanRecord(
+            plan_id="plan-test",
+            slug="test",
+            title="Test Plan",
+            goal="Keep review gates explicit.",
+            status="active",
+        )
+    )
+    store.upsert_plan_milestone(
+        PlanMilestoneRecord(
+            milestone_id="milestone-test",
+            plan_id="plan-test",
+            title="Milestone",
+            status="completed",
+        )
+    )
+    store.upsert_plan_acceptance_criterion(
+        PlanAcceptanceCriterionRecord(
+            criterion_id="criterion-test",
+            plan_id="plan-test",
+            description="done",
+            status="completed",
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-source",
+            plan_id="plan-test",
+            title="Source Task",
+            goal="Do the work.",
+            task_type="AFK",
+            status="cancelled",
+            acceptance_criteria=["done"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            review_required=True,
+        )
+    )
+    store.upsert_supervisor_task(
+        SupervisorTaskRecord(
+            task_id="task-promote",
+            plan_id="plan-test",
+            title="Promote",
+            goal="Promote verified output.",
+            task_type="AFK",
+            status="completed",
+            acceptance_criteria=["promoted"],
+            verification_commands=["python -B -m pytest -p no:cacheprovider"],
+            allowed_paths=["src/**"],
+            review_required=False,
+        )
+    )
+    store.add_plan_progress(
+        PlanProgressRecord(
+            progress_id="progress-promotion",
+            plan_id="plan-test",
+            event_type="promotion_completed",
+            summary="Promoted source task output.",
+            details=json.dumps(
+                {
+                    "source_task_id": "task-source",
+                    "promotion_task_id": "task-promote",
+                }
+            ),
+        )
+    )
+
+    with pytest.raises(ValueError, match="promoted review-required task task-source"):
+        store.update_plan_status("plan-test", "completed")
 
 
 def test_worker_run_upsert_completed_validates_worker_result_contract(tmp_path, capsys):

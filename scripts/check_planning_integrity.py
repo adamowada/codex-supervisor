@@ -109,14 +109,24 @@ def check_planning_integrity(database_path: Path) -> tuple[str, ...]:
         active_plans = connection.execute(
             "select count(*) from plans where status = 'active'"
         ).fetchone()[0]
-        if active_plans != 1:
-            failures.append(f"expected exactly one active plan, found {active_plans}")
+        done_plans = connection.execute(
+            "select count(*) from plans where status = 'done'"
+        ).fetchone()[0]
+        if active_plans > 1:
+            failures.append(f"expected at most one active plan, found {active_plans}")
+        if active_plans == 0 and done_plans < 1:
+            failures.append("expected an active plan or a completed plan")
 
         ready_tasks = connection.execute(
             "select count(*) from tasks where status = 'ready'"
         ).fetchone()[0]
-        if ready_tasks < 1:
-            failures.append("expected at least one ready task")
+        running_tasks = connection.execute(
+            "select count(*) from tasks where status = 'running'"
+        ).fetchone()[0]
+        if active_plans == 1 and ready_tasks + running_tasks < 1:
+            failures.append("expected at least one ready or running task for the active plan")
+        if active_plans == 0 and ready_tasks + running_tasks > 0:
+            failures.append("completed planning state cannot have ready or running tasks")
 
         for row in connection.execute("pragma foreign_key_check"):
             failures.append(

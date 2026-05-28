@@ -81,7 +81,7 @@ OPERATIONS: tuple[SupervisorOperation, ...] = (
         read_only=False,
         surface_groups=(PLUGIN_INSTALL_MCP_SURFACE,),
     ),
-    SupervisorOperation("queue_next", "queue-next"),
+    SupervisorOperation("queue_next", "queue-next", _mcp("queue_next")),
     SupervisorOperation("project_list", "project-list", _mcp("project_list")),
     SupervisorOperation("project_seed_tasks", "project-seed-tasks", read_only=False),
     SupervisorOperation("release_evidence_refresh", "release-evidence-refresh", read_only=False),

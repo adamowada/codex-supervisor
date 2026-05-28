@@ -229,6 +229,27 @@ High assurance matters most here. A worker result that passes acceptance criteri
 risk evidence must block, because otherwise worker integration becomes a hidden bypass around the
 policy core.
 
+## Stage 6 Interface Growth
+
+Adapter growth is now declaration-first. A surface operation earns activation only after it declares:
+
+1. the task intent it serves;
+2. the attempt behavior it reads or performs;
+3. the evidence behavior it emits or inspects;
+4. the assurance levels it can support;
+5. the acceptance behavior it exposes;
+6. the state flow it uses;
+7. the operator value that justifies the surface.
+
+The first activated adapter operation is the read-only MCP `queue_next` tool. It is intentionally
+low-risk because it only inspects planning SQLite through the compact queue interface and exposes the
+same next-work answer already proven by the CLI. Mutating adapter operations should remain gated
+until they have the same declaration and focused tests.
+
+This is the broader state-space lesson from the refactor: surfaces may grow, but each operation must
+collapse back onto task intent, attempts, evidence, assurance, and acceptance. If an adapter cannot
+state that mapping, it is not ready to exist.
+
 ## Local Hygiene
 
 Ignored local artifacts should stay disposable. Development environments, caches, run outputs,

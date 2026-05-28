@@ -44,6 +44,7 @@ from codex_supervisor.review_repairs import (
     plan_repair_tasks_from_review_result,
 )
 from codex_supervisor.runtime_preflight import build_runtime_preflight_report
+from codex_supervisor.small_interface import queue_next
 from codex_supervisor.story_loop import (
     advance_story_loop_once,
     build_story_loop_status,
@@ -192,6 +193,15 @@ def _handle_story_loop_status(arguments: JsonObject, context: McpServerContext) 
 def _handle_plan_list(arguments: JsonObject, context: McpServerContext) -> tuple[object, ...]:
     store = _open_store(context)
     return store.list_plans(status=_optional_string(arguments.get("status")))
+
+
+def _handle_queue_next(arguments: JsonObject, context: McpServerContext) -> object:
+    task_status = _optional_string(arguments.get("task_status")) or "ready"
+    return queue_next(
+        context.resolved_planning_path(),
+        plan_id=_optional_string(arguments.get("plan_id")),
+        task_status=task_status,
+    )
 
 
 def _handle_runtime_preflight(arguments: JsonObject, context: McpServerContext) -> object:
@@ -1214,6 +1224,18 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
             "additionalProperties": False,
         },
     ),
+    "codex_supervisor.queue_next": McpToolDefinition(
+        name="codex_supervisor.queue_next",
+        description="Inspect the next task in the compact control-plane queue.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string"},
+                "task_status": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    ),
     "codex_supervisor.runtime_preflight": McpToolDefinition(
         name="codex_supervisor.runtime_preflight",
         description=(
@@ -1759,6 +1781,7 @@ TOOL_HANDLERS: dict[str, McpHandler] = {
     "codex_supervisor.project_list": _handle_project_list,
     "codex_supervisor.story_loop_status": _handle_story_loop_status,
     "codex_supervisor.plan_list": _handle_plan_list,
+    "codex_supervisor.queue_next": _handle_queue_next,
     "codex_supervisor.runtime_preflight": _handle_runtime_preflight,
     "codex_supervisor.task_current": _handle_task_current,
     "codex_supervisor.task_next_afk": _handle_task_next_afk,

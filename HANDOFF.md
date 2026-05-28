@@ -48,6 +48,11 @@ from task intent plus assurance policy, fake Codex worker execution records ordi
 evidence bundles, high-assurance worker results are policy-gated, and live execution has a bounded
 verification plan.
 
+Stage 6 is implemented in `src/codex_supervisor/adapter_contracts.py` and the read-only MCP
+`codex_supervisor.queue_next` operation. Adapter growth is now declaration-first: an operation must
+name task intent, attempt behavior, evidence behavior, assurance levels, acceptance behavior, state
+flow, and operator value before activation.
+
 ## Roadmap
 
 1. Stage 1, Foundation Contract: align docs, planning SQLite, skill guidance, CI, insights, handoff,
@@ -61,9 +66,9 @@ verification plan.
 
 ## Next Action
 
-Continue with Stage 6 from `ROADMAP.md`: grow one adapter operation only after declaring its task
-intent, attempt behavior, evidence, assurance, and acceptance contract.
+All roadmap stages are complete. The simplification plan is marked `done` in
+`plans/planning.sqlite3`.
 
 Planning task:
 
-- `task-grow-first-adapter-operation-20260528`
+- none

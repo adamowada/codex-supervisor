@@ -51,15 +51,16 @@ The active product surface is intentionally narrow and generic:
 4. Five compact CLI commands: `plan-init`, `task-create`, `queue-next`, `attempt-transition`, and
    `attempt-run`.
 5. One read-only MCP adapter operation: `codex_supervisor.queue_next`.
-6. A focused verification gate.
+6. One thin Codex plugin wrapper that starts the MCP stdio server.
+7. A focused verification gate.
 
 `task-create` records work intent. `attempt-run` runs one process in a workspace and records stdout,
 stderr, exit code, artifacts, checks, and acceptance through the same attempt/evidence path as
 manual transitions. It is not a job type taxonomy; starting a project, fixing a bug, or running a
 review are task intents plus process attempts.
 
-New CLI, MCP, plugin, automation, and worker surfaces are added one generic operation at a time
-after the core model proves the shape.
+The plugin is packaging, not a second control plane. New CLI, MCP, plugin, automation, and worker
+surfaces are added one generic operation at a time after the core model proves the shape.
 
 ## Repository Map
 

@@ -150,4 +150,5 @@ Done when:
 - Each adapter operation maps to task intent, attempt, evidence, and acceptance.
 - Adapter state flows through the planning database or explicit external systems.
 - Focused tests cover the adapter contract.
+- The Codex plugin wrapper starts the same compact MCP stdio server as local checks.
 - The operation reduces operator effort enough to justify the surface.

@@ -56,6 +56,9 @@ The active CLI surface is `plan-init`, `task-create`, `queue-next`, `attempt-tra
 is the AFK process path that records execution through the same model.
 
 The active MCP surface is one read-only dispatcher operation: `codex_supervisor.queue_next`.
+The active Codex plugin surface is a thin wrapper around that MCP stdio server. The plugin owns
+discovery metadata and launch wiring only; it does not define separate task, worker, or acceptance
+behavior.
 
 CLI, MCP, plugin, automation, GitHub, and worker integrations are adapters over the core model.
 Each adapter operation declares the task intent, attempt, evidence, and acceptance behavior it

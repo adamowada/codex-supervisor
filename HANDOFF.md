@@ -55,14 +55,18 @@ criteria, not supervisor job types.
 Stage 6 is implemented in `src/codex_supervisor/adapter_contracts.py` and the read-only MCP
 `codex_supervisor.queue_next` operation. Adapter growth is declaration-first: an operation must name
 task intent, attempt behavior, evidence behavior, assurance levels, acceptance behavior, state flow,
-and operator value before activation.
+and operator value before activation. `plugins/codex-supervisor` is the thin Codex plugin wrapper:
+it contains discovery metadata, MCP config, a Desktop skill entrypoint, and a cache-safe launcher
+for the same compact MCP stdio server.
 
 The live surface now matches the compact contract. `src/codex_supervisor/cli.py` exposes five
 commands: `plan-init`, `task-create`, `queue-next`, `attempt-transition`, and `attempt-run`.
 `src/codex_supervisor/mcp_server.py` exposes one in-process tool: `codex_supervisor.queue_next`, and
 `src/codex_supervisor/mcp_stdio.py` provides the minimal stdio JSON-RPC transport for live MCP
-clients. The old operation registry, broad planning inspection commands, and fake worker scaffold
-have been removed.
+clients. `plugins/codex-supervisor` makes that transport discoverable as a Codex plugin without
+adding a second control plane. Its packaged skill requires durable task intent, attempt, evidence,
+and acceptance whenever the supervisor is invoked for work. The old operation registry, broad
+planning inspection commands, and fake worker scaffold have been removed.
 
 The package has been cut down to the compact implementation modules. Attempt transitions validate
 task ownership, planning integrity checks open work per active plan, and the attempt store prevents

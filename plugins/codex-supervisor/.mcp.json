@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "codex-supervisor": {
+      "command": "python",
+      "args": [
+        "-B",
+        "scripts/mcp_launcher.py"
+      ],
+      "cwd": "."
+    }
+  }
+}

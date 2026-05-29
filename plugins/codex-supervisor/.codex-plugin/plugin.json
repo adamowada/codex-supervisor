@@ -1,0 +1,37 @@
+{
+  "name": "codex-supervisor",
+  "version": "0.2.0+codex.20260529025430",
+  "description": "Codex Desktop wrapper for the compact codex-supervisor MCP server.",
+  "author": {
+    "name": "Adam Owada"
+  },
+  "homepage": "https://github.com/adamowada/codex-supervisor",
+  "repository": "https://github.com/adamowada/codex-supervisor",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "mcp",
+    "planning",
+    "supervisor"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Codex Supervisor",
+    "shortDescription": "Inspect the compact supervisor queue from Codex Desktop.",
+    "longDescription": "Codex Supervisor exposes the compact MCP stdio server for read-only queue inspection over planning SQLite. Work execution stays in the Python CLI and durable task, attempt, evidence, and acceptance model.",
+    "developerName": "Adam Owada",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ],
+    "websiteURL": "https://github.com/adamowada/codex-supervisor",
+    "defaultPrompt": [
+      "Show the supervisor queue.",
+      "Inspect the next task.",
+      "Summarize latest evidence."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

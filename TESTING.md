@@ -16,7 +16,7 @@ The gate checks:
 - repo-local skill inventory;
 - protected source-of-truth hashes;
 - focused tests for the compact contract;
-- e2e coverage for MCP stdio and generic AFK process attempts.
+- e2e coverage for MCP stdio, the Codex plugin wrapper, and generic AFK process attempts.
 
 ## Test Philosophy
 
@@ -33,5 +33,9 @@ Next tests should cover:
 - new adapter operations only after they are declared;
 - acceptance behavior at `attempt-transition`;
 - process evidence capture at `attempt-run`;
+- plugin launch wiring for the compact MCP stdio server;
+- installed-cache plugin launch without `CODEX_SUPERVISOR_REPO_ROOT`;
+- packaged skill instructions that require task intent, attempt, evidence, and acceptance when the
+  supervisor is invoked for work;
 - queue inspection through `AttemptStore`;
 - planning schema integrity from the production schema builder.

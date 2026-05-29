@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-28
+Last updated: 2026-05-29
 
 This is the current resume snapshot.
 
@@ -62,6 +62,12 @@ The package has been cut down to the compact implementation modules. Attempt tra
 task ownership, workers fail closed with blocker evidence, planning integrity checks open work per
 active plan, and the attempt store prevents multiple non-terminal attempts for a task.
 
+Repo-local skills now include:
+
+- `codex-supervisor`
+- `improve-codebase-architecture`
+- `reduce-codebase-complexity`
+
 ## Roadmap
 
 1. Stage 1, Foundation Contract: align docs, planning SQLite, skill guidance, CI, insights, handoff,
@@ -75,8 +81,9 @@ active plan, and the attempt store prevents multiple non-terminal attempts for a
 
 ## Next Action
 
-All roadmap stages, compact contract repair, and the live-surface simplification pass are complete.
-The simplification, repair, and live-surface plans are marked `done` in `plans/planning.sqlite3`.
+All roadmap stages, compact contract repair, live-surface simplification, and repo-local
+complexity-reduction skill work are complete. The related plans are marked `done` in
+`plans/planning.sqlite3`.
 
 Planning task:
 

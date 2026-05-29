@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the reduced repo-local skill surface."""
+"""Validate the repo-local skill surface."""
 
 from __future__ import annotations
 
@@ -8,7 +8,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILLS_ROOT = REPO_ROOT / ".agents" / "skills"
-EXPECTED_SKILLS = {"codex-supervisor"}
+EXPECTED_SKILLS = {
+    "codex-supervisor",
+    "improve-codebase-architecture",
+    "reduce-codebase-complexity",
+}
 
 
 def main() -> int:
@@ -39,8 +43,17 @@ def check_skill_inventory() -> tuple[str, ...]:
             failures.append(f"{relative} is missing frontmatter")
         if f"name: {path.parent.name}" not in text:
             failures.append(f"{relative} frontmatter name does not match directory")
-        if "TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision" not in text:
+        if "[TODO" in text:
+            failures.append(f"{relative} still contains template TODO text")
+        if (
+            path.parent.name == "codex-supervisor"
+            and "TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision" not in text
+        ):
             failures.append(f"{relative} does not name the simplified work model")
+        if path.parent.name == "reduce-codebase-complexity":
+            for required in ("State Space", "Reduction Candidate", "REDUCTION-MOVES.md"):
+                if required not in text:
+                    failures.append(f"{relative} does not include {required!r}")
 
     return tuple(failures)
 

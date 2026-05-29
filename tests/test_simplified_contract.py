@@ -49,9 +49,13 @@ def test_fresh_planning_database_contract() -> None:
         connection.close()
 
 
-def test_single_repo_local_skill() -> None:
+def test_repo_local_skills() -> None:
     skill_files = sorted((REPO_ROOT / ".agents" / "skills").glob("*/SKILL.md"))
-    assert [path.parent.name for path in skill_files] == ["codex-supervisor"]
+    assert [path.parent.name for path in skill_files] == [
+        "codex-supervisor",
+        "improve-codebase-architecture",
+        "reduce-codebase-complexity",
+    ]
 
 
 def test_simplification_insight_exists() -> None:

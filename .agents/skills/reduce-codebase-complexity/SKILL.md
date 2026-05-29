@@ -34,6 +34,34 @@ Key principles:
 
 ## Process
 
+### 0. Calibrate Ruthlessness
+
+Before exploring, determine the run posture. If the user's tolerance for deletion, breaking
+changes, compatibility, or current-test preservation is unclear, pause and ask for calibration.
+Use a host-provided structured question or plan-pause tool when available; otherwise ask directly
+in chat and wait.
+
+Ask only for the missing choices:
+
+- **Ruthlessness** - `Ruthless`, `Focused`, or `Cautious`.
+- **Mutation scope** - `Audit only`, `Write plan`, or `Implement simplification`.
+- **Sacred constraints** - public API, schema, docs, tests, data, release behavior, or nothing.
+
+Use these levels:
+
+- **Ruthless** - optimize for the smallest future architecture; legacy behavior, compatibility,
+  and current tests have no default weight.
+- **Focused** - reduce aggressively while preserving explicitly named live behavior.
+- **Cautious** - surface candidates without destructive recommendations unless risk is low.
+
+Do not ask when the user has already made the appetite clear. Infer `Ruthless` from phrases like
+"pre-MVP," "break freely," "no legacy weight," "delete," "rewrite," or "be ruthless." Use
+`Focused` as the default for ordinary simplification requests. Use `Cautious` for read-only,
+review-only, audit-only, no-edits, no-mutation, compliance, or production-risk contexts.
+
+Treat calibration as the front-door posture for the run, not as a persistent mode-like axis. It
+sets recommendation strength and mutation boundaries; it should not fork every later process step.
+
 ### 1. Explore
 
 Read the repo's source-of-truth documents first: product overview, architecture, contracts, roadmap,

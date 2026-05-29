@@ -51,7 +51,16 @@ def check_skill_inventory() -> tuple[str, ...]:
         ):
             failures.append(f"{relative} does not name the simplified work model")
         if path.parent.name == "reduce-codebase-complexity":
-            for required in ("State Space", "Reduction Candidate", "REDUCTION-MOVES.md"):
+            for required in (
+                "State Space",
+                "Reduction Candidate",
+                "REDUCTION-MOVES.md",
+                "Calibrate Ruthlessness",
+                "Ruthless",
+                "Focused",
+                "Cautious",
+                "Sacred constraints",
+            ):
                 if required not in text:
                     failures.append(f"{relative} does not include {required!r}")
 

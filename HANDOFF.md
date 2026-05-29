@@ -68,6 +68,10 @@ Repo-local skills now include:
 - `improve-codebase-architecture`
 - `reduce-codebase-complexity`
 
+`reduce-codebase-complexity` includes a front-door ruthlessness calibration step. It asks for
+deletion tolerance, mutation scope, and sacred constraints only when those are unclear, then treats
+the answer as run posture rather than another persistent mode axis.
+
 ## Roadmap
 
 1. Stage 1, Foundation Contract: align docs, planning SQLite, skill guidance, CI, insights, handoff,
@@ -82,8 +86,8 @@ Repo-local skills now include:
 ## Next Action
 
 All roadmap stages, compact contract repair, live-surface simplification, and repo-local
-complexity-reduction skill work are complete. The related plans are marked `done` in
-`plans/planning.sqlite3`.
+complexity-reduction skill work, including calibration, are complete. The related plans are marked
+`done` in `plans/planning.sqlite3`.
 
 Planning task:
 

@@ -65,9 +65,12 @@ commands: `plan-init`, `task-create`, `queue-next`, `attempt-transition`, and `a
 `src/codex_supervisor/mcp_server.py` exposes one in-process tool: `codex_supervisor.queue_next`, and
 `src/codex_supervisor/mcp_stdio.py` provides the minimal stdio JSON-RPC transport for live MCP
 clients. `plugins/codex-supervisor` makes that transport discoverable as a Codex plugin without
-adding a second control plane. Its packaged skill requires durable task intent, attempt, evidence,
-and acceptance whenever the supervisor is invoked for work. The old operation registry, broad
-planning inspection commands, and fake worker scaffold have been removed.
+adding a second control plane. The plugin also provides `scripts/cli_launcher.py`, a packaging-only
+forwarder to the source CLI so Desktop runs do not probe PATH before starting supervisor work. Its
+packaged skill requires durable task intent, attempt, evidence, and acceptance whenever the
+supervisor is invoked for work, and it forbids `queue-next` before `plan-init` in fresh folders. The
+old operation registry, broad planning inspection commands, and fake worker scaffold have been
+removed.
 
 The package has been cut down to the compact implementation modules. Attempt transitions validate
 task ownership, planning integrity checks open work per active plan, and the attempt store prevents

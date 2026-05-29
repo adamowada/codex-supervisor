@@ -51,7 +51,8 @@ The active product surface is intentionally narrow and generic:
 4. Five compact CLI commands: `plan-init`, `task-create`, `queue-next`, `attempt-transition`, and
    `attempt-run`.
 5. One read-only MCP adapter operation: `codex_supervisor.queue_next`.
-6. One thin Codex plugin wrapper that starts the MCP stdio server.
+6. One thin Codex plugin wrapper that starts the MCP stdio server and forwards Desktop CLI calls to
+   the source CLI.
 7. A focused verification gate.
 
 `task-create` records work intent. `attempt-run` runs one process in a workspace, writes the worker

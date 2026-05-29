@@ -7,6 +7,8 @@ It provides:
 - `.codex-plugin/plugin.json` for plugin discovery.
 - `.mcp.json` for the `codex-supervisor` MCP server.
 - `scripts/mcp_launcher.py` to start the repository's compact MCP stdio server.
+- `scripts/cli_launcher.py` to forward Desktop CLI calls to the source repository without relying
+  on `PATH`.
 - `skills/codex-supervisor/SKILL.md` as the Desktop-visible entrypoint.
 
 The plugin is packaging only. The product contract remains in the Python package:

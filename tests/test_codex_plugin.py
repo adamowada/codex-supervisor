@@ -39,6 +39,8 @@ def test_plugin_contains_desktop_skill_entrypoint() -> None:
     assert "plan-init" in content
     assert "attempt-run" in content
     assert "MUST use `attempt-run`" in content
+    assert "MUST use the plugin CLI launcher" in content
+    assert "MUST NOT run `queue-next` before `plan-init`" in content
     assert "CODEX_SUPERVISOR_TASK_JSON" in content
 
 
@@ -110,6 +112,40 @@ def test_installed_cache_launcher_uses_configured_marketplace_without_env(
     assert responses[1]["result"]["tools"][0]["name"] == "codex_supervisor.queue_next"
 
 
+def test_installed_cache_cli_launcher_runs_source_cli_without_path(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    cached_plugin = (
+        codex_home
+        / "plugins"
+        / "cache"
+        / "codex-supervisor-local"
+        / "codex-supervisor"
+        / "0.2.0+codex.test"
+    )
+    db_path = tmp_path / "empty-workspace" / ".codex-supervisor" / "planning.sqlite3"
+    shutil.copytree(PLUGIN_ROOT, cached_plugin)
+    _write_codex_config(codex_home)
+
+    _run_plugin_cli_launcher_from(
+        cached_plugin,
+        ("plan-init", "--path", str(db_path)),
+        codex_home=codex_home,
+        include_source_env=False,
+    )
+    completed = _run_plugin_cli_launcher_from(
+        cached_plugin,
+        ("queue-next", "--path", str(db_path), "--json"),
+        codex_home=codex_home,
+        include_source_env=False,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["task"] is None
+    assert payload["next_transition"] == "none"
+
+
 def _run_plugin_launcher(messages: tuple[dict[str, object], ...]) -> list[dict[str, object]]:
     return _run_plugin_launcher_from(
         PLUGIN_ROOT,
@@ -143,6 +179,33 @@ def _run_plugin_launcher_from(
         check=True,
     )
     return [json.loads(line) for line in completed.stdout.splitlines()]
+
+
+def _run_plugin_cli_launcher_from(
+    plugin_root: Path,
+    args: tuple[str, ...],
+    *,
+    codex_home: Path,
+    include_source_env: bool,
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["CODEX_HOME"] = str(codex_home)
+    env["PATH"] = os.pathsep.join(
+        part for part in env.get("PATH", "").split(os.pathsep) if "codex-supervisor" not in part
+    )
+    if include_source_env:
+        env["CODEX_SUPERVISOR_REPO_ROOT"] = str(REPO_ROOT)
+    else:
+        env.pop("CODEX_SUPERVISOR_REPO_ROOT", None)
+    return subprocess.run(
+        (sys.executable, "-B", "scripts/cli_launcher.py", *args),
+        cwd=plugin_root,
+        text=True,
+        capture_output=True,
+        timeout=15,
+        env=env,
+        check=True,
+    )
 
 
 def _write_codex_config(codex_home: Path) -> None:

@@ -19,6 +19,8 @@ The gate checks:
 - e2e coverage for MCP stdio, the Codex plugin wrapper, and generic AFK process attempts.
 - e2e coverage that proves an autonomous worker receives task assignment metadata and completes an
   empty project through `attempt-run`.
+- e2e coverage that the installed-cache plugin CLI launcher can initialize and inspect a fresh
+  planning database without relying on `codex-supervisor` being on `PATH`.
 
 ## Test Philosophy
 
@@ -36,6 +38,7 @@ Next tests should cover:
 - acceptance behavior at `attempt-transition`;
 - process evidence and assignment capture at `attempt-run`;
 - plugin launch wiring for the compact MCP stdio server;
+- plugin CLI launch wiring for fresh-folder full AFK setup;
 - installed-cache plugin launch without `CODEX_SUPERVISOR_REPO_ROOT`;
 - packaged skill instructions that require task intent, attempt, evidence, and acceptance when the
   supervisor is invoked for work;

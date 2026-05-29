@@ -11,7 +11,7 @@ surfaces, and clearer layers.
 
 ## Glossary
 
-Use these terms consistently. Full definitions live in [LANGUAGE.md](LANGUAGE.md).
+You **MUST** use these terms consistently. Full definitions live in [LANGUAGE.md](LANGUAGE.md).
 
 - **State Space** - the behavior combinations created by axes, modes, surfaces, and lifecycle states.
 - **Axis** - an independent choice that multiplies behavior.
@@ -36,10 +36,10 @@ Key principles:
 
 ### 0. Calibrate Ruthlessness
 
-Before exploring, determine the run posture. If the user's tolerance for deletion, breaking
-changes, compatibility, or current-test preservation is unclear, pause and ask for calibration.
-Use a host-provided structured question or plan-pause tool when available; otherwise ask directly
-in chat and wait.
+Before exploring or spawning subagents, you **MUST** determine the run posture. If the user's
+tolerance for deletion, breaking changes, compatibility, or current-test preservation is unclear,
+you **MUST** pause and ask for calibration before continuing. Use a host-provided structured
+question or plan-pause tool when available; otherwise ask directly in chat and wait.
 
 Ask only for the missing choices:
 
@@ -58,6 +58,9 @@ Do not ask when the user has already made the appetite clear. Infer `Ruthless` f
 "pre-MVP," "break freely," "no legacy weight," "delete," "rewrite," or "be ruthless." Use
 `Focused` as the default for ordinary simplification requests. Use `Cautious` for read-only,
 review-only, audit-only, no-edits, no-mutation, compliance, or production-risk contexts.
+
+Requests "with subagents" only permit delegation. They **MUST NOT** be treated as permission to
+infer `Focused`, `Audit only`, or no-edits posture.
 
 Treat calibration as the front-door posture for the run, not as a persistent mode-like axis. It
 sets recommendation strength and mutation boundaries; it should not fork every later process step.

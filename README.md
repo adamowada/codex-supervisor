@@ -11,8 +11,8 @@ The supervisor owns one durable work model:
 TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
 ```
 
-Every interface, check, and future worker integration flows through that model. Acceptance is made
-when an attempt transitions with evidence; inspection reads durable state.
+Every interface, check, and worker integration flows through that model. Codex can decide the
+semantics of the work; the supervisor owns durable intent, attempts, evidence, and acceptance.
 
 ## Assurance Levels
 
@@ -43,17 +43,23 @@ state.
 
 ## Active Surface
 
-The active product surface is intentionally narrow:
+The active product surface is intentionally narrow and generic:
 
 1. Source-of-truth documents.
 2. Planning SQLite.
 3. Bounded repo-local operating and refactoring skills.
-4. Three compact CLI commands: `plan-init`, `queue-next`, and `attempt-transition`.
+4. Five compact CLI commands: `plan-init`, `task-create`, `queue-next`, `attempt-transition`, and
+   `attempt-run`.
 5. One read-only MCP adapter operation: `codex_supervisor.queue_next`.
 6. A focused verification gate.
 
-New CLI, MCP, plugin, automation, and worker surfaces are added one operation at a time after the
-core model proves the shape.
+`task-create` records work intent. `attempt-run` runs one process in a workspace and records stdout,
+stderr, exit code, artifacts, checks, and acceptance through the same attempt/evidence path as
+manual transitions. It is not a job type taxonomy; starting a project, fixing a bug, or running a
+review are task intents plus process attempts.
+
+New CLI, MCP, plugin, automation, and worker surfaces are added one generic operation at a time
+after the core model proves the shape.
 
 ## Repository Map
 

@@ -33,6 +33,43 @@ def test_cli_queue_next_json(tmp_path: Path, capsys) -> None:  # type: ignore[no
     assert payload["next_transition"] == "attempt-transition --status running"
 
 
+def test_cli_task_create_json(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    db_path = tmp_path / "planning.sqlite3"
+    assert main(["plan-init", "--path", str(db_path)]) == 0
+    capsys.readouterr()
+
+    exit_code = main(
+        [
+            "task-create",
+            "--path",
+            str(db_path),
+            "--plan-id",
+            "plan-factory",
+            "--plan-title",
+            "Factory",
+            "--plan-goal",
+            "Create small projects through generic tasks.",
+            "--task-id",
+            "task-factory",
+            "--title",
+            "Create tiny project",
+            "--intent",
+            "Create a tiny project from a generic task intent.",
+            "--assurance",
+            "high",
+            "--acceptance",
+            "Project file exists",
+            "--json",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["plan"]["plan_id"] == "plan-factory"
+    assert payload["task"]["task_id"] == "task-factory"
+    assert payload["task"]["assurance"] == "high"
+
+
 def test_cli_attempt_transition_json(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
     db_path = make_planning_db(tmp_path)
 

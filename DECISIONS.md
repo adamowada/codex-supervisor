@@ -44,3 +44,11 @@ Rationale: The gate should match the current architecture and grow with rebuilt 
 Decision: Insights record durable lessons that guide future design.
 
 Rationale: The insight set should help future work preserve the compact control-plane shape.
+
+## D-0008: Work Semantics Stay In Task Intent
+
+Decision: The supervisor uses generic task creation and process attempts instead of deterministic
+engineering job types.
+
+Rationale: Codex can decide what work means, while the supervisor keeps durable state, evidence,
+acceptance, and auditability deterministic.

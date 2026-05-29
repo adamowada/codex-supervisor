@@ -22,6 +22,10 @@ classifiers = [
 ]
 dependencies = []
 
+[project.scripts]
+codex-supervisor = "codex_supervisor.cli:main"
+codex-supervisor-mcp = "codex_supervisor.mcp_stdio:main"
+
 [project.urls]
 Repository = "https://github.com/adamowada/codex-supervisor"
 Issues = "https://github.com/adamowada/codex-supervisor/issues"

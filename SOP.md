@@ -11,9 +11,10 @@
 
 1. State the task intent.
 2. Choose an assurance level.
-3. Run one attempt.
-4. Capture evidence.
-5. Accept, block, or leave ready.
+3. Record the task with `task-create` when it is new.
+4. Run one attempt with `attempt-transition` or `attempt-run`.
+5. Capture evidence.
+6. Accept, block, or leave ready.
 
 ## Source Docs
 

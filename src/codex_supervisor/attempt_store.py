@@ -25,6 +25,17 @@ from codex_supervisor.policy import normalize_assurance
 
 
 @dataclass(frozen=True)
+class PlanRecord:
+    """Plan row needed by the simplified execution layer."""
+
+    plan_id: str
+    title: str
+    status: str
+    priority: int
+    goal: str
+
+
+@dataclass(frozen=True)
 class TaskRecord:
     """Task row needed by the simplified execution layer."""
 
@@ -54,6 +65,105 @@ class AttemptStore:
     def __init__(self, database_path: Path, *, read_only: bool = False) -> None:
         self.database_path = database_path
         self.read_only = read_only
+
+    def ensure_active_plan(
+        self,
+        *,
+        plan_id: str,
+        title: str,
+        goal: str,
+        priority: int,
+        created_at: str | None = None,
+    ) -> PlanRecord:
+        """Ensure an active plan row exists for new task intents."""
+
+        created_at = created_at or _now()
+        with self._connect() as connection:
+            connection.execute(
+                """insert into plans(plan_id, title, status, priority, goal, created_at, updated_at)
+                   values (?, ?, 'active', ?, ?, ?, ?)
+                   on conflict(plan_id) do nothing""",
+                (
+                    _non_empty(plan_id, "plan_id"),
+                    _non_empty(title, "title"),
+                    priority,
+                    _non_empty(goal, "goal"),
+                    created_at,
+                    created_at,
+                ),
+            )
+            row = connection.execute(
+                """select plan_id, title, status, priority, goal
+                   from plans
+                   where plan_id = ?""",
+                (plan_id,),
+            ).fetchone()
+        if row is None:
+            raise LookupError(f"unknown plan {plan_id!r}")
+        plan = PlanRecord(
+            plan_id=row["plan_id"],
+            title=row["title"],
+            status=row["status"],
+            priority=row["priority"],
+            goal=row["goal"],
+        )
+        if plan.status != "active":
+            raise LookupError(f"unknown active plan {plan_id!r}")
+        return plan
+
+    def create_task(
+        self,
+        *,
+        plan_id: str,
+        title: str,
+        intent: str,
+        assurance: str,
+        acceptance_criteria: tuple[str, ...],
+        task_id: str | None = None,
+        created_at: str | None = None,
+    ) -> TaskRecord:
+        """Create one durable task intent."""
+
+        created_at = created_at or _now()
+        task_id = task_id or _stable_id("task")
+        normalized_acceptance = _string_array(acceptance_criteria, "acceptance_criteria")
+        if not normalized_acceptance:
+            raise ValueError("acceptance_criteria must include at least one item")
+        task = TaskRecord(
+            task_id=_non_empty(task_id, "task_id"),
+            plan_id=_non_empty(plan_id, "plan_id"),
+            title=_non_empty(title, "title"),
+            status="ready",
+            assurance=normalize_assurance(assurance).value,
+            intent=_non_empty(intent, "intent"),
+            acceptance_criteria=normalized_acceptance,
+        )
+
+        with self._connect() as connection:
+            plan = connection.execute(
+                "select 1 from plans where plan_id = ? and status = 'active'",
+                (task.plan_id,),
+            ).fetchone()
+            if plan is None:
+                raise LookupError(f"unknown active plan {task.plan_id!r}")
+            connection.execute(
+                """insert into tasks(
+                       task_id, plan_id, title, status, assurance, intent,
+                       acceptance_json, created_at, updated_at
+                   ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    task.task_id,
+                    task.plan_id,
+                    task.title,
+                    task.status,
+                    task.assurance,
+                    task.intent,
+                    json.dumps(list(task.acceptance_criteria), indent=2),
+                    created_at,
+                    created_at,
+                ),
+            )
+        return task
 
     def create_attempt(
         self,
@@ -450,6 +560,13 @@ def _acceptance_criteria_from_json(raw_json: str) -> tuple[str, ...]:
     ):
         raise ValueError("task acceptance_json must be a JSON array of strings")
     return tuple(acceptance_criteria)
+
+
+def _string_array(items: tuple[str, ...], field_name: str) -> tuple[str, ...]:
+    normalized = tuple(item.strip() for item in items if item.strip())
+    if len(normalized) != len(items):
+        raise ValueError(f"{field_name} entries must be non-empty strings")
+    return normalized
 
 
 def _validate_attempt_task(attempt: RunAttempt, expected_task_id: str | None) -> None:

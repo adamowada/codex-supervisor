@@ -88,42 +88,45 @@ Purpose: prove the core can be operated through a tiny public surface.
 Steps:
 
 1. Add one inspection command.
-2. Add one mutation command.
-3. Make the inspection command answer the next operational state question from planning SQLite.
-4. Make the mutation command perform one core transition.
-5. Keep command arguments close to the database and contract vocabulary.
-6. Add focused tests for both commands.
-7. Keep the command surface auditable by inspection.
+2. Add one task-intent creation command.
+3. Add one manual mutation command.
+4. Make the inspection command answer the next operational state question from planning SQLite.
+5. Make the mutation command perform one core transition.
+6. Keep command arguments close to the database and contract vocabulary.
+7. Add focused tests for the commands.
+8. Keep the command surface auditable by inspection.
 
 Done when:
 
+- One task creation command works.
 - One read command works.
-- One write command works.
-- Both commands map directly to task, attempt, evidence, or acceptance behavior.
-- Both commands have focused tests.
+- One manual write command works.
+- The commands map directly to task, attempt, evidence, or acceptance behavior.
+- The commands have focused tests.
 - The command surface remains small.
 - `scripts/verify.py` passes.
 
-## Stage 5: Worker Boundary
+## Stage 5: Generic AFK Process Boundary
 
-Purpose: keep future fresh-context Codex workers inside the attempt/evidence model without adding a
-second worker control plane before the adapter operation exists.
+Purpose: let worker processes run AFK inside the attempt/evidence model without adding a supervisor
+taxonomy of engineering job types.
 
 Steps:
 
 1. Treat `executor` as transport data on `RunAttempt`.
-2. Allow future Codex work to use the same `attempt-transition` path.
-3. Keep worker prompt builders, fake workers, and live launchers out of active product code until a
-   worker adapter operation is selected.
-4. Declare worker task intent, attempt behavior, evidence behavior, and acceptance behavior before
-   adding worker execution.
-5. Add focused worker adapter tests only when that operation becomes active.
+2. Add one generic process attempt runner.
+3. Run each worker process in an explicit workspace.
+4. Capture stdout, stderr, command metadata, exit code, declared artifacts, checks, risks, gaps, and
+   acceptance results as evidence.
+5. Terminalize every process attempt through the same acceptance policy path.
+6. Keep work categories in task intent and acceptance criteria.
+7. Add focused e2e tests for successful and failed AFK process attempts.
 
 Done when:
 
 - Executor identity is data on the active attempt model.
-- The active codebase has no separate worker control plane.
-- Future worker execution has a declared adapter path before implementation.
+- The active codebase has one AFK process path and no separate worker control plane.
+- A high-assurance e2e smoke test starts a tiny project through `task-create` and `attempt-run`.
 - `scripts/verify.py` passes.
 
 ## Stage 6: Interface Growth

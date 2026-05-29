@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from planning_db_factory import insert_task, make_planning_db
 
-from codex_supervisor.small_interface import attempt_transition, queue_next
+from codex_supervisor.small_interface import attempt_transition, queue_next, task_create
 
 
 def test_queue_next_returns_ready_task_and_transition_hint(tmp_path: Path) -> None:
@@ -16,6 +16,25 @@ def test_queue_next_returns_ready_task_and_transition_hint(tmp_path: Path) -> No
     assert result.task is not None
     assert result.task["task_id"] == "task-1"
     assert result.next_transition == "attempt-transition --status running"
+
+
+def test_task_create_reports_stored_plan(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+
+    result = task_create(
+        db_path,
+        plan_id="plan-1",
+        plan_title="Different title",
+        plan_goal="Different goal",
+        title="New task",
+        intent="Create durable task intent.",
+        assurance="medium",
+        acceptance_criteria=("Acceptance criterion",),
+        task_id="task-new",
+    )
+
+    assert result.plan["title"] == "Plan"
+    assert result.task["task_id"] == "task-new"
 
 
 def test_attempt_transition_runs_and_accepts_medium_task(tmp_path: Path) -> None:

@@ -25,6 +25,8 @@ TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
 ```
 
 Assurance levels are `low`, `medium`, and `high`. They set evidence and acceptance requirements.
+Work categories belong in task intent and acceptance criteria. Do not add supervisor job types for
+semantic engineering categories.
 
 ## Source Of Truth
 
@@ -76,6 +78,15 @@ Focused checks:
 uv run --no-sync python -B scripts/check_planning_integrity.py
 uv run --no-sync python -B scripts/check_skill_inventory.py
 uv run --no-sync python -B scripts/check_protected_files.py
+```
+
+Core CLI operations:
+
+```sh
+uv run --no-sync codex-supervisor task-create --help
+uv run --no-sync codex-supervisor queue-next --help
+uv run --no-sync codex-supervisor attempt-transition --help
+uv run --no-sync codex-supervisor attempt-run --help
 ```
 
 ## Coding Rules

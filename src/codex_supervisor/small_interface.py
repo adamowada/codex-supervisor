@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from codex_supervisor.attempt_store import AttemptStore, TaskRecord
+from codex_supervisor.attempt_store import AttemptStore, PlanRecord, TaskRecord
 from codex_supervisor.attempts import (
     AttemptEvidence,
     RunAttempt,
@@ -33,6 +33,14 @@ class QueueNextResult:
 
 
 @dataclass(frozen=True)
+class TaskCreateResult:
+    """Result for creating one durable task intent."""
+
+    plan: dict[str, object]
+    task: dict[str, object]
+
+
+@dataclass(frozen=True)
 class AttemptTransitionResult:
     """Result for the single attempt mutation command."""
 
@@ -41,6 +49,42 @@ class AttemptTransitionResult:
     evidence: dict[str, object] | None
     acceptance: dict[str, object] | None
     task_status: str
+
+
+def task_create(
+    database_path: Path,
+    *,
+    plan_id: str,
+    plan_title: str,
+    plan_goal: str,
+    title: str,
+    intent: str,
+    assurance: str,
+    acceptance_criteria: tuple[str, ...],
+    task_id: str | None = None,
+    priority: int = 100,
+) -> TaskCreateResult:
+    """Create one generic task intent in an active plan."""
+
+    store = AttemptStore(database_path)
+    plan = store.ensure_active_plan(
+        plan_id=plan_id,
+        title=plan_title,
+        goal=plan_goal,
+        priority=priority,
+    )
+    task = store.create_task(
+        plan_id=plan_id,
+        task_id=task_id,
+        title=title,
+        intent=intent,
+        assurance=assurance,
+        acceptance_criteria=acceptance_criteria,
+    )
+    return TaskCreateResult(
+        plan=_plan_to_dict(plan),
+        task=_task_to_dict(task),
+    )
 
 
 def queue_next(database_path: Path) -> QueueNextResult:
@@ -278,6 +322,16 @@ def _task_to_dict(task: TaskRecord) -> dict[str, object]:
         "assurance": task.assurance,
         "intent": task.intent,
         "acceptance_criteria": list(task.acceptance_criteria),
+    }
+
+
+def _plan_to_dict(plan: PlanRecord) -> dict[str, object]:
+    return {
+        "plan_id": plan.plan_id,
+        "title": plan.title,
+        "status": plan.status,
+        "priority": plan.priority,
+        "goal": plan.goal,
     }
 
 

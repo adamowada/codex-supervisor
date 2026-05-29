@@ -17,6 +17,7 @@ Required fields:
 - status.
 
 Backend choice belongs to a run attempt.
+Work category belongs in intent text and acceptance criteria, not in a supervisor job type.
 
 ## Run Attempt
 
@@ -33,6 +34,10 @@ Required fields:
 
 Executors may include `codex`, `manual`, `shell`, `review`, or future adapters. Executor names
 describe transport.
+
+`attempt-run` is the generic AFK executor path. It starts one process in a workspace, records the
+process as a run attempt, and attaches stdout, stderr, command metadata, exit code, declared
+artifacts, checks, risks, gaps, and acceptance results as evidence.
 
 ## Evidence Bundle
 

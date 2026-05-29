@@ -39,6 +39,11 @@ describe transport.
 process as a run attempt, and attaches stdout, stderr, command metadata, exit code, declared
 artifacts, checks, risks, gaps, and acceptance results as evidence.
 
+Before the process starts, `attempt-run` writes a task assignment JSON file and exposes it as
+`CODEX_SUPERVISOR_TASK_JSON`. The assignment contains the task intent, acceptance criteria,
+assurance level, attempt ID, and workspace path. Worker processes read that assignment instead of
+requiring a supervisor job type.
+
 ## Evidence Bundle
 
 An evidence bundle is the structured proof attached to a task or attempt.

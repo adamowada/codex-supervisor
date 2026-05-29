@@ -1,6 +1,6 @@
 {
   "name": "codex-supervisor",
-  "version": "0.2.0+codex.20260529025430",
+  "version": "0.2.0+codex.20260529031310",
   "description": "Codex Desktop wrapper for the compact codex-supervisor MCP server.",
   "author": {
     "name": "Adam Owada"

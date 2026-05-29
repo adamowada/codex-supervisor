@@ -21,6 +21,7 @@ and auditability.
 
 - Use the MCP tool `codex_supervisor.queue_next` for read-only queue inspection when available.
 - Use the repository CLI for mutation:
+  - `codex-supervisor plan-init`
   - `codex-supervisor task-create`
   - `codex-supervisor attempt-transition`
   - `codex-supervisor attempt-run`
@@ -36,9 +37,14 @@ use the durable supervisor flow. Do not treat simple work as exempt.
 3. You **MUST attach evidence** that names checks and artifacts.
 4. You **MUST finish with an acceptance decision** or a blocked state.
 
-For AFK or worker-style execution, prefer `attempt-run`. For manual edits, use
-`attempt-transition` to record running and terminal states around the edit. If the CLI is not on
-`PATH`, find the source repository from `CODEX_SUPERVISOR_REPO_ROOT` or the
+In a fresh workspace, run `plan-init` first to create `.codex-supervisor/planning.sqlite3`.
+
+For full AFK or worker-style execution, you **MUST use `attempt-run`**. The worker process receives
+the task assignment through `CODEX_SUPERVISOR_TASK_JSON`, plus task, attempt, and workspace env vars.
+Record declared artifacts, checks, acceptance results, and risk notes on the `attempt-run` call.
+
+For manual edits, use `attempt-transition` to record running and terminal states around the edit. If
+the CLI is not on `PATH`, find the source repository from `CODEX_SUPERVISOR_REPO_ROOT` or the
 `codex-supervisor-local` marketplace entry in `~/.codex/config.toml`, then run the CLI from that
 repository.
 

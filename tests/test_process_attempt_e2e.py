@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -84,6 +85,126 @@ def test_full_afk_process_attempt_starts_tiny_project(tmp_path: Path) -> None:
     assert queued["next_transition"] == "none"
 
 
+def test_full_afk_worker_gets_assignment_and_manages_empty_project_end_to_end(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / ".codex-supervisor" / "planning.sqlite3"
+    workspace = tmp_path / "empty-worker-project"
+    project_file = workspace / "index.html"
+    worker_report = workspace / "worker-report.json"
+
+    assert not workspace.exists()
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-full-afk",
+        "--plan-title",
+        "Full AFK project",
+        "--plan-goal",
+        "Start a tiny project by assigning task intent to an autonomous worker.",
+        "--task-id",
+        "task-full-afk",
+        "--title",
+        "Create HTML-only hello world site",
+        "--intent",
+        "Create index.html with visible Hello, world! text and no CSS, JavaScript, or images.",
+        "--assurance",
+        "high",
+        "--acceptance",
+        "index.html exists and contains visible Hello, world! text",
+        "--acceptance",
+        "index.html contains no CSS, JavaScript, or image references",
+        "--json",
+    )
+
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-full-afk",
+        "--attempt-id",
+        "attempt-full-afk",
+        "--executor",
+        "worker-process",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--summary",
+        "Assign task intent to a worker process to create the project.",
+        "--check",
+        "Worker read CODEX_SUPERVISOR_TASK_JSON and created index.html.",
+        "--check",
+        "index.html was inspected for CSS, JavaScript, and image references.",
+        "--artifact",
+        str(project_file),
+        "--artifact",
+        str(worker_report),
+        "--acceptance-result",
+        "index.html exists and contains visible Hello, world! text=pass",
+        "--acceptance-result",
+        "index.html contains no CSS, JavaScript, or image references=pass",
+        "--risk",
+        "Worker ran inside an isolated empty workspace and only wrote declared artifacts.",
+        "--review-evidence",
+        (
+            "Supervisor captured stdout, stderr, command metadata, assignment metadata, "
+            "and declared artifacts."
+        ),
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        _assignment_worker_code(),
+    )
+
+    payload = json.loads(completed.stdout)
+    assignment_path = Path(payload["assignment_path"])
+    evidence_artifacts = payload["transition"]["evidence"]["artifacts"]
+
+    assert payload["exit_code"] == 0
+    assert payload["transition"]["task_status"] == "done"
+    assert payload["transition"]["attempt"]["status"] == "succeeded"
+    assert payload["transition"]["acceptance"]["accepted"] is True
+    assert assignment_path.exists()
+    assert str(assignment_path) in evidence_artifacts
+    assert str(project_file) in evidence_artifacts
+    assert str(worker_report) in evidence_artifacts
+    html = project_file.read_text(encoding="utf-8")
+    assert "Hello, world!" in html
+    forbidden_markers = ("<script", "<style", "stylesheet", ".css", "<img", "src=")
+    assert all(marker not in html.casefold() for marker in forbidden_markers)
+
+    assignment = json.loads(assignment_path.read_text(encoding="utf-8"))
+    assert assignment["task"]["task_id"] == "task-full-afk"
+    assert assignment["task"]["assurance"] == "high"
+    assert assignment["task"]["acceptance_criteria"] == [
+        "index.html exists and contains visible Hello, world! text",
+        "index.html contains no CSS, JavaScript, or image references",
+    ]
+    assert assignment["attempt"]["attempt_id"] == "attempt-full-afk"
+    assert assignment["workspace"] == str(workspace.resolve())
+
+    report = json.loads(worker_report.read_text(encoding="utf-8"))
+    assert report["assignment_task_id"] == "task-full-afk"
+    assert report["assignment_attempt_id"] == "attempt-full-afk"
+
+    with sqlite3.connect(db_path) as connection:
+        attempts = connection.execute(
+            "select attempt_id, executor, status from attempts"
+        ).fetchall()
+        evidence_count = connection.execute(
+            "select count(*) from evidence_bundles"
+        ).fetchone()[0]
+    assert attempts == [("attempt-full-afk", "worker-process", "succeeded")]
+    assert evidence_count == 1
+
+
 def test_failed_process_attempt_records_terminal_state(tmp_path: Path) -> None:
     db_path = tmp_path / "planning.sqlite3"
     workspace = tmp_path / "failed-project"
@@ -154,4 +275,22 @@ def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
         timeout=15,
         env=env,
         check=True,
+    )
+
+
+def _assignment_worker_code() -> str:
+    return (
+        "import json, os\n"
+        "from pathlib import Path\n"
+        "assignment_path = Path(os.environ['CODEX_SUPERVISOR_TASK_JSON'])\n"
+        "assignment = json.loads(assignment_path.read_text(encoding='utf-8'))\n"
+        "html = '<!DOCTYPE html>\\n<html lang=\"en\">\\n<head>\\n'\n"
+        "html += '  <meta charset=\"utf-8\">\\n  <title>Hello World</title>\\n'\n"
+        "html += '</head>\\n<body>\\n  <h1>Hello, world!</h1>\\n</body>\\n</html>\\n'\n"
+        "Path('index.html').write_text(html, encoding='utf-8')\n"
+        "Path('worker-report.json').write_text(json.dumps({\n"
+        "  'assignment_task_id': assignment['task']['task_id'],\n"
+        "  'assignment_attempt_id': assignment['attempt']['attempt_id'],\n"
+        "}, sort_keys=True), encoding='utf-8')\n"
+        "print('created index.html from supervisor assignment')\n"
     )

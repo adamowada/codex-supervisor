@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,7 @@ class ProcessAttemptResult:
     command: tuple[str, ...]
     workspace: str
     exit_code: int
+    assignment_path: str
     stdout_path: str
     stderr_path: str
     transition: AttemptTransitionResult
@@ -62,19 +64,42 @@ def run_process_attempt(
 
     evidence_dir = workspace / ".codex-supervisor" / "evidence"
     evidence_dir.mkdir(parents=True, exist_ok=True)
+    assignment_path = evidence_dir / f"{recorded_attempt_id}-assignment.json"
     stdout_path = evidence_dir / f"{recorded_attempt_id}-stdout.txt"
     stderr_path = evidence_dir / f"{recorded_attempt_id}-stderr.txt"
     command_path = evidence_dir / f"{recorded_attempt_id}-command.json"
+    assignment_path.write_text(
+        json.dumps(
+            {
+                "task": running.task,
+                "attempt": running.attempt,
+                "workspace": str(workspace),
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
 
     exit_code = 1
     stdout = ""
     stderr = ""
     terminal_status = "failed"
     terminal_summary = run_summary
+    env = os.environ.copy()
+    env.update(
+        {
+            "CODEX_SUPERVISOR_TASK_ID": task_id,
+            "CODEX_SUPERVISOR_ATTEMPT_ID": recorded_attempt_id,
+            "CODEX_SUPERVISOR_TASK_JSON": str(assignment_path),
+            "CODEX_SUPERVISOR_WORKSPACE": str(workspace),
+        }
+    )
     try:
         completed = subprocess.run(
             command,
             cwd=workspace,
+            env=env,
             text=True,
             capture_output=True,
             timeout=timeout_seconds,
@@ -99,6 +124,7 @@ def run_process_attempt(
                     "workspace": str(workspace),
                     "timeout_seconds": timeout_seconds,
                     "exit_code": exit_code,
+                    "assignment_path": str(assignment_path),
                 },
                 indent=2,
                 sort_keys=True,
@@ -108,6 +134,7 @@ def run_process_attempt(
 
     recorded_artifacts = (
         str(command_path),
+        str(assignment_path),
         str(stdout_path),
         str(stderr_path),
         *artifacts,
@@ -135,6 +162,7 @@ def run_process_attempt(
         command=command,
         workspace=str(workspace),
         exit_code=exit_code,
+        assignment_path=str(assignment_path),
         stdout_path=str(stdout_path),
         stderr_path=str(stderr_path),
         transition=transition,

@@ -47,10 +47,11 @@ next ready task in the active queue. `attempt-transition` is the manual write pa
 evidence, and acceptance.
 
 Stage 5 is implemented in `src/codex_supervisor/process_attempt.py`. `attempt-run` is the generic
-AFK process path: it runs one command in an explicit workspace, records stdout, stderr, command
-metadata, exit code, artifacts, checks, risks, gaps, and acceptance results, then terminalizes the
-attempt through the same acceptance policy path. Work categories remain task intent and acceptance
-criteria, not supervisor job types.
+AFK process path: it writes a task assignment JSON for the worker, passes it as
+`CODEX_SUPERVISOR_TASK_JSON`, runs one command in an explicit workspace, records stdout, stderr,
+command metadata, assignment metadata, exit code, artifacts, checks, risks, gaps, and acceptance
+results, then terminalizes the attempt through the same acceptance policy path. Work categories
+remain task intent and acceptance criteria, not supervisor job types.
 
 Stage 6 is implemented in `src/codex_supervisor/adapter_contracts.py` and the read-only MCP
 `codex_supervisor.queue_next` operation. Adapter growth is declaration-first: an operation must name

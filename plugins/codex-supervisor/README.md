@@ -25,3 +25,8 @@ When the plugin is launched from the source tree, the launcher finds the reposit
 When launched from the installed Codex cache, it resolves the source repository from
 `CODEX_HOME/config.toml` and the configured `codex-supervisor-local` marketplace. Set
 `CODEX_SUPERVISOR_REPO_ROOT` only when overriding that lookup intentionally.
+
+For full AFK work in a fresh folder, initialize `.codex-supervisor/planning.sqlite3`, create one
+task intent, and run the worker through `attempt-run`. The worker receives the durable assignment at
+`CODEX_SUPERVISOR_TASK_JSON`; stdout, stderr, command metadata, assignment metadata, artifacts,
+checks, risks, and acceptance results are recorded through the same evidence path.

@@ -36,7 +36,10 @@ def test_plugin_contains_desktop_skill_entrypoint() -> None:
     assert "TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision" in content
     assert "MUST create durable task intent" in content
     assert "MUST record a run attempt" in content
+    assert "plan-init" in content
     assert "attempt-run" in content
+    assert "MUST use `attempt-run`" in content
+    assert "CODEX_SUPERVISOR_TASK_JSON" in content
 
 
 def test_repo_marketplace_points_at_plugin_wrapper() -> None:

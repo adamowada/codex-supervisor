@@ -40,8 +40,13 @@ Read the repo's source-of-truth documents first: product overview, architecture,
 testing strategy, decisions, operating instructions, and current handoff or planning state when
 available. Then inspect the actual code and tests to see what is live.
 
-When the host exposes subagent tools, spawn read-only explorer subagents for large repos; otherwise
-explore locally. Give explorers separate lenses:
+Then inventory the live code and tests with `rg --files` or `git ls-files` before using broader
+filesystem walks. Avoid treating ignored caches, generated artifacts, virtual environments, and
+build outputs as product surface unless the user explicitly asks to audit local artifacts.
+
+Spawn read-only Codex explorer subagents when the host exposes subagent tools and the current task
+permits delegation; otherwise explore locally or prepare self-contained read-only prompts. Give
+explorers separate lenses:
 
 - surface inventory;
 - axis and mode inventory;

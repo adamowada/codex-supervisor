@@ -181,8 +181,8 @@ point at real tasks, evidence must point at real tasks, evidence attached to an 
 that attempt's task, running tasks must have one non-terminal attempt, and attempts must have
 timestamps that match their status.
 
-This stage also sharpens the next interface rule: Stage 4 should build on the compact attempt store,
-not on the legacy planning store that still expects the old worker-run schema.
+This stage also sharpens the next interface rule: Stage 4 builds on the compact attempt store and
+keeps task, attempt, evidence, and acceptance vocabulary visible at the boundary.
 
 ## Stage 4 Small Interface
 
@@ -198,7 +198,7 @@ the next transition hint.
 
 `attempt-transition` performs one transition. It can create or start an attempt, complete an
 attempt, attach evidence, evaluate acceptance, and update task status. This is enough surface to
-operate the current model without preserving the old compatibility commands.
+operate the current model.
 
 The important lesson is sequencing: CLI can be the first proof surface because it is cheap to test
 and easy to inspect. MCP, plugin, automation, GitHub, CI, and spawned-project adapters should wait
@@ -250,28 +250,29 @@ This is the broader state-space lesson from the refactor: surfaces may grow, but
 collapse back onto task intent, attempts, evidence, assurance, and acceptance. If an adapter cannot
 state that mapping, it is not ready to exist.
 
-## Compact Contract Repair
+## Live Surface Alignment
 
-The repair after the roadmap completion clarified an important rule: simplifying the target model is
-not enough if old entrypoints can still create or expect old state. Active commands must create,
-inspect, and mutate the same compact schema.
+The active implementation is strongest when every reachable entrypoint creates, inspects, and
+mutates the same compact schema.
 
-The repaired contract is:
+The live contract is:
 
 1. `plan-init` creates the six-table compact schema.
-2. Kept planning inspection commands read compact tables directly.
-3. `attempt-transition` cannot mutate an attempt for a different task.
-4. Worker execution closes attempts even when the worker throws or returns an invalid status.
-5. Planning integrity checks open work relative to active plans, not globally.
-6. The attempt store rejects duplicate non-terminal attempts immediately.
+2. Planning inspection commands read compact tables directly.
+3. `queue-next` reads the next task, active attempt, latest evidence, and acceptance state.
+4. `attempt-transition` validates task ownership before changing attempt state.
+5. Worker execution closes attempts even when the worker throws or returns an invalid status.
+6. Planning integrity checks open work relative to active plans.
+7. The attempt store rejects duplicate non-terminal attempts immediately.
+8. MCP exposes the same queue inspection answer through one read-only adapter operation.
 
-Integrity checks remain the audit layer, but write paths must reject invalid state before it lands.
-The database can also help: a partial unique index on non-terminal attempts makes the one-active-try
-rule durable.
+Integrity checks remain the audit layer, but write paths reject invalid state before it lands. The
+database also helps: a partial unique index on non-terminal attempts makes the one-active-try rule
+durable.
 
-The design lesson is small but sharp: compatibility code is not neutral in a pre-MVP simplification.
-If an old path can still initialize, inspect, or mutate a different schema, it is part of the state
-space and must either be rewritten onto the compact contract or removed.
+The design lesson is small but sharp: code that is reachable is part of the product. In a pre-MVP
+simplification, every reachable path should either serve the compact control plane directly or wait
+outside the active surface.
 
 ## Local Hygiene
 

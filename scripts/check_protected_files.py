@@ -20,7 +20,7 @@ from codex_supervisor.locks import (  # noqa: E402
 PROTECTED_FILE_HASHES = {
     ".gitignore": "e67254cca067cb65c4b691c33416e23f9ab245c25e8528593df7459993c70abb",
     ".gitattributes": "287b668a5753e463f837a21c0cd062f3722e45a4ad89cc9075041bfd12d3f0ae",
-    "README.md": "8bcc26aa43214b7f25ec64d6df02b35ed7ced0914b5c419fac048aac727dd7a1",
+    "README.md": "32ca58ba90eaddaecc76f5626c1932d9cfa842ebc81743c68b2a311685d2caee",
     "AGENTS.md": "ec890327d3a44a8e0d7ea1ffa1b2e5fd27a3fdb7173fb661ee22995842df7ff1",
     "PLANS.md": "9ddc7ea6458f501aee6df51b6aae52e1ccabca1e223f1ff1e4958d10c8967924",
     "ARCHITECTURE.md": "9707e4c01c459ee69ac63df8cf9af5c87f2b889ed03f50a0e5550ea84e662bd7",

@@ -47,7 +47,9 @@ The active product surface is intentionally narrow:
 1. Source-of-truth documents.
 2. Planning SQLite.
 3. One repo-local operating skill.
-4. A focused verification gate.
+4. Compact CLI commands for planning inspection, `queue-next`, and `attempt-transition`.
+5. One read-only MCP adapter operation: `codex_supervisor.queue_next`.
+6. A focused verification gate.
 
 New CLI, MCP, plugin, automation, and worker surfaces are added one operation at a time after the
 core model proves the shape.

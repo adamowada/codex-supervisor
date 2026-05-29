@@ -43,8 +43,8 @@ ADAPTER_OPERATION_CONTRACTS: tuple[AdapterOperationContract, ...] = (
         ),
         state_flow="Reads planning SQLite through the compact queue interface.",
         operator_value=(
-            "Lets an MCP client answer the next-work question without invoking "
-            "legacy queue commands."
+            "Lets an MCP client answer the next-work question through the same compact "
+            "inspection path as the CLI."
         ),
         active=True,
     ),

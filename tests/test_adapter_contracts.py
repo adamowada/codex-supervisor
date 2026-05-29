@@ -5,7 +5,11 @@ from codex_supervisor.adapter_contracts import (
     active_adapter_contracts,
     validate_adapter_contracts,
 )
-from codex_supervisor.operation_registry import operation_by_name
+from codex_supervisor.operation_registry import (
+    cli_command_names,
+    mcp_tool_names,
+    operation_by_name,
+)
 from codex_supervisor.policy import AssuranceLevel
 
 
@@ -37,3 +41,18 @@ def test_active_adapter_contract_has_registered_mcp_operation() -> None:
     assert "queue_next" in active
     assert operation.mcp_tool == "codex_supervisor.queue_next"
     assert operation.read_only is True
+
+
+def test_operation_registry_contains_only_compact_surface() -> None:
+    assert cli_command_names() == frozenset(
+        {
+            "plan-init",
+            "plan-list",
+            "plan-summary",
+            "task-list",
+            "task-show",
+            "queue-next",
+            "attempt-transition",
+        }
+    )
+    assert mcp_tool_names() == frozenset({"codex_supervisor.queue_next"})

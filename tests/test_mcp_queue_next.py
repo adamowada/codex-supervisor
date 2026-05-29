@@ -12,6 +12,7 @@ def test_mcp_queue_next_is_listed_as_read_only(tmp_path: Path) -> None:
 
     tools = {tool["name"]: tool for tool in list_mcp_tools(context=context)}
 
+    assert list(tools) == ["codex_supervisor.queue_next"]
     assert "codex_supervisor.queue_next" in tools
     assert tools["codex_supervisor.queue_next"]["annotations"] == {"readOnlyHint": True}
 

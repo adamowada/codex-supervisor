@@ -50,7 +50,8 @@ Stage 5 is implemented in `src/codex_supervisor/process_attempt.py`. `attempt-ru
 AFK process path: it writes a task assignment JSON for the worker, passes it as
 `CODEX_SUPERVISOR_TASK_JSON`, runs one command in an explicit workspace, records stdout, stderr,
 command metadata, assignment metadata, exit code, artifacts, checks, risks, gaps, and acceptance
-results, then terminalizes the attempt through the same acceptance policy path. Work categories
+results, then terminalizes the attempt through the same acceptance policy path. Failed worker
+processes cannot leave supplied passing acceptance results as passing evidence. Work categories
 remain task intent and acceptance criteria, not supervisor job types.
 
 Stage 6 is implemented in `src/codex_supervisor/adapter_contracts.py` and the read-only MCP
@@ -69,7 +70,8 @@ adding a second control plane. The plugin also provides `scripts/cli_launcher.py
 forwarder to the source CLI so Desktop runs do not probe PATH before starting supervisor work. Its
 packaged skill requires durable task intent, attempt, evidence, and acceptance whenever the
 supervisor is invoked for work, and it forbids `queue-next` before `plan-init` in fresh folders. The
-old operation registry, broad planning inspection commands, and fake worker scaffold have been
+launcher defaults omitted planning paths to the current workspace ledger, not the source repository.
+The old operation registry, broad planning inspection commands, and fake worker scaffold have been
 removed.
 
 The package has been cut down to the compact implementation modules. Attempt transitions validate
@@ -100,8 +102,9 @@ the answer as run posture rather than another persistent mode axis.
 ## Next Action
 
 All roadmap stages, compact contract repair, live-surface simplification, generic AFK process
-execution, and repo-local complexity-reduction skill work, including calibration, are complete. The
-related plans are marked `done` in `plans/planning.sqlite3`.
+execution, plugin workspace-default repair, and repo-local complexity-reduction skill work,
+including calibration, are complete. The related plans are marked `done` in
+`plans/planning.sqlite3`.
 
 Planning task:
 

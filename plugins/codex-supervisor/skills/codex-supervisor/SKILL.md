@@ -33,6 +33,11 @@ When running from Codex Desktop, you **MUST use the plugin CLI launcher** instea
 `codex-supervisor` is on `PATH`. The launcher lives at `scripts/cli_launcher.py` in this plugin and
 forwards to the source repository CLI.
 
+If you omit `--path` for `plan-init`, `task-create`, `queue-next`, `attempt-transition`, or
+`attempt-run`, the launcher **MUST default to the current workspace ledger** at
+`.codex-supervisor/planning.sqlite3`. Use an explicit `--path` only when intentionally operating on a
+specific ledger.
+
 Use the launcher shape:
 
 ```sh
@@ -56,6 +61,7 @@ empty folder.
 For full AFK or worker-style execution, you **MUST use `attempt-run`**. The worker process receives
 the task assignment through `CODEX_SUPERVISOR_TASK_JSON`, plus task, attempt, and workspace env vars.
 Record declared artifacts, checks, acceptance results, and risk notes on the `attempt-run` call.
+Failed worker processes **MUST NOT** leave passing acceptance evidence.
 
 For manual edits, use `attempt-transition` to record running and terminal states around the edit. If
 the launcher cannot locate the source repository, set `CODEX_SUPERVISOR_REPO_ROOT` to the source

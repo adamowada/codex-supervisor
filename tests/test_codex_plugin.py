@@ -40,6 +40,7 @@ def test_plugin_contains_desktop_skill_entrypoint() -> None:
     assert "attempt-run" in content
     assert "MUST use `attempt-run`" in content
     assert "MUST use the plugin CLI launcher" in content
+    assert "MUST default to the current workspace ledger" in content
     assert "MUST NOT run `queue-next` before `plan-init`" in content
     assert "CODEX_SUPERVISOR_TASK_JSON" in content
 
@@ -146,6 +147,48 @@ def test_installed_cache_cli_launcher_runs_source_cli_without_path(
     assert payload["next_transition"] == "none"
 
 
+def test_installed_cache_cli_launcher_defaults_to_invocation_workspace(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    workspace = tmp_path / "fresh-workspace"
+    workspace.mkdir()
+    workspace_db = workspace / ".codex-supervisor" / "planning.sqlite3"
+    source_db = REPO_ROOT / "plans" / "planning.sqlite3"
+    source_before = source_db.read_bytes()
+    cached_plugin = (
+        codex_home
+        / "plugins"
+        / "cache"
+        / "codex-supervisor-local"
+        / "codex-supervisor"
+        / "0.2.0+codex.test"
+    )
+    shutil.copytree(PLUGIN_ROOT, cached_plugin)
+    _write_codex_config(codex_home)
+
+    _run_plugin_cli_launcher_from(
+        cached_plugin,
+        ("plan-init",),
+        codex_home=codex_home,
+        include_source_env=False,
+        invocation_cwd=workspace,
+    )
+    completed = _run_plugin_cli_launcher_from(
+        cached_plugin,
+        ("queue-next", "--json"),
+        codex_home=codex_home,
+        include_source_env=False,
+        invocation_cwd=workspace,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert workspace_db.is_file()
+    assert payload["task"] is None
+    assert payload["next_transition"] == "none"
+    assert source_db.read_bytes() == source_before
+
+
 def _run_plugin_launcher(messages: tuple[dict[str, object], ...]) -> list[dict[str, object]]:
     return _run_plugin_launcher_from(
         PLUGIN_ROOT,
@@ -187,6 +230,7 @@ def _run_plugin_cli_launcher_from(
     *,
     codex_home: Path,
     include_source_env: bool,
+    invocation_cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["CODEX_HOME"] = str(codex_home)
@@ -197,9 +241,10 @@ def _run_plugin_cli_launcher_from(
         env["CODEX_SUPERVISOR_REPO_ROOT"] = str(REPO_ROOT)
     else:
         env.pop("CODEX_SUPERVISOR_REPO_ROOT", None)
+    launcher = plugin_root / "scripts" / "cli_launcher.py"
     return subprocess.run(
-        (sys.executable, "-B", "scripts/cli_launcher.py", *args),
-        cwd=plugin_root,
+        (sys.executable, "-B", str(launcher), *args),
+        cwd=invocation_cwd or plugin_root,
         text=True,
         capture_output=True,
         timeout=15,

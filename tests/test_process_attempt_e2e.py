@@ -261,6 +261,71 @@ def test_failed_process_attempt_records_terminal_state(tmp_path: Path) -> None:
     assert Path(payload["stderr_path"]).exists()
 
 
+def test_failed_process_attempt_forces_acceptance_results_to_fail(tmp_path: Path) -> None:
+    db_path = tmp_path / "planning.sqlite3"
+    workspace = tmp_path / "failed-acceptance-project"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-afk-failure",
+        "--plan-title",
+        "AFK failure evidence",
+        "--plan-goal",
+        "Record honest acceptance evidence for failed worker attempts.",
+        "--task-id",
+        "task-failed-acceptance",
+        "--title",
+        "Fail command honestly",
+        "--intent",
+        "Run a worker command that fails while caller-supplied evidence claims success.",
+        "--assurance",
+        "medium",
+        "--acceptance",
+        "Command succeeds",
+        "--json",
+    )
+
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-failed-acceptance",
+        "--attempt-id",
+        "attempt-failed-acceptance",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--check",
+        "Caller declared this check before the process completed.",
+        "--artifact",
+        str(workspace / "missing.txt"),
+        "--acceptance-result",
+        "Command succeeds=pass",
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        "raise SystemExit(7)",
+    )
+
+    payload = json.loads(completed.stdout)
+    checks = payload["transition"]["evidence"]["checks"]
+    assert payload["exit_code"] == 7
+    assert payload["transition"]["task_status"] == "blocked"
+    assert payload["transition"]["acceptance"]["accepted"] is False
+    assert payload["transition"]["acceptance"]["failed_acceptance_criteria"] == [
+        "Command succeeds"
+    ]
+    assert "acceptance: Command succeeds = fail" in checks
+    assert "acceptance: Command succeeds = pass" not in checks
+
+
 def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     src_path = str(REPO_ROOT / "src")

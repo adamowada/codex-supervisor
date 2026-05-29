@@ -143,6 +143,10 @@ def run_process_attempt(
         f"process exit code: {exit_code}",
         *checks,
     )
+    recorded_acceptance_results = _acceptance_results_for_terminal_status(
+        acceptance_results,
+        terminal_status=terminal_status,
+    )
     transition = attempt_transition(
         database_path,
         task_id=task_id,
@@ -152,7 +156,7 @@ def run_process_attempt(
         summary=terminal_summary,
         checks=recorded_checks,
         artifacts=recorded_artifacts,
-        acceptance_results=acceptance_results,
+        acceptance_results=recorded_acceptance_results,
         risks=risks,
         gaps=gaps,
         next_actions=next_actions,
@@ -171,6 +175,16 @@ def run_process_attempt(
 
 def _command_summary(command: tuple[str, ...]) -> str:
     return "Run worker process: " + " ".join(command)
+
+
+def _acceptance_results_for_terminal_status(
+    acceptance_results: dict[str, bool] | None,
+    *,
+    terminal_status: str,
+) -> dict[str, bool] | None:
+    if terminal_status == "succeeded" or not acceptance_results:
+        return acceptance_results
+    return dict.fromkeys(acceptance_results, False)
 
 
 def _coerce_output(value: str | bytes | None) -> str:

@@ -10,11 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from codex_supervisor.compact_planning import (
-    compact_plan_summaries,
     initialize_compact_planning_database,
-    list_compact_plans,
-    list_compact_tasks,
-    read_compact_task,
     seed_compact_bootstrap_plan,
 )
 from codex_supervisor.paths import default_planning_database_path
@@ -44,30 +40,8 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_path_arg(plan_init)
     plan_init.add_argument("--seed-bootstrap-plan", action="store_true", default=False)
 
-    plan_list = subparsers.add_parser("plan-list", help="List compact plans")
-    _add_path_arg(plan_list)
-    plan_list.add_argument("--status", default=None)
-    plan_list.add_argument("--json", action="store_true", default=False)
-
-    plan_summary = subparsers.add_parser("plan-summary", help="Summarize compact plans")
-    _add_path_arg(plan_summary)
-    plan_summary.add_argument("--plan-id", default=None)
-    plan_summary.add_argument("--json", action="store_true", default=False)
-
-    task_list = subparsers.add_parser("task-list", help="List compact tasks")
-    _add_path_arg(task_list)
-    task_list.add_argument("--status", default=None)
-    task_list.add_argument("--json", action="store_true", default=False)
-
-    task_show = subparsers.add_parser("task-show", help="Show one compact task")
-    task_show.add_argument("task_id")
-    _add_path_arg(task_show)
-    task_show.add_argument("--json", action="store_true", default=False)
-
     queue = subparsers.add_parser("queue-next", help="Inspect the next compact queue task")
     _add_path_arg(queue)
-    queue.add_argument("--plan-id", default=None)
-    queue.add_argument("--task-status", default="ready")
     queue.add_argument("--json", action="store_true", default=False)
 
     transition = subparsers.add_parser("attempt-transition", help="Run one attempt transition")
@@ -99,23 +73,8 @@ def _dispatch(args: argparse.Namespace) -> object | None:
         if args.seed_bootstrap_plan:
             seed_compact_bootstrap_plan(database_path, created_at=_now())
         return None
-    if args.command == "plan-list":
-        return list_compact_plans(database_path, status=args.status)
-    if args.command == "plan-summary":
-        return compact_plan_summaries(database_path, plan_id=args.plan_id)
-    if args.command == "task-list":
-        return list_compact_tasks(database_path, status=args.status)
-    if args.command == "task-show":
-        task = read_compact_task(database_path, args.task_id)
-        if task is None:
-            raise ValueError(f"No task found: {args.task_id}")
-        return task
     if args.command == "queue-next":
-        return queue_next(
-            database_path,
-            plan_id=args.plan_id,
-            task_status=args.task_status,
-        )
+        return queue_next(database_path)
     if args.command == "attempt-transition":
         return attempt_transition(
             database_path,

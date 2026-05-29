@@ -25,13 +25,13 @@ Source-of-truth documents define the product contract. They stay concise and cur
 
 ### Policy
 
-Policy maps task intent to an assurance level:
+Policy maps an explicit task assurance level to evidence requirements:
 
 - `low`
 - `medium`
 - `high`
 
-Policy sets evidence and acceptance requirements.
+Assurance is stored task data. Policy does not infer assurance from prose.
 
 ### Execution Boundary
 
@@ -45,8 +45,14 @@ points to supporting artifacts.
 
 ### Interfaces
 
-CLI, MCP, plugin, automation, and GitHub integrations are adapters over the core model. Each adapter
-operation declares the task intent, attempt, evidence, and acceptance behavior it supports.
+The active CLI surface is `plan-init`, `queue-next`, and `attempt-transition`. `queue-next` is
+inspection only. `attempt-transition` is the write path for attempts, evidence, and acceptance.
+
+The active MCP surface is one read-only dispatcher operation: `codex_supervisor.queue_next`.
+
+CLI, MCP, plugin, automation, GitHub, and worker integrations are adapters over the core model.
+Each adapter operation declares the task intent, attempt, evidence, and acceptance behavior it
+supports before it becomes active.
 
 ## Build Rule
 

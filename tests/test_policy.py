@@ -9,7 +9,6 @@ from codex_supervisor.policy import (
     TaskIntent,
     evaluate_acceptance,
     evaluate_task_attempt_acceptance,
-    infer_assurance_from_intent,
     normalize_assurance,
     policy_for_assurance,
     task_intent_policy,
@@ -32,16 +31,8 @@ def test_policy_defines_evidence_requirements_for_each_assurance_level() -> None
     assert high.require_review_when_requested is True
 
 
-def test_infers_assurance_from_task_intent() -> None:
-    assert infer_assurance_from_intent("Explore possible queue shapes") == AssuranceLevel.LOW
-    assert infer_assurance_from_intent("Implement policy core") == AssuranceLevel.MEDIUM
-    assert infer_assurance_from_intent("Update source-of-truth policy") == AssuranceLevel.HIGH
-
-
-def test_explicit_assurance_overrides_intent_in_policy_selection() -> None:
-    assert task_intent_policy(intent="Explore release flow", assurance="medium").level == (
-        AssuranceLevel.MEDIUM
-    )
+def test_task_intent_policy_uses_explicit_assurance() -> None:
+    assert task_intent_policy(assurance="medium").level == AssuranceLevel.MEDIUM
 
 
 def test_low_assurance_accepts_summary_with_next_action() -> None:

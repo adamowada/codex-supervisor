@@ -21,7 +21,6 @@ class AdapterOperationContract:
     acceptance_behavior: str
     state_flow: str
     operator_value: str
-    active: bool
 
 
 ADAPTER_OPERATION_CONTRACTS: tuple[AdapterOperationContract, ...] = (
@@ -38,23 +37,15 @@ ADAPTER_OPERATION_CONTRACTS: tuple[AdapterOperationContract, ...] = (
             AssuranceLevel.HIGH,
         ),
         acceptance_behavior=(
-            "Reports the current acceptance evaluation when task, attempt, "
-            "and evidence are present."
+            "Reports durable task, attempt, and evidence state without replaying acceptance policy."
         ),
         state_flow="Reads planning SQLite through the compact queue interface.",
         operator_value=(
             "Lets an MCP client answer the next-work question through the same compact "
             "inspection path as the CLI."
         ),
-        active=True,
     ),
 )
-
-
-def active_adapter_contracts() -> tuple[AdapterOperationContract, ...]:
-    """Return active adapter operation declarations."""
-
-    return tuple(contract for contract in ADAPTER_OPERATION_CONTRACTS if contract.active)
 
 
 def validate_adapter_contracts(

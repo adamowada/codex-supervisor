@@ -28,8 +28,7 @@ The gate checks:
 
 Next tests should cover:
 
-- assurance policy mapping;
-- acceptance requirements by assurance level;
-- attempt recording;
-- evidence bundle validation;
-- the first inspection and mutation commands.
+- new adapter operations only after they are declared;
+- acceptance behavior at `attempt-transition`;
+- queue inspection through `AttemptStore`;
+- planning schema integrity from the production schema builder.

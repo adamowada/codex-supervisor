@@ -32,35 +32,37 @@ Active planning database:
 Ignored local cleanup is complete. `.venv/` remains for local development.
 
 Stage 2 is implemented in `src/codex_supervisor/policy.py`. Assurance policy is pure core code:
-it maps task intent to `low`, `medium`, or `high`, defines evidence requirements, and evaluates task,
-attempt, and evidence records without importing CLI, MCP, plugin, worker, or SQLite layers.
+it uses explicit `low`, `medium`, or `high` task assurance, defines evidence requirements, and
+evaluates task, attempt, and evidence records without importing CLI, MCP, plugin, worker, or SQLite
+layers. Assurance is not inferred from prose.
 
 Stage 3 is implemented in `src/codex_supervisor/attempts.py` and
 `src/codex_supervisor/attempt_store.py`. Run attempts now have a pure status model, compact SQLite
 helpers, evidence attachment, and planning integrity checks for attempt/evidence relationships.
 
-Stage 4 is implemented in `src/codex_supervisor/small_interface.py` and exposed through two CLI
-commands: `queue-next` for inspection and `attempt-transition` for mutation. The commands use the
-compact task, attempt, evidence, and acceptance path.
+Stage 4 is implemented in `src/codex_supervisor/small_interface.py` and exposed through two active
+operational CLI commands: `queue-next` for inspection and `attempt-transition` for mutation.
+`plan-init` exists only to create the compact schema. `queue-next` has one meaning: the next ready
+task in the active queue. `attempt-transition` is the write path for attempts, evidence, and
+acceptance.
 
-Stage 5 is implemented in `src/codex_supervisor/worker_attempts.py`. Worker prompts are generated
-from task intent plus assurance policy, fake Codex worker execution records ordinary attempts and
-evidence bundles, high-assurance worker results are policy-gated, and live execution has a bounded
-verification plan.
+Stage 5 is a boundary, not an active worker implementation. Future Codex workers are represented as
+attempt executors, but worker prompt builders, fake workers, and live launchers stay out of active
+product code until a worker adapter operation is selected.
 
 Stage 6 is implemented in `src/codex_supervisor/adapter_contracts.py` and the read-only MCP
-`codex_supervisor.queue_next` operation. Adapter growth is now declaration-first: an operation must
-name task intent, attempt behavior, evidence behavior, assurance levels, acceptance behavior, state
-flow, and operator value before activation.
+`codex_supervisor.queue_next` operation. Adapter growth is declaration-first: an operation must name
+task intent, attempt behavior, evidence behavior, assurance levels, acceptance behavior, state flow,
+and operator value before activation.
 
-The live surface now matches the compact contract. `src/codex_supervisor/cli.py` exposes seven
-commands: `plan-init`, `plan-list`, `plan-summary`, `task-list`, `task-show`, `queue-next`, and
-`attempt-transition`. `src/codex_supervisor/mcp_server.py` exposes one tool:
-`codex_supervisor.queue_next`. The operation registry contains only those compact operations.
+The live surface now matches the compact contract. `src/codex_supervisor/cli.py` exposes three
+commands: `plan-init`, `queue-next`, and `attempt-transition`. `src/codex_supervisor/mcp_server.py`
+exposes one in-process tool: `codex_supervisor.queue_next`. The old operation registry, stdio MCP
+transport, broad planning inspection commands, and fake worker scaffold have been removed.
 
 The package has been cut down to the compact implementation modules. Attempt transitions validate
-task ownership, workers fail closed with blocker evidence, planning integrity checks open work per
-active plan, and the attempt store prevents multiple non-terminal attempts for a task.
+task ownership, planning integrity checks open work per active plan, and the attempt store prevents
+multiple non-terminal attempts for a task. Surviving queue read SQL lives in `AttemptStore`.
 
 Repo-local skills now include:
 
@@ -80,7 +82,7 @@ the answer as run posture rather than another persistent mode axis.
 3. Stage 3, Execution Attempts: represent manual, shell, review, and future Codex work as one
    attempt shape.
 4. Stage 4, Small Interface: add one inspection command and one mutation command.
-5. Stage 5, Worker Integration: connect fresh-context Codex workers as attempt executors.
+5. Stage 5, Worker Boundary: keep future workers inside the attempt model without active scaffold.
 6. Stage 6, Interface Growth: add larger adapters one operation at a time.
 
 ## Next Action

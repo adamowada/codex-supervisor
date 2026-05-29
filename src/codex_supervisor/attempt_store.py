@@ -37,6 +37,17 @@ class TaskRecord:
     acceptance_criteria: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class QueuedTaskRecord:
+    """Next queue item with its owning plan."""
+
+    plan_id: str
+    plan_title: str
+    plan_status: str
+    priority: int
+    task: TaskRecord
+
+
 class AttemptStore:
     """Small store for `attempts` and `evidence_bundles` rows."""
 
@@ -234,6 +245,47 @@ class AttemptStore:
         with self._connect() as connection:
             return self._read_task(connection, task_id)
 
+    def read_next_task(self) -> QueuedTaskRecord | None:
+        """Read the next ready task from the active queue."""
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """select
+                       plans.plan_id,
+                       plans.title as plan_title,
+                       plans.status as plan_status,
+                       plans.priority,
+                       tasks.task_id,
+                       tasks.title as task_title,
+                       tasks.status as task_status,
+                       tasks.assurance,
+                       tasks.intent,
+                       tasks.acceptance_json
+                   from tasks
+                   join plans on plans.plan_id = tasks.plan_id
+                   where plans.status = 'active'
+                     and tasks.status = 'ready'
+                   order by plans.priority desc, tasks.created_at asc, tasks.task_id asc
+                   limit 1""",
+            ).fetchone()
+        if row is None:
+            return None
+        return QueuedTaskRecord(
+            plan_id=row["plan_id"],
+            plan_title=row["plan_title"],
+            plan_status=row["plan_status"],
+            priority=row["priority"],
+            task=TaskRecord(
+                task_id=row["task_id"],
+                plan_id=row["plan_id"],
+                title=row["task_title"],
+                status=row["task_status"],
+                assurance=row["assurance"],
+                intent=row["intent"],
+                acceptance_criteria=_acceptance_criteria_from_json(row["acceptance_json"]),
+            ),
+        )
+
     def read_attempt(self, attempt_id: str) -> RunAttempt:
         """Read one attempt."""
 
@@ -261,6 +313,36 @@ class AttemptStore:
             for attempt in self.list_attempts(task_id)
             if attempt.status in {RunAttemptStatus.PLANNED, RunAttemptStatus.RUNNING}
         )
+
+    def read_active_attempt(self, task_id: str) -> RunAttempt | None:
+        """Read the first planned or running attempt for a task."""
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """select attempt_id, task_id, executor, status, summary, started_at, finished_at
+                   from attempts
+                   where task_id = ?
+                     and status in ('planned', 'running')
+                   order by coalesce(started_at, ''), attempt_id
+                   limit 1""",
+                (task_id,),
+            ).fetchone()
+        return _attempt_from_row(row) if row is not None else None
+
+    def read_latest_evidence(self, task_id: str) -> AttemptEvidence | None:
+        """Read the latest evidence bundle for a task."""
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """select bundle_id, task_id, attempt_id, assurance, summary,
+                          checks_json, artifacts_json, created_at
+                   from evidence_bundles
+                   where task_id = ?
+                   order by created_at desc, bundle_id desc
+                   limit 1""",
+                (task_id,),
+            ).fetchone()
+        return _evidence_from_row(row) if row is not None else None
 
     def update_task_status(
         self,
@@ -311,11 +393,6 @@ class AttemptStore:
         ).fetchone()
         if row is None:
             raise LookupError(f"unknown task {task_id!r}")
-        acceptance_criteria = json.loads(row["acceptance_json"])
-        if not isinstance(acceptance_criteria, list) or not all(
-            isinstance(item, str) for item in acceptance_criteria
-        ):
-            raise ValueError("task acceptance_json must be a JSON array of strings")
         return TaskRecord(
             task_id=row["task_id"],
             plan_id=row["plan_id"],
@@ -323,7 +400,7 @@ class AttemptStore:
             status=row["status"],
             assurance=row["assurance"],
             intent=row["intent"],
-            acceptance_criteria=tuple(acceptance_criteria),
+            acceptance_criteria=_acceptance_criteria_from_json(row["acceptance_json"]),
         )
 
     @staticmethod
@@ -351,6 +428,28 @@ def _attempt_from_row(row: sqlite3.Row) -> RunAttempt:
     )
     validate_attempt_timestamps(attempt)
     return attempt
+
+
+def _evidence_from_row(row: sqlite3.Row) -> AttemptEvidence:
+    return AttemptEvidence(
+        bundle_id=row["bundle_id"],
+        task_id=row["task_id"],
+        attempt_id=row["attempt_id"],
+        assurance=row["assurance"],
+        summary=row["summary"],
+        checks=parse_json_string_array(row["checks_json"], field_name="checks_json"),
+        artifacts=parse_json_string_array(row["artifacts_json"], field_name="artifacts_json"),
+        created_at=row["created_at"],
+    )
+
+
+def _acceptance_criteria_from_json(raw_json: str) -> tuple[str, ...]:
+    acceptance_criteria = json.loads(raw_json)
+    if not isinstance(acceptance_criteria, list) or not all(
+        isinstance(item, str) for item in acceptance_criteria
+    ):
+        raise ValueError("task acceptance_json must be a JSON array of strings")
+    return tuple(acceptance_criteria)
 
 
 def _validate_attempt_task(attempt: RunAttempt, expected_task_id: str | None) -> None:

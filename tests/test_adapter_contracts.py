@@ -2,14 +2,9 @@ from __future__ import annotations
 
 from codex_supervisor.adapter_contracts import (
     ADAPTER_OPERATION_CONTRACTS,
-    active_adapter_contracts,
     validate_adapter_contracts,
 )
-from codex_supervisor.operation_registry import (
-    cli_command_names,
-    mcp_tool_names,
-    operation_by_name,
-)
+from codex_supervisor.mcp_server import list_mcp_tools
 from codex_supervisor.policy import AssuranceLevel
 
 
@@ -31,28 +26,9 @@ def test_mcp_queue_next_contract_maps_to_compact_model() -> None:
     assert "evidence" in contract.evidence_behavior.casefold()
     assert "acceptance" in contract.acceptance_behavior.casefold()
     assert "planning SQLite" in contract.state_flow
-    assert contract.active is True
 
 
-def test_active_adapter_contract_has_registered_mcp_operation() -> None:
-    active = {contract.operation_name for contract in active_adapter_contracts()}
-    operation = operation_by_name("queue_next")
+def test_mcp_surface_contains_declared_queue_operation() -> None:
+    tool_names = {tool["name"] for tool in list_mcp_tools()}
 
-    assert "queue_next" in active
-    assert operation.mcp_tool == "codex_supervisor.queue_next"
-    assert operation.read_only is True
-
-
-def test_operation_registry_contains_only_compact_surface() -> None:
-    assert cli_command_names() == frozenset(
-        {
-            "plan-init",
-            "plan-list",
-            "plan-summary",
-            "task-list",
-            "task-show",
-            "queue-next",
-            "attempt-transition",
-        }
-    )
-    assert mcp_tool_names() == frozenset({"codex_supervisor.queue_next"})
+    assert tool_names == {"codex_supervisor.queue_next"}

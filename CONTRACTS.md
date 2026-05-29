@@ -56,8 +56,10 @@ why it matters.
 
 Acceptance is the policy decision that a task can advance.
 
-Task status plus evidence bundles represent acceptance in the active schema. A dedicated acceptance
-table can be added when repeated acceptance queries require it.
+`attempt-transition` evaluates acceptance when terminal attempt evidence is written. Task status plus
+evidence bundles represent acceptance in the active schema. Inspection paths do not replay
+acceptance from stored evidence. A dedicated acceptance table can be added when repeated acceptance
+queries require it.
 
 ## Assurance Levels
 

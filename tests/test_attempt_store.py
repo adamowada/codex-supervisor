@@ -49,6 +49,39 @@ def test_attempt_store_runs_lifecycle_and_attaches_evidence(tmp_path: Path) -> N
     assert store.list_active_attempts("task-1") == ()
 
 
+def test_attempt_store_reads_queue_state(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+    store = AttemptStore(db_path)
+    store.create_attempt(
+        task_id="task-1",
+        executor="manual",
+        summary="Manual attempt planned.",
+        attempt_id="attempt-1",
+    )
+    store.attach_evidence_bundle(
+        task_id="task-1",
+        attempt_id="attempt-1",
+        assurance="medium",
+        summary="Evidence attached.",
+        checks=("pytest tests/test_attempt_store.py",),
+        artifacts=("src/codex_supervisor/attempt_store.py",),
+        bundle_id="evidence-1",
+        created_at="2026-05-28T17:01:00Z",
+    )
+
+    queued = store.read_next_task()
+    active = store.read_active_attempt("task-1")
+    latest_evidence = store.read_latest_evidence("task-1")
+
+    assert queued is not None
+    assert queued.plan_id == "plan-1"
+    assert queued.task.task_id == "task-1"
+    assert active is not None
+    assert active.attempt_id == "attempt-1"
+    assert latest_evidence is not None
+    assert latest_evidence.bundle_id == "evidence-1"
+
+
 def test_attempt_store_rejects_invalid_transition(tmp_path: Path) -> None:
     db_path = make_planning_db(tmp_path)
     store = AttemptStore(db_path)

@@ -11,7 +11,8 @@ The supervisor owns one durable work model:
 TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
 ```
 
-Every interface, worker integration, check, and review path flows through that model.
+Every interface, check, and future worker integration flows through that model. Acceptance is made
+when an attempt transitions with evidence; inspection reads durable state.
 
 ## Assurance Levels
 
@@ -46,8 +47,8 @@ The active product surface is intentionally narrow:
 
 1. Source-of-truth documents.
 2. Planning SQLite.
-3. One repo-local operating skill.
-4. Compact CLI commands for planning inspection, `queue-next`, and `attempt-transition`.
+3. Bounded repo-local operating and refactoring skills.
+4. Three compact CLI commands: `plan-init`, `queue-next`, and `attempt-transition`.
 5. One read-only MCP adapter operation: `codex_supervisor.queue_next`.
 6. A focused verification gate.
 

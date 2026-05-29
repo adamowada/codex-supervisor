@@ -21,13 +21,14 @@ Rationale: Assurance changes evidence and acceptance requirements while the core
 
 ## D-0004: Skills Are Guidance
 
-Decision: The repo-local skill surface is one concise supervisor skill.
+Decision: Repo-local skills are bounded development guidance, not runtime control-plane surface.
 
-Rationale: Skills are most useful as operating reminders beside the source-of-truth contract.
+Rationale: Skills help agents operate and simplify the repository, but they must stay thin and
+guarded so they do not become hidden product modes.
 
 ## D-0005: Interfaces Follow The Core
 
-Decision: CLI, MCP, plugin, automation, and GitHub surfaces are adapters over the core model.
+Decision: CLI, MCP, plugin, automation, GitHub, and worker surfaces are adapters over the core model.
 
 Rationale: Interfaces should make the core easier to use while preserving the same task, attempt,
 evidence, and acceptance semantics.

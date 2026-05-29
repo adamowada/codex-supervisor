@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,7 +11,6 @@ from codex_supervisor.attempts import (
     RunAttempt,
     RunAttemptStatus,
     normalize_attempt_status,
-    parse_json_string_array,
 )
 from codex_supervisor.policy import (
     AcceptanceEvaluation,
@@ -31,7 +29,6 @@ class QueueNextResult:
     task: dict[str, object] | None
     active_attempt: dict[str, object] | None
     latest_evidence: dict[str, object] | None
-    acceptance: dict[str, object] | None
     next_transition: str
 
 
@@ -46,50 +43,35 @@ class AttemptTransitionResult:
     task_status: str
 
 
-def queue_next(
-    database_path: Path,
-    *,
-    plan_id: str | None = None,
-    task_status: str = "ready",
-) -> QueueNextResult:
+def queue_next(database_path: Path) -> QueueNextResult:
     """Inspect the next task and its attempt/evidence state."""
 
-    connection = sqlite3.connect(f"file:{database_path.as_posix()}?mode=ro", uri=True)
-    connection.row_factory = sqlite3.Row
-    try:
-        row = connection.execute(
-            _queue_next_sql(plan_id=plan_id),
-            (task_status,) if plan_id is None else (plan_id, task_status),
-        ).fetchone()
-        if row is None:
-            return QueueNextResult(
-                plan=None,
-                task=None,
-                active_attempt=None,
-                latest_evidence=None,
-                acceptance=None,
-                next_transition="none",
-            )
-
-        task = _task_from_row(row)
-        active_attempt = _active_attempt(connection, task.task_id)
-        latest_evidence = _latest_evidence(connection, task.task_id)
-        acceptance = _acceptance_for(task, active_attempt, latest_evidence)
+    store = AttemptStore(database_path, read_only=True)
+    queued = store.read_next_task()
+    if queued is None:
         return QueueNextResult(
-            plan={
-                "plan_id": row["plan_id"],
-                "title": row["plan_title"],
-                "status": row["plan_status"],
-                "priority": row["priority"],
-            },
-            task=_task_to_dict(task),
-            active_attempt=_attempt_to_dict(active_attempt) if active_attempt else None,
-            latest_evidence=_evidence_to_dict(latest_evidence) if latest_evidence else None,
-            acceptance=_evaluation_to_dict(acceptance) if acceptance else None,
-            next_transition=_next_transition(task, active_attempt, acceptance),
+            plan=None,
+            task=None,
+            active_attempt=None,
+            latest_evidence=None,
+            next_transition="none",
         )
-    finally:
-        connection.close()
+
+    task = queued.task
+    active_attempt = store.read_active_attempt(task.task_id)
+    latest_evidence = store.read_latest_evidence(task.task_id)
+    return QueueNextResult(
+        plan={
+            "plan_id": queued.plan_id,
+            "title": queued.plan_title,
+            "status": queued.plan_status,
+            "priority": queued.priority,
+        },
+        task=_task_to_dict(task),
+        active_attempt=_attempt_to_dict(active_attempt) if active_attempt else None,
+        latest_evidence=_evidence_to_dict(latest_evidence) if latest_evidence else None,
+        next_transition=_next_transition(task, active_attempt),
+    )
 
 
 def attempt_transition(
@@ -161,30 +143,6 @@ def attempt_transition(
     )
     store.update_task_status(task_id, task_status)
     return _transition_result(store, task, attempt, evidence, evaluation)
-
-
-def _queue_next_sql(*, plan_id: str | None) -> str:
-    where = "plans.status = 'active' and tasks.status = ?"
-    if plan_id is not None:
-        where = "plans.plan_id = ? and tasks.status = ?"
-    return f"""
-        select
-            plans.plan_id,
-            plans.title as plan_title,
-            plans.status as plan_status,
-            plans.priority,
-            tasks.task_id,
-            tasks.title,
-            tasks.status,
-            tasks.assurance,
-            tasks.intent,
-            tasks.acceptance_json
-        from tasks
-        join plans on plans.plan_id = tasks.plan_id
-        where {where}
-        order by plans.priority desc, tasks.created_at asc, tasks.task_id asc
-        limit 1
-    """
 
 
 def _start_or_create_running_attempt(
@@ -275,27 +233,6 @@ def _evaluate_transition(
     )
 
 
-def _acceptance_for(
-    task: TaskRecord,
-    attempt: RunAttempt | None,
-    evidence: AttemptEvidence | None,
-) -> AcceptanceEvaluation | None:
-    if attempt is None or evidence is None:
-        return None
-    checks = evidence.checks
-    return _evaluate_transition(
-        task,
-        attempt,
-        evidence,
-        checks=checks,
-        acceptance_results=None,
-        risks=(),
-        gaps=(),
-        next_actions=(),
-        review_evidence=(),
-    )
-
-
 def _evidence_check_strings(
     *,
     checks: tuple[str, ...],
@@ -329,70 +266,6 @@ def _transition_result(
         evidence=_evidence_to_dict(evidence) if evidence else None,
         acceptance=_evaluation_to_dict(evaluation) if evaluation else None,
         task_status=current_task.status,
-    )
-
-
-def _active_attempt(connection: sqlite3.Connection, task_id: str) -> RunAttempt | None:
-    row = connection.execute(
-        """select attempt_id, task_id, executor, status, summary, started_at, finished_at
-           from attempts
-           where task_id = ?
-             and status in ('planned', 'running')
-           order by coalesce(started_at, ''), attempt_id
-           limit 1""",
-        (task_id,),
-    ).fetchone()
-    return _attempt_from_row(row) if row is not None else None
-
-
-def _latest_evidence(connection: sqlite3.Connection, task_id: str) -> AttemptEvidence | None:
-    row = connection.execute(
-        """select bundle_id, task_id, attempt_id, assurance, summary,
-                  checks_json, artifacts_json, created_at
-           from evidence_bundles
-           where task_id = ?
-           order by created_at desc, bundle_id desc
-           limit 1""",
-        (task_id,),
-    ).fetchone()
-    if row is None:
-        return None
-    return AttemptEvidence(
-        bundle_id=row["bundle_id"],
-        task_id=row["task_id"],
-        attempt_id=row["attempt_id"],
-        assurance=row["assurance"],
-        summary=row["summary"],
-        checks=parse_json_string_array(row["checks_json"], field_name="checks_json"),
-        artifacts=parse_json_string_array(row["artifacts_json"], field_name="artifacts_json"),
-        created_at=row["created_at"],
-    )
-
-
-def _task_from_row(row: sqlite3.Row) -> TaskRecord:
-    return TaskRecord(
-        task_id=row["task_id"],
-        plan_id=row["plan_id"],
-        title=row["title"],
-        status=row["status"],
-        assurance=row["assurance"],
-        intent=row["intent"],
-        acceptance_criteria=parse_json_string_array(
-            row["acceptance_json"],
-            field_name="acceptance_json",
-        ),
-    )
-
-
-def _attempt_from_row(row: sqlite3.Row) -> RunAttempt:
-    return RunAttempt(
-        attempt_id=row["attempt_id"],
-        task_id=row["task_id"],
-        executor=row["executor"],
-        status=normalize_attempt_status(row["status"]),
-        summary=row["summary"],
-        started_at=row["started_at"],
-        finished_at=row["finished_at"],
     )
 
 
@@ -445,12 +318,9 @@ def _evaluation_to_dict(evaluation: AcceptanceEvaluation) -> dict[str, object]:
 def _next_transition(
     task: TaskRecord,
     attempt: RunAttempt | None,
-    evaluation: AcceptanceEvaluation | None,
 ) -> str:
     if task.status == "ready":
         return "attempt-transition --status running"
     if attempt is not None:
         return "attempt-transition --status succeeded|failed|blocked"
-    if evaluation is not None and not evaluation.accepted:
-        return "attempt-transition --status running"
     return "none"

@@ -17,7 +17,7 @@ Steps:
 1. Define the compact control-plane model in source-of-truth docs.
 2. Keep planning SQLite on the schema from `PLANS.md`: `meta`, `plans`, `tasks`, `attempts`,
    `evidence_bundles`, and `decisions`.
-3. Keep one repo-local skill that points agents at the active model.
+3. Keep bounded repo-local skills that point agents at the active model and reduction workflows.
 4. Keep CI focused on the verification gate in `scripts/verify.py`.
 5. Keep insights focused on durable design lessons.
 6. Keep `HANDOFF.md` current and action-oriented.
@@ -43,7 +43,7 @@ Steps:
 2. Define `low`, `medium`, and `high` as explicit values.
 3. Define evidence requirements for each assurance level.
 4. Define acceptance requirements for each assurance level.
-5. Add a function that maps task intent to an assurance policy.
+5. Add a function that selects policy from an explicit assurance level.
 6. Add a function that evaluates whether evidence satisfies a task's assurance.
 7. Keep policy independent from CLI, MCP, plugin, and worker transport details.
 8. Add focused tests for the assurance and acceptance matrix.
@@ -104,29 +104,27 @@ Done when:
 - The command surface remains small.
 - `scripts/verify.py` passes.
 
-## Stage 5: Worker Integration
+## Stage 5: Worker Boundary
 
-Purpose: connect fresh-context Codex workers as attempt executors.
+Purpose: keep future fresh-context Codex workers inside the attempt/evidence model without adding a
+second worker control plane before the adapter operation exists.
 
 Steps:
 
-1. Generate worker prompts from task intent plus assurance policy.
-2. Launch a fresh-context Codex worker as a `RunAttempt`.
-3. Capture worker output as evidence.
-4. Normalize worker results into `EvidenceBundle` records.
-5. Evaluate acceptance through the same policy path as manual and shell attempts.
-6. Require high-assurance evidence for high-assurance worker tasks.
-7. Add fake-worker tests before live Codex execution.
-8. Add live Codex verification after the fake executor proves the contract.
+1. Treat `executor` as transport data on `RunAttempt`.
+2. Allow future Codex work to use the same `attempt-transition` path.
+3. Keep worker prompt builders, fake workers, and live launchers out of active product code until a
+   worker adapter operation is selected.
+4. Declare worker task intent, attempt behavior, evidence behavior, and acceptance behavior before
+   adding worker execution.
+5. Add focused worker adapter tests only when that operation becomes active.
 
 Done when:
 
-- Codex worker execution is represented as an attempt.
-- Worker prompts are generated from the active task model.
-- Worker results become evidence bundles.
-- High-assurance worker work requires the evidence named by policy.
-- Fake-worker tests pass.
-- Live-worker behavior has a bounded verification path.
+- Executor identity is data on the active attempt model.
+- The active codebase has no separate worker control plane.
+- Future worker execution has a declared adapter path before implementation.
+- `scripts/verify.py` passes.
 
 ## Stage 6: Interface Growth
 

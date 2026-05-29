@@ -54,8 +54,6 @@ TOOL_DEFINITIONS: dict[str, McpToolDefinition] = {
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
-                "plan_id": {"type": "string"},
-                "task_status": {"type": "string", "default": "ready"},
             },
             "additionalProperties": False,
         },
@@ -97,11 +95,7 @@ def dispatch_mcp_tool(
 
 
 def _handle_queue_next(arguments: JsonObject, context: McpServerContext) -> object:
-    return queue_next(
-        _database_path(arguments, context),
-        plan_id=_optional_string(arguments.get("plan_id")),
-        task_status=_optional_string(arguments.get("task_status")) or "ready",
-    )
+    return queue_next(_database_path(arguments, context))
 
 
 def _database_path(arguments: JsonObject, context: McpServerContext) -> Path:

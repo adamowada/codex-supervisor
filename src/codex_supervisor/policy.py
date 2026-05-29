@@ -131,29 +131,6 @@ ASSURANCE_POLICIES = {
     AssuranceLevel.HIGH: HIGH_POLICY,
 }
 
-LOW_INTENT_MARKERS = (
-    "explore",
-    "diagnose",
-    "sketch",
-    "candidate",
-    "proposal",
-    "research",
-)
-
-HIGH_INTENT_MARKERS = (
-    "full-auto",
-    "source-of-truth",
-    "source of truth",
-    "controller",
-    "release",
-    "destructive",
-    "trust-boundary",
-    "trust boundary",
-    "protected",
-    "high-assurance",
-    "high assurance",
-)
-
 TERMINAL_ATTEMPT_STATUSES = {"succeeded", "failed", "blocked"}
 
 
@@ -175,30 +152,13 @@ def policy_for_assurance(value: str | AssuranceLevel) -> AssurancePolicy:
     return ASSURANCE_POLICIES[normalize_assurance(value)]
 
 
-def infer_assurance_from_intent(intent: str) -> AssuranceLevel:
-    """Infer the default assurance level from task intent text."""
-
-    normalized = intent.casefold()
-    if any(marker in normalized for marker in HIGH_INTENT_MARKERS):
-        return AssuranceLevel.HIGH
-    if any(marker in normalized for marker in LOW_INTENT_MARKERS):
-        return AssuranceLevel.LOW
-    return AssuranceLevel.MEDIUM
-
-
 def task_intent_policy(
     *,
-    intent: str,
-    assurance: str | AssuranceLevel | None = None,
+    assurance: str | AssuranceLevel,
 ) -> AssurancePolicy:
     """Return the policy selected for a task intent."""
 
-    level = (
-        infer_assurance_from_intent(intent)
-        if assurance is None
-        else normalize_assurance(assurance)
-    )
-    return policy_for_assurance(level)
+    return policy_for_assurance(assurance)
 
 
 def evaluate_acceptance(task: TaskIntent, evidence: EvidenceBundle) -> AcceptanceEvaluation:

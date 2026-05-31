@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-29
+Last updated: 2026-05-31
 
 This is the current resume snapshot.
 
@@ -54,6 +54,13 @@ results, then terminalizes the attempt through the same acceptance policy path. 
 processes cannot leave supplied passing acceptance results as passing evidence. Work categories
 remain task intent and acceptance criteria, not supervisor job types.
 
+The happy path is now locked by scenario tests: a fresh workspace can initialize a workspace-local
+ledger, create a task, run one worker process through `attempt-run`, record assignment/process
+evidence, accept a single criterion with `--acceptance-result pass`, and end with a clean planning
+database. Bare `pass` or `fail` is intentionally valid only for single-criterion tasks; tasks with
+multiple criteria must name criteria explicitly. When the last open task in an active plan becomes
+done, the plan becomes done too.
+
 Stage 6 is implemented in `src/codex_supervisor/adapter_contracts.py` and the read-only MCP
 `codex_supervisor.queue_next` operation. Adapter growth is declaration-first: an operation must name
 task intent, attempt behavior, evidence behavior, assurance levels, acceptance behavior, state flow,
@@ -102,9 +109,9 @@ the answer as run posture rather than another persistent mode axis.
 ## Next Action
 
 All roadmap stages, compact contract repair, live-surface simplification, generic AFK process
-execution, plugin workspace-default repair, and repo-local complexity-reduction skill work,
-including calibration, are complete. The related plans are marked `done` in
-`plans/planning.sqlite3`.
+execution, plugin workspace-default repair, happy-path e2e coverage, and repo-local
+complexity-reduction skill work, including calibration, are complete. The related plans are marked
+`done` in `plans/planning.sqlite3`.
 
 Planning task:
 

@@ -118,3 +118,91 @@ def test_cli_attempt_transition_json(tmp_path: Path, capsys) -> None:  # type: i
     payload = json.loads(capsys.readouterr().out)
     assert payload["task_status"] == "done"
     assert payload["acceptance"]["accepted"] is True
+
+
+def test_cli_plain_acceptance_result_is_only_for_single_criterion(
+    tmp_path: Path,
+    capsys,  # type: ignore[no-untyped-def]
+) -> None:
+    db_path = tmp_path / "planning.sqlite3"
+    assert main(["plan-init", "--path", str(db_path)]) == 0
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "task-create",
+                "--path",
+                str(db_path),
+                "--plan-id",
+                "plan-multi",
+                "--plan-title",
+                "Multi criterion",
+                "--plan-goal",
+                "Keep acceptance shortcuts unambiguous.",
+                "--task-id",
+                "task-multi",
+                "--title",
+                "Two criteria",
+                "--intent",
+                "Create evidence for a task with two acceptance criteria.",
+                "--assurance",
+                "high",
+                "--acceptance",
+                "First criterion",
+                "--acceptance",
+                "Second criterion",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert (
+        main(
+            [
+                "attempt-transition",
+                "--path",
+                str(db_path),
+                "--task-id",
+                "task-multi",
+                "--attempt-id",
+                "attempt-multi",
+                "--status",
+                "running",
+                "--summary",
+                "Running task.",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    exit_code = main(
+        [
+            "attempt-transition",
+            "--path",
+            str(db_path),
+            "--task-id",
+            "task-multi",
+            "--attempt-id",
+            "attempt-multi",
+            "--status",
+            "succeeded",
+            "--summary",
+            "Task satisfied.",
+            "--check",
+            "Focused check passed.",
+            "--artifact",
+            "artifact.txt",
+            "--acceptance-result",
+            "pass",
+            "--risk",
+            "No residual risk.",
+            "--json",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "only valid when the task has exactly one acceptance criterion" in captured.err

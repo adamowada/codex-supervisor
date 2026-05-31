@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -189,6 +190,119 @@ def test_installed_cache_cli_launcher_defaults_to_invocation_workspace(
     assert source_db.read_bytes() == source_before
 
 
+def test_installed_cache_cli_launcher_runs_full_happy_path_in_fresh_workspace(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    workspace = tmp_path / "fresh-worker-workspace"
+    workspace.mkdir()
+    workspace_db = workspace / ".codex-supervisor" / "planning.sqlite3"
+    project_file = workspace / "README.md"
+    source_db = REPO_ROOT / "plans" / "planning.sqlite3"
+    source_before = source_db.read_bytes()
+    cached_plugin = (
+        codex_home
+        / "plugins"
+        / "cache"
+        / "codex-supervisor-local"
+        / "codex-supervisor"
+        / "0.2.0+codex.test"
+    )
+    shutil.copytree(PLUGIN_ROOT, cached_plugin)
+    _write_codex_config(codex_home)
+
+    _run_plugin_cli_launcher_from(
+        cached_plugin,
+        ("plan-init",),
+        codex_home=codex_home,
+        include_source_env=False,
+        invocation_cwd=workspace,
+    )
+    _run_plugin_cli_launcher_from(
+        cached_plugin,
+        (
+            "task-create",
+            "--plan-id",
+            "plugin-happy-plan",
+            "--plan-title",
+            "Plugin happy path",
+            "--plan-goal",
+            "Assign one tiny project through the plugin launcher.",
+            "--task-id",
+            "plugin-happy-task",
+            "--title",
+            "Create README",
+            "--intent",
+            "Create README.md in the fresh workspace.",
+            "--assurance",
+            "high",
+            "--acceptance",
+            "README.md exists",
+            "--json",
+        ),
+        codex_home=codex_home,
+        include_source_env=False,
+        invocation_cwd=workspace,
+    )
+    completed = _run_plugin_cli_launcher_from(
+        cached_plugin,
+        (
+            "attempt-run",
+            "--task-id",
+            "plugin-happy-task",
+            "--attempt-id",
+            "plugin-happy-attempt",
+            "--executor",
+            "worker-process",
+            "--workspace",
+            str(workspace),
+            "--timeout-seconds",
+            "10",
+            "--summary",
+            "Assign README creation to worker process.",
+            "--check",
+            "Worker created README.md.",
+            "--artifact",
+            str(project_file),
+            "--acceptance-result",
+            "pass",
+            "--risk",
+            "Worker ran inside the invocation workspace.",
+            "--json",
+            "--",
+            sys.executable,
+            "-c",
+            (
+                "from pathlib import Path; "
+                "Path('README.md').write_text('# Plugin Happy Path\\n', encoding='utf-8')"
+            ),
+        ),
+        codex_home=codex_home,
+        include_source_env=False,
+        invocation_cwd=workspace,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert workspace_db.is_file()
+    assert payload["exit_code"] == 0
+    assert payload["transition"]["task_status"] == "done"
+    assert payload["transition"]["attempt"]["executor"] == "worker-process"
+    assert Path(payload["assignment_path"]).is_file()
+    assert project_file.read_text(encoding="utf-8") == "# Plugin Happy Path\n"
+    assert source_db.read_bytes() == source_before
+
+    with sqlite3.connect(workspace_db) as connection:
+        plan_status = connection.execute(
+            "select status from plans where plan_id = 'plugin-happy-plan'"
+        ).fetchone()[0]
+        attempts = connection.execute(
+            "select attempt_id, executor, status from attempts"
+        ).fetchall()
+    assert plan_status == "done"
+    assert attempts == [("plugin-happy-attempt", "worker-process", "succeeded")]
+    assert _planning_integrity_failures(workspace_db) == ()
+
+
 def _run_plugin_launcher(messages: tuple[dict[str, object], ...]) -> list[dict[str, object]]:
     return _run_plugin_launcher_from(
         PLUGIN_ROOT,
@@ -267,3 +381,10 @@ def _write_codex_config(codex_home: Path) -> None:
         ),
         encoding="utf-8",
     )
+
+
+def _planning_integrity_failures(db_path: Path) -> tuple[str, ...]:
+    sys.path.insert(0, str(REPO_ROOT))
+    from scripts.check_planning_integrity import check_planning_integrity
+
+    return check_planning_integrity(db_path)

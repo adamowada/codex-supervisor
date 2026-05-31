@@ -9,6 +9,7 @@ from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from codex_supervisor.attempt_store import AttemptStore
 from codex_supervisor.compact_planning import (
     initialize_compact_planning_database,
     seed_compact_bootstrap_plan,
@@ -130,7 +131,11 @@ def _dispatch(args: argparse.Namespace) -> object | None:
             summary=args.summary,
             checks=tuple(args.check),
             artifacts=tuple(args.artifact),
-            acceptance_results=_parse_acceptance_results(tuple(args.acceptance_result)),
+            acceptance_results=_parse_acceptance_results_for_task(
+                database_path,
+                args.task_id,
+                tuple(args.acceptance_result),
+            ),
             risks=tuple(args.risk),
             gaps=tuple(args.gap),
             next_actions=tuple(args.next_action),
@@ -148,7 +153,11 @@ def _dispatch(args: argparse.Namespace) -> object | None:
             command=_parse_command(tuple(args.process_command)),
             checks=tuple(args.check),
             artifacts=tuple(args.artifact),
-            acceptance_results=_parse_acceptance_results(tuple(args.acceptance_result)),
+            acceptance_results=_parse_acceptance_results_for_task(
+                database_path,
+                args.task_id,
+                tuple(args.acceptance_result),
+            ),
             risks=tuple(args.risk),
             gaps=tuple(args.gap),
             next_actions=tuple(args.next_action),
@@ -181,6 +190,29 @@ def _parse_acceptance_results(raw_items: tuple[str, ...]) -> dict[str, bool] | N
             raise ValueError("--acceptance-result value must be pass or fail")
         parsed[criterion] = value in {"pass", "passed", "true"}
     return parsed
+
+
+def _parse_acceptance_results_for_task(
+    database_path: Path,
+    task_id: str,
+    raw_items: tuple[str, ...],
+) -> dict[str, bool] | None:
+    if not raw_items:
+        return None
+    if len(raw_items) == 1 and "=" not in raw_items[0]:
+        value = raw_items[0].strip().casefold()
+        if value not in {"pass", "passed", "true", "fail", "failed", "false"}:
+            raise ValueError("--acceptance-result must use NAME=pass or NAME=fail")
+        acceptance_criteria = AttemptStore(database_path, read_only=True).read_task(
+            task_id
+        ).acceptance_criteria
+        if len(acceptance_criteria) != 1:
+            raise ValueError(
+                "--acceptance-result pass/fail is only valid when the task has exactly "
+                "one acceptance criterion"
+            )
+        return {acceptance_criteria[0]: value in {"pass", "passed", "true"}}
+    return _parse_acceptance_results(raw_items)
 
 
 def _parse_command(raw_items: tuple[str, ...]) -> tuple[str, ...]:

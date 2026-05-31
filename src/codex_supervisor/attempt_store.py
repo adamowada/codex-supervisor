@@ -465,11 +465,12 @@ class AttemptStore:
 
         updated_at = updated_at or _now()
         with self._connect() as connection:
-            self._require_task(connection, task_id)
+            task = self._read_task(connection, task_id)
             connection.execute(
                 "update tasks set status = ?, updated_at = ? where task_id = ?",
                 (status, updated_at, task_id),
             )
+            self._sync_active_plan_status(connection, task.plan_id, updated_at)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -524,6 +525,42 @@ class AttemptStore:
         if row is None:
             raise LookupError(f"unknown attempt {attempt_id!r}")
         return _attempt_from_row(row)
+
+    @staticmethod
+    def _sync_active_plan_status(
+        connection: sqlite3.Connection,
+        plan_id: str,
+        updated_at: str,
+    ) -> None:
+        plan = connection.execute(
+            "select status from plans where plan_id = ?",
+            (plan_id,),
+        ).fetchone()
+        if plan is None or plan["status"] != "active":
+            return
+
+        open_tasks = connection.execute(
+            """select count(*)
+               from tasks
+               where plan_id = ?
+                 and status in ('ready', 'running')""",
+            (plan_id,),
+        ).fetchone()[0]
+        if open_tasks:
+            return
+
+        blocked_tasks = connection.execute(
+            """select count(*)
+               from tasks
+               where plan_id = ?
+                 and status = 'blocked'""",
+            (plan_id,),
+        ).fetchone()[0]
+        next_status = "blocked" if blocked_tasks else "done"
+        connection.execute(
+            "update plans set status = ?, updated_at = ? where plan_id = ?",
+            (next_status, updated_at, plan_id),
+        )
 
 
 def _attempt_from_row(row: sqlite3.Row) -> RunAttempt:

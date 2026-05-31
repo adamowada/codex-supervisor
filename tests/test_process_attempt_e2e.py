@@ -85,6 +85,99 @@ def test_full_afk_process_attempt_starts_tiny_project(tmp_path: Path) -> None:
     assert queued["next_transition"] == "none"
 
 
+def test_happy_path_plain_pass_records_one_worker_attempt_and_clean_plan(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / ".codex-supervisor" / "planning.sqlite3"
+    workspace = tmp_path / "tiny-worker-project"
+    project_file = workspace / "README.md"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-happy-path",
+        "--plan-title",
+        "Happy path",
+        "--plan-goal",
+        "Assign one tiny project to one autonomous worker process.",
+        "--task-id",
+        "task-happy-path",
+        "--title",
+        "Create README",
+        "--intent",
+        "Create README.md in the worker workspace.",
+        "--assurance",
+        "high",
+        "--acceptance",
+        "README.md exists",
+        "--json",
+    )
+
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-happy-path",
+        "--attempt-id",
+        "attempt-happy-path",
+        "--executor",
+        "worker-process",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--summary",
+        "Assign tiny project to worker process.",
+        "--check",
+        "Worker created README.md.",
+        "--artifact",
+        str(project_file),
+        "--acceptance-result",
+        "pass",
+        "--risk",
+        "Worker ran inside an isolated temporary workspace.",
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        (
+            "from pathlib import Path; "
+            "Path('README.md').write_text('# Tiny Worker Project\\n', encoding='utf-8')"
+        ),
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["exit_code"] == 0
+    assert payload["transition"]["task_status"] == "done"
+    assert payload["transition"]["acceptance"]["accepted"] is True
+    assert project_file.read_text(encoding="utf-8") == "# Tiny Worker Project\n"
+    assert Path(payload["assignment_path"]).is_file()
+    assert Path(payload["stdout_path"]).is_file()
+    assert Path(payload["stderr_path"]).is_file()
+
+    with sqlite3.connect(db_path) as connection:
+        plan_status = connection.execute(
+            "select status from plans where plan_id = 'plan-happy-path'"
+        ).fetchone()[0]
+        task_status = connection.execute(
+            "select status from tasks where task_id = 'task-happy-path'"
+        ).fetchone()[0]
+        attempts = connection.execute(
+            "select attempt_id, executor, status from attempts order by attempt_id"
+        ).fetchall()
+        evidence_count = connection.execute("select count(*) from evidence_bundles").fetchone()[0]
+
+    assert plan_status == "done"
+    assert task_status == "done"
+    assert attempts == [("attempt-happy-path", "worker-process", "succeeded")]
+    assert evidence_count == 1
+    assert _planning_integrity_failures(db_path) == ()
+
+
 def test_full_afk_worker_gets_assignment_and_manages_empty_project_end_to_end(
     tmp_path: Path,
 ) -> None:
@@ -341,6 +434,13 @@ def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
         env=env,
         check=True,
     )
+
+
+def _planning_integrity_failures(db_path: Path) -> tuple[str, ...]:
+    sys.path.insert(0, str(REPO_ROOT))
+    from scripts.check_planning_integrity import check_planning_integrity
+
+    return check_planning_integrity(db_path)
 
 
 def _assignment_worker_code() -> str:

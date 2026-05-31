@@ -20,7 +20,7 @@ The gate checks:
 - e2e coverage that proves an autonomous worker receives task assignment metadata and completes an
   empty project through `attempt-run`.
 - e2e coverage that the installed-cache plugin CLI launcher can initialize and inspect a fresh
-  planning database without relying on `codex-supervisor` being on `PATH`.
+  planning database with `plan-init --json` without relying on `codex-supervisor` being on `PATH`.
 - e2e coverage that the installed-cache plugin CLI launcher defaults omitted planning paths to the
   invocation workspace, not the source repository.
 - e2e coverage that failed process attempts cannot record supplied passing acceptance results as
@@ -30,6 +30,8 @@ The gate checks:
   and running queue inspection preserve durable factory state.
 - e2e coverage that installed-cache MCP queue inspection uses an explicit workspace ledger path
   instead of the source repository ledger.
+- e2e coverage that full-AFK product follow-up mutation is assigned through another worker attempt,
+  preserving the supervisor role boundary.
 
 ## Test Philosophy
 

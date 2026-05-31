@@ -44,6 +44,11 @@ declared artifacts, and optional verifier output, then writes terminal evidence 
 acceptance path. Launch failures, timeouts, verifier failures, missing artifacts, and telemetry write
 failures become durable evidence instead of leaving invisible running work.
 
+For full AFK or autonomous-worker product work, the supervisor manages task intent, worker launch,
+inspection, verifier setup, evidence, and acceptance. Product files are changed by the worker
+process inside `attempt-run`. Supervisor-owned setup and verifier files live under
+`.codex-supervisor/`. Product follow-up work becomes new task intent assigned through `attempt-run`.
+
 Work semantics live in task intent and worker behavior. The supervisor does not define job types for
 features, bugs, reviews, project starts, or other engineering categories.
 

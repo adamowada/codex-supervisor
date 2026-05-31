@@ -64,7 +64,7 @@ When terminalizing an attempt, if the task has exactly one acceptance criterion,
 Named acceptance results are only for multiple criteria, and each name **MUST** exactly match an
 acceptance criterion.
 
-In a fresh workspace, you **MUST run `plan-init` before any queue inspection** to create
+In a fresh workspace, you **MUST run `plan-init --json` before any queue inspection** to create
 `.codex-supervisor/planning.sqlite3`. You **MUST NOT run `queue-next` before `plan-init`** in an
 empty folder.
 
@@ -78,6 +78,17 @@ call. When acceptance depends on file contents or other machine-checkable facts,
 Python verifier at `.codex-supervisor/verify.py`.
 Failed worker processes **MUST NOT** leave passing acceptance evidence.
 Declared output artifacts **MUST exist** before supplied passing acceptance can remain passing.
+
+For full AFK, autonomous worker, unattended worker, or worker-assigned file mutation, the supervisor
+**MUST NOT mutate product files directly**. Product files are files outside `.codex-supervisor/`.
+The supervisor may create or update supervisor-owned files under `.codex-supervisor/`, create task
+intent, launch workers, inspect outputs, run verifiers or smoke tests, and record evidence. When the
+supervisor discovers product cleanup, audit, warning, polish, or repair work, it **MUST** create
+follow-up task intent and assign the product mutation through `attempt-run`.
+
+Verifier checks **SHOULD** prove behavior or structural contract. Prefer builds, tests, API calls,
+browser flows, artifact existence, JSON fields, and endpoint responses.
+Literal string checks **SHOULD** only be used when the literal text is itself required by the task.
 
 For manual edits, use `attempt-transition` to record running and terminal states around the edit. If
 the launcher cannot locate the source repository, set `CODEX_SUPERVISOR_REPO_ROOT` to the source

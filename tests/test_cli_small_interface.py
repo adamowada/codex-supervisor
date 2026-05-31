@@ -22,6 +22,21 @@ def test_cli_plan_init_creates_compact_schema_for_queue_next(tmp_path: Path, cap
     assert payload["next_transition"] == "none"
 
 
+def test_cli_plan_init_json_reports_compact_schema(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    db_path = tmp_path / "planning.sqlite3"
+
+    exit_code = main(["plan-init", "--path", str(db_path), "--json"])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {
+        "initialized": True,
+        "path": str(db_path),
+        "schema_name": "fresh_simplified_planning",
+        "schema_version": "1",
+    }
+
+
 def test_cli_queue_next_json(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
     db_path = make_planning_db(tmp_path)
 

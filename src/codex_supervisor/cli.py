@@ -4,16 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import sys
 from dataclasses import asdict, is_dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 from codex_supervisor.attempt_store import AttemptStore
-from codex_supervisor.compact_planning import (
-    initialize_compact_planning_database,
-    seed_compact_bootstrap_plan,
-)
+from codex_supervisor.compact_planning import initialize_compact_planning_database
 from codex_supervisor.paths import default_planning_database_path
 from codex_supervisor.process_attempt import run_process_attempt
 from codex_supervisor.small_interface import attempt_transition, queue_next, task_create
@@ -40,7 +37,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     plan_init = subparsers.add_parser("plan-init", help="Initialize compact planning SQLite")
     _add_path_arg(plan_init)
-    plan_init.add_argument("--seed-bootstrap-plan", action="store_true", default=False)
+    plan_init.add_argument("--json", action="store_true", default=False)
 
     queue = subparsers.add_parser("queue-next", help="Inspect the next compact queue task")
     _add_path_arg(queue)
@@ -108,8 +105,8 @@ def _dispatch(args: argparse.Namespace) -> object | None:
     database_path = _database_path(args)
     if args.command == "plan-init":
         initialize_compact_planning_database(database_path)
-        if args.seed_bootstrap_plan:
-            seed_compact_bootstrap_plan(database_path, created_at=_now())
+        if args.json:
+            return _plan_init_payload(database_path)
         return None
     if args.command == "queue-next":
         return queue_next(database_path)
@@ -178,6 +175,18 @@ def _add_path_arg(parser: argparse.ArgumentParser) -> None:
 
 def _database_path(args: argparse.Namespace) -> Path:
     return args.path if args.path is not None else default_planning_database_path()
+
+
+def _plan_init_payload(database_path: Path) -> dict[str, object]:
+    with sqlite3.connect(database_path) as connection:
+        rows = connection.execute("select key, value from meta").fetchall()
+    metadata = {str(key): str(value) for key, value in rows}
+    return {
+        "initialized": True,
+        "path": str(database_path),
+        "schema_name": metadata.get("schema_name"),
+        "schema_version": metadata.get("schema_version"),
+    }
 
 
 def _parse_acceptance_results(raw_items: tuple[str, ...]) -> dict[str, bool] | None:
@@ -259,10 +268,6 @@ def _compact_line(value: object) -> str:
                 title = value.get("title") or value.get("summary") or ""
                 return "\t".join(str(part) for part in (item, status, title) if part is not None)
     return json.dumps(value, sort_keys=True)
-
-
-def _now() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 if __name__ == "__main__":

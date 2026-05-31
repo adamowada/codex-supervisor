@@ -48,6 +48,11 @@ Before the process starts, `attempt-run` writes a task assignment JSON file and 
 assurance level, attempt ID, and workspace path. Worker processes read that assignment instead of
 requiring a supervisor job type.
 
+For full AFK or autonomous-worker product work, product file mutation happens inside `attempt-run`.
+The supervisor may write supervisor-owned files under `.codex-supervisor/`, launch workers, inspect
+outputs, run verifiers, and record evidence. Product cleanup, repair, audit, warning, or polish work
+is represented as new task intent and assigned through another worker attempt.
+
 Declared task artifacts are verified after the process exits. A caller-supplied passing acceptance
 result is forced to failing evidence when required artifacts are missing.
 
@@ -56,6 +61,9 @@ after the worker exits and before the terminal transition is recorded. The verif
 same assignment environment and workspace as the worker. Its command metadata, stdout, stderr, and
 exit code become evidence. A nonzero verifier exit code fails the attempt and forces supplied
 passing acceptance results to failing evidence.
+
+Verifier commands should prove behavior or structural contract. Literal string checks are for tasks
+where the literal text is itself required.
 
 ## Evidence Bundle
 

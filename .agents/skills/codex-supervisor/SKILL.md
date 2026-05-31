@@ -19,10 +19,16 @@ TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
 - Use assurance levels as policy: `low`, `medium`, `high`.
 - For full AFK, autonomous worker, unattended worker, or worker-assigned file mutation, create the
   task with `--assurance high` unless the user explicitly requests a lower assurance level.
+- For full AFK, autonomous worker, unattended worker, or worker-assigned file mutation, the
+  supervisor **MUST NOT mutate product files directly**. Product mutations belong inside
+  `attempt-run`; supervisor-owned setup, verifier, and evidence files belong under
+  `.codex-supervisor/`.
 - When acceptance depends on machine-checkable facts, use `attempt-run --verify-command` to record an
   independent verifier result before acceptance is finalized.
 - Prefer workspace Python verifiers at `.codex-supervisor/verify.py` over inline shell or
   PowerShell verifier logic.
+- Verifiers should prove behavior or structural contract. Literal string checks should only be used
+  when the literal text is itself required.
 - Keep `plans/planning.sqlite3` on the schema from `PLANS.md`.
 - Keep `HANDOFF.md` current and compact.
 - Refresh protected-file hashes after intentional source-of-truth edits.

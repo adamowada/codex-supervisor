@@ -44,7 +44,9 @@ Stage 4 is implemented in `src/codex_supervisor/small_interface.py`. The active 
 `task-create` for durable task intent, `queue-next` for inspection, and `attempt-transition` for
 manual mutation. `plan-init` exists to create the compact schema. `queue-next` has one meaning: the
 next operational task in the active queue, with running work surfaced before ready work.
-`attempt-transition` is the manual write path for attempts, evidence, and acceptance.
+`attempt-transition` is the manual write path for attempts, evidence, and acceptance. `plan-init`
+supports `--json` so fresh workspace smoke tests can initialize the compact schema without parsing
+human output.
 
 Stage 5 is implemented in `src/codex_supervisor/process_attempt.py`. `attempt-run` is the generic
 AFK process path: it writes a task assignment JSON for the worker, passes it as
@@ -55,6 +57,11 @@ path. Failed worker processes and failed verifier commands cannot leave supplied
 results as passing evidence. Process launch failures, verifier failures, missing declared artifacts,
 and telemetry write failures become durable terminal evidence instead of stranded running attempts.
 Work categories remain task intent and acceptance criteria, not supervisor job types.
+For full AFK or autonomous-worker product work, the supervisor may manage task intent, worker launch,
+inspection, verifier setup, evidence, and acceptance, but it does not mutate product files directly.
+Product cleanup, audit, warning, polish, or repair work is assigned through another `attempt-run`.
+Verifier commands should prove behavior or structural contract; literal string checks are reserved
+for tasks where literal text is itself required.
 
 The happy path is now locked by scenario tests: a fresh workspace can initialize a workspace-local
 ledger, create a task, run one worker process through `attempt-run`, record assignment/process
@@ -62,7 +69,9 @@ evidence, run a generic verifier when acceptance depends on machine-checkable fa
 criterion with `--acceptance-result pass`, and end with a clean planning database. Bare `pass` or
 `fail` is intentionally valid only for single-criterion tasks; tasks with multiple criteria must name
 criteria explicitly. When the last open task in an active plan becomes done, the plan becomes done
-too.
+too. A second scenario test covers the current follow-up model: when supervisor inspection discovers
+additional product work after a plan is done, the supervisor creates a new plan/task and assigns that
+mutation through another worker attempt.
 
 Stage 6 is implemented in `src/codex_supervisor/adapter_contracts.py` and the read-only MCP
 `codex_supervisor.queue_next` operation. Adapter growth is declaration-first: an operation must name

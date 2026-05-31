@@ -314,6 +314,173 @@ def test_full_afk_worker_gets_assignment_and_manages_empty_project_end_to_end(
     assert evidence_count == 1
 
 
+def test_full_afk_follow_up_product_mutation_is_assigned_to_worker(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / ".codex-supervisor" / "planning.sqlite3"
+    workspace = tmp_path / "factory-project"
+    project_file = workspace / "README.md"
+    verifier_file = workspace / ".codex-supervisor" / "verify.py"
+
+    init = _run_cli("plan-init", "--path", str(db_path), "--json")
+    assert json.loads(init.stdout)["schema_version"] == "1"
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-factory-build",
+        "--plan-title",
+        "Factory build",
+        "--plan-goal",
+        "Create the initial product artifact through a worker.",
+        "--task-id",
+        "task-build-readme",
+        "--title",
+        "Create README",
+        "--intent",
+        "Create README.md in the worker workspace.",
+        "--assurance",
+        "high",
+        "--acceptance",
+        "README.md exists",
+        "--json",
+    )
+
+    first = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-build-readme",
+        "--attempt-id",
+        "attempt-build-readme",
+        "--executor",
+        "worker-process",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--summary",
+        "Assign initial product file creation to a worker.",
+        "--check",
+        "Worker created README.md.",
+        "--artifact",
+        str(project_file),
+        "--acceptance-result",
+        "pass",
+        "--risk",
+        "Worker ran inside an isolated temporary workspace.",
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        (
+            "from pathlib import Path; "
+            "Path('README.md').write_text('# Factory Project\\n', encoding='utf-8')"
+        ),
+    )
+    assert json.loads(first.stdout)["transition"]["task_status"] == "done"
+
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-factory-follow-up",
+        "--plan-title",
+        "Factory follow-up",
+        "--plan-goal",
+        "Apply discovered product cleanup through a worker.",
+        "--task-id",
+        "task-update-readme",
+        "--title",
+        "Update README",
+        "--intent",
+        "Add a local verification note to README.md.",
+        "--assurance",
+        "high",
+        "--acceptance",
+        "README.md contains the local verification note",
+        "--json",
+    )
+    _write_text_verifier(
+        verifier_file,
+        (
+            "content = Path('README.md').read_text(encoding='utf-8')\n"
+            "if 'Verified locally by worker.\\n' not in content:\n"
+            "    raise SystemExit(3)\n"
+            "print('follow-up verified')\n"
+        ),
+    )
+
+    follow_up = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-update-readme",
+        "--attempt-id",
+        "attempt-update-readme",
+        "--executor",
+        "worker-process",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--summary",
+        "Assign product follow-up mutation to a worker.",
+        "--check",
+        "Worker added the local verification note.",
+        "--artifact",
+        str(project_file),
+        "--verify-command",
+        _shell_command((sys.executable, "-B", str(verifier_file))),
+        "--acceptance-result",
+        "pass",
+        "--risk",
+        "Follow-up work used a worker attempt instead of supervisor product edits.",
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        (
+            "from pathlib import Path; "
+            "Path('README.md').write_text("
+            "Path('README.md').read_text(encoding='utf-8') + "
+            "'Verified locally by worker.\\n', encoding='utf-8')"
+        ),
+    )
+
+    payload = json.loads(follow_up.stdout)
+    assert payload["exit_code"] == 0
+    assert payload["verifier_exit_code"] == 0
+    assert payload["transition"]["task_status"] == "done"
+    assert project_file.read_text(encoding="utf-8") == (
+        "# Factory Project\nVerified locally by worker.\n"
+    )
+
+    with sqlite3.connect(db_path) as connection:
+        attempts = connection.execute(
+            "select attempt_id, executor, status from attempts order by attempt_id"
+        ).fetchall()
+        plans = connection.execute(
+            "select plan_id, status from plans order by plan_id"
+        ).fetchall()
+        evidence_count = connection.execute("select count(*) from evidence_bundles").fetchone()[0]
+
+    assert attempts == [
+        ("attempt-build-readme", "worker-process", "succeeded"),
+        ("attempt-update-readme", "worker-process", "succeeded"),
+    ]
+    assert plans == [
+        ("plan-factory-build", "done"),
+        ("plan-factory-follow-up", "done"),
+    ]
+    assert evidence_count == 2
+    assert _planning_integrity_failures(db_path) == ()
+
+
 def test_failed_process_attempt_records_terminal_state(tmp_path: Path) -> None:
     db_path = tmp_path / "planning.sqlite3"
     workspace = tmp_path / "failed-project"

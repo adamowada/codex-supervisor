@@ -50,6 +50,8 @@ def test_plugin_contains_desktop_skill_entrypoint() -> None:
     assert "MUST** follow [WINDOWS.md](WINDOWS.md)" in content
     assert ".codex-supervisor/verify.py" in content
     assert "CODEX_SUPERVISOR_TASK_JSON" in content
+    assert "MUST NOT mutate product files directly" in content
+    assert "Literal string checks **SHOULD** only be used" in content
 
 
 def test_plugin_contains_windows_platform_guidance() -> None:
@@ -215,12 +217,19 @@ def test_installed_cache_cli_launcher_runs_source_cli_without_path(
     shutil.copytree(PLUGIN_ROOT, cached_plugin)
     _write_codex_config(codex_home)
 
-    _run_plugin_cli_launcher_from(
+    initialized = _run_plugin_cli_launcher_from(
         cached_plugin,
-        ("plan-init", "--path", str(db_path)),
+        ("plan-init", "--path", str(db_path), "--json"),
         codex_home=codex_home,
         include_source_env=False,
     )
+    init_payload = json.loads(initialized.stdout)
+    assert init_payload == {
+        "initialized": True,
+        "path": str(db_path),
+        "schema_name": "fresh_simplified_planning",
+        "schema_version": "1",
+    }
     completed = _run_plugin_cli_launcher_from(
         cached_plugin,
         ("queue-next", "--path", str(db_path), "--json"),
@@ -253,13 +262,20 @@ def test_installed_cache_cli_launcher_defaults_to_invocation_workspace(
     shutil.copytree(PLUGIN_ROOT, cached_plugin)
     _write_codex_config(codex_home)
 
-    _run_plugin_cli_launcher_from(
+    initialized = _run_plugin_cli_launcher_from(
         cached_plugin,
-        ("plan-init",),
+        ("plan-init", "--json"),
         codex_home=codex_home,
         include_source_env=False,
         invocation_cwd=workspace,
     )
+    init_payload = json.loads(initialized.stdout)
+    assert init_payload == {
+        "initialized": True,
+        "path": str(workspace_db),
+        "schema_name": "fresh_simplified_planning",
+        "schema_version": "1",
+    }
     completed = _run_plugin_cli_launcher_from(
         cached_plugin,
         ("queue-next", "--json"),

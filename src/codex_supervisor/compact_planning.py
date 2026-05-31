@@ -1,8 +1,7 @@
-"""Compact planning SQLite schema and bootstrap helpers."""
+"""Compact planning SQLite schema helpers."""
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from pathlib import Path
 
@@ -76,44 +75,4 @@ def initialize_compact_planning_database(database_path: Path) -> None:
         )
         connection.execute(
             "insert or replace into meta(key, value) values ('schema_version', '1')"
-        )
-
-
-def seed_compact_bootstrap_plan(database_path: Path, *, created_at: str) -> None:
-    """Seed one compact bootstrap plan and ready task."""
-
-    with sqlite3.connect(database_path) as connection:
-        connection.execute("pragma foreign_keys = on")
-        connection.execute(
-            """insert or ignore into plans(
-                   plan_id, title, status, priority, goal, created_at, updated_at
-               )
-               values (?, ?, ?, ?, ?, ?, ?)""",
-            (
-                "plan-bootstrap-supervisor",
-                "Bootstrap Codex Supervisor",
-                "active",
-                100,
-                "Continue compact supervisor implementation through task, attempt, "
-                "evidence, and acceptance.",
-                created_at,
-                created_at,
-            ),
-        )
-        connection.execute(
-            """insert or ignore into tasks(
-                   task_id, plan_id, title, status, assurance, intent,
-                   acceptance_json, created_at, updated_at
-               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                "task-bootstrap-orient-and-plan",
-                "plan-bootstrap-supervisor",
-                "Orient and continue compact implementation",
-                "ready",
-                "medium",
-                "Inspect compact planning state and continue the next implementation task.",
-                json.dumps(["Compact planning commands work.", "Verification passes."], indent=2),
-                created_at,
-                created_at,
-            ),
         )

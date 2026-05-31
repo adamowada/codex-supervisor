@@ -47,7 +47,20 @@ def test_plugin_contains_desktop_skill_entrypoint() -> None:
     assert "MUST use the plugin CLI launcher" in content
     assert "MUST default to the current workspace ledger" in content
     assert "MUST NOT run `queue-next` before `plan-init`" in content
+    assert "MUST** follow [WINDOWS.md](WINDOWS.md)" in content
+    assert ".codex-supervisor/verify.py" in content
     assert "CODEX_SUPERVISOR_TASK_JSON" in content
+
+
+def test_plugin_contains_windows_platform_guidance() -> None:
+    guidance = PLUGIN_ROOT / "skills" / "codex-supervisor" / "WINDOWS.md"
+    content = guidance.read_text(encoding="utf-8")
+
+    assert "powershell.exe -NoProfile -ExecutionPolicy Bypass -File <codex.ps1> exec" in content
+    assert "MUST NOT** put complex PowerShell logic inline in `--verify-command`" in content
+    assert "MUST** prefer a workspace Python verifier" in content
+    assert "python -B .codex-supervisor\\verify.py" in content
+    assert "MUST** retry the same task" in content
 
 
 def test_repo_marketplace_points_at_plugin_wrapper() -> None:
@@ -270,6 +283,7 @@ def test_installed_cache_cli_launcher_runs_full_happy_path_in_fresh_workspace(
     workspace.mkdir()
     workspace_db = workspace / ".codex-supervisor" / "planning.sqlite3"
     project_file = workspace / "README.md"
+    verifier_file = workspace / ".codex-supervisor" / "verify.py"
     source_db = REPO_ROOT / "plans" / "planning.sqlite3"
     source_before = source_db.read_bytes()
     cached_plugin = (
@@ -316,6 +330,7 @@ def test_installed_cache_cli_launcher_runs_full_happy_path_in_fresh_workspace(
         include_source_env=False,
         invocation_cwd=workspace,
     )
+    _write_readme_verifier(verifier_file, expected="# Plugin Happy Path\n")
     completed = _run_plugin_cli_launcher_from(
         cached_plugin,
         (
@@ -336,6 +351,8 @@ def test_installed_cache_cli_launcher_runs_full_happy_path_in_fresh_workspace(
             "Worker created README.md.",
             "--artifact",
             str(project_file),
+            "--verify-command",
+            _shell_command((sys.executable, "-B", str(verifier_file))),
             "--acceptance-result",
             "pass",
             "--risk",
@@ -357,8 +374,10 @@ def test_installed_cache_cli_launcher_runs_full_happy_path_in_fresh_workspace(
     payload = json.loads(completed.stdout)
     assert workspace_db.is_file()
     assert payload["exit_code"] == 0
+    assert payload["verifier_exit_code"] == 0
     assert payload["transition"]["task_status"] == "done"
     assert payload["transition"]["attempt"]["executor"] == "worker-process"
+    assert "verifier exit code: 0" in payload["transition"]["evidence"]["checks"]
     assert Path(payload["assignment_path"]).is_file()
     assert project_file.read_text(encoding="utf-8") == "# Plugin Happy Path\n"
     assert source_db.read_bytes() == source_before
@@ -442,6 +461,28 @@ def _run_plugin_cli_launcher_from(
         env=env,
         check=True,
     )
+
+
+def _write_readme_verifier(path: Path, *, expected: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(
+            (
+                "from pathlib import Path",
+                "expected = " + repr(expected),
+                "content = Path('README.md').read_text(encoding='utf-8')",
+                "if content != expected:",
+                "    raise SystemExit('README.md content mismatch')",
+                "print('README.md verified')",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+
+
+def _shell_command(args: tuple[str, ...]) -> str:
+    return subprocess.list2cmdline(args)
 
 
 def _write_codex_config(codex_home: Path) -> None:

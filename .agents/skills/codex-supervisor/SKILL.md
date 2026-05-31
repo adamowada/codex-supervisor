@@ -21,6 +21,8 @@ TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
   task with `--assurance high` unless the user explicitly requests a lower assurance level.
 - When acceptance depends on machine-checkable facts, use `attempt-run --verify-command` to record an
   independent verifier result before acceptance is finalized.
+- Prefer workspace Python verifiers at `.codex-supervisor/verify.py` over inline shell or
+  PowerShell verifier logic.
 - Keep `plans/planning.sqlite3` on the schema from `PLANS.md`.
 - Keep `HANDOFF.md` current and compact.
 - Refresh protected-file hashes after intentional source-of-truth edits.

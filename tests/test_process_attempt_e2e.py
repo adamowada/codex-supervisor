@@ -14,6 +14,7 @@ def test_full_afk_process_attempt_starts_tiny_project(tmp_path: Path) -> None:
     db_path = tmp_path / "planning.sqlite3"
     workspace = tmp_path / "tiny-project"
     project_file = workspace / "README.md"
+    verifier_file = workspace / ".codex-supervisor" / "verify.py"
 
     _run_cli("plan-init", "--path", str(db_path))
     _run_cli(
@@ -38,6 +39,15 @@ def test_full_afk_process_attempt_starts_tiny_project(tmp_path: Path) -> None:
         "README.md exists",
         "--json",
     )
+    _write_text_verifier(
+        verifier_file,
+        (
+            "content = Path('README.md').read_text(encoding='utf-8')\n"
+            "if content != '# Tiny Project\\n':\n"
+            "    raise SystemExit(3)\n"
+            "print('README.md verified')\n"
+        ),
+    )
 
     completed = _run_cli(
         "attempt-run",
@@ -56,17 +66,7 @@ def test_full_afk_process_attempt_starts_tiny_project(tmp_path: Path) -> None:
         "--artifact",
         str(project_file),
         "--verify-command",
-        _shell_command(
-            (
-                sys.executable,
-                "-c",
-                (
-                    "from pathlib import Path; "
-                    "content = Path('README.md').read_text(encoding='utf-8'); "
-                    "raise SystemExit(0 if content == '# Tiny Project\\n' else 3)"
-                ),
-            )
-        ),
+        _shell_command((sys.executable, "-B", str(verifier_file))),
         "--acceptance-result",
         "README.md exists=pass",
         "--risk",
@@ -429,6 +429,7 @@ def test_verifier_failure_blocks_supplied_passing_acceptance(tmp_path: Path) -> 
     db_path = tmp_path / "planning.sqlite3"
     workspace = tmp_path / "bad-content-project"
     project_file = workspace / "index.html"
+    verifier_file = workspace / ".codex-supervisor" / "verify.py"
 
     _run_cli("plan-init", "--path", str(db_path))
     _run_cli(
@@ -453,6 +454,15 @@ def test_verifier_failure_blocks_supplied_passing_acceptance(tmp_path: Path) -> 
         "index.html contains no CSS",
         "--json",
     )
+    _write_text_verifier(
+        verifier_file,
+        (
+            "html = Path('index.html').read_text(encoding='utf-8').casefold()\n"
+            "if '<style' in html:\n"
+            "    raise SystemExit(4)\n"
+            "print('index.html contains no css')\n"
+        ),
+    )
 
     completed = _run_cli(
         "attempt-run",
@@ -471,17 +481,7 @@ def test_verifier_failure_blocks_supplied_passing_acceptance(tmp_path: Path) -> 
         "--artifact",
         str(project_file),
         "--verify-command",
-        _shell_command(
-            (
-                sys.executable,
-                "-c",
-                (
-                    "from pathlib import Path; "
-                    "html = Path('index.html').read_text(encoding='utf-8').casefold(); "
-                    "raise SystemExit(4 if '<style' in html else 0)"
-                ),
-            )
-        ),
+        _shell_command((sys.executable, "-B", str(verifier_file))),
         "--acceptance-result",
         "index.html contains no CSS=pass",
         "--risk",
@@ -662,6 +662,11 @@ def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
         env=env,
         check=True,
     )
+
+
+def _write_text_verifier(path: Path, body: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("from pathlib import Path\n" + body, encoding="utf-8")
 
 
 def _shell_command(args: tuple[str, ...]) -> str:

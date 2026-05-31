@@ -79,10 +79,11 @@ clients. `plugins/codex-supervisor` makes that transport discoverable as a Codex
 adding a second control plane. The plugin also provides `scripts/cli_launcher.py`, a packaging-only
 forwarder to the source CLI so Desktop runs do not probe PATH before starting supervisor work. Its
 packaged skill requires durable task intent, attempt, evidence, and acceptance whenever the
-supervisor is invoked for work, and it forbids `queue-next` before `plan-init` in fresh folders. The
-launcher defaults omitted planning paths to the current workspace ledger, not the source repository.
-The old operation registry, broad planning inspection commands, and fake worker scaffold have been
-removed.
+supervisor is invoked for work, and it forbids `queue-next` before `plan-init` in fresh folders. It
+also links Windows-specific launch guidance and prefers workspace Python verifiers at
+`.codex-supervisor/verify.py` over inline shell or PowerShell verifier logic. The launcher defaults
+omitted planning paths to the current workspace ledger, not the source repository. The old operation
+registry, broad planning inspection commands, and fake worker scaffold have been removed.
 
 The package has been cut down to the compact implementation modules. Attempt transitions validate
 task ownership, planning integrity checks open work per active plan, and the attempt store prevents
@@ -114,9 +115,10 @@ the answer as run posture rather than another persistent mode axis.
 ## Next Action
 
 All roadmap stages, compact contract repair, live-surface simplification, generic AFK process
-execution, plugin workspace-default repair, generic verifier evidence, happy-path e2e coverage,
-factory-state hardening, and repo-local complexity-reduction skill work, including calibration, are
-complete. The related plans are marked `done` in `plans/planning.sqlite3`.
+execution, plugin workspace-default repair, generic verifier evidence, Windows launch steering,
+Python-verifier happy-path coverage, factory-state hardening, and repo-local complexity-reduction
+skill work, including calibration, are complete. The related plans are marked `done` in
+`plans/planning.sqlite3`.
 
 Planning task:
 

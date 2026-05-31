@@ -11,6 +11,7 @@ It provides:
   on `PATH`. When a compact command omits `--path`, the launcher uses the current workspace ledger
   at `.codex-supervisor/planning.sqlite3`.
 - `skills/codex-supervisor/SKILL.md` as the Desktop-visible entrypoint.
+- `skills/codex-supervisor/WINDOWS.md` as Windows-specific launch and verifier guidance.
 
 The plugin is packaging only. The product contract remains in the Python package:
 
@@ -40,3 +41,7 @@ checks, optional verifier results, risks, and acceptance results are recorded th
 evidence path. Failed worker processes and failed verifier commands cannot record supplied passing
 acceptance results as passing evidence, and declared output artifacts must exist before supplied
 passing acceptance can remain passing.
+
+When acceptance depends on machine-checkable file contents or behavior, prefer a workspace Python
+verifier at `.codex-supervisor/verify.py` and pass it through `--verify-command`. On Windows, follow
+the skill's `WINDOWS.md` rules for PowerShell worker launch and verifier invocation.

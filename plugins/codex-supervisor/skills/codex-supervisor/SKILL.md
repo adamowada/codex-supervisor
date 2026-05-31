@@ -46,6 +46,9 @@ Use the launcher shape:
 python -B scripts/cli_launcher.py <command> ...
 ```
 
+On Windows or PowerShell, you **MUST** follow [WINDOWS.md](WINDOWS.md) for platform-aware worker
+launch and verifier commands.
+
 ## Required Flow
 
 When this skill is invoked for work that creates, edits, verifies, or reviews files, you **MUST**
@@ -66,7 +69,8 @@ For full AFK, autonomous worker, unattended worker, or worker-assigned file muta
 create the task with `--assurance high`** unless the user explicitly requests a lower assurance
 level. Record declared artifacts, checks, acceptance results, and risk notes on the `attempt-run`
 call. When acceptance depends on file contents or other machine-checkable facts, use
-`--verify-command` so passing acceptance is backed by an independent verifier.
+`--verify-command` so passing acceptance is backed by an independent verifier. Prefer a workspace
+Python verifier at `.codex-supervisor/verify.py`.
 Failed worker processes **MUST NOT** leave passing acceptance evidence.
 Declared output artifacts **MUST exist** before supplied passing acceptance can remain passing.
 

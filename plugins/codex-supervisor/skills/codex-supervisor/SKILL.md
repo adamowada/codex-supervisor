@@ -20,6 +20,8 @@ and auditability.
 ## Active Surface
 
 - Use the MCP tool `codex_supervisor.queue_next` for read-only queue inspection when available.
+  You **MUST pass the intended planning database path** or use a launcher configured with
+  `CODEX_SUPERVISOR_PLANNING_PATH`; MCP must not guess the ledger.
 - Use the repository CLI for mutation:
   - `codex-supervisor plan-init`
   - `codex-supervisor task-create`
@@ -62,6 +64,7 @@ For full AFK or worker-style execution, you **MUST use `attempt-run`**. The work
 the task assignment through `CODEX_SUPERVISOR_TASK_JSON`, plus task, attempt, and workspace env vars.
 Record declared artifacts, checks, acceptance results, and risk notes on the `attempt-run` call.
 Failed worker processes **MUST NOT** leave passing acceptance evidence.
+Declared output artifacts **MUST exist** before supplied passing acceptance can remain passing.
 
 For manual edits, use `attempt-transition` to record running and terminal states around the edit. If
 the launcher cannot locate the source repository, set `CODEX_SUPERVISOR_REPO_ROOT` to the source

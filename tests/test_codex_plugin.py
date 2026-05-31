@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from planning_db_factory import make_planning_db
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = REPO_ROOT / "plugins" / "codex-supervisor"
 
@@ -84,6 +86,30 @@ def test_plugin_launcher_starts_compact_mcp_server() -> None:
     assert responses[1]["result"]["tools"][0]["name"] == "codex_supervisor.queue_next"
 
 
+def test_plugin_mcp_queue_requires_explicit_planning_path() -> None:
+    responses = _run_plugin_launcher(
+        (
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "codex_supervisor.queue_next",
+                    "arguments": {},
+                },
+            },
+        )
+    )
+
+    tool_result = responses[1]["result"]
+    structured = tool_result["structuredContent"]
+    assert tool_result["isError"] is True
+    assert structured["ok"] is False
+    assert structured["error"]["code"] == "planning_path_required"
+
+
 def test_installed_cache_launcher_uses_configured_marketplace_without_env(
     tmp_path: Path,
 ) -> None:
@@ -112,6 +138,50 @@ def test_installed_cache_launcher_uses_configured_marketplace_without_env(
 
     assert responses[0]["result"]["serverInfo"]["name"] == "codex-supervisor"
     assert responses[1]["result"]["tools"][0]["name"] == "codex_supervisor.queue_next"
+
+
+def test_installed_cache_mcp_launcher_dispatches_workspace_queue(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    cached_plugin = (
+        codex_home
+        / "plugins"
+        / "cache"
+        / "codex-supervisor-local"
+        / "codex-supervisor"
+        / "0.2.0+codex.test"
+    )
+    workspace_db = make_planning_db(tmp_path / "workspace")
+    source_db = REPO_ROOT / "plans" / "planning.sqlite3"
+    source_before = source_db.read_bytes()
+    shutil.copytree(PLUGIN_ROOT, cached_plugin)
+    _write_codex_config(codex_home)
+
+    responses = _run_plugin_launcher_from(
+        cached_plugin,
+        (
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "codex_supervisor.queue_next",
+                    "arguments": {},
+                },
+            },
+        ),
+        codex_home=codex_home,
+        include_source_env=False,
+        planning_path=workspace_db,
+    )
+
+    structured = responses[1]["result"]["structuredContent"]
+    assert structured["ok"] is True
+    assert structured["data"]["task"]["task_id"] == "task-1"
+    assert source_db.read_bytes() == source_before
 
 
 def test_installed_cache_cli_launcher_runs_source_cli_without_path(
@@ -318,6 +388,7 @@ def _run_plugin_launcher_from(
     *,
     codex_home: Path,
     include_source_env: bool,
+    planning_path: Path | None = None,
 ) -> list[dict[str, object]]:
     env = os.environ.copy()
     env["CODEX_HOME"] = str(codex_home)
@@ -325,6 +396,10 @@ def _run_plugin_launcher_from(
         env["CODEX_SUPERVISOR_REPO_ROOT"] = str(REPO_ROOT)
     else:
         env.pop("CODEX_SUPERVISOR_REPO_ROOT", None)
+    if planning_path is not None:
+        env["CODEX_SUPERVISOR_PLANNING_PATH"] = str(planning_path)
+    else:
+        env.pop("CODEX_SUPERVISOR_PLANNING_PATH", None)
     completed = subprocess.run(
         (sys.executable, "-B", "scripts/mcp_launcher.py"),
         cwd=plugin_root,

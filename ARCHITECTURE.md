@@ -22,6 +22,8 @@ Source-of-truth documents define the product contract. They stay concise and cur
 ### Planning Store
 
 `plans/planning.sqlite3` stores operational state using the schema in `PLANS.md`.
+The store enforces one active plan, one non-terminal attempt per task, and atomic terminal attempt
+evidence writes.
 
 ### Policy
 
@@ -38,7 +40,9 @@ Assurance is stored task data. Policy does not infer assurance from prose.
 Execution is recorded as an attempt. Codex, manual work, shell checks, review, and future adapters
 all run attempts when they produce evidence. The generic process runner is the AFK execution path:
 it starts one worker process in a workspace, captures stdout, stderr, command metadata, exit code,
-and declared artifacts, then writes terminal evidence through the same acceptance path.
+and declared artifacts, then writes terminal evidence through the same acceptance path. Launch
+failures, timeouts, missing artifacts, and telemetry write failures become durable evidence instead
+of leaving invisible running work.
 
 Work semantics live in task intent and worker behavior. The supervisor does not define job types for
 features, bugs, reviews, project starts, or other engineering categories.
@@ -51,11 +55,14 @@ points to supporting artifacts.
 ### Interfaces
 
 The active CLI surface is `plan-init`, `task-create`, `queue-next`, `attempt-transition`, and
-`attempt-run`. `task-create` records durable intent. `queue-next` is inspection only.
+`attempt-run`. `task-create` records durable intent. `queue-next` is inspection only and returns
+running active work before ready work.
 `attempt-transition` is the manual write path for attempts, evidence, and acceptance. `attempt-run`
 is the AFK process path that records execution through the same model.
 
-The active MCP surface is one read-only dispatcher operation: `codex_supervisor.queue_next`.
+The active MCP surface is one read-only dispatcher operation: `codex_supervisor.queue_next`. MCP
+inspection requires an explicit planning path so it cannot silently inspect the source repository
+ledger while the active work lives in a workspace ledger.
 The active Codex plugin surface is a thin wrapper around that MCP stdio server. The plugin owns
 discovery metadata and launch wiring only; it does not define separate task, worker, or acceptance
 behavior.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -62,24 +63,28 @@ def run_process_attempt(
     )
     recorded_attempt_id = str(running.attempt["attempt_id"])
 
+    telemetry_errors: list[str] = []
     evidence_dir = workspace / ".codex-supervisor" / "evidence"
-    evidence_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        telemetry_errors.append(f"could not create workspace evidence directory: {exc}")
+        evidence_dir = Path(tempfile.mkdtemp(prefix="codex-supervisor-evidence-"))
     assignment_path = evidence_dir / f"{recorded_attempt_id}-assignment.json"
     stdout_path = evidence_dir / f"{recorded_attempt_id}-stdout.txt"
     stderr_path = evidence_dir / f"{recorded_attempt_id}-stderr.txt"
     command_path = evidence_dir / f"{recorded_attempt_id}-command.json"
-    assignment_path.write_text(
-        json.dumps(
-            {
-                "task": running.task,
-                "attempt": running.attempt,
-                "workspace": str(workspace),
-            },
-            indent=2,
-            sort_keys=True,
-        ),
-        encoding="utf-8",
+    assignment_payload = {
+        "task": running.task,
+        "attempt": running.attempt,
+        "workspace": str(workspace),
+    }
+    assignment_error = _write_text(
+        assignment_path,
+        json.dumps(assignment_payload, indent=2, sort_keys=True),
     )
+    if assignment_error is not None:
+        telemetry_errors.append(f"could not write assignment metadata: {assignment_error}")
 
     exit_code = 1
     stdout = ""
@@ -114,10 +119,14 @@ def run_process_attempt(
         stdout = _coerce_output(exc.stdout)
         stderr = _coerce_output(exc.stderr)
         terminal_summary = f"{run_summary} Timed out after {timeout_seconds} seconds."
+    except OSError as exc:
+        stderr = str(exc)
+        terminal_summary = f"{run_summary} Could not start worker process: {exc}."
     finally:
-        stdout_path.write_text(stdout, encoding="utf-8")
-        stderr_path.write_text(stderr, encoding="utf-8")
-        command_path.write_text(
+        stdout_error = _write_text(stdout_path, stdout)
+        stderr_error = _write_text(stderr_path, stderr)
+        command_error = _write_text(
+            command_path,
             json.dumps(
                 {
                     "command": list(command),
@@ -129,8 +138,22 @@ def run_process_attempt(
                 indent=2,
                 sort_keys=True,
             ),
-            encoding="utf-8",
         )
+        if stdout_error is not None:
+            telemetry_errors.append(f"could not write stdout metadata: {stdout_error}")
+        if stderr_error is not None:
+            telemetry_errors.append(f"could not write stderr metadata: {stderr_error}")
+        if command_error is not None:
+            telemetry_errors.append(f"could not write command metadata: {command_error}")
+
+    missing_artifacts = _missing_declared_artifacts(artifacts, workspace=workspace)
+    if missing_artifacts:
+        terminal_summary = (
+            f"{terminal_summary} Missing declared artifact(s): "
+            f"{', '.join(missing_artifacts)}."
+        )
+    if telemetry_errors:
+        terminal_summary = f"{terminal_summary} Telemetry warning(s): {'; '.join(telemetry_errors)}."
 
     recorded_artifacts = (
         str(command_path),
@@ -141,11 +164,18 @@ def run_process_attempt(
     )
     recorded_checks = (
         f"process exit code: {exit_code}",
+        *(f"missing artifact: {artifact}" for artifact in missing_artifacts),
+        *(f"telemetry warning: {error}" for error in telemetry_errors),
         *checks,
     )
     recorded_acceptance_results = _acceptance_results_for_terminal_status(
         acceptance_results,
         terminal_status=terminal_status,
+        missing_artifacts=missing_artifacts,
+    )
+    recorded_gaps = (
+        *(f"missing declared artifact: {artifact}" for artifact in missing_artifacts),
+        *gaps,
     )
     transition = attempt_transition(
         database_path,
@@ -158,7 +188,7 @@ def run_process_attempt(
         artifacts=recorded_artifacts,
         acceptance_results=recorded_acceptance_results,
         risks=risks,
-        gaps=gaps,
+        gaps=recorded_gaps,
         next_actions=next_actions,
         review_evidence=review_evidence,
     )
@@ -181,8 +211,11 @@ def _acceptance_results_for_terminal_status(
     acceptance_results: dict[str, bool] | None,
     *,
     terminal_status: str,
+    missing_artifacts: tuple[str, ...] = (),
 ) -> dict[str, bool] | None:
-    if terminal_status == "succeeded" or not acceptance_results:
+    if terminal_status == "succeeded" and not missing_artifacts:
+        return acceptance_results
+    if not acceptance_results:
         return acceptance_results
     return dict.fromkeys(acceptance_results, False)
 
@@ -193,3 +226,26 @@ def _coerce_output(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return value
+
+
+def _write_text(path: Path, content: str) -> str | None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        return str(exc)
+    return None
+
+
+def _missing_declared_artifacts(
+    artifacts: tuple[str, ...],
+    *,
+    workspace: Path,
+) -> tuple[str, ...]:
+    missing: list[str] = []
+    for artifact in artifacts:
+        artifact_path = Path(artifact)
+        candidate = artifact_path if artifact_path.is_absolute() else workspace / artifact_path
+        if not candidate.exists():
+            missing.append(artifact)
+    return tuple(missing)

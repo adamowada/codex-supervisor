@@ -39,10 +39,17 @@ describe transport.
 process as a run attempt, and attaches stdout, stderr, command metadata, exit code, declared
 artifacts, checks, risks, gaps, and acceptance results as evidence.
 
+Process launch, timeout, nonzero exit, missing declared artifacts, and telemetry write failures are
+terminal evidence. They must leave the task blocked or accepted through the same durable transition
+path; they must not leave a running attempt stranded.
+
 Before the process starts, `attempt-run` writes a task assignment JSON file and exposes it as
 `CODEX_SUPERVISOR_TASK_JSON`. The assignment contains the task intent, acceptance criteria,
 assurance level, attempt ID, and workspace path. Worker processes read that assignment instead of
 requiring a supervisor job type.
+
+Declared task artifacts are verified after the process exits. A caller-supplied passing acceptance
+result is forced to failing evidence when required artifacts are missing.
 
 ## Evidence Bundle
 

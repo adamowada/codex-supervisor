@@ -6,7 +6,6 @@ from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import Any
 
-from codex_supervisor.paths import default_planning_database_path
 from codex_supervisor.small_interface import queue_next
 
 JsonObject = dict[str, Any]
@@ -104,7 +103,10 @@ def _database_path(arguments: JsonObject, context: McpServerContext) -> Path:
         return Path(raw_path)
     if context.planning_path is not None:
         return context.planning_path
-    return default_planning_database_path()
+    raise McpDispatchError(
+        "planning_path_required",
+        "codex_supervisor.queue_next requires a planning database path.",
+    )
 
 
 def _validate_arguments(definition: McpToolDefinition, arguments: object | None) -> JsonObject:

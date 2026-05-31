@@ -79,6 +79,15 @@ class AttemptStore:
 
         created_at = created_at or _now()
         with self._connect() as connection:
+            active_plan = connection.execute(
+                "select plan_id from plans where status = 'active' and plan_id != ? limit 1",
+                (_non_empty(plan_id, "plan_id"),),
+            ).fetchone()
+            if active_plan is not None:
+                raise ValueError(
+                    "cannot create a second active plan while "
+                    f"{active_plan['plan_id']!r} is active"
+                )
             connection.execute(
                 """insert into plans(plan_id, title, status, priority, goal, created_at, updated_at)
                    values (?, ?, 'active', ?, ?, ?, ?)
@@ -186,7 +195,7 @@ class AttemptStore:
         validate_attempt_timestamps(attempt)
 
         with self._connect() as connection:
-            self._require_task(connection, task_id)
+            self._prepare_task_for_attempt(connection, task_id, _now())
             active_attempt = connection.execute(
                 """select attempt_id from attempts
                    where task_id = ?
@@ -230,6 +239,7 @@ class AttemptStore:
             current = self._read_attempt(connection, attempt_id)
             _validate_attempt_task(current, task_id)
             validate_attempt_transition(current.status, RunAttemptStatus.RUNNING)
+            self._prepare_task_for_attempt(connection, current.task_id, started_at)
             attempt = RunAttempt(
                 attempt_id=current.attempt_id,
                 task_id=current.task_id,
@@ -251,6 +261,97 @@ class AttemptStore:
                 (started_at, attempt.task_id),
             )
         return attempt
+
+    def finalize_attempt(
+        self,
+        attempt_id: str,
+        *,
+        status: str | RunAttemptStatus,
+        summary: str,
+        task_id: str,
+        task_status: str,
+        assurance: str,
+        checks: tuple[str, ...],
+        artifacts: tuple[str, ...],
+        bundle_id: str | None = None,
+        finished_at: str | None = None,
+        created_at: str | None = None,
+    ) -> tuple[RunAttempt, AttemptEvidence]:
+        """Terminalize an attempt, attach evidence, and update task state atomically."""
+
+        target_status = normalize_attempt_status(status)
+        if target_status is RunAttemptStatus.PLANNED or target_status is RunAttemptStatus.RUNNING:
+            raise ValueError("finalize_attempt requires a terminal status")
+        if task_status not in {"blocked", "done"}:
+            raise ValueError("finalize_attempt task_status must be blocked or done")
+
+        finished_at = finished_at or _now()
+        created_at = created_at or finished_at
+        bundle_id = bundle_id or _stable_id("evidence")
+        assurance_level = normalize_assurance(assurance).value
+        checks_json = json_string_array(checks, field_name="checks")
+        artifacts_json = json_string_array(artifacts, field_name="artifacts")
+
+        with self._connect() as connection:
+            current = self._read_attempt(connection, attempt_id)
+            _validate_attempt_task(current, task_id)
+            validate_attempt_transition(current.status, target_status)
+            attempt = RunAttempt(
+                attempt_id=current.attempt_id,
+                task_id=current.task_id,
+                executor=current.executor,
+                status=target_status,
+                summary=_non_empty(summary, "summary"),
+                started_at=current.started_at or finished_at,
+                finished_at=finished_at,
+            )
+            validate_attempt_timestamps(attempt)
+            connection.execute(
+                """update attempts
+                   set status = ?, summary = ?, started_at = ?, finished_at = ?
+                   where attempt_id = ?""",
+                (
+                    attempt.status.value,
+                    attempt.summary,
+                    attempt.started_at,
+                    attempt.finished_at,
+                    attempt.attempt_id,
+                ),
+            )
+            connection.execute(
+                """insert into evidence_bundles(
+                       bundle_id, task_id, attempt_id, assurance, summary,
+                       checks_json, artifacts_json, created_at
+                   ) values (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    bundle_id,
+                    attempt.task_id,
+                    attempt.attempt_id,
+                    assurance_level,
+                    attempt.summary,
+                    checks_json,
+                    artifacts_json,
+                    created_at,
+                ),
+            )
+            connection.execute(
+                "update tasks set status = ?, updated_at = ? where task_id = ?",
+                (task_status, finished_at, attempt.task_id),
+            )
+            task = self._read_task(connection, attempt.task_id)
+            self._sync_active_plan_status(connection, task.plan_id, finished_at)
+
+        evidence = AttemptEvidence(
+            bundle_id=bundle_id,
+            task_id=attempt.task_id,
+            attempt_id=attempt.attempt_id,
+            assurance=assurance_level,
+            summary=attempt.summary,
+            checks=parse_json_string_array(checks_json, field_name="checks"),
+            artifacts=parse_json_string_array(artifacts_json, field_name="artifacts"),
+            created_at=created_at,
+        )
+        return attempt, evidence
 
     def complete_attempt(
         self,
@@ -356,7 +457,7 @@ class AttemptStore:
             return self._read_task(connection, task_id)
 
     def read_next_task(self) -> QueuedTaskRecord | None:
-        """Read the next ready task from the active queue."""
+        """Read the next operational task from the active queue."""
 
         with self._connect() as connection:
             row = connection.execute(
@@ -374,8 +475,12 @@ class AttemptStore:
                    from tasks
                    join plans on plans.plan_id = tasks.plan_id
                    where plans.status = 'active'
-                     and tasks.status = 'ready'
-                   order by plans.priority desc, tasks.created_at asc, tasks.task_id asc
+                     and tasks.status in ('running', 'ready')
+                   order by
+                     case tasks.status when 'running' then 0 else 1 end,
+                     plans.priority desc,
+                     tasks.created_at asc,
+                     tasks.task_id asc
                    limit 1""",
             ).fetchone()
         if row is None:
@@ -525,6 +630,43 @@ class AttemptStore:
         if row is None:
             raise LookupError(f"unknown attempt {attempt_id!r}")
         return _attempt_from_row(row)
+
+    @staticmethod
+    def _prepare_task_for_attempt(
+        connection: sqlite3.Connection,
+        task_id: str,
+        updated_at: str,
+    ) -> None:
+        row = connection.execute(
+            """select tasks.status as task_status,
+                      tasks.plan_id,
+                      plans.status as plan_status
+               from tasks
+               join plans on plans.plan_id = tasks.plan_id
+               where tasks.task_id = ?""",
+            (task_id,),
+        ).fetchone()
+        if row is None:
+            raise LookupError(f"unknown task {task_id!r}")
+
+        task_status = row["task_status"]
+        plan_status = row["plan_status"]
+        if plan_status == "active" and task_status == "ready":
+            return
+        if plan_status == "blocked" and task_status == "blocked":
+            connection.execute(
+                "update plans set status = 'active', updated_at = ? where plan_id = ?",
+                (updated_at, row["plan_id"]),
+            )
+            connection.execute(
+                "update tasks set status = 'ready', updated_at = ? where task_id = ?",
+                (updated_at, task_id),
+            )
+            return
+        raise ValueError(
+            f"cannot start attempt for task {task_id!r} with task status "
+            f"{task_status!r} in plan status {plan_status!r}"
+        )
 
     @staticmethod
     def _sync_active_plan_status(

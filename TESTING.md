@@ -25,6 +25,10 @@ The gate checks:
   invocation workspace, not the source repository.
 - e2e coverage that failed process attempts cannot record supplied passing acceptance results as
   passing evidence.
+- e2e coverage that process launch failures, missing declared artifacts, retry after blocked work,
+  and running queue inspection preserve durable factory state.
+- e2e coverage that installed-cache MCP queue inspection uses an explicit workspace ledger path
+  instead of the source repository ledger.
 
 ## Test Philosophy
 
@@ -39,11 +43,7 @@ The gate checks:
 Next tests should cover:
 
 - new adapter operations only after they are declared;
-- acceptance behavior at `attempt-transition`;
-- process evidence and assignment capture at `attempt-run`;
-- plugin launch wiring for the compact MCP stdio server;
-- installed-cache plugin launch without `CODEX_SUPERVISOR_REPO_ROOT`;
-- packaged skill instructions that require task intent, attempt, evidence, and acceptance when the
-  supervisor is invoked for work;
-- queue inspection through `AttemptStore`;
-- planning schema integrity from the production schema builder.
+- timeout finalization in `attempt-run`;
+- literal execution of the plugin MCP manifest command;
+- schema/index integrity from a freshly initialized production database;
+- new adapter operations only after the existing factory path stays boring.

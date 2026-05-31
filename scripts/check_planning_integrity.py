@@ -112,10 +112,13 @@ def check_planning_integrity(database_path: Path) -> tuple[str, ...]:
         done_plans = connection.execute(
             "select count(*) from plans where status = 'done'"
         ).fetchone()[0]
+        blocked_plans = connection.execute(
+            "select count(*) from plans where status = 'blocked'"
+        ).fetchone()[0]
         if active_plans > 1:
             failures.append(f"expected at most one active plan, found {active_plans}")
-        if active_plans == 0 and done_plans < 1:
-            failures.append("expected an active plan or a completed plan")
+        if active_plans == 0 and done_plans < 1 and blocked_plans < 1:
+            failures.append("expected an active, blocked, or completed plan")
 
         active_open_tasks = connection.execute(
             """select count(*)
@@ -275,6 +278,38 @@ def _check_attempt_relationships(
              )"""
     ):
         failures.append(f"running task {row['task_id']} has no non-terminal attempt")
+
+    for row in connection.execute(
+        """select tasks.task_id
+           from tasks
+           where tasks.status = 'done'
+             and not exists (
+                 select 1
+                 from attempts
+                 join evidence_bundles
+                   on evidence_bundles.attempt_id = attempts.attempt_id
+                  and evidence_bundles.task_id = tasks.task_id
+                 where attempts.task_id = tasks.task_id
+                   and attempts.status = 'succeeded'
+             )"""
+    ):
+        failures.append(f"done task {row['task_id']} has no succeeded attempt with evidence")
+
+    for row in connection.execute(
+        """select tasks.task_id
+           from tasks
+           where tasks.status = 'blocked'
+             and not exists (
+                 select 1
+                 from attempts
+                 join evidence_bundles
+                   on evidence_bundles.attempt_id = attempts.attempt_id
+                  and evidence_bundles.task_id = tasks.task_id
+                 where attempts.task_id = tasks.task_id
+                   and attempts.status in ('failed', 'blocked', 'succeeded')
+             )"""
+    ):
+        failures.append(f"blocked task {row['task_id']} has no terminal attempt with evidence")
 
 
 if __name__ == "__main__":

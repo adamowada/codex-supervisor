@@ -113,6 +113,66 @@ def test_planning_integrity_checks_open_tasks_per_active_plan(tmp_path: Path) ->
     assert "non-active plans cannot have ready or running tasks" in failures
 
 
+def test_planning_integrity_accepts_blocked_plan_with_failed_evidence(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute("update plans set status = 'blocked' where plan_id = 'plan-1'")
+        connection.execute("update tasks set status = 'blocked' where task_id = 'task-1'")
+        connection.execute(
+            """insert into attempts(
+                   attempt_id, task_id, executor, status, summary, started_at, finished_at
+               ) values (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "attempt-failed",
+                "task-1",
+                "worker",
+                "failed",
+                "Worker failed.",
+                "2026-05-28T17:00:00Z",
+                "2026-05-28T17:01:00Z",
+            ),
+        )
+        connection.execute(
+            """insert into evidence_bundles(
+                   bundle_id, task_id, attempt_id, assurance, summary,
+                   checks_json, artifacts_json, created_at
+               ) values (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "evidence-failed",
+                "task-1",
+                "attempt-failed",
+                "medium",
+                "Failure evidence.",
+                '["process exit code: 1"]',
+                '["stderr.txt"]',
+                "2026-05-28T17:01:00Z",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    assert check_planning_integrity(db_path) == ()
+
+
+def test_planning_integrity_requires_terminal_evidence_for_terminal_tasks(
+    tmp_path: Path,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute("update plans set status = 'done' where plan_id = 'plan-1'")
+        connection.execute("update tasks set status = 'done' where task_id = 'task-1'")
+        connection.commit()
+    finally:
+        connection.close()
+
+    failures = check_planning_integrity(db_path)
+
+    assert "done task task-1 has no succeeded attempt with evidence" in failures
+
+
 def _copy_current_db(tmp_path: Path) -> Path:
     copied = tmp_path / "planning.sqlite3"
     shutil.copyfile(DB_PATH, copied)

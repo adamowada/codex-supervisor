@@ -352,6 +352,61 @@ def test_failed_process_attempt_records_terminal_state(tmp_path: Path) -> None:
     assert payload["transition"]["acceptance"]["accepted"] is False
     assert Path(payload["stdout_path"]).exists()
     assert Path(payload["stderr_path"]).exists()
+    assert _planning_integrity_failures(db_path) == ()
+
+
+def test_missing_worker_command_records_terminal_state(tmp_path: Path) -> None:
+    db_path = tmp_path / "planning.sqlite3"
+    workspace = tmp_path / "missing-worker-project"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-missing-worker",
+        "--plan-title",
+        "Missing worker",
+        "--plan-goal",
+        "Record spawn failures durably.",
+        "--task-id",
+        "task-missing-worker",
+        "--title",
+        "Run missing worker",
+        "--intent",
+        "Run a worker command that cannot be started.",
+        "--assurance",
+        "medium",
+        "--acceptance",
+        "Worker command starts",
+        "--json",
+    )
+
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-missing-worker",
+        "--attempt-id",
+        "attempt-missing-worker",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--json",
+        "--",
+        "definitely-not-a-real-worker-command-for-codex-supervisor",
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["exit_code"] == 1
+    assert payload["transition"]["task_status"] == "blocked"
+    assert payload["transition"]["attempt"]["status"] == "failed"
+    assert payload["transition"]["acceptance"]["accepted"] is False
+    assert "Could not start worker process" in payload["transition"]["attempt"]["summary"]
+    assert _planning_integrity_failures(db_path) == ()
 
 
 def test_failed_process_attempt_forces_acceptance_results_to_fail(tmp_path: Path) -> None:
@@ -417,6 +472,77 @@ def test_failed_process_attempt_forces_acceptance_results_to_fail(tmp_path: Path
     ]
     assert "acceptance: Command succeeds = fail" in checks
     assert "acceptance: Command succeeds = pass" not in checks
+    assert _planning_integrity_failures(db_path) == ()
+
+
+def test_missing_declared_artifact_blocks_supplied_passing_acceptance(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "planning.sqlite3"
+    workspace = tmp_path / "missing-artifact-project"
+    missing_artifact = workspace / "missing.txt"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-missing-artifact",
+        "--plan-title",
+        "Missing artifact",
+        "--plan-goal",
+        "Worker output artifacts must be proven before acceptance.",
+        "--task-id",
+        "task-missing-artifact",
+        "--title",
+        "Require artifact",
+        "--intent",
+        "Run a worker command that exits cleanly without writing the declared artifact.",
+        "--assurance",
+        "medium",
+        "--acceptance",
+        "missing.txt exists",
+        "--json",
+    )
+
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-missing-artifact",
+        "--attempt-id",
+        "attempt-missing-artifact",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--check",
+        "Caller claimed the file exists.",
+        "--artifact",
+        str(missing_artifact),
+        "--acceptance-result",
+        "missing.txt exists=pass",
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        "print('worker did not create the declared artifact')",
+    )
+
+    payload = json.loads(completed.stdout)
+    checks = payload["transition"]["evidence"]["checks"]
+    assert payload["exit_code"] == 0
+    assert payload["transition"]["task_status"] == "blocked"
+    assert payload["transition"]["attempt"]["status"] == "succeeded"
+    assert payload["transition"]["acceptance"]["accepted"] is False
+    assert "missing.txt exists" in payload["transition"]["acceptance"][
+        "failed_acceptance_criteria"
+    ]
+    assert f"missing artifact: {missing_artifact}" in checks
+    assert "acceptance: missing.txt exists = fail" in checks
+    assert _planning_integrity_failures(db_path) == ()
 
 
 def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:

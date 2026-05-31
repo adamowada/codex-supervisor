@@ -24,6 +24,10 @@ The active MCP operation is read-only queue inspection:
 codex_supervisor.queue_next
 ```
 
+MCP queue inspection uses an explicit planning path. Set `CODEX_SUPERVISOR_PLANNING_PATH` when the
+launcher should bind the MCP server to one workspace ledger; otherwise pass the `path` argument on
+the tool call. The server does not silently fall back to the source repository ledger.
+
 When the plugin is launched from the source tree, the launcher finds the repository automatically.
 When launched from the installed Codex cache, it resolves the source repository from
 `CODEX_HOME/config.toml` and the configured `codex-supervisor-local` marketplace. Set
@@ -33,4 +37,5 @@ For full AFK work in a fresh folder, initialize `.codex-supervisor/planning.sqli
 task intent, and run the worker through `attempt-run`. The worker receives the durable assignment at
 `CODEX_SUPERVISOR_TASK_JSON`; stdout, stderr, command metadata, assignment metadata, artifacts,
 checks, risks, and acceptance results are recorded through the same evidence path. Failed worker
-processes cannot record supplied passing acceptance results as passing evidence.
+processes cannot record supplied passing acceptance results as passing evidence, and declared output
+artifacts must exist before supplied passing acceptance can remain passing.

@@ -43,16 +43,18 @@ helpers, evidence attachment, and planning integrity checks for attempt/evidence
 Stage 4 is implemented in `src/codex_supervisor/small_interface.py`. The active CLI includes
 `task-create` for durable task intent, `queue-next` for inspection, and `attempt-transition` for
 manual mutation. `plan-init` exists to create the compact schema. `queue-next` has one meaning: the
-next ready task in the active queue. `attempt-transition` is the manual write path for attempts,
-evidence, and acceptance.
+next operational task in the active queue, with running work surfaced before ready work.
+`attempt-transition` is the manual write path for attempts, evidence, and acceptance.
 
 Stage 5 is implemented in `src/codex_supervisor/process_attempt.py`. `attempt-run` is the generic
 AFK process path: it writes a task assignment JSON for the worker, passes it as
 `CODEX_SUPERVISOR_TASK_JSON`, runs one command in an explicit workspace, records stdout, stderr,
 command metadata, assignment metadata, exit code, artifacts, checks, risks, gaps, and acceptance
 results, then terminalizes the attempt through the same acceptance policy path. Failed worker
-processes cannot leave supplied passing acceptance results as passing evidence. Work categories
-remain task intent and acceptance criteria, not supervisor job types.
+processes cannot leave supplied passing acceptance results as passing evidence. Process launch
+failures, missing declared artifacts, and telemetry write failures become durable terminal evidence
+instead of stranded running attempts. Work categories remain task intent and acceptance criteria,
+not supervisor job types.
 
 The happy path is now locked by scenario tests: a fresh workspace can initialize a workspace-local
 ledger, create a task, run one worker process through `attempt-run`, record assignment/process
@@ -83,7 +85,9 @@ removed.
 
 The package has been cut down to the compact implementation modules. Attempt transitions validate
 task ownership, planning integrity checks open work per active plan, and the attempt store prevents
-multiple non-terminal attempts for a task. Surviving queue read SQL lives in `AttemptStore`.
+multiple non-terminal attempts for a task. The attempt store enforces one active plan, reactivates
+blocked work through the same retry path, and atomically writes terminal attempt evidence before task
+status changes. Surviving queue read SQL lives in `AttemptStore`.
 
 Repo-local skills now include:
 
@@ -109,9 +113,9 @@ the answer as run posture rather than another persistent mode axis.
 ## Next Action
 
 All roadmap stages, compact contract repair, live-surface simplification, generic AFK process
-execution, plugin workspace-default repair, happy-path e2e coverage, and repo-local
-complexity-reduction skill work, including calibration, are complete. The related plans are marked
-`done` in `plans/planning.sqlite3`.
+execution, plugin workspace-default repair, happy-path e2e coverage, factory-state hardening, and
+repo-local complexity-reduction skill work, including calibration, are complete. The related plans
+are marked `done` in `plans/planning.sqlite3`.
 
 Planning task:
 

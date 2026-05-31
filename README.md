@@ -50,7 +50,8 @@ The active product surface is intentionally narrow and generic:
 3. Bounded repo-local operating and refactoring skills.
 4. Five compact CLI commands: `plan-init`, `task-create`, `queue-next`, `attempt-transition`, and
    `attempt-run`.
-5. One read-only MCP adapter operation: `codex_supervisor.queue_next`.
+5. One read-only MCP adapter operation: `codex_supervisor.queue_next`, with an explicit planning
+   path.
 6. One thin Codex plugin wrapper that starts the MCP stdio server and forwards Desktop CLI calls to
    the source CLI, defaulting omitted planning paths to the current workspace ledger.
 7. A focused verification gate.
@@ -60,7 +61,12 @@ assignment to `CODEX_SUPERVISOR_TASK_JSON`, and records stdout, stderr, command 
 assignment metadata, artifacts, checks, risks, and acceptance through the same attempt/evidence path
 as manual transitions. It is not a job type taxonomy; starting a project, fixing a bug, or running a
 review are task intents plus process attempts. Failed worker processes cannot leave supplied passing
-acceptance results behind as passing evidence.
+acceptance results behind as passing evidence, and declared output artifacts must exist before
+supplied passing acceptance can remain passing.
+
+`queue-next` inspects the next operational item in the active queue. Running work is surfaced before
+ready work so a supervisor can finish, block, or recover an in-flight attempt instead of silently
+starting something else.
 
 The plugin is packaging, not a second control plane. New CLI, MCP, plugin, automation, and worker
 surfaces are added one generic operation at a time after the core model proves the shape.

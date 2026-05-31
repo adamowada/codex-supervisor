@@ -153,26 +153,23 @@ def attempt_transition(
         attempt = _start_or_create_running_attempt(store, task_id, executor, summary, attempt_id)
         return _transition_result(store, task, attempt, None, None)
 
-    attempt = _terminal_attempt(store, task_id, target_status, summary, attempt_id)
-    evidence = store.attach_evidence_bundle(
-        task_id=task_id,
-        attempt_id=attempt.attempt_id,
-        assurance=task.assurance,
-        summary=summary,
-        checks=_evidence_check_strings(
-            checks=checks,
-            acceptance_results=acceptance_results,
-            risks=risks,
-            gaps=gaps,
-            next_actions=next_actions,
-            review_evidence=review_evidence,
-        ),
-        artifacts=artifacts,
+    terminal_attempt_id = _terminal_attempt_id(store, task_id, attempt_id)
+    evidence_checks = _evidence_check_strings(
+        checks=checks,
+        acceptance_results=acceptance_results,
+        risks=risks,
+        gaps=gaps,
+        next_actions=next_actions,
+        review_evidence=review_evidence,
     )
     evaluation = _evaluate_transition(
         task,
-        attempt,
-        evidence,
+        task_id=task_id,
+        attempt_id=terminal_attempt_id,
+        attempt_status=target_status,
+        evidence_summary=summary,
+        evidence_checks=evidence_checks,
+        evidence_artifacts=artifacts,
         checks=checks,
         acceptance_results=acceptance_results,
         risks=risks,
@@ -182,10 +179,19 @@ def attempt_transition(
     )
     task_status = (
         "done"
-        if attempt.status is RunAttemptStatus.SUCCEEDED and evaluation.accepted
+        if target_status is RunAttemptStatus.SUCCEEDED and evaluation.accepted
         else "blocked"
     )
-    store.update_task_status(task_id, task_status)
+    attempt, evidence = store.finalize_attempt(
+        terminal_attempt_id,
+        task_id=task_id,
+        status=target_status,
+        summary=summary,
+        task_status=task_status,
+        assurance=task.assurance,
+        checks=evidence_checks,
+        artifacts=artifacts,
+    )
     return _transition_result(store, task, attempt, evidence, evaluation)
 
 
@@ -214,31 +220,34 @@ def _start_or_create_running_attempt(
         return store.start_attempt(created.attempt_id, task_id=task_id, summary=summary)
 
 
-def _terminal_attempt(
+def _terminal_attempt_id(
     store: AttemptStore,
     task_id: str,
-    target_status: RunAttemptStatus,
-    summary: str,
     attempt_id: str | None,
-) -> RunAttempt:
+) -> str:
     if attempt_id is None:
         active = store.list_active_attempts(task_id)
         if len(active) != 1:
             raise ValueError("terminal transitions require exactly one active attempt")
-        attempt_id = active[0].attempt_id
-    return store.complete_attempt(
-        attempt_id,
-        task_id=task_id,
-        status=target_status,
-        summary=summary,
-    )
+        return active[0].attempt_id
+    attempt = store.read_attempt(attempt_id)
+    if attempt.task_id != task_id:
+        raise ValueError(
+            f"attempt {attempt.attempt_id!r} belongs to task {attempt.task_id!r}, "
+            f"not {task_id!r}"
+        )
+    return attempt.attempt_id
 
 
 def _evaluate_transition(
     task: TaskRecord,
-    attempt: RunAttempt,
-    evidence: AttemptEvidence,
     *,
+    task_id: str,
+    attempt_id: str,
+    attempt_status: RunAttemptStatus,
+    evidence_summary: str,
+    evidence_checks: tuple[str, ...],
+    evidence_artifacts: tuple[str, ...],
     checks: tuple[str, ...],
     acceptance_results: dict[str, bool] | None,
     risks: tuple[str, ...],
@@ -257,17 +266,17 @@ def _evaluate_transition(
             review_required=bool(review_evidence),
         ),
         AttemptRecord(
-            attempt_id=attempt.attempt_id,
-            task_id=attempt.task_id,
-            status=attempt.status.value,
+            attempt_id=attempt_id,
+            task_id=task_id,
+            status=attempt_status.value,
         ),
         EvidenceBundle(
-            task_id=evidence.task_id,
-            attempt_id=evidence.attempt_id or "",
-            summary=evidence.summary,
+            task_id=task_id,
+            attempt_id=attempt_id,
+            summary=evidence_summary,
             checks=focused_checks,
             strict_checks=strict_checks,
-            artifacts=evidence.artifacts,
+            artifacts=evidence_artifacts,
             acceptance_results=acceptance_results,
             risks=risks,
             gaps=gaps,

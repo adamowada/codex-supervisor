@@ -11,6 +11,7 @@ from pathlib import Path
 
 PLUGIN_NAME = "codex-supervisor"
 SOURCE_ENV_VAR = "CODEX_SUPERVISOR_REPO_ROOT"
+PLANNING_PATH_ENV_VAR = "CODEX_SUPERVISOR_PLANNING_PATH"
 
 
 def main() -> int:
@@ -23,20 +24,17 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    command = (
-        "uv",
-        "run",
-        "--no-sync",
-        "python",
+    command = [
+        sys.executable,
         "-B",
         "-m",
         "codex_supervisor.mcp_stdio",
-    )
-    try:
-        completed = subprocess.run(command, cwd=repo_root, check=False)
-    except FileNotFoundError:
-        print("Could not start codex-supervisor MCP: uv is not on PATH.", file=sys.stderr)
-        return 1
+    ]
+    planning_path = os.environ.get(PLANNING_PATH_ENV_VAR)
+    if planning_path and planning_path.strip():
+        command.extend(("--planning-path", planning_path.strip()))
+    env = _pythonpath_env(repo_root, os.environ)
+    completed = subprocess.run(tuple(command), cwd=repo_root, env=env, check=False)
     return completed.returncode
 
 
@@ -72,8 +70,15 @@ def _is_repo_root(candidate: Path) -> bool:
     return (
         (candidate / "pyproject.toml").is_file()
         and (candidate / "src" / "codex_supervisor").is_dir()
-        and (candidate / "plans" / "planning.sqlite3").is_file()
     )
+
+
+def _pythonpath_env(repo_root: Path, environ: Mapping[str, str]) -> dict[str, str]:
+    env = dict(environ)
+    src_path = str(repo_root / "src")
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = src_path if not existing else src_path + os.pathsep + existing
+    return env
 
 
 def _cache_info(plugin_root: Path, environ: Mapping[str, str]) -> tuple[Path, str] | None:

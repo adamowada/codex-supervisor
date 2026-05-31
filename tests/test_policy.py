@@ -125,12 +125,12 @@ def test_high_assurance_accepts_task_attempt_and_evidence_records() -> None:
     assert evaluation.accepted is True
 
 
-def test_medium_and_high_require_a_succeeded_attempt_when_attempt_is_supplied() -> None:
+def test_attempt_acceptance_requires_a_succeeded_attempt_when_attempt_is_supplied() -> None:
     evaluation = evaluate_task_attempt_acceptance(
         TaskIntent(
             task_id="task-1",
             intent="Implement policy core",
-            assurance=AssuranceLevel.MEDIUM,
+            assurance=AssuranceLevel.LOW,
             acceptance_criteria=("Policy exists",),
         ),
         AttemptRecord(
@@ -142,9 +142,8 @@ def test_medium_and_high_require_a_succeeded_attempt_when_attempt_is_supplied() 
             task_id="task-1",
             attempt_id="attempt-1",
             summary="Policy module added.",
-            checks=("pytest tests/test_policy.py",),
-            artifacts=("src/codex_supervisor/policy.py",),
-            acceptance_results={"Policy exists": True},
+            gaps=("Worker did not complete the task.",),
+            next_actions=("Retry with a working command.",),
         ),
     )
 

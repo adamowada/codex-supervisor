@@ -37,20 +37,18 @@ def main(argv: list[str] | None = None) -> int:
         invocation_cwd=invocation_cwd,
     )
     command = (
-        "uv",
-        "run",
-        "--no-sync",
-        "python",
+        sys.executable,
         "-B",
         "-m",
         "codex_supervisor.cli",
         *cli_args,
     )
-    try:
-        completed = subprocess.run(command, cwd=repo_root, check=False)
-    except FileNotFoundError:
-        print("Could not start codex-supervisor CLI: uv is not on PATH.", file=sys.stderr)
-        return 1
+    completed = subprocess.run(
+        command,
+        cwd=repo_root,
+        env=_pythonpath_env(repo_root, os.environ),
+        check=False,
+    )
     return completed.returncode
 
 
@@ -73,6 +71,14 @@ def _with_workspace_database_default(
         return tuple(argv)
     database_path = invocation_cwd / ".codex-supervisor" / "planning.sqlite3"
     return (command, "--path", str(database_path), *argv[1:])
+
+
+def _pythonpath_env(repo_root: Path, environ: dict[str, str]) -> dict[str, str]:
+    env = dict(environ)
+    src_path = str(repo_root / "src")
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = src_path if not existing else src_path + os.pathsep + existing
+    return env
 
 
 if __name__ == "__main__":

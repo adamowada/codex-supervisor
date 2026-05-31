@@ -93,7 +93,7 @@ LOW_POLICY = AssurancePolicy(
     require_risk_or_gap_notes=True,
     require_risk_notes=False,
     require_next_action=True,
-    require_succeeded_attempt=False,
+    require_succeeded_attempt=True,
     require_review_when_requested=False,
 )
 

@@ -511,6 +511,102 @@ def test_verifier_failure_blocks_supplied_passing_acceptance(tmp_path: Path) -> 
     assert _planning_integrity_failures(db_path) == ()
 
 
+def test_process_attempt_capture_is_utf8_error_tolerant(tmp_path: Path) -> None:
+    db_path = tmp_path / "planning.sqlite3"
+    workspace = tmp_path / "encoding-project"
+    project_file = workspace / "result.txt"
+    verifier_file = workspace / ".codex-supervisor" / "verify.py"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-encoding",
+        "--plan-title",
+        "Encoding capture",
+        "--plan-goal",
+        "Capture worker and verifier output without locale-dependent crashes.",
+        "--task-id",
+        "task-encoding",
+        "--title",
+        "Capture output",
+        "--intent",
+        "Run worker and verifier commands that emit bytes outside valid UTF-8.",
+        "--assurance",
+        "high",
+        "--acceptance",
+        "result.txt exists",
+        "--json",
+    )
+    _write_text_verifier(
+        verifier_file,
+        (
+            "import sys\n"
+            "content = Path('result.txt').read_text(encoding='utf-8')\n"
+            "if content != 'done\\n':\n"
+            "    raise SystemExit(4)\n"
+            "sys.stdout.buffer.write(b'verifier stdout: \\xff\\n')\n"
+            "sys.stderr.buffer.write(b'verifier stderr: \\xfe\\n')\n"
+        ),
+    )
+
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-encoding",
+        "--attempt-id",
+        "attempt-encoding",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--artifact",
+        str(project_file),
+        "--verify-command",
+        _shell_command((sys.executable, "-B", str(verifier_file))),
+        "--acceptance-result",
+        "pass",
+        "--risk",
+        "Output bytes are captured with replacement for invalid UTF-8.",
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        (
+            "import sys; "
+            "from pathlib import Path; "
+            "Path('result.txt').write_text('done\\n', encoding='utf-8'); "
+            "sys.stdout.buffer.write(b'worker stdout: \\xff\\n'); "
+            "sys.stderr.buffer.write(b'worker stderr: \\xfe\\n')"
+        ),
+    )
+
+    payload = json.loads(completed.stdout)
+
+    assert payload["exit_code"] == 0
+    assert payload["verifier_exit_code"] == 0
+    assert payload["transition"]["task_status"] == "done"
+    assert payload["transition"]["attempt"]["status"] == "succeeded"
+    assert payload["transition"]["acceptance"]["accepted"] is True
+    assert "worker stdout: \ufffd" in Path(payload["stdout_path"]).read_text(
+        encoding="utf-8"
+    )
+    assert "worker stderr: \ufffd" in Path(payload["stderr_path"]).read_text(
+        encoding="utf-8"
+    )
+    assert "verifier stdout: \ufffd" in Path(
+        payload["verifier_stdout_path"]
+    ).read_text(encoding="utf-8")
+    assert "verifier stderr: \ufffd" in Path(
+        payload["verifier_stderr_path"]
+    ).read_text(encoding="utf-8")
+    assert _planning_integrity_failures(db_path) == ()
+
+
 def test_failed_process_attempt_forces_acceptance_results_to_fail(tmp_path: Path) -> None:
     db_path = tmp_path / "planning.sqlite3"
     workspace = tmp_path / "failed-acceptance-project"

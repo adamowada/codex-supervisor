@@ -12,6 +12,13 @@ from pathlib import Path
 from codex_supervisor.small_interface import AttemptTransitionResult, attempt_transition
 
 
+_TEXT_CAPTURE = {
+    "text": True,
+    "encoding": "utf-8",
+    "errors": "replace",
+}
+
+
 @dataclass(frozen=True)
 class ProcessAttemptResult:
     """Result for a process attempt and its recorded transition."""
@@ -110,6 +117,8 @@ def run_process_attempt(
     verifier_stderr = ""
     verifier_skipped_reason: str | None = None
     env = os.environ.copy()
+    env.setdefault("PYTHONUTF8", "1")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
     env.update(
         {
             "CODEX_SUPERVISOR_TASK_ID": task_id,
@@ -123,14 +132,14 @@ def run_process_attempt(
             command,
             cwd=workspace,
             env=env,
-            text=True,
             capture_output=True,
             timeout=timeout_seconds,
             check=False,
+            **_TEXT_CAPTURE,
         )
         exit_code = completed.returncode
-        stdout = completed.stdout
-        stderr = completed.stderr
+        stdout = _coerce_output(completed.stdout)
+        stderr = _coerce_output(completed.stderr)
         terminal_status = "succeeded" if exit_code == 0 else "failed"
         terminal_summary = f"{run_summary} Exit code: {exit_code}."
     except subprocess.TimeoutExpired as exc:
@@ -176,15 +185,15 @@ def run_process_attempt(
                     verifier_command,
                     cwd=workspace,
                     env=env,
-                    text=True,
                     capture_output=True,
                     timeout=timeout_seconds,
                     check=False,
                     shell=True,
+                    **_TEXT_CAPTURE,
                 )
                 verifier_exit_code = verifier.returncode
-                verifier_stdout = verifier.stdout
-                verifier_stderr = verifier.stderr
+                verifier_stdout = _coerce_output(verifier.stdout)
+                verifier_stderr = _coerce_output(verifier.stderr)
                 if verifier_exit_code != 0:
                     terminal_status = "failed"
                 terminal_summary = (

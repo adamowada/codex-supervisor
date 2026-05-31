@@ -59,6 +59,11 @@ use the durable supervisor flow. Do not treat simple work as exempt.
 3. You **MUST attach evidence** that names checks and artifacts.
 4. You **MUST finish with an acceptance decision** or a blocked state.
 
+When terminalizing an attempt, if the task has exactly one acceptance criterion, you **MUST** use
+`--acceptance-result pass` or `--acceptance-result fail`. You **MUST NOT** invent a result name.
+Named acceptance results are only for multiple criteria, and each name **MUST** exactly match an
+acceptance criterion.
+
 In a fresh workspace, you **MUST run `plan-init` before any queue inspection** to create
 `.codex-supervisor/planning.sqlite3`. You **MUST NOT run `queue-next` before `plan-init`** in an
 empty folder.

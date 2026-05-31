@@ -22,6 +22,10 @@ class ProcessAttemptResult:
     assignment_path: str
     stdout_path: str
     stderr_path: str
+    verifier_command: str | None
+    verifier_exit_code: int | None
+    verifier_stdout_path: str | None
+    verifier_stderr_path: str | None
     transition: AttemptTransitionResult
 
 
@@ -31,6 +35,7 @@ def run_process_attempt(
     task_id: str,
     workspace: Path,
     command: tuple[str, ...],
+    verifier_command: str | None = None,
     attempt_id: str | None = None,
     executor: str = "codex",
     timeout_seconds: int = 300,
@@ -47,6 +52,8 @@ def run_process_attempt(
 
     if not command:
         raise ValueError("command must include at least one argument")
+    if verifier_command is not None and not verifier_command.strip():
+        raise ValueError("verifier_command cannot be blank")
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
 
@@ -74,6 +81,13 @@ def run_process_attempt(
     stdout_path = evidence_dir / f"{recorded_attempt_id}-stdout.txt"
     stderr_path = evidence_dir / f"{recorded_attempt_id}-stderr.txt"
     command_path = evidence_dir / f"{recorded_attempt_id}-command.json"
+    verifier_command_path: Path | None = None
+    verifier_stdout_path: Path | None = None
+    verifier_stderr_path: Path | None = None
+    if verifier_command is not None:
+        verifier_command_path = evidence_dir / f"{recorded_attempt_id}-verifier-command.json"
+        verifier_stdout_path = evidence_dir / f"{recorded_attempt_id}-verifier-stdout.txt"
+        verifier_stderr_path = evidence_dir / f"{recorded_attempt_id}-verifier-stderr.txt"
     assignment_payload = {
         "task": running.task,
         "attempt": running.attempt,
@@ -91,6 +105,10 @@ def run_process_attempt(
     stderr = ""
     terminal_status = "failed"
     terminal_summary = run_summary
+    verifier_exit_code: int | None = None
+    verifier_stdout = ""
+    verifier_stderr = ""
+    verifier_skipped_reason: str | None = None
     env = os.environ.copy()
     env.update(
         {
@@ -146,6 +164,78 @@ def run_process_attempt(
         if command_error is not None:
             telemetry_errors.append(f"could not write command metadata: {command_error}")
 
+    if verifier_command is not None:
+        if exit_code != 0:
+            verifier_skipped_reason = f"worker exit code was {exit_code}"
+            terminal_summary = (
+                f"{terminal_summary} Verifier skipped because {verifier_skipped_reason}."
+            )
+        else:
+            try:
+                verifier = subprocess.run(
+                    verifier_command,
+                    cwd=workspace,
+                    env=env,
+                    text=True,
+                    capture_output=True,
+                    timeout=timeout_seconds,
+                    check=False,
+                    shell=True,
+                )
+                verifier_exit_code = verifier.returncode
+                verifier_stdout = verifier.stdout
+                verifier_stderr = verifier.stderr
+                if verifier_exit_code != 0:
+                    terminal_status = "failed"
+                terminal_summary = (
+                    f"{terminal_summary} Verifier exit code: {verifier_exit_code}."
+                )
+            except subprocess.TimeoutExpired as exc:
+                verifier_exit_code = 1
+                verifier_stdout = _coerce_output(exc.stdout)
+                verifier_stderr = _coerce_output(exc.stderr)
+                terminal_status = "failed"
+                terminal_summary = (
+                    f"{terminal_summary} Verifier timed out after {timeout_seconds} seconds."
+                )
+            except OSError as exc:
+                verifier_exit_code = 1
+                verifier_stderr = str(exc)
+                terminal_status = "failed"
+                terminal_summary = f"{terminal_summary} Could not start verifier: {exc}."
+
+        if verifier_stdout_path is not None:
+            verifier_stdout_error = _write_text(verifier_stdout_path, verifier_stdout)
+            if verifier_stdout_error is not None:
+                telemetry_errors.append(
+                    f"could not write verifier stdout metadata: {verifier_stdout_error}"
+                )
+        if verifier_stderr_path is not None:
+            verifier_stderr_error = _write_text(verifier_stderr_path, verifier_stderr)
+            if verifier_stderr_error is not None:
+                telemetry_errors.append(
+                    f"could not write verifier stderr metadata: {verifier_stderr_error}"
+                )
+        if verifier_command_path is not None:
+            verifier_command_error = _write_text(
+                verifier_command_path,
+                json.dumps(
+                    {
+                        "command": verifier_command,
+                        "workspace": str(workspace),
+                        "timeout_seconds": timeout_seconds,
+                        "exit_code": verifier_exit_code,
+                        "skipped_reason": verifier_skipped_reason,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                ),
+            )
+            if verifier_command_error is not None:
+                telemetry_errors.append(
+                    f"could not write verifier command metadata: {verifier_command_error}"
+                )
+
     missing_artifacts = _missing_declared_artifacts(artifacts, workspace=workspace)
     if missing_artifacts:
         terminal_summary = (
@@ -160,10 +250,25 @@ def run_process_attempt(
         str(assignment_path),
         str(stdout_path),
         str(stderr_path),
+        *(
+            str(path)
+            for path in (verifier_command_path, verifier_stdout_path, verifier_stderr_path)
+            if path is not None
+        ),
         *artifacts,
     )
     recorded_checks = (
         f"process exit code: {exit_code}",
+        *(
+            (f"verifier exit code: {verifier_exit_code}",)
+            if verifier_exit_code is not None
+            else ()
+        ),
+        *(
+            (f"verifier skipped: {verifier_skipped_reason}",)
+            if verifier_skipped_reason is not None
+            else ()
+        ),
         *(f"missing artifact: {artifact}" for artifact in missing_artifacts),
         *(f"telemetry warning: {error}" for error in telemetry_errors),
         *checks,
@@ -192,6 +297,12 @@ def run_process_attempt(
         next_actions=next_actions,
         review_evidence=review_evidence,
     )
+    verifier_stdout_path_string = (
+        str(verifier_stdout_path) if verifier_stdout_path is not None else None
+    )
+    verifier_stderr_path_string = (
+        str(verifier_stderr_path) if verifier_stderr_path is not None else None
+    )
     return ProcessAttemptResult(
         command=command,
         workspace=str(workspace),
@@ -199,6 +310,10 @@ def run_process_attempt(
         assignment_path=str(assignment_path),
         stdout_path=str(stdout_path),
         stderr_path=str(stderr_path),
+        verifier_command=verifier_command,
+        verifier_exit_code=verifier_exit_code,
+        verifier_stdout_path=verifier_stdout_path_string,
+        verifier_stderr_path=verifier_stderr_path_string,
         transition=transition,
     )
 

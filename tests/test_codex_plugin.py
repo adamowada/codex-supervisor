@@ -42,6 +42,8 @@ def test_plugin_contains_desktop_skill_entrypoint() -> None:
     assert "plan-init" in content
     assert "attempt-run" in content
     assert "MUST use `attempt-run`" in content
+    assert "full AFK" in content
+    assert "`--assurance high`" in content
     assert "MUST use the plugin CLI launcher" in content
     assert "MUST default to the current workspace ledger" in content
     assert "MUST NOT run `queue-next` before `plan-init`" in content

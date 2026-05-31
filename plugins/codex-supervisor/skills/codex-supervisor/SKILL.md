@@ -62,7 +62,11 @@ empty folder.
 
 For full AFK or worker-style execution, you **MUST use `attempt-run`**. The worker process receives
 the task assignment through `CODEX_SUPERVISOR_TASK_JSON`, plus task, attempt, and workspace env vars.
-Record declared artifacts, checks, acceptance results, and risk notes on the `attempt-run` call.
+For full AFK, autonomous worker, unattended worker, or worker-assigned file mutation, you **MUST
+create the task with `--assurance high`** unless the user explicitly requests a lower assurance
+level. Record declared artifacts, checks, acceptance results, and risk notes on the `attempt-run`
+call. When acceptance depends on file contents or other machine-checkable facts, use
+`--verify-command` so passing acceptance is backed by an independent verifier.
 Failed worker processes **MUST NOT** leave passing acceptance evidence.
 Declared output artifacts **MUST exist** before supplied passing acceptance can remain passing.
 

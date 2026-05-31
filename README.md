@@ -58,11 +58,12 @@ The active product surface is intentionally narrow and generic:
 
 `task-create` records work intent. `attempt-run` runs one process in a workspace, writes the worker
 assignment to `CODEX_SUPERVISOR_TASK_JSON`, and records stdout, stderr, command metadata,
-assignment metadata, artifacts, checks, risks, and acceptance through the same attempt/evidence path
-as manual transitions. It is not a job type taxonomy; starting a project, fixing a bug, or running a
-review are task intents plus process attempts. Failed worker processes cannot leave supplied passing
-acceptance results behind as passing evidence, and declared output artifacts must exist before
-supplied passing acceptance can remain passing.
+assignment metadata, artifacts, checks, risks, optional verifier results, and acceptance through the
+same attempt/evidence path as manual transitions. It is not a job type taxonomy; starting a project,
+fixing a bug, or running a review are task intents plus process attempts. Failed worker processes
+and failed verifier commands cannot leave supplied passing acceptance results behind as passing
+evidence, and declared output artifacts must exist before supplied passing acceptance can remain
+passing.
 
 `queue-next` inspects the next operational item in the active queue. Running work is surfaced before
 ready work so a supervisor can finish, block, or recover an in-flight attempt instead of silently

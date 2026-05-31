@@ -36,6 +36,7 @@ When launched from the installed Codex cache, it resolves the source repository 
 For full AFK work in a fresh folder, initialize `.codex-supervisor/planning.sqlite3`, create one
 task intent, and run the worker through `attempt-run`. The worker receives the durable assignment at
 `CODEX_SUPERVISOR_TASK_JSON`; stdout, stderr, command metadata, assignment metadata, artifacts,
-checks, risks, and acceptance results are recorded through the same evidence path. Failed worker
-processes cannot record supplied passing acceptance results as passing evidence, and declared output
-artifacts must exist before supplied passing acceptance can remain passing.
+checks, optional verifier results, risks, and acceptance results are recorded through the same
+evidence path. Failed worker processes and failed verifier commands cannot record supplied passing
+acceptance results as passing evidence, and declared output artifacts must exist before supplied
+passing acceptance can remain passing.

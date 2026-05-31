@@ -25,6 +25,7 @@ The gate checks:
   invocation workspace, not the source repository.
 - e2e coverage that failed process attempts cannot record supplied passing acceptance results as
   passing evidence.
+- e2e coverage that verifier failures override supplied passing acceptance results.
 - e2e coverage that process launch failures, missing declared artifacts, retry after blocked work,
   and running queue inspection preserve durable factory state.
 - e2e coverage that installed-cache MCP queue inspection uses an explicit workspace ledger path

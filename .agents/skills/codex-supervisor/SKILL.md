@@ -17,6 +17,10 @@ TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
 
 - Keep the state space small.
 - Use assurance levels as policy: `low`, `medium`, `high`.
+- For full AFK, autonomous worker, unattended worker, or worker-assigned file mutation, create the
+  task with `--assurance high` unless the user explicitly requests a lower assurance level.
+- When acceptance depends on machine-checkable facts, use `attempt-run --verify-command` to record an
+  independent verifier result before acceptance is finalized.
 - Keep `plans/planning.sqlite3` on the schema from `PLANS.md`.
 - Keep `HANDOFF.md` current and compact.
 - Refresh protected-file hashes after intentional source-of-truth edits.

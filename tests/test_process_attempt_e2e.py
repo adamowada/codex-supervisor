@@ -55,6 +55,18 @@ def test_full_afk_process_attempt_starts_tiny_project(tmp_path: Path) -> None:
         "README.md exists in workspace",
         "--artifact",
         str(project_file),
+        "--verify-command",
+        _shell_command(
+            (
+                sys.executable,
+                "-c",
+                (
+                    "from pathlib import Path; "
+                    "content = Path('README.md').read_text(encoding='utf-8'); "
+                    "raise SystemExit(0 if content == '# Tiny Project\\n' else 3)"
+                ),
+            )
+        ),
         "--acceptance-result",
         "README.md exists=pass",
         "--risk",
@@ -71,12 +83,16 @@ def test_full_afk_process_attempt_starts_tiny_project(tmp_path: Path) -> None:
 
     payload = json.loads(completed.stdout)
     assert payload["exit_code"] == 0
+    assert payload["verifier_exit_code"] == 0
     assert payload["transition"]["task_status"] == "done"
     assert payload["transition"]["attempt"]["status"] == "succeeded"
     assert payload["transition"]["acceptance"]["accepted"] is True
+    assert "verifier exit code: 0" in payload["transition"]["evidence"]["checks"]
     assert project_file.read_text(encoding="utf-8") == "# Tiny Project\n"
     assert Path(payload["stdout_path"]).exists()
     assert Path(payload["stderr_path"]).exists()
+    assert Path(payload["verifier_stdout_path"]).exists()
+    assert Path(payload["verifier_stderr_path"]).exists()
 
     queued = json.loads(
         _run_cli("queue-next", "--path", str(db_path), "--json").stdout
@@ -409,6 +425,92 @@ def test_missing_worker_command_records_terminal_state(tmp_path: Path) -> None:
     assert _planning_integrity_failures(db_path) == ()
 
 
+def test_verifier_failure_blocks_supplied_passing_acceptance(tmp_path: Path) -> None:
+    db_path = tmp_path / "planning.sqlite3"
+    workspace = tmp_path / "bad-content-project"
+    project_file = workspace / "index.html"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-verifier-failure",
+        "--plan-title",
+        "Verifier failure",
+        "--plan-goal",
+        "Reject caller optimism when machine verification fails.",
+        "--task-id",
+        "task-verifier-failure",
+        "--title",
+        "Create plain HTML",
+        "--intent",
+        "Create index.html with a heading and no CSS.",
+        "--assurance",
+        "high",
+        "--acceptance",
+        "index.html contains no CSS",
+        "--json",
+    )
+
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-verifier-failure",
+        "--attempt-id",
+        "attempt-verifier-failure",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--check",
+        "Caller claimed index.html contains no CSS.",
+        "--artifact",
+        str(project_file),
+        "--verify-command",
+        _shell_command(
+            (
+                sys.executable,
+                "-c",
+                (
+                    "from pathlib import Path; "
+                    "html = Path('index.html').read_text(encoding='utf-8').casefold(); "
+                    "raise SystemExit(4 if '<style' in html else 0)"
+                ),
+            )
+        ),
+        "--acceptance-result",
+        "index.html contains no CSS=pass",
+        "--risk",
+        "Worker ran in an isolated temporary workspace.",
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        "from pathlib import Path; Path('index.html').write_text('<style></style>', encoding='utf-8')",
+    )
+
+    payload = json.loads(completed.stdout)
+    checks = payload["transition"]["evidence"]["checks"]
+    assert payload["exit_code"] == 0
+    assert payload["verifier_exit_code"] == 4
+    assert payload["transition"]["task_status"] == "blocked"
+    assert payload["transition"]["attempt"]["status"] == "failed"
+    assert payload["transition"]["acceptance"]["accepted"] is False
+    assert payload["transition"]["acceptance"]["failed_acceptance_criteria"] == [
+        "index.html contains no CSS"
+    ]
+    assert "verifier exit code: 4" in checks
+    assert "acceptance: index.html contains no CSS = fail" in checks
+    assert "acceptance: index.html contains no CSS = pass" not in checks
+    assert Path(payload["verifier_stdout_path"]).is_file()
+    assert Path(payload["verifier_stderr_path"]).is_file()
+    assert _planning_integrity_failures(db_path) == ()
+
+
 def test_failed_process_attempt_forces_acceptance_results_to_fail(tmp_path: Path) -> None:
     db_path = tmp_path / "planning.sqlite3"
     workspace = tmp_path / "failed-acceptance-project"
@@ -560,6 +662,10 @@ def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
         env=env,
         check=True,
     )
+
+
+def _shell_command(args: tuple[str, ...]) -> str:
+    return subprocess.list2cmdline(args)
 
 
 def _planning_integrity_failures(db_path: Path) -> tuple[str, ...]:

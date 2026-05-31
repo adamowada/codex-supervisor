@@ -89,6 +89,11 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--summary", default=None)
     run.add_argument("--check", action="append", default=[])
     run.add_argument("--artifact", action="append", default=[])
+    run.add_argument(
+        "--verify-command",
+        default=None,
+        help="Shell command to run after the worker exits; nonzero forces failure",
+    )
     run.add_argument("--acceptance-result", action="append", default=[])
     run.add_argument("--risk", action="append", default=[])
     run.add_argument("--gap", action="append", default=[])
@@ -151,6 +156,7 @@ def _dispatch(args: argparse.Namespace) -> object | None:
             timeout_seconds=args.timeout_seconds,
             summary=args.summary,
             command=_parse_command(tuple(args.process_command)),
+            verifier_command=args.verify_command,
             checks=tuple(args.check),
             artifacts=tuple(args.artifact),
             acceptance_results=_parse_acceptance_results_for_task(

@@ -37,7 +37,7 @@ describe transport.
 
 `attempt-run` is the generic AFK executor path. It starts one process in a workspace, records the
 process as a run attempt, and attaches stdout, stderr, command metadata, exit code, declared
-artifacts, checks, risks, gaps, and acceptance results as evidence.
+artifacts, checks, risks, gaps, optional verifier results, and acceptance results as evidence.
 
 Process launch, timeout, nonzero exit, missing declared artifacts, and telemetry write failures are
 terminal evidence. They must leave the task blocked or accepted through the same durable transition
@@ -50,6 +50,12 @@ requiring a supervisor job type.
 
 Declared task artifacts are verified after the process exits. A caller-supplied passing acceptance
 result is forced to failing evidence when required artifacts are missing.
+
+When content or behavior needs machine verification, `attempt-run` may run one verifier command
+after the worker exits and before the terminal transition is recorded. The verifier receives the
+same assignment environment and workspace as the worker. Its command metadata, stdout, stderr, and
+exit code become evidence. A nonzero verifier exit code fails the attempt and forces supplied
+passing acceptance results to failing evidence.
 
 ## Evidence Bundle
 

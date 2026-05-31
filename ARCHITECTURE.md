@@ -40,9 +40,9 @@ Assurance is stored task data. Policy does not infer assurance from prose.
 Execution is recorded as an attempt. Codex, manual work, shell checks, review, and future adapters
 all run attempts when they produce evidence. The generic process runner is the AFK execution path:
 it starts one worker process in a workspace, captures stdout, stderr, command metadata, exit code,
-and declared artifacts, then writes terminal evidence through the same acceptance path. Launch
-failures, timeouts, missing artifacts, and telemetry write failures become durable evidence instead
-of leaving invisible running work.
+declared artifacts, and optional verifier output, then writes terminal evidence through the same
+acceptance path. Launch failures, timeouts, verifier failures, missing artifacts, and telemetry write
+failures become durable evidence instead of leaving invisible running work.
 
 Work semantics live in task intent and worker behavior. The supervisor does not define job types for
 features, bugs, reviews, project starts, or other engineering categories.

@@ -51,12 +51,15 @@ human output.
 Stage 5 is implemented in `src/codex_supervisor/process_attempt.py`. `attempt-run` is the generic
 AFK process path: it writes a task assignment JSON for the worker, passes it as
 `CODEX_SUPERVISOR_TASK_JSON`, runs one command in an explicit workspace, records stdout, stderr,
-command metadata, assignment metadata, exit code, artifacts, checks, optional verifier output,
-risks, gaps, and acceptance results, then terminalizes the attempt through the same acceptance policy
-path. Failed worker processes and failed verifier commands cannot leave supplied passing acceptance
-results as passing evidence. Process launch failures, verifier failures, missing declared artifacts,
-and telemetry write failures become durable terminal evidence instead of stranded running attempts.
-Work categories remain task intent and acceptance criteria, not supervisor job types.
+command metadata, assignment metadata, a tiny liveness JSON with `last_output_at`, exit code,
+artifacts, checks, optional verifier output, risks, gaps, and acceptance results, then terminalizes
+the attempt through the same acceptance policy path. Failed worker processes and failed verifier
+commands cannot leave supplied passing acceptance results as passing evidence. If a worker times out,
+`attempt-run` still runs the verifier when one is supplied; a passing verifier can accept the
+original task instead of forcing a separate acceptance-only task. Process launch failures, verifier
+failures, missing declared artifacts, and telemetry write failures become durable terminal evidence
+instead of stranded running attempts. Work categories remain task intent and acceptance criteria, not
+supervisor job types.
 For full AFK or autonomous-worker product work, the supervisor may manage task intent, worker launch,
 inspection, verifier setup, evidence, and acceptance, but it does not mutate product files directly.
 Product cleanup, audit, warning, polish, or repair work is assigned through another `attempt-run`.
@@ -69,9 +72,12 @@ evidence, run a generic verifier when acceptance depends on machine-checkable fa
 criterion with `--acceptance-result pass`, and end with a clean planning database. Bare `pass` or
 `fail` is intentionally valid only for single-criterion tasks; tasks with multiple criteria must name
 criteria explicitly. When the last open task in an active plan becomes done, the plan becomes done
-too. A second scenario test covers the current follow-up model: when supervisor inspection discovers
-additional product work after a plan is done, the supervisor creates a new plan/task and assigns that
-mutation through another worker attempt.
+too. Liveness and timeout-recovery tests cover live `last_output_at` updates and verifier acceptance
+on the original timed-out task. A second scenario test covers the current follow-up model: when
+supervisor inspection discovers additional product work after a plan is done, the supervisor creates
+a new plan/task and assigns that mutation through another worker attempt. Acceptance-only follow-up
+tasks are disallowed by skill guidance; follow-up task intent is for new product work, repair,
+cleanup, audit, or polish.
 
 Stage 6 is implemented in `src/codex_supervisor/adapter_contracts.py` and the read-only MCP
 `codex_supervisor.queue_next` operation. Adapter growth is declaration-first: an operation must name
@@ -126,8 +132,9 @@ the answer as run posture rather than another persistent mode axis.
 All roadmap stages, compact contract repair, live-surface simplification, generic AFK process
 execution, plugin workspace-default repair, generic verifier evidence, Windows launch steering,
 Python-verifier happy-path coverage, factory-state hardening, and repo-local complexity-reduction
-skill work, including calibration, are complete. The related plans are marked `done` in
-`plans/planning.sqlite3`.
+skill work, including calibration, are complete. `attempt-run` now preserves a tiny liveness signal
+and can accept original tasks through verifier recovery after worker timeout. The related plans are
+marked `done` in `plans/planning.sqlite3`.
 
 Planning task:
 

@@ -5,6 +5,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -99,6 +100,194 @@ def test_full_afk_process_attempt_starts_tiny_project(tmp_path: Path) -> None:
     )
     assert queued["task"] is None
     assert queued["next_transition"] == "none"
+
+
+def test_attempt_run_updates_liveness_while_worker_runs(tmp_path: Path) -> None:
+    db_path = tmp_path / ".codex-supervisor" / "planning.sqlite3"
+    workspace = tmp_path / "live-worker-project"
+    marker = tmp_path / "release-worker"
+    output_file = workspace / "done.txt"
+    liveness_path = (
+        workspace / ".codex-supervisor" / "evidence" / "attempt-live-liveness.json"
+    )
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-live",
+        "--plan-title",
+        "Live worker",
+        "--plan-goal",
+        "Observe one autonomous worker while it runs.",
+        "--task-id",
+        "task-live",
+        "--title",
+        "Create done file",
+        "--intent",
+        "Create done.txt after the worker starts.",
+        "--assurance",
+        "medium",
+        "--acceptance",
+        "done.txt exists",
+        "--json",
+    )
+
+    worker_code = (
+        "import sys, time\n"
+        "from pathlib import Path\n"
+        "marker = Path(sys.argv[1])\n"
+        "print('worker alive', flush=True)\n"
+        "deadline = time.time() + 10\n"
+        "while not marker.exists() and time.time() < deadline:\n"
+        "    time.sleep(0.05)\n"
+        "Path('done.txt').write_text('done\\n', encoding='utf-8')\n"
+    )
+    process = subprocess.Popen(
+        _cli_command(
+            "attempt-run",
+            "--path",
+            str(db_path),
+            "--task-id",
+            "task-live",
+            "--attempt-id",
+            "attempt-live",
+            "--workspace",
+            str(workspace),
+            "--timeout-seconds",
+            "10",
+            "--artifact",
+            str(output_file),
+            "--acceptance-result",
+            "pass",
+            "--json",
+            "--",
+            sys.executable,
+            "-c",
+            worker_code,
+            str(marker),
+        ),
+        cwd=REPO_ROOT,
+        env=_cli_env(),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        live_payload = _wait_for_liveness_output(liveness_path)
+        assert live_payload["state"] == "running"
+        assert live_payload["last_output_at"] is not None
+        assert live_payload["ended_at"] is None
+        marker.write_text("release\n", encoding="utf-8")
+        stdout, stderr = process.communicate(timeout=15)
+    finally:
+        if process.poll() is None:
+            process.kill()
+
+    assert process.returncode == 0, stderr
+    payload = json.loads(stdout)
+    assert payload["transition"]["task_status"] == "done"
+    assert output_file.read_text(encoding="utf-8") == "done\n"
+    final_liveness = json.loads(liveness_path.read_text(encoding="utf-8"))
+    assert final_liveness["state"] == "succeeded"
+    assert final_liveness["last_output_at"] is not None
+    assert final_liveness["ended_at"] is not None
+
+
+def test_timeout_worker_can_be_accepted_by_verifier_on_original_task(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / ".codex-supervisor" / "planning.sqlite3"
+    workspace = tmp_path / "timeout-recovery-project"
+    project_file = workspace / "README.md"
+    verifier_file = workspace / ".codex-supervisor" / "verify.py"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-timeout-recovery",
+        "--plan-title",
+        "Timeout recovery",
+        "--plan-goal",
+        "Accept verified product state even when the worker times out.",
+        "--task-id",
+        "task-timeout-recovery",
+        "--title",
+        "Create README before hanging",
+        "--intent",
+        "Create README.md, then simulate a worker that never exits cleanly.",
+        "--assurance",
+        "high",
+        "--acceptance",
+        "README.md contains the recovered content",
+        "--json",
+    )
+    _write_text_verifier(
+        verifier_file,
+        (
+            "content = Path('README.md').read_text(encoding='utf-8')\n"
+            "if content != '# Recovered\\n':\n"
+            "    raise SystemExit(3)\n"
+            "print('timeout recovery verified')\n"
+        ),
+    )
+
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-timeout-recovery",
+        "--attempt-id",
+        "attempt-timeout-recovery",
+        "--executor",
+        "worker-process",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "2",
+        "--summary",
+        "Assign work to a worker that hangs after producing valid output.",
+        "--artifact",
+        str(project_file),
+        "--verify-command",
+        _shell_command((sys.executable, "-B", str(verifier_file))),
+        "--acceptance-result",
+        "pass",
+        "--risk",
+        "Verifier recovery accepted product state on the original task.",
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        (
+            "import time\n"
+            "from pathlib import Path\n"
+            "Path('README.md').write_text('# Recovered\\n', encoding='utf-8')\n"
+            "print('wrote README', flush=True)\n"
+            "time.sleep(10)\n"
+        ),
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["exit_code"] == 124
+    assert payload["verifier_exit_code"] == 0
+    assert payload["transition"]["task_status"] == "done"
+    assert payload["transition"]["attempt"]["status"] == "succeeded"
+    assert payload["transition"]["acceptance"]["accepted"] is True
+    assert "Timed out after 2 seconds" in payload["transition"]["attempt"]["summary"]
+    assert "Verifier exit code: 0" in payload["transition"]["attempt"]["summary"]
+    assert project_file.read_text(encoding="utf-8") == "# Recovered\n"
+    liveness = json.loads(Path(payload["liveness_path"]).read_text(encoding="utf-8"))
+    assert liveness["state"] == "timed_out"
+    assert liveness["last_output_at"] is not None
+    assert liveness["ended_at"] is not None
+    assert _planning_integrity_failures(db_path) == ()
 
 
 def test_happy_path_plain_pass_records_one_worker_attempt_and_clean_plan(
@@ -911,20 +1100,39 @@ def test_missing_declared_artifact_blocks_supplied_passing_acceptance(
 
 
 def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        _cli_command(*args),
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        timeout=15,
+        env=_cli_env(),
+        check=True,
+    )
+
+
+def _cli_command(*args: str) -> tuple[str, ...]:
+    return (sys.executable, "-B", "-m", "codex_supervisor.cli", *args)
+
+
+def _cli_env() -> dict[str, str]:
     env = os.environ.copy()
     src_path = str(REPO_ROOT / "src")
     env["PYTHONPATH"] = (
         src_path if not env.get("PYTHONPATH") else src_path + os.pathsep + env["PYTHONPATH"]
     )
-    return subprocess.run(
-        (sys.executable, "-B", "-m", "codex_supervisor.cli", *args),
-        cwd=REPO_ROOT,
-        text=True,
-        capture_output=True,
-        timeout=15,
-        env=env,
-        check=True,
-    )
+    return env
+
+
+def _wait_for_liveness_output(path: Path) -> dict[str, object]:
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        if path.exists():
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if payload.get("last_output_at") is not None:
+                return payload
+        time.sleep(0.05)
+    raise AssertionError(f"liveness output did not appear at {path}")
 
 
 def _write_text_verifier(path: Path, body: str) -> None:

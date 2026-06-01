@@ -6,7 +6,9 @@ import json
 import os
 import subprocess
 import tempfile
+import threading
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from codex_supervisor.small_interface import AttemptTransitionResult, attempt_transition
@@ -27,6 +29,7 @@ class ProcessAttemptResult:
     workspace: str
     exit_code: int
     assignment_path: str
+    liveness_path: str
     stdout_path: str
     stderr_path: str
     verifier_command: str | None
@@ -34,6 +37,14 @@ class ProcessAttemptResult:
     verifier_stdout_path: str | None
     verifier_stderr_path: str | None
     transition: AttemptTransitionResult
+
+
+@dataclass(frozen=True)
+class _WorkerProcessResult:
+    exit_code: int
+    stdout: str
+    stderr: str
+    timed_out: bool = False
 
 
 def run_process_attempt(
@@ -85,6 +96,7 @@ def run_process_attempt(
         telemetry_errors.append(f"could not create workspace evidence directory: {exc}")
         evidence_dir = Path(tempfile.mkdtemp(prefix="codex-supervisor-evidence-"))
     assignment_path = evidence_dir / f"{recorded_attempt_id}-assignment.json"
+    liveness_path = evidence_dir / f"{recorded_attempt_id}-liveness.json"
     stdout_path = evidence_dir / f"{recorded_attempt_id}-stdout.txt"
     stderr_path = evidence_dir / f"{recorded_attempt_id}-stderr.txt"
     command_path = evidence_dir / f"{recorded_attempt_id}-command.json"
@@ -110,6 +122,7 @@ def run_process_attempt(
     exit_code = 1
     stdout = ""
     stderr = ""
+    worker_timed_out = False
     terminal_status = "failed"
     terminal_summary = run_summary
     verifier_exit_code: int | None = None
@@ -128,30 +141,28 @@ def run_process_attempt(
         }
     )
     try:
-        completed = subprocess.run(
+        completed = _run_worker_process(
             command,
-            cwd=workspace,
-            env=env,
-            capture_output=True,
-            timeout=timeout_seconds,
-            check=False,
-            **_TEXT_CAPTURE,
+            workspace=workspace,
+            environment=env,
+            timeout_seconds=timeout_seconds,
+            liveness_path=liveness_path,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
         )
-        exit_code = completed.returncode
+        exit_code = completed.exit_code
         stdout = _coerce_output(completed.stdout)
         stderr = _coerce_output(completed.stderr)
+        worker_timed_out = completed.timed_out
         terminal_status = "succeeded" if exit_code == 0 else "failed"
-        terminal_summary = f"{run_summary} Exit code: {exit_code}."
-    except subprocess.TimeoutExpired as exc:
-        stdout = _coerce_output(exc.stdout)
-        stderr = _coerce_output(exc.stderr)
-        terminal_summary = f"{run_summary} Timed out after {timeout_seconds} seconds."
+        if worker_timed_out:
+            terminal_summary = f"{run_summary} Timed out after {timeout_seconds} seconds."
+        else:
+            terminal_summary = f"{run_summary} Exit code: {exit_code}."
     except OSError as exc:
         stderr = str(exc)
         terminal_summary = f"{run_summary} Could not start worker process: {exc}."
     finally:
-        stdout_error = _write_text(stdout_path, stdout)
-        stderr_error = _write_text(stderr_path, stderr)
         command_error = _write_text(
             command_path,
             json.dumps(
@@ -160,21 +171,19 @@ def run_process_attempt(
                     "workspace": str(workspace),
                     "timeout_seconds": timeout_seconds,
                     "exit_code": exit_code,
+                    "timed_out": worker_timed_out,
                     "assignment_path": str(assignment_path),
+                    "liveness_path": str(liveness_path),
                 },
                 indent=2,
                 sort_keys=True,
             ),
         )
-        if stdout_error is not None:
-            telemetry_errors.append(f"could not write stdout metadata: {stdout_error}")
-        if stderr_error is not None:
-            telemetry_errors.append(f"could not write stderr metadata: {stderr_error}")
         if command_error is not None:
             telemetry_errors.append(f"could not write command metadata: {command_error}")
 
     if verifier_command is not None:
-        if exit_code != 0:
+        if exit_code != 0 and not worker_timed_out:
             verifier_skipped_reason = f"worker exit code was {exit_code}"
             terminal_summary = (
                 f"{terminal_summary} Verifier skipped because {verifier_skipped_reason}."
@@ -196,6 +205,8 @@ def run_process_attempt(
                 verifier_stderr = _coerce_output(verifier.stderr)
                 if verifier_exit_code != 0:
                     terminal_status = "failed"
+                elif worker_timed_out:
+                    terminal_status = "succeeded"
                 terminal_summary = (
                     f"{terminal_summary} Verifier exit code: {verifier_exit_code}."
                 )
@@ -257,6 +268,7 @@ def run_process_attempt(
     recorded_artifacts = (
         str(command_path),
         str(assignment_path),
+        str(liveness_path),
         str(stdout_path),
         str(stderr_path),
         *(
@@ -317,6 +329,7 @@ def run_process_attempt(
         workspace=str(workspace),
         exit_code=exit_code,
         assignment_path=str(assignment_path),
+        liveness_path=str(liveness_path),
         stdout_path=str(stdout_path),
         stderr_path=str(stderr_path),
         verifier_command=verifier_command,
@@ -350,6 +363,168 @@ def _coerce_output(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return value
+
+
+def _run_worker_process(
+    command: tuple[str, ...],
+    *,
+    workspace: Path,
+    environment: dict[str, str],
+    timeout_seconds: int,
+    liveness_path: Path,
+    stdout_path: Path,
+    stderr_path: Path,
+) -> _WorkerProcessResult:
+    _write_text(stdout_path, "")
+    _write_text(stderr_path, "")
+    liveness = _LivenessRecorder(liveness_path)
+    creationflags = (
+        int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
+    )
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=workspace,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=False,
+            creationflags=creationflags,
+            start_new_session=os.name != "nt",
+        )
+    except OSError:
+        liveness.finish(state="start_failed", exit_code=1)
+        raise
+    liveness.start(process.pid)
+    stdout_parts: list[bytes] = []
+    stderr_parts: list[bytes] = []
+    stdout_thread = threading.Thread(
+        target=_collect_process_pipe,
+        args=(process.stdout, stdout_path, stdout_parts, liveness),
+        daemon=True,
+    )
+    stderr_thread = threading.Thread(
+        target=_collect_process_pipe,
+        args=(process.stderr, stderr_path, stderr_parts, liveness),
+        daemon=True,
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+    timed_out = False
+    try:
+        process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        _terminate_process_tree(process)
+        process.wait()
+    stdout_thread.join(timeout=5)
+    stderr_thread.join(timeout=5)
+    exit_code = 124 if timed_out else int(process.returncode or 0)
+    liveness.finish(
+        state="timed_out" if timed_out else ("succeeded" if exit_code == 0 else "failed"),
+        exit_code=exit_code,
+    )
+    return _WorkerProcessResult(
+        exit_code=exit_code,
+        stdout=_coerce_output(b"".join(stdout_parts)),
+        stderr=_coerce_output(b"".join(stderr_parts)),
+        timed_out=timed_out,
+    )
+
+
+def _collect_process_pipe(
+    pipe: object,
+    output_path: Path,
+    output_parts: list[bytes],
+    liveness: "_LivenessRecorder",
+) -> None:
+    if pipe is None:
+        return
+    try:
+        while True:
+            chunk = pipe.readline()  # type: ignore[attr-defined]
+            if not chunk:
+                break
+            output_parts.append(chunk)
+            _append_output(output_path, chunk)
+            liveness.mark_output()
+    finally:
+        pipe.close()  # type: ignore[attr-defined]
+
+
+def _append_output(path: Path, chunk: bytes) -> None:
+    text = chunk.decode("utf-8", errors="replace")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(text)
+
+
+def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ("taskkill", "/PID", str(process.pid), "/T", "/F"),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return
+    kill_process_group = getattr(os, "killpg", None)
+    if callable(kill_process_group):
+        try:
+            kill_process_group(process.pid, 15)
+            return
+        except OSError:
+            pass
+    process.terminate()
+
+
+class _LivenessRecorder:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.started_at = _utc_now()
+        self.last_output_at: str | None = None
+        self.ended_at: str | None = None
+        self.state = "starting"
+        self.pid: int | None = None
+        self.exit_code: int | None = None
+        self._lock = threading.Lock()
+        self._write()
+
+    def start(self, pid: int | None) -> None:
+        with self._lock:
+            self.pid = pid
+            self.state = "running"
+            self._write()
+
+    def mark_output(self) -> None:
+        with self._lock:
+            self.last_output_at = _utc_now()
+            self._write()
+
+    def finish(self, *, state: str, exit_code: int) -> None:
+        with self._lock:
+            self.state = state
+            self.exit_code = exit_code
+            self.ended_at = _utc_now()
+            self._write()
+
+    def _write(self) -> None:
+        payload = {
+            "started_at": self.started_at,
+            "last_output_at": self.last_output_at,
+            "ended_at": self.ended_at,
+            "state": self.state,
+            "pid": self.pid,
+            "exit_code": self.exit_code,
+        }
+        _write_text(self.path, json.dumps(payload, indent=2, sort_keys=True))
+
+
+def _utc_now() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _write_text(path: Path, content: str) -> str | None:

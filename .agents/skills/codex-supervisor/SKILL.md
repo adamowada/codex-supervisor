@@ -25,6 +25,9 @@ TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
   `.codex-supervisor/`.
 - When acceptance depends on machine-checkable facts, use `attempt-run --verify-command` to record an
   independent verifier result before acceptance is finalized.
+- When work already belongs to an existing task, acceptance **MUST** be recorded on that task. You
+  **MUST NOT** create acceptance-only follow-up tasks; create follow-up task intent only for new
+  product work, repair, cleanup, audit, or polish.
 - Prefer workspace Python verifiers at `.codex-supervisor/verify.py` over inline shell or
   PowerShell verifier logic.
 - Verifiers should prove behavior or structural contract. Literal string checks should only be used

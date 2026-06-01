@@ -64,6 +64,10 @@ When terminalizing an attempt, if the task has exactly one acceptance criterion,
 Named acceptance results are only for multiple criteria, and each name **MUST** exactly match an
 acceptance criterion.
 
+When work already belongs to an existing task, acceptance **MUST** be recorded on that task. You
+**MUST NOT** create acceptance-only follow-up tasks. Create follow-up task intent only for new
+product work, repair, cleanup, audit, or polish.
+
 In a fresh workspace, you **MUST run `plan-init --json` before any queue inspection** to create
 `.codex-supervisor/planning.sqlite3`. You **MUST NOT run `queue-next` before `plan-init`** in an
 empty folder.

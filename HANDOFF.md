@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-05-31
+Last updated: 2026-06-01
 
 This is the current resume snapshot.
 
@@ -79,6 +79,14 @@ a new plan/task and assigns that mutation through another worker attempt. Accept
 tasks are disallowed by skill guidance; follow-up task intent is for new product work, repair,
 cleanup, audit, or polish.
 
+The planning database has been reconciled through `c8280ad Add timeout recovery liveness`.
+`plan-ledger-currentness-20260531` reconstructs the missing records after
+`attempt-factory-state-hardening-20260531` and adds the currentness guardrail. Source-of-truth docs
+now require `HANDOFF.md` and `plans/planning.sqlite3` to move together, and
+`tests/test_simplified_contract.py` fails when `HANDOFF.md` changes without a matching planning DB
+change relative to `HEAD`. The liveness regression test also tolerates transient partial reads while
+the worker liveness JSON is being rewritten.
+
 Stage 6 is implemented in `src/codex_supervisor/adapter_contracts.py` and the read-only MCP
 `codex_supervisor.queue_next` operation. Adapter growth is declaration-first: an operation must name
 task intent, attempt behavior, evidence behavior, assurance levels, acceptance behavior, state flow,
@@ -131,10 +139,10 @@ the answer as run posture rather than another persistent mode axis.
 
 All roadmap stages, compact contract repair, live-surface simplification, generic AFK process
 execution, plugin workspace-default repair, generic verifier evidence, Windows launch steering,
-Python-verifier happy-path coverage, factory-state hardening, and repo-local complexity-reduction
-skill work, including calibration, are complete. `attempt-run` now preserves a tiny liveness signal
-and can accept original tasks through verifier recovery after worker timeout. The related plans are
-marked `done` in `plans/planning.sqlite3`.
+Python-verifier happy-path coverage, factory-state hardening, timeout-recovery liveness, ledger
+reconstruction, currentness guardrails, liveness test race repair, and repo-local
+complexity-reduction skill work, including calibration, are complete. The related plans are marked
+`done` in `plans/planning.sqlite3`.
 
 Planning task:
 

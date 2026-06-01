@@ -12,6 +12,10 @@ The planning database answers five questions:
 4. What evidence exists?
 5. What decisions shape the plan?
 
+The planning database is the durable ledger. It **MUST** be current whenever `HANDOFF.md` is current.
+Work that changes the repository's current state, completion evidence, or next action **MUST** update
+`plans/planning.sqlite3` and `HANDOFF.md` together.
+
 ## Schema
 
 ### `meta`
@@ -122,3 +126,10 @@ Durable product or architecture decisions.
 
 Add a table when repeated queries need it. Until then, store task acceptance, evidence details, and
 attempt metadata in structured JSON fields attached to the core tables.
+
+## Currentness Rule
+
+`HANDOFF.md` is the readable resume snapshot. `plans/planning.sqlite3` is the durable resume ledger.
+They **MUST** move together: editing `HANDOFF.md` without updating the planning database is treated as
+missing durable evidence unless the edit is purely typographic and does not change current state,
+completed work, next action, verification evidence, or source-of-truth status.

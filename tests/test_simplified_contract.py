@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -63,3 +64,23 @@ def test_simplification_insight_exists() -> None:
     text = insight.read_text(encoding="utf-8")
     assert "TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision" in text
     assert "Assurance" in text
+
+
+def test_handoff_edits_are_paired_with_planning_database_edits() -> None:
+    changed = _changed_since_head("HANDOFF.md", "plans/planning.sqlite3")
+
+    assert "HANDOFF.md" not in changed or "plans/planning.sqlite3" in changed, (
+        "HANDOFF.md changed without plans/planning.sqlite3. Current-state handoff edits "
+        "must be paired with durable planning evidence."
+    )
+
+
+def _changed_since_head(*paths: str) -> set[str]:
+    completed = subprocess.run(
+        ("git", "diff", "--name-only", "HEAD", "--", *paths),
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    return {line.strip().replace("\\", "/") for line in completed.stdout.splitlines() if line.strip()}

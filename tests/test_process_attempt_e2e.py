@@ -1128,7 +1128,11 @@ def _wait_for_liveness_output(path: Path) -> dict[str, object]:
     deadline = time.time() + 5
     while time.time() < deadline:
         if path.exists():
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                time.sleep(0.05)
+                continue
             if payload.get("last_output_at") is not None:
                 return payload
         time.sleep(0.05)

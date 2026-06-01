@@ -64,6 +64,11 @@ Required tables:
 The database records the current queue, attempts, evidence, and decisions. Keep additional detail in
 JSON fields until a repeated access pattern earns a dedicated table.
 
+`plans/planning.sqlite3` and `HANDOFF.md` **MUST** be current together. Any change that updates
+current state, completed work, next action, verification evidence, or source-of-truth status
+**MUST** update both the planning database and `HANDOFF.md` in the same work unit. A handoff-only
+current-state edit means the durable ledger is missing evidence.
+
 ## Common Commands
 
 Use the verification gate:
@@ -103,5 +108,6 @@ uv run --no-sync codex-supervisor attempt-run --help
 - Planning SQLite passes the schema check.
 - Repo-local skill guidance matches the active model.
 - Verification passes.
-- `HANDOFF.md` names the current state and next action.
+- `HANDOFF.md` names the current state and next action, and `plans/planning.sqlite3` records the
+  same completed or active work.
 - Source locks match intentional protected-doc changes.

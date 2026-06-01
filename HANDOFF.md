@@ -63,8 +63,11 @@ supervisor job types.
 For full AFK or autonomous-worker product work, the supervisor may manage task intent, worker launch,
 inspection, verifier setup, evidence, and acceptance, but it does not mutate product files directly.
 Product cleanup, audit, warning, polish, or repair work is assigned through another `attempt-run`.
-Verifier commands should prove behavior or structural contract; literal string checks are reserved
-for tasks where literal text is itself required.
+Verifier commands must prove behavior or structural contract: builds, tests, API calls, browser
+flows, artifact existence, JSON fields, and endpoint responses are preferred. Verifiers must not
+depend on local implementation names, variable names, or incidental source snippets unless the task
+explicitly requires that exact text. Literal string checks are reserved for tasks where literal text
+is itself required.
 
 The happy path is now locked by scenario tests: a fresh workspace can initialize a workspace-local
 ledger, create a task, run one worker process through `attempt-run`, record assignment/process
@@ -85,7 +88,9 @@ The planning database has been reconciled through `c8280ad Add timeout recovery 
 now require `HANDOFF.md` and `plans/planning.sqlite3` to move together, and
 `tests/test_simplified_contract.py` fails when `HANDOFF.md` changes without a matching planning DB
 change relative to `HEAD`. The liveness regression test also tolerates transient partial reads while
-the worker liveness JSON is being rewritten.
+the worker liveness JSON is being rewritten. `plan-verifier-steering-20260601` records the
+behavior-first verifier steering hardening after the Green Book mobile-header smoke test exposed an
+overly literal local variable-name check.
 
 Stage 6 is implemented in `src/codex_supervisor/adapter_contracts.py` and the read-only MCP
 `codex_supervisor.queue_next` operation. Adapter growth is declaration-first: an operation must name
@@ -141,8 +146,9 @@ All roadmap stages, compact contract repair, live-surface simplification, generi
 execution, plugin workspace-default repair, generic verifier evidence, Windows launch steering,
 Python-verifier happy-path coverage, factory-state hardening, timeout-recovery liveness, ledger
 reconstruction, currentness guardrails, liveness test race repair, and repo-local
-complexity-reduction skill work, including calibration, are complete. The related plans are marked
-`done` in `plans/planning.sqlite3`.
+complexity-reduction skill work, including calibration, are complete. Verifier steering now uses
+MUST language to reject implementation-name and incidental-snippet checks unless exact text is part
+of the task. The related plans are marked `done` in `plans/planning.sqlite3`.
 
 Planning task:
 

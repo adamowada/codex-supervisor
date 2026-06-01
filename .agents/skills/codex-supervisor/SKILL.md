@@ -30,8 +30,11 @@ TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
   product work, repair, cleanup, audit, or polish.
 - Prefer workspace Python verifiers at `.codex-supervisor/verify.py` over inline shell or
   PowerShell verifier logic.
-- Verifiers should prove behavior or structural contract. Literal string checks should only be used
-  when the literal text is itself required.
+- Verifiers **MUST** prove behavior or structural contract. Prefer builds, tests, API calls, browser
+  flows, artifact existence, JSON fields, and endpoint responses.
+- Verifiers **MUST NOT** depend on local implementation names, variable names, or incidental source
+  snippets unless the task explicitly requires that exact text.
+- Literal string checks **MUST** only be used when the literal text is itself required.
 - Keep `plans/planning.sqlite3` on the schema from `PLANS.md`.
 - Keep `HANDOFF.md` current and compact.
 - Refresh protected-file hashes after intentional source-of-truth edits.

@@ -51,7 +51,9 @@ def test_plugin_contains_desktop_skill_entrypoint() -> None:
     assert ".codex-supervisor/verify.py" in content
     assert "CODEX_SUPERVISOR_TASK_JSON" in content
     assert "MUST NOT mutate product files directly" in content
-    assert "Literal string checks **SHOULD** only be used" in content
+    assert "Verifier checks **MUST** prove behavior or structural contract" in content
+    assert "MUST NOT** depend on local implementation names" in content
+    assert "Literal string checks **MUST** only be used" in content
 
 
 def test_plugin_contains_windows_platform_guidance() -> None:

@@ -90,9 +90,11 @@ intent, launch workers, inspect outputs, run verifiers or smoke tests, and recor
 supervisor discovers product cleanup, audit, warning, polish, or repair work, it **MUST** create
 follow-up task intent and assign the product mutation through `attempt-run`.
 
-Verifier checks **SHOULD** prove behavior or structural contract. Prefer builds, tests, API calls,
+Verifier checks **MUST** prove behavior or structural contract. Prefer builds, tests, API calls,
 browser flows, artifact existence, JSON fields, and endpoint responses.
-Literal string checks **SHOULD** only be used when the literal text is itself required by the task.
+Verifiers **MUST NOT** depend on local implementation names, variable names, or incidental source
+snippets unless the task explicitly requires that exact text.
+Literal string checks **MUST** only be used when the literal text is itself required by the task.
 
 For manual edits, use `attempt-transition` to record running and terminal states around the edit. If
 the launcher cannot locate the source repository, set `CODEX_SUPERVISOR_REPO_ROOT` to the source

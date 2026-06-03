@@ -14,6 +14,7 @@ from codex_supervisor.compact_planning import initialize_compact_planning_databa
 from codex_supervisor.paths import default_planning_database_path
 from codex_supervisor.process_attempt import run_process_attempt
 from codex_supervisor.small_interface import attempt_transition, queue_next, task_create
+from codex_supervisor.workspace_hygiene import ensure_workspace_supervisor_ignored
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -104,7 +105,9 @@ def _build_parser() -> argparse.ArgumentParser:
 def _dispatch(args: argparse.Namespace) -> object | None:
     database_path = _database_path(args)
     if args.command == "plan-init":
+        ensure_workspace_supervisor_ignored(database_path)
         initialize_compact_planning_database(database_path)
+        ensure_workspace_supervisor_ignored(database_path)
         if args.json:
             return _plan_init_payload(database_path)
         return None

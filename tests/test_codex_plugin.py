@@ -42,8 +42,18 @@ def test_plugin_contains_desktop_skill_entrypoint() -> None:
     assert "plan-init" in content
     assert "attempt-run" in content
     assert "MUST use `attempt-run`" in content
+    assert "MUST NOT** run bare" in content
+    assert "MUST NOT** probe `PATH`" in content
     assert "full AFK" in content
     assert "`--assurance high`" in content
+    assert "Filesystem Firewall" in content
+    assert "Product files are every file outside `.codex-supervisor/**`" in content
+    assert "Every product file creation, deletion, or mutation" in content
+    assert "Subagents are not workers" in content
+    assert "git ls-files .codex-supervisor" in content
+    assert "git check-ignore -q -- .codex-supervisor/planning.sqlite3" in content
+    assert "git status --short" in content
+    assert "Product file changes are backed by `attempt-run` worker evidence" in content
     assert "MUST use the plugin CLI launcher" in content
     assert "MUST default to the current workspace ledger" in content
     assert "MUST NOT run `queue-next` before `plan-init`" in content
@@ -225,6 +235,9 @@ def test_installed_cache_cli_launcher_runs_source_cli_without_path(
         codex_home=codex_home,
         include_source_env=False,
     )
+    assert (db_path.parent.parent / ".gitignore").read_text(encoding="utf-8") == (
+        ".codex-supervisor/\n"
+    )
     init_payload = json.loads(initialized.stdout)
     assert init_payload == {
         "initialized": True,
@@ -288,6 +301,7 @@ def test_installed_cache_cli_launcher_defaults_to_invocation_workspace(
 
     payload = json.loads(completed.stdout)
     assert workspace_db.is_file()
+    assert (workspace / ".gitignore").read_text(encoding="utf-8") == ".codex-supervisor/\n"
     assert payload["task"] is None
     assert payload["next_transition"] == "none"
     assert source_db.read_bytes() == source_before
@@ -322,6 +336,7 @@ def test_installed_cache_cli_launcher_runs_full_happy_path_in_fresh_workspace(
         include_source_env=False,
         invocation_cwd=workspace,
     )
+    assert (workspace / ".gitignore").read_text(encoding="utf-8") == ".codex-supervisor/\n"
     _run_plugin_cli_launcher_from(
         cached_plugin,
         (

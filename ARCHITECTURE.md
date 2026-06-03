@@ -62,8 +62,10 @@ points to supporting artifacts.
 The active CLI surface is `plan-init`, `task-create`, `queue-next`, `attempt-transition`, and
 `attempt-run`. `task-create` records durable intent. `queue-next` is inspection only and returns
 running active work before ready work.
-`attempt-transition` is the manual write path for attempts, evidence, and acceptance. `attempt-run`
-is the AFK process path that records execution through the same model.
+`attempt-transition` is the supervisor/admin state-transition path for attempts, evidence, blocked
+states, review-only evidence, and terminal evidence that does not mutate product files.
+`attempt-run` is the product-file mutation path for target-workspace AFK or autonomous-worker work,
+and records execution through the same model.
 
 The active MCP surface is one read-only dispatcher operation: `codex_supervisor.queue_next`. MCP
 inspection requires an explicit planning path so it cannot silently inspect the source repository

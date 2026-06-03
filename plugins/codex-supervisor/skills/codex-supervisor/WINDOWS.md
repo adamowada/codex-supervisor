@@ -6,7 +6,7 @@ Use these rules when operating `codex-supervisor` from Windows or PowerShell.
 
 - You **MUST** use the plugin CLI launcher for supervisor mutation commands:
   `python -B scripts/cli_launcher.py <command> ...`
-- You **MUST** run full AFK work through `attempt-run`.
+- You **MUST** run every product file mutation through `attempt-run`.
 - When launching Codex as the worker, you **MUST** invoke the resolved `codex.ps1` script through
   PowerShell:
 

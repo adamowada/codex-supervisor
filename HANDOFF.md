@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-06-01
+Last updated: 2026-06-03
 
 This is the current resume snapshot.
 
@@ -42,9 +42,10 @@ helpers, evidence attachment, and planning integrity checks for attempt/evidence
 
 Stage 4 is implemented in `src/codex_supervisor/small_interface.py`. The active CLI includes
 `task-create` for durable task intent, `queue-next` for inspection, and `attempt-transition` for
-manual mutation. `plan-init` exists to create the compact schema. `queue-next` has one meaning: the
+supervisor/admin state transitions. `plan-init` exists to create the compact schema. `queue-next` has one meaning: the
 next operational task in the active queue, with running work surfaced before ready work.
-`attempt-transition` is the manual write path for attempts, evidence, and acceptance. `plan-init`
+`attempt-transition` is the state-transition path for attempts, evidence, and acceptance when the
+transition does not mutate product files. `plan-init`
 supports `--json` so fresh workspace smoke tests can initialize the compact schema without parsing
 human output.
 
@@ -113,6 +114,20 @@ also links Windows-specific launch guidance and prefers workspace Python verifie
 omitted planning paths to the current workspace ledger, not the source repository. The old operation
 registry, broad planning inspection commands, and fake worker scaffold have been removed.
 
+`plan-supervisor-firewall-skill-20260603` is complete. The packaged Desktop skill has been rewritten
+as a deterministic supervisor/worker filesystem contract: the supervisor owns `.codex-supervisor/**`
+and the narrow `.gitignore` bootstrap edit, product files must be mutated through `attempt-run`, and
+ACP must stop if `.codex-supervisor/**` is tracked or not ignored. The repo-local source skill now
+separates source-repository maintenance from target-workspace supervisor operation. `plan-init`
+enforces the workspace `.gitignore` guard and rejects tracked supervisor state. Focused CLI/plugin
+tests passed with 20 tests, and the full verification gate passed with 75 tests.
+
+`plan-skill-determinism-20260603` is complete. The remaining skill ambiguity has been removed:
+Desktop mutation operations are logical operation names and must be invoked through the plugin CLI
+launcher, ACP has literal git checks, evidence fields require explicit values instead of optional
+gaps, and source docs now say `attempt-transition` is a supervisor/admin state transition rather
+than product-file mutation.
+
 The package has been cut down to the compact implementation modules. Attempt transitions validate
 task ownership, planning integrity checks open work per active plan, and the attempt store prevents
 multiple non-terminal attempts for a task. The attempt store enforces one active plan, reactivates
@@ -148,7 +163,10 @@ Python-verifier happy-path coverage, factory-state hardening, timeout-recovery l
 reconstruction, currentness guardrails, liveness test race repair, and repo-local
 complexity-reduction skill work, including calibration, are complete. Verifier steering now uses
 MUST language to reject implementation-name and incidental-snippet checks unless exact text is part
-of the task. The related plans are marked `done` in `plans/planning.sqlite3`.
+of the task. The supervisor filesystem firewall skill hardening and `plan-init` git hygiene guard
+are complete. The follow-up determinism cleanup for Desktop launcher wording, ACP git checks,
+explicit evidence fields, and state-transition language is complete. The related plans are marked
+`done` in `plans/planning.sqlite3`.
 
 Planning task:
 

@@ -89,7 +89,7 @@ Steps:
 
 1. Add one inspection command.
 2. Add one task-intent creation command.
-3. Add one manual mutation command.
+3. Add one supervisor/admin state-transition command.
 4. Make the inspection command answer the next operational state question from planning SQLite.
 5. Make the mutation command perform one core transition.
 6. Keep command arguments close to the database and contract vocabulary.
@@ -100,7 +100,7 @@ Done when:
 
 - One task creation command works.
 - One read command works.
-- One manual write command works.
+- One supervisor/admin state-transition command works.
 - The commands map directly to task, attempt, evidence, or acceptance behavior.
 - The commands have focused tests.
 - The command surface remains small.

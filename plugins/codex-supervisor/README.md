@@ -13,6 +13,9 @@ It provides:
 - `skills/codex-supervisor/SKILL.md` as the Desktop-visible entrypoint.
 - `skills/codex-supervisor/WINDOWS.md` as Windows-specific launch and verifier guidance.
 
+In Codex Desktop, mutation operations are invoked through `scripts/cli_launcher.py`. The skill
+forbids probing `PATH` for a bare `codex-supervisor` executable.
+
 The plugin is packaging only. The product contract remains in the Python package:
 
 ```text
@@ -28,6 +31,11 @@ codex_supervisor.queue_next
 MCP queue inspection uses an explicit planning path. Set `CODEX_SUPERVISOR_PLANNING_PATH` when the
 launcher should bind the MCP server to one workspace ledger; otherwise pass the `path` argument on
 the tool call. The server does not silently fall back to the source repository ledger.
+
+In target workspaces, the supervisor owns `.codex-supervisor/**` and the one bootstrap `.gitignore`
+edit required to ignore `.codex-supervisor/`. Product files are mutated by workers through
+`attempt-run`, not by direct supervisor edits or `attempt-transition`. `plan-init` creates or updates
+the workspace `.gitignore` and refuses to proceed when `.codex-supervisor/**` is already tracked.
 
 When the plugin is launched from the source tree, the launcher finds the repository automatically.
 When launched from the installed Codex cache, it resolves the source repository from

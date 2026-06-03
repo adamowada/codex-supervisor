@@ -88,6 +88,10 @@ specific ledger.
 On Windows or PowerShell, you **MUST** follow [WINDOWS.md](WINDOWS.md) for platform-aware worker
 launch and verifier commands.
 
+When a Windows `attempt-run` launches Codex as the worker, it **MUST** use the packaged worker
+launcher at `<plugin-root>\scripts\codex_worker_launcher.py`. It **MUST NOT** create an ad hoc
+PowerShell worker launcher.
+
 ## Required Flow
 
 When this skill is invoked for work that creates, edits, verifies, reviews, or ships files, you
@@ -100,6 +104,9 @@ When this skill is invoked for work that creates, edits, verifies, reviews, or s
    lower assurance level.
 4. You **MUST record a run attempt** through `attempt-run` before product mutation.
 5. You **MUST use `attempt-run`** for every product file mutation.
+   - On Windows, Codex worker attempts **MUST** use
+     `python -B <plugin-root>\scripts\codex_worker_launcher.py --workspace <workspace> --prompt-file <workspace>\.codex-supervisor\worker_prompt.txt`
+     after the `attempt-run --` separator.
 6. You **MUST attach explicit evidence**:
    - `--check`: at least one check that ran or one concrete inspection result.
    - `--artifact`: every product path created or changed by the worker. If no product artifact

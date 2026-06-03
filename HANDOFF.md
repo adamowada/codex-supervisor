@@ -134,6 +134,20 @@ multiple non-terminal attempts for a task. The attempt store enforces one active
 blocked work through the same retry path, and atomically writes terminal attempt evidence before task
 status changes. Surviving queue read SQL lives in `AttemptStore`.
 
+`plan-e2e-weak-spots-20260603` is complete. The remaining factory e2e weak spots are hardened with a
+deterministic target-workspace ACP gate and tests: direct product edits are rejected, tracked
+`.codex-supervisor/**` state is rejected, and worker-backed product changes are accepted. An opt-in
+live Codex worker smoke test now exercises a real `codex exec` worker when
+`CODEX_SUPERVISOR_RUN_LIVE_CODEX_E2E=1` is set. The normal verification gate stays deterministic and
+skips that live test by default.
+
+`plan-windows-worker-launcher-20260603` is complete. The packaged Desktop plugin now includes
+`scripts/codex_worker_launcher.py`, a single stdin-safe Codex worker launch path for `attempt-run`.
+The launcher resolves `codex` or `codex.ps1`, wraps Windows `codex.ps1` through PowerShell in one
+tested place, and pipes the worker prompt through stdin instead of putting prompt text in argv.
+The packaged skill and Windows guidance now require this launcher and forbid ad hoc PowerShell
+worker launch scripts. Plugin tests lock the Windows command shape and prompt-stdin behavior.
+
 Repo-local skills now include:
 
 - `codex-supervisor`
@@ -166,7 +180,10 @@ MUST language to reject implementation-name and incidental-snippet checks unless
 of the task. The supervisor filesystem firewall skill hardening and `plan-init` git hygiene guard
 are complete. The follow-up determinism cleanup for Desktop launcher wording, ACP git checks,
 explicit evidence fields, and state-transition language is complete. The related plans are marked
-`done` in `plans/planning.sqlite3`.
+`done` in `plans/planning.sqlite3`. The e2e weak-spot hardening pass is complete with 80 default
+tests passing and one explicit live Codex worker smoke test skipped unless enabled. The packaged
+Windows Codex worker launcher is complete, with 82 default tests passing and one explicit live Codex
+worker smoke test skipped unless enabled.
 
 Planning task:
 

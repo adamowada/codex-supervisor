@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -58,6 +59,8 @@ def test_plugin_contains_desktop_skill_entrypoint() -> None:
     assert "MUST default to the current workspace ledger" in content
     assert "MUST NOT run `queue-next` before `plan-init`" in content
     assert "MUST** follow [WINDOWS.md](WINDOWS.md)" in content
+    assert "codex_worker_launcher.py" in content
+    assert "MUST NOT** create an ad hoc" in content
     assert ".codex-supervisor/verify.py" in content
     assert "CODEX_SUPERVISOR_TASK_JSON" in content
     assert "MUST NOT mutate product files directly" in content
@@ -70,11 +73,80 @@ def test_plugin_contains_windows_platform_guidance() -> None:
     guidance = PLUGIN_ROOT / "skills" / "codex-supervisor" / "WINDOWS.md"
     content = guidance.read_text(encoding="utf-8")
 
-    assert "powershell.exe -NoProfile -ExecutionPolicy Bypass -File <codex.ps1> exec" in content
+    assert "codex_worker_launcher.py" in content
+    assert "MUST NOT** create ad hoc `run_worker.ps1`" in content
+    assert "MUST NOT** pass the worker prompt as a command-line argument" in content
+    assert "pipes the prompt through stdin" in content
     assert "MUST NOT** put complex PowerShell logic inline in `--verify-command`" in content
     assert "MUST** prefer a workspace Python verifier" in content
     assert "python -B .codex-supervisor\\verify.py" in content
     assert "MUST** retry the same task" in content
+
+
+def test_plugin_worker_launcher_wraps_windows_codex_ps1() -> None:
+    launcher = _load_worker_launcher()
+    codex_executable = Path("C:/Users/example/AppData/Roaming/npm/codex.ps1")
+    workspace = Path("C:/workspace")
+
+    command = launcher.build_codex_exec_command(
+        codex_executable,
+        workspace,
+        platform_name="nt",
+    )
+
+    assert command == (
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(codex_executable),
+        "exec",
+        "--skip-git-repo-check",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "-C",
+        str(workspace),
+    )
+
+
+def test_plugin_worker_launcher_pipes_prompt_to_codex_exec(tmp_path: Path) -> None:
+    launcher = PLUGIN_ROOT / "scripts" / "codex_worker_launcher.py"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    prompt_file = workspace / ".codex-supervisor" / "worker_prompt.txt"
+    prompt_file.parent.mkdir()
+    prompt_file.write_text("line one\nline two --not-an-argv\n", encoding="utf-8")
+    fake_codex = _write_fake_codex(tmp_path)
+
+    completed = subprocess.run(
+        (
+            sys.executable,
+            "-B",
+            str(launcher),
+            "--workspace",
+            str(workspace),
+            "--prompt-file",
+            str(prompt_file),
+            "--codex-executable",
+            str(fake_codex),
+        ),
+        text=True,
+        capture_output=True,
+        timeout=15,
+        check=True,
+    )
+
+    payload = json.loads((workspace / "fake-codex-result.json").read_text(encoding="utf-8"))
+    assert completed.stdout == "fake codex worker ran\n"
+    assert payload["argv"] == [
+        "exec",
+        "--skip-git-repo-check",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "-C",
+        str(workspace),
+    ]
+    assert payload["stdin"] == "line one\nline two --not-an-argv\n"
+    assert payload["cwd"] == str(workspace)
 
 
 def test_repo_marketplace_points_at_plugin_wrapper() -> None:
@@ -425,6 +497,56 @@ def test_installed_cache_cli_launcher_runs_full_happy_path_in_fresh_workspace(
     assert plan_status == "done"
     assert attempts == [("plugin-happy-attempt", "worker-process", "succeeded")]
     assert _planning_integrity_failures(workspace_db) == ()
+
+
+def _load_worker_launcher() -> object:
+    launcher_path = PLUGIN_ROOT / "scripts" / "codex_worker_launcher.py"
+    spec = importlib.util.spec_from_file_location("codex_worker_launcher", launcher_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _write_fake_codex(tmp_path: Path) -> Path:
+    fake_script = tmp_path / "fake_codex.py"
+    fake_script.write_text(
+        "\n".join(
+            (
+                "import json",
+                "import sys",
+                "from pathlib import Path",
+                "payload = {",
+                "    'argv': sys.argv[1:],",
+                "    'stdin': sys.stdin.read(),",
+                "    'cwd': str(Path.cwd()),",
+                "}",
+                "Path('fake-codex-result.json').write_text(",
+                "    json.dumps(payload, sort_keys=True),",
+                "    encoding='utf-8',",
+                ")",
+                "print('fake codex worker ran')",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    if os.name == "nt":
+        fake_executable = tmp_path / "fake-codex.cmd"
+        fake_executable.write_text(
+            f'@echo off\r\n"{sys.executable}" "{fake_script}" %*\r\n',
+            encoding="utf-8",
+        )
+        return fake_executable
+
+    fake_executable = tmp_path / "fake-codex"
+    fake_executable.write_text(
+        f'#!/bin/sh\nexec "{sys.executable}" "{fake_script}" "$@"\n',
+        encoding="utf-8",
+    )
+    fake_executable.chmod(0o755)
+    return fake_executable
 
 
 def _run_plugin_launcher(messages: tuple[dict[str, object], ...]) -> list[dict[str, object]]:

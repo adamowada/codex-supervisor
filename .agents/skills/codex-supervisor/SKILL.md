@@ -47,6 +47,9 @@ Use these rules when validating or operating the packaged Desktop supervisor in 
 - Product file creation, deletion, or mutation **MUST** happen through `attempt-run`.
 - The supervisor **MUST NOT** mutate product files directly.
 - `attempt-transition` **MUST NOT** substitute for a worker-run product mutation.
+- Windows target-workspace Codex worker attempts **MUST** use the packaged Desktop worker launcher at
+  `plugins/codex-supervisor/scripts/codex_worker_launcher.py`; do not create ad hoc PowerShell
+  worker launch scripts.
 - `plan-init` **MUST** ensure `.codex-supervisor/` is ignored before the workspace can be ACP'd.
 - ACP **MUST NOT** proceed if `.codex-supervisor/**` is tracked or if `.codex-supervisor/` is not
   ignored.

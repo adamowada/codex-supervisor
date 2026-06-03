@@ -7,13 +7,18 @@ Use these rules when operating `codex-supervisor` from Windows or PowerShell.
 - You **MUST** use the plugin CLI launcher for supervisor mutation commands:
   `python -B scripts/cli_launcher.py <command> ...`
 - You **MUST** run every product file mutation through `attempt-run`.
-- When launching Codex as the worker, you **MUST** invoke the resolved `codex.ps1` script through
-  PowerShell:
+- When launching Codex as the worker on Windows, you **MUST** use the packaged worker launcher:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File <codex.ps1> exec ...
+python -B <plugin-root>\scripts\codex_worker_launcher.py --workspace <workspace> --prompt-file <workspace>\.codex-supervisor\worker_prompt.txt
 ```
 
+- You **MUST NOT** create ad hoc `run_worker.ps1` launch scripts for Codex workers.
+- You **MUST NOT** pass the worker prompt as a command-line argument.
+- The packaged worker launcher is the only Windows Codex worker launch path. It resolves
+  `codex.ps1`, invokes it through PowerShell, and pipes the prompt through stdin.
+- Set `CODEX_SUPERVISOR_CODEX_EXECUTABLE` only when the worker must use a specific `codex` or
+  `codex.ps1` executable.
 - Do not assume `codex exec ...` is directly executable by Python process launch on Windows.
 
 ## Verifiers

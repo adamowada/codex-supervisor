@@ -32,6 +32,8 @@ The gate checks:
   instead of the source repository ledger.
 - e2e coverage that full-AFK product follow-up mutation is assigned through another worker attempt,
   preserving the supervisor role boundary.
+- e2e coverage that the target-workspace ACP gate rejects direct product edits, rejects tracked
+  `.codex-supervisor/**` state, and accepts product changes backed by `attempt-run` evidence.
 - contract coverage that `HANDOFF.md` edits are paired with `plans/planning.sqlite3` edits, so the
   readable handoff and durable ledger stay current together.
 
@@ -51,3 +53,19 @@ Next tests should cover:
 - literal execution of the plugin MCP manifest command;
 - schema/index integrity from a freshly initialized production database;
 - new adapter operations only after the existing factory path stays boring.
+
+## Explicit Live Smoke
+
+The default verification gate does not launch real Codex Desktop or a real Codex worker. It uses
+deterministic subprocess workers so CI stays stable.
+
+To exercise a real Codex worker process through `attempt-run`, run the opt-in test with:
+
+```sh
+$env:CODEX_SUPERVISOR_RUN_LIVE_CODEX_E2E = "1"
+uv run --no-sync python -m pytest tests/test_live_codex_worker_e2e.py -q -p no:cacheprovider
+```
+
+Set `CODEX_SUPERVISOR_CODEX_EXECUTABLE` when the test should use a specific `codex` or `codex.ps1`
+executable. On Windows, the test invokes `codex.ps1` through PowerShell when that script is the
+resolved executable.

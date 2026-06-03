@@ -10,6 +10,8 @@ It provides:
 - `scripts/cli_launcher.py` to forward Desktop CLI calls to the source repository without relying
   on `PATH`. When a compact command omits `--path`, the launcher uses the current workspace ledger
   at `.codex-supervisor/planning.sqlite3`.
+- `scripts/codex_worker_launcher.py` to launch Codex workers through one stdin-safe command,
+  including the Windows `codex.ps1` PowerShell path.
 - `skills/codex-supervisor/SKILL.md` as the Desktop-visible entrypoint.
 - `skills/codex-supervisor/WINDOWS.md` as Windows-specific launch and verifier guidance.
 
@@ -52,4 +54,4 @@ passing acceptance can remain passing.
 
 When acceptance depends on machine-checkable file contents or behavior, prefer a workspace Python
 verifier at `.codex-supervisor/verify.py` and pass it through `--verify-command`. On Windows, follow
-the skill's `WINDOWS.md` rules for PowerShell worker launch and verifier invocation.
+the skill's `WINDOWS.md` rules for the packaged worker launcher and verifier invocation.

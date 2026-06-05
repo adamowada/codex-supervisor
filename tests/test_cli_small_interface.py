@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import subprocess
 from pathlib import Path
 
@@ -36,6 +37,27 @@ def test_cli_plan_init_json_reports_compact_schema(tmp_path: Path, capsys) -> No
         "schema_name": "fresh_simplified_planning",
         "schema_version": "2",
     }
+
+
+def test_cli_plan_init_rejects_existing_old_schema(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    db_path = tmp_path / "planning.sqlite3"
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute("create table meta (key text primary key, value text not null)")
+        connection.execute(
+            "insert into meta(key, value) values ('schema_name', 'fresh_simplified_planning')"
+        )
+        connection.execute("insert into meta(key, value) values ('schema_version', '1')")
+        connection.commit()
+    finally:
+        connection.close()
+
+    exit_code = main(["plan-init", "--path", str(db_path), "--json"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "existing planning database uses schema version '1'" in captured.err
+    assert "delete it and rerun plan-init" in captured.err
 
 
 def test_cli_plan_init_ignores_workspace_supervisor_dir_in_git_repo(

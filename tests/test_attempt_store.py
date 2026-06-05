@@ -113,6 +113,106 @@ def test_attempt_store_rejects_invalid_transition(tmp_path: Path) -> None:
         )
 
 
+def test_attempt_store_rejects_task_status_acceptance_result_mismatch(
+    tmp_path: Path,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    store = AttemptStore(db_path)
+    store.create_attempt(
+        task_id="task-1",
+        executor="manual",
+        summary="Manual attempt planned.",
+        attempt_id="attempt-1",
+    )
+    store.start_attempt(
+        "attempt-1",
+        task_id="task-1",
+        summary="Manual attempt running.",
+    )
+
+    with pytest.raises(ValueError, match="done tasks require accepted acceptance"):
+        store.finalize_attempt(
+            "attempt-1",
+            status="succeeded",
+            summary="Mismatched acceptance.",
+            task_id="task-1",
+            task_status="done",
+            assurance="medium",
+            checks=("pytest",),
+            artifacts=("artifact",),
+            acceptance_actor="codex-supervisor-policy",
+            acceptance_result="rejected",
+            acceptance_rationale="Policy rejected terminal evidence.",
+            acceptance_evaluation={"accepted": False},
+        )
+
+
+def test_attempt_store_rejects_accepted_failed_attempt(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+    store = AttemptStore(db_path)
+    store.create_attempt(
+        task_id="task-1",
+        executor="manual",
+        summary="Manual attempt planned.",
+        attempt_id="attempt-1",
+    )
+    store.start_attempt(
+        "attempt-1",
+        task_id="task-1",
+        summary="Manual attempt running.",
+    )
+
+    with pytest.raises(ValueError, match="accepted acceptance requires succeeded attempt"):
+        store.finalize_attempt(
+            "attempt-1",
+            status="failed",
+            summary="Failed attempt cannot be accepted.",
+            task_id="task-1",
+            task_status="done",
+            assurance="medium",
+            checks=("pytest",),
+            artifacts=("artifact",),
+            acceptance_actor="codex-supervisor-policy",
+            acceptance_result="accepted",
+            acceptance_rationale="Policy accepted terminal evidence.",
+            acceptance_evaluation={"accepted": True},
+        )
+
+
+def test_attempt_store_rejects_accepted_result_when_evaluation_rejected(
+    tmp_path: Path,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    store = AttemptStore(db_path)
+    store.create_attempt(
+        task_id="task-1",
+        executor="manual",
+        summary="Manual attempt planned.",
+        attempt_id="attempt-1",
+    )
+    store.start_attempt(
+        "attempt-1",
+        task_id="task-1",
+        summary="Manual attempt running.",
+    )
+
+    with pytest.raises(ValueError, match="accepted acceptance requires accepted evaluation"):
+        store.finalize_attempt(
+            "attempt-1",
+            status="succeeded",
+            summary="Evaluation mismatch.",
+            task_id="task-1",
+            task_status="done",
+            assurance="medium",
+            checks=("pytest",),
+            artifacts=("artifact",),
+            acceptance_actor="codex-supervisor-policy",
+            acceptance_result="accepted",
+            acceptance_rationale="Policy accepted terminal evidence.",
+            acceptance_evaluation={"accepted": False},
+        )
+
+
 def test_attempt_store_rejects_second_nonterminal_attempt(tmp_path: Path) -> None:
     db_path = make_planning_db(tmp_path)
     store = AttemptStore(db_path)

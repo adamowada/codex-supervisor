@@ -305,6 +305,12 @@ class AttemptStore:
             acceptance_evaluation,
             field_name="acceptance_evaluation",
         )
+        _validate_acceptance_projection(
+            attempt_status=target_status,
+            task_status=task_status,
+            acceptance_result=normalized_acceptance_result,
+            acceptance_evaluation=acceptance_evaluation,
+        )
 
         with self._connect() as connection:
             current = self._read_attempt(connection, attempt_id)
@@ -759,6 +765,28 @@ def _json_object(value: Mapping[str, object], *, field_name: str) -> str:
     if not isinstance(decoded, dict):
         raise ValueError(f"{field_name} must be a JSON object")
     return encoded
+
+
+def _validate_acceptance_projection(
+    *,
+    attempt_status: RunAttemptStatus,
+    task_status: str,
+    acceptance_result: str,
+    acceptance_evaluation: Mapping[str, object],
+) -> None:
+    evaluation_accepted = acceptance_evaluation.get("accepted")
+    if task_status == "done" and acceptance_result != "accepted":
+        raise ValueError("done tasks require accepted acceptance")
+    if task_status == "blocked" and acceptance_result != "rejected":
+        raise ValueError("blocked tasks require rejected acceptance")
+    if acceptance_result == "accepted":
+        if attempt_status is not RunAttemptStatus.SUCCEEDED:
+            raise ValueError("accepted acceptance requires succeeded attempt")
+        if evaluation_accepted is not True:
+            raise ValueError("accepted acceptance requires accepted evaluation")
+        return
+    if evaluation_accepted is not False:
+        raise ValueError("rejected acceptance requires rejected evaluation")
 
 
 def _validate_attempt_task(attempt: RunAttempt, expected_task_id: str | None) -> None:

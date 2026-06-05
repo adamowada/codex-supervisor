@@ -187,7 +187,61 @@ def test_planning_integrity_requires_terminal_evidence_for_terminal_tasks(
 
     failures = check_planning_integrity(db_path)
 
-    assert "done task task-1 has no succeeded attempt with evidence" in failures
+    assert (
+        "done task task-1 has no succeeded attempt with evidence and accepted decision"
+        in failures
+    )
+
+
+def test_planning_integrity_names_missing_acceptance_decision(
+    tmp_path: Path,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute("update plans set status = 'done' where plan_id = 'plan-1'")
+        connection.execute("update tasks set status = 'done' where task_id = 'task-1'")
+        connection.execute(
+            """insert into attempts(
+                   attempt_id, task_id, executor, status, summary, started_at, finished_at
+               ) values (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "attempt-succeeded",
+                "task-1",
+                "worker",
+                "succeeded",
+                "Worker succeeded.",
+                "2026-05-28T17:00:00Z",
+                "2026-05-28T17:01:00Z",
+            ),
+        )
+        connection.execute(
+            """insert into evidence_bundles(
+                   bundle_id, task_id, attempt_id, assurance, summary,
+                   checks_json, artifacts_json, created_at
+               ) values (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "evidence-succeeded",
+                "task-1",
+                "attempt-succeeded",
+                "medium",
+                "Success evidence.",
+                '["acceptance: Acceptance criterion = pass"]',
+                '["artifact"]',
+                "2026-05-28T17:01:00Z",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    failures = check_planning_integrity(db_path)
+
+    assert "terminal attempt attempt-succeeded has no acceptance decision" in failures
+    assert (
+        "done task task-1 has no succeeded attempt with evidence and accepted decision"
+        in failures
+    )
 
 
 def _copy_current_db(tmp_path: Path) -> Path:

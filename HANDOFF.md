@@ -53,6 +53,9 @@ The latest architecture-deepening pass is implemented in code and docs:
   provenance rules ACP uses.
 - `AttemptStore.finalize_attempt()` is the only store terminalization path. Terminal attempts write
   evidence and acceptance decisions atomically instead of allowing a decision-free completion path.
+- `AttemptStore.finalize_attempt()` rejects contradictory task status, attempt status, acceptance
+  result, and evaluation combinations before writing durable state.
+- `plan-init` refuses existing incompatible planning schemas instead of half-upgrading old ledgers.
 - Source-of-truth docs now name product provenance and structured evidence encoding directly.
 
 Target-workspace supervisor operation still uses the bright-line filesystem boundary: the supervisor
@@ -79,10 +82,10 @@ uv run --no-sync ruff check src tests scripts
 All checks passed
 
 uv run --no-sync python -B -m pytest
-91 passed
+96 passed
 
 uv run --no-sync python -B scripts/verify.py
-91 passed
+96 passed
 ```
 
 Planning task `task-durable-acceptance-decisions-20260605` is accepted and done in
@@ -97,6 +100,10 @@ state moves through `finalize_attempt()`.
 Planning task `task-acceptance-decision-normalization-20260605` is accepted and done in
 `plans/planning.sqlite3`. Acceptance decision actor and rationale values are normalized once before
 both insertion and return.
+
+Planning task `task-acceptance-hardening-review-fixes-20260605` is accepted and done in
+`plans/planning.sqlite3`. The review fixes add fail-fast old-schema initialization, store-level
+acceptance projection validation, clearer integrity diagnostics, and focused regression tests.
 
 The opt-in live Codex pytest and its letter-grade structure have been removed. Live smoke testing is
 manual and out-of-band; source verification now stays fully deterministic with no always-skipped

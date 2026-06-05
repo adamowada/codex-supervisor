@@ -5,6 +5,9 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+SCHEMA_NAME = "fresh_simplified_planning"
+SCHEMA_VERSION = "2"
+
 SCHEMA_SQL = """
 create table if not exists meta (
     key text primary key,
@@ -78,13 +81,48 @@ def initialize_compact_planning_database(database_path: Path) -> None:
     """Create the compact planning schema."""
 
     database_path.parent.mkdir(parents=True, exist_ok=True)
+    _reject_incompatible_existing_database(database_path)
     with sqlite3.connect(database_path) as connection:
         connection.execute("pragma foreign_keys = on")
         connection.executescript(SCHEMA_SQL)
         connection.execute(
             "insert or replace into meta(key, value) values ('schema_name', ?)",
-            ("fresh_simplified_planning",),
+            (SCHEMA_NAME,),
         )
         connection.execute(
-            "insert or replace into meta(key, value) values ('schema_version', '2')"
+            "insert or replace into meta(key, value) values ('schema_version', ?)",
+            (SCHEMA_VERSION,),
+        )
+
+
+def _reject_incompatible_existing_database(database_path: Path) -> None:
+    if not database_path.exists():
+        return
+    with sqlite3.connect(database_path) as connection:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                "select name from sqlite_master where type='table' and name not like 'sqlite_%'"
+            )
+        }
+        if not tables:
+            return
+        if "meta" not in tables:
+            raise ValueError(
+                "existing planning database is not a compact codex-supervisor ledger; "
+                "delete it and rerun plan-init"
+            )
+        metadata = {
+            row[0]: row[1]
+            for row in connection.execute("select key, value from meta order by key")
+        }
+    if metadata.get("schema_name") != SCHEMA_NAME:
+        raise ValueError(
+            f"existing planning database uses schema name {metadata.get('schema_name')!r}; "
+            "delete it and rerun plan-init"
+        )
+    if metadata.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError(
+            "existing planning database uses schema version "
+            f"{metadata.get('schema_version')!r}; delete it and rerun plan-init"
         )

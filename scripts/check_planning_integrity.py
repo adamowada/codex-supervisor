@@ -367,7 +367,10 @@ def _check_attempt_relationships(
                    and attempts.status = 'succeeded'
              )"""
     ):
-        failures.append(f"done task {row['task_id']} has no succeeded attempt with evidence")
+        failures.append(
+            f"done task {row['task_id']} has no succeeded attempt with evidence "
+            "and accepted decision"
+        )
 
     for row in connection.execute(
         """select tasks.task_id
@@ -387,7 +390,10 @@ def _check_attempt_relationships(
                    and attempts.status in ('failed', 'blocked', 'succeeded')
              )"""
     ):
-        failures.append(f"blocked task {row['task_id']} has no terminal attempt with evidence")
+        failures.append(
+            f"blocked task {row['task_id']} has no terminal attempt with evidence "
+            "and rejected decision"
+        )
 
 
 if __name__ == "__main__":

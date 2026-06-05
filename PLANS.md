@@ -125,7 +125,8 @@ Durable product or architecture decisions.
 ## Extension Rule
 
 Add a table when repeated queries need it. Until then, store task acceptance, evidence details, and
-attempt metadata in structured JSON fields attached to the core tables.
+attempt metadata in structured JSON fields attached to the core tables. Evidence may be structured
+in code before it is encoded into the existing JSON fields.
 
 ## Currentness Rule
 

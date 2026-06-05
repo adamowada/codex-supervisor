@@ -37,7 +37,8 @@ describe transport.
 
 `attempt-run` is the generic AFK executor path. It starts one process in a workspace, records the
 process as a run attempt, and attaches stdout, stderr, command metadata, exit code, declared
-artifacts, checks, risks, gaps, optional verifier results, and acceptance results as evidence.
+artifacts, git-discovered product paths, checks, risks, gaps, optional verifier results, and
+acceptance results as evidence.
 
 Process launch, timeout, nonzero exit, missing declared artifacts, and telemetry write failures are
 terminal evidence. They must leave the task blocked or accepted through the same durable transition
@@ -55,6 +56,11 @@ is represented as new task intent and assigned through another worker attempt.
 
 Declared task artifacts are verified after the process exits. A caller-supplied passing acceptance
 result is forced to failing evidence when required artifacts are missing.
+
+Product artifact provenance includes both caller-declared artifacts and changed product paths
+discovered from the target git workspace after `attempt-run` finishes. Product paths exclude
+`.gitignore` and `.codex-supervisor/**`. ACP uses the same provenance rule to require every changed
+product path to be backed by succeeded `attempt-run` evidence.
 
 When content or behavior needs machine verification, `attempt-run` may run one verifier command
 after the worker exits and before the terminal transition is recorded. The verifier receives the
@@ -82,6 +88,10 @@ Required fields:
 
 Evidence is inspectable. Raw artifacts can live outside SQLite, while SQLite records what exists and
 why it matters.
+
+Evidence is structured before storage. The active schema keeps the compact `checks_json` and
+`artifacts_json` fields, and the evidence codec owns how checks, acceptance results, risks, gaps,
+next actions, and review evidence are encoded into those fields.
 
 ## Acceptance Decision
 

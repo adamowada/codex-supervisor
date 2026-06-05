@@ -12,13 +12,9 @@ from codex_supervisor.attempts import (
     RunAttemptStatus,
     normalize_attempt_status,
 )
-from codex_supervisor.policy import (
-    AcceptanceEvaluation,
-    AttemptRecord,
-    EvidenceBundle,
-    TaskIntent,
-    evaluate_task_attempt_acceptance,
-)
+from codex_supervisor.evidence import EvidenceEnvelope
+from codex_supervisor.policy import AcceptanceEvaluation
+from codex_supervisor.terminal_transition import terminalize_attempt
 
 
 @dataclass(frozen=True)
@@ -154,7 +150,7 @@ def attempt_transition(
         return _transition_result(store, task, attempt, None, None)
 
     terminal_attempt_id = _terminal_attempt_id(store, task_id, attempt_id)
-    evidence_checks = _evidence_check_strings(
+    evidence = EvidenceEnvelope(
         checks=checks,
         acceptance_results=acceptance_results,
         risks=risks,
@@ -162,37 +158,16 @@ def attempt_transition(
         next_actions=next_actions,
         review_evidence=review_evidence,
     )
-    evaluation = _evaluate_transition(
+    terminal = terminalize_attempt(
+        store,
         task,
-        task_id=task_id,
         attempt_id=terminal_attempt_id,
-        attempt_status=target_status,
-        evidence_summary=summary,
-        evidence_checks=evidence_checks,
-        evidence_artifacts=artifacts,
-        checks=checks,
-        acceptance_results=acceptance_results,
-        risks=risks,
-        gaps=gaps,
-        next_actions=next_actions,
-        review_evidence=review_evidence,
-    )
-    task_status = (
-        "done"
-        if target_status is RunAttemptStatus.SUCCEEDED and evaluation.accepted
-        else "blocked"
-    )
-    attempt, evidence = store.finalize_attempt(
-        terminal_attempt_id,
-        task_id=task_id,
         status=target_status,
         summary=summary,
-        task_status=task_status,
-        assurance=task.assurance,
-        checks=evidence_checks,
         artifacts=artifacts,
+        evidence=evidence,
     )
-    return _transition_result(store, task, attempt, evidence, evaluation)
+    return _transition_result(store, task, terminal.attempt, terminal.evidence, terminal.evaluation)
 
 
 def _start_or_create_running_attempt(
@@ -237,72 +212,6 @@ def _terminal_attempt_id(
             f"not {task_id!r}"
         )
     return attempt.attempt_id
-
-
-def _evaluate_transition(
-    task: TaskRecord,
-    *,
-    task_id: str,
-    attempt_id: str,
-    attempt_status: RunAttemptStatus,
-    evidence_summary: str,
-    evidence_checks: tuple[str, ...],
-    evidence_artifacts: tuple[str, ...],
-    checks: tuple[str, ...],
-    acceptance_results: dict[str, bool] | None,
-    risks: tuple[str, ...],
-    gaps: tuple[str, ...],
-    next_actions: tuple[str, ...],
-    review_evidence: tuple[str, ...],
-) -> AcceptanceEvaluation:
-    strict_checks = checks if task.assurance == "high" else ()
-    focused_checks = checks if task.assurance != "high" else ()
-    return evaluate_task_attempt_acceptance(
-        TaskIntent(
-            task_id=task.task_id,
-            intent=task.intent,
-            assurance=task.assurance,
-            acceptance_criteria=task.acceptance_criteria,
-            review_required=bool(review_evidence),
-        ),
-        AttemptRecord(
-            attempt_id=attempt_id,
-            task_id=task_id,
-            status=attempt_status.value,
-        ),
-        EvidenceBundle(
-            task_id=task_id,
-            attempt_id=attempt_id,
-            summary=evidence_summary,
-            checks=focused_checks,
-            strict_checks=strict_checks,
-            artifacts=evidence_artifacts,
-            acceptance_results=acceptance_results,
-            risks=risks,
-            gaps=gaps,
-            next_actions=next_actions,
-            review_evidence=review_evidence,
-        ),
-    )
-
-
-def _evidence_check_strings(
-    *,
-    checks: tuple[str, ...],
-    acceptance_results: dict[str, bool] | None,
-    risks: tuple[str, ...],
-    gaps: tuple[str, ...],
-    next_actions: tuple[str, ...],
-    review_evidence: tuple[str, ...],
-) -> tuple[str, ...]:
-    evidence_checks = list(checks)
-    for criterion, passed in sorted((acceptance_results or {}).items()):
-        evidence_checks.append(f"acceptance: {criterion} = {'pass' if passed else 'fail'}")
-    evidence_checks.extend(f"risk: {risk}" for risk in risks)
-    evidence_checks.extend(f"gap: {gap}" for gap in gaps)
-    evidence_checks.extend(f"next-action: {action}" for action in next_actions)
-    evidence_checks.extend(f"review: {review}" for review in review_evidence)
-    return tuple(evidence_checks)
 
 
 def _transition_result(

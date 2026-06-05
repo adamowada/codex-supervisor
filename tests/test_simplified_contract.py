@@ -83,4 +83,8 @@ def _changed_since_head(*paths: str) -> set[str]:
         capture_output=True,
         check=True,
     )
-    return {line.strip().replace("\\", "/") for line in completed.stdout.splitlines() if line.strip()}
+    return {
+        line.strip().replace("\\", "/")
+        for line in completed.stdout.splitlines()
+        if line.strip()
+    }

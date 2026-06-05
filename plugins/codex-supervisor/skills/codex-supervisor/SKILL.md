@@ -109,8 +109,9 @@ When this skill is invoked for work that creates, edits, verifies, reviews, or s
      after the `attempt-run --` separator.
 6. You **MUST attach explicit evidence**:
    - `--check`: at least one check that ran or one concrete inspection result.
-   - `--artifact`: every product path created or changed by the worker. If no product artifact
-     exists, record a `--check` that says no product artifact exists.
+   - `--artifact`: every known expected product path and important generated artifact. `attempt-run`
+     also records git-discovered changed product paths automatically. If no product artifact exists,
+     record a `--check` that says no product artifact exists.
    - `--risk`: a real residual risk, or `No known residual risk.`
    - `--gap`: a real gap, or `No known gap.`
    - `--next-action`: the next action, or `No next action.`

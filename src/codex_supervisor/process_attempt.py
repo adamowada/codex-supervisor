@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from codex_supervisor.small_interface import AttemptTransitionResult, attempt_transition
-from codex_supervisor.workspace_hygiene import SUPERVISOR_DIR
+from codex_supervisor.target_workspace import changed_product_paths
 
 _TEXT_CAPTURE = {
     "text": True,
@@ -261,7 +261,7 @@ def run_process_attempt(
         telemetry_summary = "; ".join(telemetry_errors)
         terminal_summary = f"{terminal_summary} Telemetry warning(s): {telemetry_summary}."
 
-    git_product_artifacts = _changed_product_paths(workspace)
+    git_product_artifacts = changed_product_paths(workspace)
     recorded_artifacts = _unique_strings(
         (
             str(command_path),
@@ -549,58 +549,6 @@ def _missing_declared_artifacts(
         if not candidate.exists():
             missing.append(artifact)
     return tuple(missing)
-
-
-def _changed_product_paths(workspace: Path) -> tuple[str, ...]:
-    try:
-        completed = subprocess.run(
-            (
-                "git",
-                "-C",
-                str(workspace),
-                "status",
-                "--porcelain=v1",
-                "-z",
-                "--untracked-files=all",
-            ),
-            check=False,
-            text=True,
-            capture_output=True,
-        )
-    except FileNotFoundError:
-        return ()
-    if completed.returncode != 0:
-        return ()
-
-    paths: list[str] = []
-    entries = [entry for entry in completed.stdout.split("\0") if entry]
-    index = 0
-    while index < len(entries):
-        entry = entries[index]
-        status = entry[:2]
-        raw_path = entry[3:] if len(entry) > 3 else ""
-        if "R" in status or "C" in status:
-            index += 1
-            if index < len(entries):
-                raw_path = entries[index]
-        index += 1
-        normalized = _normalize_relative_path(raw_path)
-        if _is_product_path(normalized):
-            paths.append(normalized)
-    return tuple(sorted(set(paths)))
-
-
-def _is_product_path(relative_path: str) -> bool:
-    return bool(relative_path) and relative_path != ".gitignore" and not (
-        relative_path == SUPERVISOR_DIR or relative_path.startswith(f"{SUPERVISOR_DIR}/")
-    )
-
-
-def _normalize_relative_path(path: str) -> str:
-    normalized = path.strip().replace("\\", "/")
-    while normalized.startswith("./"):
-        normalized = normalized[2:]
-    return normalized
 
 
 def _unique_strings(items: tuple[str, ...]) -> tuple[str, ...]:

@@ -846,7 +846,10 @@ def test_verifier_failure_blocks_supplied_passing_acceptance(tmp_path: Path) -> 
         "--",
         sys.executable,
         "-c",
-        "from pathlib import Path; Path('index.html').write_text('<style></style>', encoding='utf-8')",
+        (
+            "from pathlib import Path; "
+            "Path('index.html').write_text('<style></style>', encoding='utf-8')"
+        ),
     )
 
     payload = json.loads(completed.stdout)

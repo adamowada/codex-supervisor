@@ -52,3 +52,11 @@ engineering job types.
 
 Rationale: Codex can decide what work means, while the supervisor keeps durable state, evidence,
 acceptance, and auditability deterministic.
+
+## D-0009: Product Provenance Is A Target Workspace Contract
+
+Decision: Product artifact provenance is owned by target workspace inspection and includes declared
+artifacts plus git-discovered changed product paths recorded by `attempt-run`.
+
+Rationale: Broad worker prompts can create unknown files. One provenance module gives `attempt-run`
+and ACP the same product path semantics without adding job types, modes, commands, or tables.

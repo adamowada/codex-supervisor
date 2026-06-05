@@ -40,9 +40,10 @@ Assurance is stored task data. Policy does not infer assurance from prose.
 Execution is recorded as an attempt. Codex, manual work, shell checks, review, and future adapters
 all run attempts when they produce evidence. The generic process runner is the AFK execution path:
 it starts one worker process in a workspace, captures stdout, stderr, command metadata, exit code,
-declared artifacts, and optional verifier output, then writes terminal evidence through the same
-acceptance path. Launch failures, timeouts, verifier failures, missing artifacts, and telemetry write
-failures become durable evidence instead of leaving invisible running work.
+declared artifacts, git-discovered product paths, and optional verifier output, then writes terminal
+evidence through the same acceptance path. Launch failures, timeouts, verifier failures, missing
+artifacts, and telemetry write failures become durable evidence instead of leaving invisible running
+work.
 
 For full AFK or autonomous-worker product work, the supervisor manages task intent, worker launch,
 inspection, verifier setup, evidence, and acceptance. Product files are changed by the worker
@@ -52,10 +53,18 @@ process inside `attempt-run`. Supervisor-owned setup and verifier files live und
 Work semantics live in task intent and worker behavior. The supervisor does not define job types for
 features, bugs, reviews, project starts, or other engineering categories.
 
+### Target Workspace Inspection
+
+Target workspace inspection owns product provenance. It reads git workspace state, normalizes paths,
+excludes `.gitignore` and `.codex-supervisor/**`, detects changed product paths, inspects linked
+worktrees, and identifies product paths backed by succeeded `attempt-run` evidence. Git is the
+concrete adapter at this seam.
+
 ### Evidence Boundary
 
 Evidence bundles contain summaries, checks, and artifact references. SQLite indexes evidence and
-points to supporting artifacts.
+points to supporting artifacts. Evidence is kept structured until the compact store encodes it into
+the existing checks and artifacts JSON arrays.
 
 ### Interfaces
 

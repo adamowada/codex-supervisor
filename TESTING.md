@@ -34,6 +34,8 @@ The gate checks:
   preserving the supervisor role boundary.
 - e2e coverage that the target-workspace ACP gate rejects direct product edits, rejects tracked
   `.codex-supervisor/**` state, and accepts product changes backed by `attempt-run` evidence.
+- focused Module coverage for target workspace product provenance, evidence encoding, and terminal
+  attempt acceptance.
 - contract coverage that `HANDOFF.md` edits are paired with `plans/planning.sqlite3` edits, so the
   readable handoff and durable ledger stay current together.
 

@@ -65,6 +65,11 @@ and failed verifier commands cannot leave supplied passing acceptance results be
 evidence, and declared output artifacts must exist before supplied passing acceptance can remain
 passing.
 
+Product provenance is owned by the target workspace inspection layer. `attempt-run` records declared
+artifacts and git-discovered changed product paths, excluding `.gitignore` and
+`.codex-supervisor/**`. ACP uses the same provenance rules to decide whether changed product paths
+are worker-backed.
+
 `queue-next` inspects the next operational item in the active queue. Running work is surfaced before
 ready work so a supervisor can finish, block, or recover an in-flight attempt instead of silently
 starting something else.

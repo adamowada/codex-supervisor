@@ -36,6 +36,7 @@ The active schema contains:
 - `tasks`
 - `attempts`
 - `evidence_bundles`
+- `acceptance_decisions`
 - `decisions`
 
 The branch history carries past implementation context. The database carries current operational
@@ -64,6 +65,9 @@ fixing a bug, or running a review are task intents plus process attempts. Failed
 and failed verifier commands cannot leave supplied passing acceptance results behind as passing
 evidence, and declared output artifacts must exist before supplied passing acceptance can remain
 passing.
+
+Terminal attempts write a durable acceptance decision linked to the task, attempt, and evidence
+bundle. Task status is the current-state projection of that decision.
 
 Product provenance is owned by the target workspace inspection layer. `attempt-run` records declared
 artifacts and git-discovered changed product paths, excluding `.gitignore` and

@@ -52,6 +52,18 @@ create table if not exists evidence_bundles (
     artifacts_json text not null,
     created_at text not null
 );
+create table if not exists acceptance_decisions (
+    decision_id text primary key,
+    task_id text not null references tasks(task_id) on delete cascade,
+    attempt_id text not null references attempts(attempt_id) on delete cascade,
+    bundle_id text not null references evidence_bundles(bundle_id) on delete cascade,
+    actor text not null,
+    result text not null check (result in ('accepted', 'rejected')),
+    rationale text not null,
+    evaluation_json text not null,
+    created_at text not null,
+    unique(attempt_id)
+);
 create table if not exists decisions (
     decision_id text primary key,
     plan_id text references plans(plan_id) on delete set null,
@@ -63,7 +75,7 @@ create table if not exists decisions (
 
 
 def initialize_compact_planning_database(database_path: Path) -> None:
-    """Create the compact six-table planning schema."""
+    """Create the compact planning schema."""
 
     database_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(database_path) as connection:
@@ -74,5 +86,5 @@ def initialize_compact_planning_database(database_path: Path) -> None:
             ("fresh_simplified_planning",),
         )
         connection.execute(
-            "insert or replace into meta(key, value) values ('schema_version', '1')"
+            "insert or replace into meta(key, value) values ('schema_version', '2')"
         )

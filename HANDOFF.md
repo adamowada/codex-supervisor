@@ -29,6 +29,7 @@ Planning database:
 - `tasks`
 - `attempts`
 - `evidence_bundles`
+- `acceptance_decisions`
 - `decisions`
 
 `plans/planning.sqlite3` and `HANDOFF.md` must stay current together.
@@ -46,8 +47,12 @@ The latest architecture-deepening pass is implemented in code and docs:
 - `src/codex_supervisor/evidence.py` keeps evidence structured before it is encoded into the
   compact `checks_json` and `artifacts_json` fields.
 - `src/codex_supervisor/terminal_transition.py` owns terminal attempt acceptance and persistence.
+  Terminal attempts now write a durable `acceptance_decisions` row linked to the task, attempt, and
+  evidence bundle; task status is the current-state projection.
 - `attempt-run` records declared artifacts plus git-discovered product paths through the same
   provenance rules ACP uses.
+- `AttemptStore.finalize_attempt()` is the only store terminalization path. Terminal attempts write
+  evidence and acceptance decisions atomically instead of allowing a decision-free completion path.
 - Source-of-truth docs now name product provenance and structured evidence encoding directly.
 
 Target-workspace supervisor operation still uses the bright-line filesystem boundary: the supervisor
@@ -73,12 +78,25 @@ Full verification completed after doc, source-lock, handoff, and planning ledger
 uv run --no-sync ruff check src tests scripts
 All checks passed
 
+uv run --no-sync python -B -m pytest
+91 passed
+
 uv run --no-sync python -B scripts/verify.py
-90 passed
+91 passed
 ```
 
-Planning task `task-architecture-deepening-20260604` is accepted and done in
-`plans/planning.sqlite3`.
+Planning task `task-durable-acceptance-decisions-20260605` is accepted and done in
+`plans/planning.sqlite3`. The planning database schema is version 2 and includes durable
+`acceptance_decisions` rows. Existing terminal attempts were reconstructed with one acceptance
+decision per attempt during the schema upgrade.
+
+Planning task `task-terminalization-single-path-20260605` is accepted and done in
+`plans/planning.sqlite3`. The unused `complete_attempt()` bypass was removed so terminal store
+state moves through `finalize_attempt()`.
+
+Planning task `task-acceptance-decision-normalization-20260605` is accepted and done in
+`plans/planning.sqlite3`. Acceptance decision actor and rationale values are normalized once before
+both insertion and return.
 
 The opt-in live Codex pytest and its letter-grade structure have been removed. Live smoke testing is
 manual and out-of-band; source verification now stays fully deterministic with no always-skipped

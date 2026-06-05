@@ -7,7 +7,7 @@ SQLite, CLI commands, MCP, plugins, or worker launch details.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -74,6 +74,21 @@ class AttemptEvidence:
     summary: str
     checks: tuple[str, ...]
     artifacts: tuple[str, ...]
+    created_at: str
+
+
+@dataclass(frozen=True)
+class AcceptanceDecision:
+    """Durable policy decision for one terminal attempt."""
+
+    decision_id: str
+    task_id: str
+    attempt_id: str
+    bundle_id: str
+    actor: str
+    result: str
+    rationale: str
+    evaluation: Mapping[str, object]
     created_at: str
 
 

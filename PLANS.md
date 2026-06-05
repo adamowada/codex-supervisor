@@ -10,7 +10,8 @@ The planning database answers five questions:
 2. What task intent is next?
 3. What attempts have run?
 4. What evidence exists?
-5. What decisions shape the plan?
+5. What acceptance decisions did policy make?
+6. What product or architecture decisions shape the plan?
 
 The planning database is the durable ledger. It **MUST** be current whenever `HANDOFF.md` is current.
 Work that changes the repository's current state, completion evidence, or next action **MUST** update
@@ -112,6 +113,25 @@ Structured evidence produced by an attempt or accepted manually for a task.
 - `artifacts_json`: required JSON array.
 - `created_at`: required timestamp.
 
+### `acceptance_decisions`
+
+One policy decision for one terminal attempt.
+
+- `decision_id`: primary key.
+- `task_id`: parent task.
+- `attempt_id`: terminal attempt.
+- `bundle_id`: evidence bundle judged by policy.
+- `actor`: required policy actor.
+- `result`: required result.
+- `rationale`: required text.
+- `evaluation_json`: required JSON object.
+- `created_at`: required timestamp.
+
+Allowed results:
+
+- `accepted`
+- `rejected`
+
 ### `decisions`
 
 Durable product or architecture decisions.
@@ -124,9 +144,10 @@ Durable product or architecture decisions.
 
 ## Extension Rule
 
-Add a table when repeated queries need it. Until then, store task acceptance, evidence details, and
-attempt metadata in structured JSON fields attached to the core tables. Evidence may be structured
-in code before it is encoded into the existing JSON fields.
+Add a table when repeated queries need it. Until then, store evidence details and attempt metadata
+in structured JSON fields attached to the core tables. Evidence may be structured in code before it
+is encoded into the existing JSON fields. Acceptance decisions are first-class rows because they are
+part of the durable work model.
 
 ## Currentness Rule
 

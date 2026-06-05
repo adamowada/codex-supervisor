@@ -59,10 +59,12 @@ Required tables:
 - `tasks`
 - `attempts`
 - `evidence_bundles`
+- `acceptance_decisions`
 - `decisions`
 
-The database records the current queue, attempts, evidence, and decisions. Keep additional detail in
-JSON fields until a repeated access pattern earns a dedicated table.
+The database records the current queue, attempts, evidence, acceptance decisions, and product or
+architecture decisions. Keep additional detail in JSON fields until a repeated access pattern earns
+a dedicated table.
 
 `plans/planning.sqlite3` and `HANDOFF.md` **MUST** be current together. Any change that updates
 current state, completed work, next action, verification evidence, or source-of-truth status

@@ -24,20 +24,22 @@ def test_attempt_store_runs_lifecycle_and_attaches_evidence(tmp_path: Path) -> N
         summary="Manual attempt running.",
         started_at="2026-05-28T17:00:00Z",
     )
-    completed = store.complete_attempt(
+    completed, evidence, decision = store.finalize_attempt(
         "attempt-1",
         status="succeeded",
         summary="Manual attempt succeeded.",
-        finished_at="2026-05-28T17:01:00Z",
-    )
-    evidence = store.attach_evidence_bundle(
         task_id="task-1",
-        attempt_id="attempt-1",
+        task_status="done",
         assurance="medium",
-        summary="Evidence attached.",
         checks=("pytest tests/test_attempt_store.py",),
         artifacts=("src/codex_supervisor/attempt_store.py",),
+        acceptance_actor="codex-supervisor-policy",
+        acceptance_result="accepted",
+        acceptance_rationale="Policy accepted terminal evidence.",
+        acceptance_evaluation={"accepted": True},
         bundle_id="evidence-1",
+        decision_id="acceptance-1",
+        finished_at="2026-05-28T17:01:00Z",
         created_at="2026-05-28T17:01:00Z",
     )
 
@@ -45,6 +47,7 @@ def test_attempt_store_runs_lifecycle_and_attaches_evidence(tmp_path: Path) -> N
     assert running.status == RunAttemptStatus.RUNNING
     assert completed.status == RunAttemptStatus.SUCCEEDED
     assert evidence.checks == ("pytest tests/test_attempt_store.py",)
+    assert decision.result == "accepted"
     assert store.read_attempt("attempt-1").finished_at == "2026-05-28T17:01:00Z"
     assert store.list_active_attempts("task-1") == ()
 
@@ -93,10 +96,19 @@ def test_attempt_store_rejects_invalid_transition(tmp_path: Path) -> None:
     )
 
     with pytest.raises(AttemptTransitionError, match="invalid attempt transition"):
-        store.complete_attempt(
+        store.finalize_attempt(
             "attempt-1",
             status="succeeded",
             summary="Cannot skip running.",
+            task_id="task-1",
+            task_status="done",
+            assurance="medium",
+            checks=("pytest",),
+            artifacts=("artifact",),
+            acceptance_actor="codex-supervisor-policy",
+            acceptance_result="accepted",
+            acceptance_rationale="Policy accepted terminal evidence.",
+            acceptance_evaluation={"accepted": True},
             finished_at="2026-05-28T17:01:00Z",
         )
 

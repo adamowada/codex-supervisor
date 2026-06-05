@@ -91,16 +91,20 @@ why it matters.
 
 Evidence is structured before storage. The active schema keeps the compact `checks_json` and
 `artifacts_json` fields, and the evidence codec owns how checks, acceptance results, risks, gaps,
-next actions, and review evidence are encoded into those fields.
+next actions, and review evidence are encoded into those fields. Terminal acceptance is stored as
+a separate decision row linked to the evidence bundle instead of being inferred from check strings.
 
 ## Acceptance Decision
 
 Acceptance is the policy decision that a task can advance.
 
-`attempt-transition` evaluates acceptance when terminal attempt evidence is written. Task status plus
-evidence bundles represent acceptance in the active schema. Inspection paths do not replay
-acceptance from stored evidence. A dedicated acceptance table can be added when repeated acceptance
-queries require it.
+`attempt-transition` evaluates acceptance when terminal attempt evidence is written. Every terminal
+attempt with evidence writes one `acceptance_decisions` row linked to the task, attempt, and evidence
+bundle. The row records the policy actor, accepted/rejected result, rationale, and structured
+evaluation JSON. Task status is the current-state projection of that durable decision.
+
+Inspection paths read stored state. They do not replay acceptance from evidence and they do not
+reinterpret old decisions through newer policy code.
 
 ## Assurance Levels
 

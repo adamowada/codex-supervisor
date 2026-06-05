@@ -23,7 +23,7 @@ Source-of-truth documents define the product contract. They stay concise and cur
 
 `plans/planning.sqlite3` stores operational state using the schema in `PLANS.md`.
 The store enforces one active plan, one non-terminal attempt per task, and atomic terminal attempt
-evidence writes.
+evidence plus acceptance decision writes.
 
 ### Policy
 
@@ -65,6 +65,10 @@ concrete adapter at this seam.
 Evidence bundles contain summaries, checks, and artifact references. SQLite indexes evidence and
 points to supporting artifacts. Evidence is kept structured until the compact store encodes it into
 the existing checks and artifacts JSON arrays.
+
+Acceptance decisions are durable rows written for terminal attempts. They link the task, attempt,
+and evidence bundle to the policy result and rationale. Task status is a projection of the latest
+terminal decision, not the acceptance record itself.
 
 ### Interfaces
 

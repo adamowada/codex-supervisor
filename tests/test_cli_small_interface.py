@@ -34,7 +34,7 @@ def test_cli_plan_init_json_reports_compact_schema(tmp_path: Path, capsys) -> No
         "initialized": True,
         "path": str(db_path),
         "schema_name": "fresh_simplified_planning",
-        "schema_version": "1",
+        "schema_version": "2",
     }
 
 

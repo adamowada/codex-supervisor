@@ -18,6 +18,7 @@ def test_fresh_planning_database_contract() -> None:
             )
         }
         assert tables == {
+            "acceptance_decisions",
             "attempts",
             "decisions",
             "evidence_bundles",
@@ -30,6 +31,12 @@ def test_fresh_planning_database_contract() -> None:
                 "select value from meta where key = 'schema_name'"
             ).fetchone()[0]
             == "fresh_simplified_planning"
+        )
+        assert (
+            connection.execute(
+                "select value from meta where key = 'schema_version'"
+            ).fetchone()[0]
+            == "2"
         )
         active_plans = connection.execute(
             "select count(*) from plans where status = 'active'"

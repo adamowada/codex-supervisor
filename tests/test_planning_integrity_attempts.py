@@ -149,6 +149,23 @@ def test_planning_integrity_accepts_blocked_plan_with_failed_evidence(tmp_path: 
                 "2026-05-28T17:01:00Z",
             ),
         )
+        connection.execute(
+            """insert into acceptance_decisions(
+                   decision_id, task_id, attempt_id, bundle_id, actor,
+                   result, rationale, evaluation_json, created_at
+               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "acceptance-failed",
+                "task-1",
+                "attempt-failed",
+                "evidence-failed",
+                "codex-supervisor-policy",
+                "rejected",
+                "Policy rejected terminal evidence.",
+                '{"accepted": false}',
+                "2026-05-28T17:01:00Z",
+            ),
+        )
         connection.commit()
     finally:
         connection.close()

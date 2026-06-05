@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -12,6 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from codex_supervisor.attempts import (
+    AcceptanceDecision,
     AttemptEvidence,
     RunAttempt,
     RunAttemptStatus,
@@ -273,11 +274,16 @@ class AttemptStore:
         assurance: str,
         checks: tuple[str, ...],
         artifacts: tuple[str, ...],
+        acceptance_actor: str,
+        acceptance_result: str,
+        acceptance_rationale: str,
+        acceptance_evaluation: Mapping[str, object],
         bundle_id: str | None = None,
+        decision_id: str | None = None,
         finished_at: str | None = None,
         created_at: str | None = None,
-    ) -> tuple[RunAttempt, AttemptEvidence]:
-        """Terminalize an attempt, attach evidence, and update task state atomically."""
+    ) -> tuple[RunAttempt, AttemptEvidence, AcceptanceDecision]:
+        """Terminalize an attempt, attach evidence, record acceptance, and update task state."""
 
         target_status = normalize_attempt_status(status)
         if target_status is RunAttemptStatus.PLANNED or target_status is RunAttemptStatus.RUNNING:
@@ -288,9 +294,17 @@ class AttemptStore:
         finished_at = finished_at or _now()
         created_at = created_at or finished_at
         bundle_id = bundle_id or _stable_id("evidence")
+        decision_id = decision_id or _stable_id("acceptance")
         assurance_level = normalize_assurance(assurance).value
         checks_json = json_string_array(checks, field_name="checks")
         artifacts_json = json_string_array(artifacts, field_name="artifacts")
+        normalized_actor = _non_empty(acceptance_actor, "acceptance_actor")
+        normalized_rationale = _non_empty(acceptance_rationale, "acceptance_rationale")
+        normalized_acceptance_result = _acceptance_result(acceptance_result)
+        acceptance_evaluation_json = _json_object(
+            acceptance_evaluation,
+            field_name="acceptance_evaluation",
+        )
 
         with self._connect() as connection:
             current = self._read_attempt(connection, attempt_id)
@@ -335,6 +349,23 @@ class AttemptStore:
                 ),
             )
             connection.execute(
+                """insert into acceptance_decisions(
+                       decision_id, task_id, attempt_id, bundle_id, actor,
+                       result, rationale, evaluation_json, created_at
+                   ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    decision_id,
+                    attempt.task_id,
+                    attempt.attempt_id,
+                    bundle_id,
+                    normalized_actor,
+                    normalized_acceptance_result,
+                    normalized_rationale,
+                    acceptance_evaluation_json,
+                    created_at,
+                ),
+            )
+            connection.execute(
                 "update tasks set status = ?, updated_at = ? where task_id = ?",
                 (task_status, finished_at, attempt.task_id),
             )
@@ -351,51 +382,18 @@ class AttemptStore:
             artifacts=parse_json_string_array(artifacts_json, field_name="artifacts"),
             created_at=created_at,
         )
-        return attempt, evidence
-
-    def complete_attempt(
-        self,
-        attempt_id: str,
-        *,
-        status: str | RunAttemptStatus,
-        summary: str,
-        task_id: str | None = None,
-        finished_at: str | None = None,
-    ) -> RunAttempt:
-        """Move an attempt to a terminal status."""
-
-        target_status = normalize_attempt_status(status)
-        if target_status is RunAttemptStatus.PLANNED or target_status is RunAttemptStatus.RUNNING:
-            raise ValueError("complete_attempt requires a terminal status")
-
-        finished_at = finished_at or _now()
-        with self._connect() as connection:
-            current = self._read_attempt(connection, attempt_id)
-            _validate_attempt_task(current, task_id)
-            validate_attempt_transition(current.status, target_status)
-            attempt = RunAttempt(
-                attempt_id=current.attempt_id,
-                task_id=current.task_id,
-                executor=current.executor,
-                status=target_status,
-                summary=_non_empty(summary, "summary"),
-                started_at=current.started_at or finished_at,
-                finished_at=finished_at,
-            )
-            validate_attempt_timestamps(attempt)
-            connection.execute(
-                """update attempts
-                   set status = ?, summary = ?, started_at = ?, finished_at = ?
-                   where attempt_id = ?""",
-                (
-                    attempt.status.value,
-                    attempt.summary,
-                    attempt.started_at,
-                    attempt.finished_at,
-                    attempt.attempt_id,
-                ),
-            )
-        return attempt
+        decision = AcceptanceDecision(
+            decision_id=decision_id,
+            task_id=attempt.task_id,
+            attempt_id=attempt.attempt_id,
+            bundle_id=bundle_id,
+            actor=normalized_actor,
+            result=normalized_acceptance_result,
+            rationale=normalized_rationale,
+            evaluation=json.loads(acceptance_evaluation_json),
+            created_at=created_at,
+        )
+        return attempt, evidence, decision
 
     def attach_evidence_bundle(
         self,
@@ -746,6 +744,21 @@ def _string_array(items: tuple[str, ...], field_name: str) -> tuple[str, ...]:
     if len(normalized) != len(items):
         raise ValueError(f"{field_name} entries must be non-empty strings")
     return normalized
+
+
+def _acceptance_result(value: str) -> str:
+    normalized = value.strip().casefold()
+    if normalized not in {"accepted", "rejected"}:
+        raise ValueError("acceptance_result must be accepted or rejected")
+    return normalized
+
+
+def _json_object(value: Mapping[str, object], *, field_name: str) -> str:
+    encoded = json.dumps(dict(value), indent=2, sort_keys=True)
+    decoded = json.loads(encoded)
+    if not isinstance(decoded, dict):
+        raise ValueError(f"{field_name} must be a JSON object")
+    return encoded
 
 
 def _validate_attempt_task(attempt: RunAttempt, expected_task_id: str | None) -> None:

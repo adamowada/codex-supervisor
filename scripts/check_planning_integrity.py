@@ -12,6 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = REPO_ROOT / "plans" / "planning.sqlite3"
 
 EXPECTED_TABLES = {
+    "acceptance_decisions",
     "attempts",
     "decisions",
     "evidence_bundles",
@@ -22,13 +23,14 @@ EXPECTED_TABLES = {
 
 REQUIRED_META = {
     "schema_name": "fresh_simplified_planning",
-    "schema_version": "1",
+    "schema_version": "2",
 }
 
 VALID_PLAN_STATUSES = {"active", "blocked", "done", "dropped"}
 VALID_TASK_STATUSES = {"ready", "running", "blocked", "done", "dropped"}
 VALID_ATTEMPT_STATUSES = {"planned", "running", "succeeded", "failed", "blocked"}
 VALID_ASSURANCE = {"low", "medium", "high"}
+VALID_ACCEPTANCE_RESULTS = {"accepted", "rejected"}
 
 
 def main() -> int:
@@ -105,6 +107,13 @@ def check_planning_integrity(database_path: Path) -> tuple[str, ...]:
             column="assurance",
             allowed=VALID_ASSURANCE,
         )
+        _check_values(
+            connection,
+            failures,
+            table="acceptance_decisions",
+            column="result",
+            allowed=VALID_ACCEPTANCE_RESULTS,
+        )
 
         active_plans = connection.execute(
             "select count(*) from plans where status = 'active'"
@@ -162,6 +171,23 @@ def check_planning_integrity(database_path: Path) -> tuple[str, ...]:
                     failures.append(
                         f"{table}.{column} row {row['rowid']} must contain non-empty strings"
                     )
+
+        for row in connection.execute(
+            "select rowid, evaluation_json from acceptance_decisions"
+        ):
+            try:
+                value = json.loads(row["evaluation_json"])
+            except json.JSONDecodeError as exc:
+                failures.append(
+                    "acceptance_decisions.evaluation_json "
+                    f"row {row['rowid']} is invalid JSON: {exc}"
+                )
+                continue
+            if not isinstance(value, dict):
+                failures.append(
+                    "acceptance_decisions.evaluation_json "
+                    f"row {row['rowid']} is not a JSON object"
+                )
 
         _check_attempt_timestamps(connection, failures)
         _check_attempt_relationships(connection, failures)
@@ -257,6 +283,50 @@ def _check_attempt_relationships(
         )
 
     for row in connection.execute(
+        """select acceptance_decisions.decision_id,
+                  acceptance_decisions.task_id,
+                  attempts.task_id as attempt_task_id
+           from acceptance_decisions
+           join attempts on attempts.attempt_id = acceptance_decisions.attempt_id
+           where acceptance_decisions.task_id != attempts.task_id"""
+    ):
+        failures.append(
+            f"acceptance decision {row['decision_id']} task {row['task_id']} does not match "
+            f"attempt task {row['attempt_task_id']}"
+        )
+
+    for row in connection.execute(
+        """select acceptance_decisions.decision_id,
+                  acceptance_decisions.task_id,
+                  evidence_bundles.task_id as bundle_task_id,
+                  acceptance_decisions.attempt_id,
+                  evidence_bundles.attempt_id as bundle_attempt_id
+           from acceptance_decisions
+           join evidence_bundles on evidence_bundles.bundle_id = acceptance_decisions.bundle_id
+           where acceptance_decisions.task_id != evidence_bundles.task_id
+              or acceptance_decisions.attempt_id != evidence_bundles.attempt_id"""
+    ):
+        failures.append(
+            f"acceptance decision {row['decision_id']} does not match evidence bundle "
+            f"task/attempt ({row['bundle_task_id']}, {row['bundle_attempt_id']})"
+        )
+
+    for row in connection.execute(
+        """select attempts.attempt_id
+           from attempts
+           where attempts.status in ('succeeded', 'failed', 'blocked')
+             and exists (
+                 select 1 from evidence_bundles
+                 where evidence_bundles.attempt_id = attempts.attempt_id
+             )
+             and not exists (
+                 select 1 from acceptance_decisions
+                 where acceptance_decisions.attempt_id = attempts.attempt_id
+             )"""
+    ):
+        failures.append(f"terminal attempt {row['attempt_id']} has no acceptance decision")
+
+    for row in connection.execute(
         """select task_id, count(*) as active_attempts
            from attempts
            where status in ('planned', 'running')
@@ -289,6 +359,10 @@ def _check_attempt_relationships(
                  join evidence_bundles
                    on evidence_bundles.attempt_id = attempts.attempt_id
                   and evidence_bundles.task_id = tasks.task_id
+                 join acceptance_decisions
+                   on acceptance_decisions.attempt_id = attempts.attempt_id
+                  and acceptance_decisions.bundle_id = evidence_bundles.bundle_id
+                  and acceptance_decisions.result = 'accepted'
                  where attempts.task_id = tasks.task_id
                    and attempts.status = 'succeeded'
              )"""
@@ -305,6 +379,10 @@ def _check_attempt_relationships(
                  join evidence_bundles
                    on evidence_bundles.attempt_id = attempts.attempt_id
                   and evidence_bundles.task_id = tasks.task_id
+                 join acceptance_decisions
+                   on acceptance_decisions.attempt_id = attempts.attempt_id
+                  and acceptance_decisions.bundle_id = evidence_bundles.bundle_id
+                  and acceptance_decisions.result = 'rejected'
                  where attempts.task_id = tasks.task_id
                    and attempts.status in ('failed', 'blocked', 'succeeded')
              )"""

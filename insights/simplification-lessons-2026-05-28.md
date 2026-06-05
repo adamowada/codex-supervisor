@@ -79,7 +79,8 @@ The planning database should answer operational questions directly:
 - What task intent is next?
 - What attempts have run?
 - What evidence exists?
-- What decisions shape the work?
+- What acceptance decisions did policy make?
+- What product or architecture decisions shape the work?
 
 The active schema contains:
 
@@ -88,10 +89,11 @@ The active schema contains:
 - `tasks`
 - `attempts`
 - `evidence_bundles`
+- `acceptance_decisions`
 - `decisions`
 
-This shape keeps the queue and evidence model inspectable. Detail can live in JSON fields while the
-access pattern is still forming. Repeated queries can earn dedicated tables later.
+This shape keeps the queue, evidence, and acceptance model inspectable. Detail can live in JSON
+fields while the access pattern is still forming. Repeated queries can earn dedicated tables later.
 
 ## Skills
 
@@ -257,7 +259,7 @@ mutates the same compact schema.
 
 The live contract is:
 
-1. `plan-init` creates the six-table compact schema.
+1. `plan-init` creates the compact planning schema.
 2. Planning inspection commands read compact tables directly.
 3. `queue-next` reads the next task, active attempt, latest evidence, and acceptance state.
 4. `attempt-transition` validates task ownership before changing attempt state.

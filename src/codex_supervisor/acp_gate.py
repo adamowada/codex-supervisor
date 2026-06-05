@@ -61,6 +61,7 @@ def check_target_workspace_acp_gate(
         failures.append(
             "product paths lack attempt-run worker evidence: " + ", ".join(missing_evidence)
         )
+    failures.extend(_linked_worktree_product_failures(workspace))
 
     return AcpGateResult(
         ok=not failures,
@@ -71,7 +72,7 @@ def check_target_workspace_acp_gate(
 
 
 def _changed_product_paths(workspace: Path) -> tuple[str, ...]:
-    output = _git_output(workspace, "status", "--porcelain=v1", "-z")
+    output = _git_output(workspace, "status", "--porcelain=v1", "-z", "--untracked-files=all")
     paths: list[str] = []
     entries = [entry for entry in output.split("\0") if entry]
     index = 0
@@ -108,13 +109,42 @@ def _worker_backed_product_artifacts(
     paths: set[str] = set()
     for artifacts_json, attempt_id in rows:
         artifacts = _json_string_array(artifacts_json)
-        if not _has_attempt_run_metadata(workspace, attempt_id=str(attempt_id), artifacts=artifacts):
+        if not _has_attempt_run_metadata(
+            workspace,
+            attempt_id=str(attempt_id),
+            artifacts=artifacts,
+        ):
             continue
         for artifact in artifacts:
             normalized = _artifact_to_workspace_relative(workspace, artifact)
             if normalized is not None and _is_product_path(normalized):
                 paths.add(normalized)
     return tuple(sorted(paths))
+
+
+def _linked_worktree_product_failures(workspace: Path) -> tuple[str, ...]:
+    failures: list[str] = []
+    for worktree in _linked_worktrees(workspace):
+        changed = _changed_product_paths(worktree)
+        if changed:
+            failures.append(
+                f"linked worktree has unintegrated product changes: "
+                f"{worktree}: {', '.join(changed)}"
+            )
+    return tuple(failures)
+
+
+def _linked_worktrees(workspace: Path) -> tuple[Path, ...]:
+    output = _git_output(workspace, "worktree", "list", "--porcelain")
+    root = workspace.resolve()
+    paths: list[Path] = []
+    for line in output.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        path = Path(line.removeprefix("worktree ")).resolve()
+        if path != root:
+            paths.append(path)
+    return tuple(paths)
 
 
 def _has_attempt_run_metadata(

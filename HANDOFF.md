@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-06-03
+Last updated: 2026-06-04
 
 This is the current resume snapshot.
 
@@ -148,6 +148,59 @@ tested place, and pipes the worker prompt through stdin instead of putting promp
 The packaged skill and Windows guidance now require this launcher and forbid ad hoc PowerShell
 worker launch scripts. Plugin tests lock the Windows command shape and prompt-stdin behavior.
 
+`plan-live-smoke-a-plus-20260604` is complete. The opt-in live Codex worker smoke now runs a graded
+three-scenario ladder through real `attempt-run` evidence, the packaged worker launcher, Python
+verifiers, and target-workspace ACP gates. The ladder covers exact single-file creation, code repair
+with pytest coverage creation, and data-summary work that preserves inputs while producing derived
+JSON and notes. The initial live red exposed the stale direct `codex exec` path, prompt ambiguity,
+and an ACP nested untracked file mismatch. ACP now asks git for all untracked files so worker-backed
+nested product artifacts match file-level evidence instead of directory placeholders. The live ladder
+scored A+ twice consecutively, and the default verification gate passed with 83 tests and one opt-in
+live smoke skipped. `plan-live-smoke-polish-20260604` records the post-evidence touched-file Ruff
+cleanup and final post-polish verification pass.
+
+`plan-live-todo-smoke-20260604` is complete. The next exact-prompt live smoke used the worker prompt
+`create a 3-tier todo list app`. The broad prompt generated unknown product files, which exposed that
+`attempt-run` did not automatically record git-discovered product artifacts for ACP. `attempt-run`
+now records changed product paths from `git status --porcelain=v1 -z --untracked-files=all` after
+the worker/verifier run, excluding `.gitignore` and `.codex-supervisor/**`, so broad worker outputs
+can be ACP-backed without predeclaring every file. A deterministic ACP regression covers this path.
+The accepted live retry produced `app.js`, `index.html`, and `styles.css`, passed a structural
+verifier for a reasonable three-tier todo hierarchy, and passed the target ACP gate with those
+product paths worker-backed.
+
+`plan-live-subagent-worktree-smoke-20260604` is complete. The next exact-prompt live smoke used the
+worker prompt `create a 3-tier todo list app using 6 subagents working in git worktrees`. The worker
+interpreted the prompt literally enough to create six linked git worktrees:
+`agent-1-scaffold`, `agent-2-data`, `agent-3-service`, `agent-4-ui`, `agent-5-client`, and
+`agent-6-qa`. The root worktree contained coordination and QA files, while the actual app pieces
+remained unintegrated in linked worktrees outside the root target workspace. The old ACP gate
+incorrectly passed the root when linked worktrees were dirty. ACP now inspects linked git worktrees
+and rejects unintegrated product changes outside the target workspace, reporting the dirty linked
+worktree path and product files. A deterministic ACP regression covers this. The live target is
+intentionally not ACP-ready until those linked worktree changes are integrated, and the source
+guardrail now reports that instead of silently passing root ACP.
+
+`plan-live-subagent-a-plus-20260604` is complete. The same live-smoke target has now reached A+:
+integration work was assigned through `attempt-run`, copied and reconciled the six subagent
+worktree outputs into the root worktree, removed the linked worktrees, and verified the integrated
+app. The A+ verifier proved required integrated files, `node --test test/http-contract.test.js`,
+`node scripts/smoke-test.js`, and linked worktree count `0`. The final target ACP gate passed with
+all changed product paths worker-backed and no failures.
+
+`plan-live-parallel-worker-smoke-20260604` is complete. The exact-prompt live smoke used the worker
+prompt `create a 3-tier todo list app. spawn workers in parallel.` The supervisor created four
+separate target tasks and launched four `attempt-run` worker processes concurrently, without Codex
+subagent framing. The red run proved real overlap and exposed concurrent mutation pressure: all four
+live worker attempts terminalized failed or timed out while still producing a shared todo app and
+repair artifacts. A final high-assurance target task then ran through `attempt-run`, normalized the
+root app, and verified A+ evidence. The target A+ report proves prompt fidelity, worker count `4`,
+all six overlap pairs, four terminal parallel worker attempts, `node --test` API/smoke success, and
+linked worktree count `0`. Target ACP passed with `.codex-supervisor/planning.sqlite3` ignored, no
+tracked `.codex-supervisor/**` paths, and every changed product path worker-backed. A browser smoke
+on the generated UI also passed: add a todo to `Next`, move it to `Now`, complete/delete it, and
+return the board to empty.
+
 Repo-local skills now include:
 
 - `codex-supervisor`
@@ -183,6 +236,19 @@ explicit evidence fields, and state-transition language is complete. The related
 `done` in `plans/planning.sqlite3`. The e2e weak-spot hardening pass is complete with 80 default
 tests passing and one explicit live Codex worker smoke test skipped unless enabled. The packaged
 Windows Codex worker launcher is complete, with 82 default tests passing and one explicit live Codex
+worker smoke test skipped unless enabled. The live smoke A+ hardening pass is complete: the opt-in
+live ladder scored A+ twice consecutively, and the default verification gate now passes with 83
+tests and one explicit live Codex worker smoke test skipped unless enabled. The post-polish
+touched-file Ruff check and final verification pass are recorded in `plans/planning.sqlite3`. The
+exact-prompt 3-tier todo smoke is also complete; the final verification gate now passes with 84
+tests and one explicit live Codex worker smoke test skipped unless enabled. The exact-prompt
+six-subagent worktree smoke is complete; ACP now rejects dirty linked worktrees, and the final
+verification gate passes with 85 tests and one explicit live Codex worker smoke test skipped unless
+enabled. The follow-on A+ integration pass for that same smoke is complete: the target app verifies,
+linked worktrees are removed, and target ACP passes. The exact-prompt parallel supervisor worker
+smoke is complete: four concurrent `attempt-run` workers were launched without subagents, the red
+concurrency result was recorded, the final target app reached A+, browser smoke passed, and target
+ACP passed. The final source verification gate passes with 85 tests and one explicit live Codex
 worker smoke test skipped unless enabled.
 
 Planning task:

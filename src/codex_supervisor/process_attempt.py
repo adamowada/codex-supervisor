@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from codex_supervisor.small_interface import AttemptTransitionResult, attempt_transition
-
+from codex_supervisor.workspace_hygiene import SUPERVISOR_DIR
 
 _TEXT_CAPTURE = {
     "text": True,
@@ -120,8 +120,6 @@ def run_process_attempt(
         telemetry_errors.append(f"could not write assignment metadata: {assignment_error}")
 
     exit_code = 1
-    stdout = ""
-    stderr = ""
     worker_timed_out = False
     terminal_status = "failed"
     terminal_summary = run_summary
@@ -151,8 +149,6 @@ def run_process_attempt(
             stderr_path=stderr_path,
         )
         exit_code = completed.exit_code
-        stdout = _coerce_output(completed.stdout)
-        stderr = _coerce_output(completed.stderr)
         worker_timed_out = completed.timed_out
         terminal_status = "succeeded" if exit_code == 0 else "failed"
         if worker_timed_out:
@@ -160,7 +156,6 @@ def run_process_attempt(
         else:
             terminal_summary = f"{run_summary} Exit code: {exit_code}."
     except OSError as exc:
-        stderr = str(exc)
         terminal_summary = f"{run_summary} Could not start worker process: {exc}."
     finally:
         command_error = _write_text(
@@ -263,20 +258,25 @@ def run_process_attempt(
             f"{', '.join(missing_artifacts)}."
         )
     if telemetry_errors:
-        terminal_summary = f"{terminal_summary} Telemetry warning(s): {'; '.join(telemetry_errors)}."
+        telemetry_summary = "; ".join(telemetry_errors)
+        terminal_summary = f"{terminal_summary} Telemetry warning(s): {telemetry_summary}."
 
-    recorded_artifacts = (
-        str(command_path),
-        str(assignment_path),
-        str(liveness_path),
-        str(stdout_path),
-        str(stderr_path),
-        *(
-            str(path)
-            for path in (verifier_command_path, verifier_stdout_path, verifier_stderr_path)
-            if path is not None
-        ),
-        *artifacts,
+    git_product_artifacts = _changed_product_paths(workspace)
+    recorded_artifacts = _unique_strings(
+        (
+            str(command_path),
+            str(assignment_path),
+            str(liveness_path),
+            str(stdout_path),
+            str(stderr_path),
+            *(
+                str(path)
+                for path in (verifier_command_path, verifier_stdout_path, verifier_stderr_path)
+                if path is not None
+            ),
+            *artifacts,
+            *git_product_artifacts,
+        )
     )
     recorded_checks = (
         f"process exit code: {exit_code}",
@@ -290,6 +290,7 @@ def run_process_attempt(
             if verifier_skipped_reason is not None
             else ()
         ),
+        *(f"git changed product path: {artifact}" for artifact in git_product_artifacts),
         *(f"missing artifact: {artifact}" for artifact in missing_artifacts),
         *(f"telemetry warning: {error}" for error in telemetry_errors),
         *checks,
@@ -437,7 +438,7 @@ def _collect_process_pipe(
     pipe: object,
     output_path: Path,
     output_parts: list[bytes],
-    liveness: "_LivenessRecorder",
+    liveness: _LivenessRecorder,
 ) -> None:
     if pipe is None:
         return
@@ -548,3 +549,66 @@ def _missing_declared_artifacts(
         if not candidate.exists():
             missing.append(artifact)
     return tuple(missing)
+
+
+def _changed_product_paths(workspace: Path) -> tuple[str, ...]:
+    try:
+        completed = subprocess.run(
+            (
+                "git",
+                "-C",
+                str(workspace),
+                "status",
+                "--porcelain=v1",
+                "-z",
+                "--untracked-files=all",
+            ),
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+    except FileNotFoundError:
+        return ()
+    if completed.returncode != 0:
+        return ()
+
+    paths: list[str] = []
+    entries = [entry for entry in completed.stdout.split("\0") if entry]
+    index = 0
+    while index < len(entries):
+        entry = entries[index]
+        status = entry[:2]
+        raw_path = entry[3:] if len(entry) > 3 else ""
+        if "R" in status or "C" in status:
+            index += 1
+            if index < len(entries):
+                raw_path = entries[index]
+        index += 1
+        normalized = _normalize_relative_path(raw_path)
+        if _is_product_path(normalized):
+            paths.append(normalized)
+    return tuple(sorted(set(paths)))
+
+
+def _is_product_path(relative_path: str) -> bool:
+    return bool(relative_path) and relative_path != ".gitignore" and not (
+        relative_path == SUPERVISOR_DIR or relative_path.startswith(f"{SUPERVISOR_DIR}/")
+    )
+
+
+def _normalize_relative_path(path: str) -> str:
+    normalized = path.strip().replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized
+
+
+def _unique_strings(items: tuple[str, ...]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        unique.append(item)
+    return tuple(unique)

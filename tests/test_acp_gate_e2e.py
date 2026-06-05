@@ -65,6 +65,154 @@ def test_acp_gate_accepts_worker_backed_product_change(tmp_path: Path) -> None:
     assert result.worker_backed_paths == ("README.md",)
 
 
+def test_acp_gate_accepts_worker_backed_nested_untracked_product_file(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _git(workspace, "init")
+    db_path = workspace / ".codex-supervisor" / "planning.sqlite3"
+    product_file = workspace / "reports" / "summary.md"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _create_task(db_path)
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-acp",
+        "--attempt-id",
+        "attempt-acp",
+        "--executor",
+        "worker-process",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--summary",
+        "Assign nested report creation to worker.",
+        "--check",
+        "Worker created reports/summary.md.",
+        "--artifact",
+        str(product_file),
+        "--acceptance-result",
+        "pass",
+        "--risk",
+        "No known residual risk.",
+        "--gap",
+        "No known gap.",
+        "--next-action",
+        "No next action.",
+        "--review-evidence",
+        "Worker evidence captured through attempt-run.",
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        (
+            "from pathlib import Path; "
+            "Path('reports/summary.md').parent.mkdir(parents=True, exist_ok=True); "
+            "Path('reports/summary.md').write_text('# OK\\n', encoding='utf-8')"
+        ),
+    )
+
+    assert json.loads(completed.stdout)["transition"]["task_status"] == "done"
+    result = check_target_workspace_acp_gate(workspace)
+
+    assert result.ok is True
+    assert result.changed_product_paths == ("reports/summary.md",)
+    assert result.worker_backed_paths == ("reports/summary.md",)
+
+
+def test_acp_gate_accepts_attempt_run_captured_product_paths(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _git(workspace, "init")
+    db_path = workspace / ".codex-supervisor" / "planning.sqlite3"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _create_task(db_path)
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-acp",
+        "--attempt-id",
+        "attempt-acp",
+        "--executor",
+        "worker-process",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--summary",
+        "Assign unknown product creation to worker.",
+        "--check",
+        "Worker created product files discovered through git status.",
+        "--acceptance-result",
+        "pass",
+        "--risk",
+        "No known residual risk.",
+        "--gap",
+        "No known gap.",
+        "--next-action",
+        "No next action.",
+        "--review-evidence",
+        "Worker evidence captured through attempt-run.",
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        (
+            "from pathlib import Path; "
+            "Path('README.md').write_text('# OK\\n', encoding='utf-8'); "
+            "Path('reports').mkdir(exist_ok=True); "
+            "Path('reports/summary.md').write_text('# Summary\\n', encoding='utf-8')"
+        ),
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["transition"]["task_status"] == "done"
+    assert "README.md" in payload["transition"]["evidence"]["artifacts"]
+    assert "reports/summary.md" in payload["transition"]["evidence"]["artifacts"]
+    result = check_target_workspace_acp_gate(workspace)
+
+    assert result.ok is True
+    assert result.changed_product_paths == ("README.md", "reports/summary.md")
+    assert result.worker_backed_paths == ("README.md", "reports/summary.md")
+
+
+def test_acp_gate_rejects_dirty_linked_worktree_product_changes(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    linked = tmp_path / "linked-agent"
+    workspace.mkdir()
+    _git(workspace, "init")
+    db_path = workspace / ".codex-supervisor" / "planning.sqlite3"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _git(workspace, "add", ".gitignore")
+    _git(
+        workspace,
+        "-c",
+        "user.email=smoke@example.invalid",
+        "-c",
+        "user.name=Live Smoke",
+        "commit",
+        "-m",
+        "baseline",
+    )
+    _git(workspace, "worktree", "add", "-b", "agent-branch", str(linked))
+    (linked / "server").mkdir()
+    (linked / "server" / "app.js").write_text("console.log('todo')\n", encoding="utf-8")
+
+    result = check_target_workspace_acp_gate(workspace)
+
+    assert result.ok is False
+    assert result.failures == (
+        f"linked worktree has unintegrated product changes: {linked}: server/app.js",
+    )
+
+
 def test_acp_gate_rejects_direct_product_edit_without_worker_evidence(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()

@@ -56,18 +56,10 @@ Next tests should cover:
 - schema/index integrity from a freshly initialized production database;
 - new adapter operations only after the existing factory path stays boring.
 
-## Explicit Live Smoke
+## Live Smoke
 
-The default verification gate does not launch real Codex Desktop or a real Codex worker. It uses
-deterministic subprocess workers so CI stays stable.
+The verification gate does not launch real Codex Desktop or a real Codex worker. It uses
+deterministic subprocess workers so CI stays stable and the active contract stays reproducible.
 
-To exercise a real Codex worker process through `attempt-run`, run the opt-in test with:
-
-```sh
-$env:CODEX_SUPERVISOR_RUN_LIVE_CODEX_E2E = "1"
-uv run --no-sync python -m pytest tests/test_live_codex_worker_e2e.py -q -p no:cacheprovider
-```
-
-Set `CODEX_SUPERVISOR_CODEX_EXECUTABLE` when the test should use a specific `codex` or `codex.ps1`
-executable. On Windows, the test invokes `codex.ps1` through PowerShell when that script is the
-resolved executable.
+Broader live smoke testing happens manually in separate Codex Desktop workspaces, then durable
+lessons are folded back into deterministic source tests.

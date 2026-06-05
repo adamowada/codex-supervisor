@@ -74,11 +74,15 @@ uv run --no-sync ruff check src tests scripts
 All checks passed
 
 uv run --no-sync python -B scripts/verify.py
-90 passed, 1 skipped
+90 passed
 ```
 
 Planning task `task-architecture-deepening-20260604` is accepted and done in
 `plans/planning.sqlite3`.
+
+The opt-in live Codex pytest and its letter-grade structure have been removed. Live smoke testing is
+manual and out-of-band; source verification now stays fully deterministic with no always-skipped
+live worker test.
 
 ## Recent Durable Decisions
 

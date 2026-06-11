@@ -49,6 +49,10 @@ Before the process starts, `attempt-run` writes a task assignment JSON file and 
 assurance level, attempt ID, and workspace path. Worker processes read that assignment instead of
 requiring a supervisor job type.
 
+The packaged Codex worker launcher is the default Codex worker path. It must launch workers with
+`model_reasoning_effort="xhigh"` unless the user explicitly requests different worker reasoning
+behavior.
+
 For full AFK or autonomous-worker product work, product file mutation happens inside `attempt-run`.
 The supervisor may write supervisor-owned files under `.codex-supervisor/`, launch workers, inspect
 outputs, run verifiers, and record evidence. Product cleanup, repair, audit, warning, or polish work

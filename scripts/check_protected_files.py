@@ -24,7 +24,7 @@ PROTECTED_FILE_HASHES = {
     "AGENTS.md": "73944206146b6cd5856a4ac7efc8a7a89afddaab7bcd14751ad8e1e52ba2d0dd",
     "PLANS.md": "db48fe68b5fec7bd819dd72f0fce1e5e24d3aefaab61f6a6c66335adf8451cbd",
     "ARCHITECTURE.md": "22e75f9071a57dff29fa57bd40fe3e03b1cc60e4b1e03e65a39e6d019797d49b",
-    "CONTRACTS.md": "e2d5fad843dce242b314e55b80fcedf390caa93ae849f3c5bc2c1297c3fe4e76",
+    "CONTRACTS.md": "ffb90191b75fd3fe4a15da15c08619ea6e860e61594f548dba6756def199fcdc",
     "ROADMAP.md": "b5d089a24695daa957eb2b8c2eabe8ce81aab098adfe3ce5eb6c8f64d4b913aa",
     "SOP.md": "7415a0623e105a8db7377a27ae8e1f166b61ed7690b9e18df27946a8ff05711c",
     "TESTING.md": "a4bdc5d4977ab40936fcf8a8be65c6eddc0c592d02b1a98c780145bd27597215",

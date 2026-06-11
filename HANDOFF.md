@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-06-05
+Last updated: 2026-06-10
 
 This is the current resume snapshot.
 
@@ -51,6 +51,9 @@ The latest architecture-deepening pass is implemented in code and docs:
   evidence bundle; task status is the current-state projection.
 - `attempt-run` records declared artifacts plus git-discovered product paths through the same
   provenance rules ACP uses.
+- The packaged Desktop Codex worker launcher defaults workers to
+  `model_reasoning_effort="xhigh"` and exposes `--reasoning-effort` only for explicit user-requested
+  reasoning overrides.
 - `AttemptStore.finalize_attempt()` is the only store terminalization path. Terminal attempts write
   evidence and acceptance decisions atomically instead of allowing a decision-free completion path.
 - `AttemptStore.finalize_attempt()` rejects contradictory task status, attempt status, acceptance
@@ -108,6 +111,22 @@ acceptance projection validation, clearer integrity diagnostics, and focused reg
 The opt-in live Codex pytest and its letter-grade structure have been removed. Live smoke testing is
 manual and out-of-band; source verification now stays fully deterministic with no always-skipped
 live worker test.
+
+Planning task `task-default-xhigh-worker-reasoning-20260610` is accepted and done in
+`plans/planning.sqlite3`. The packaged Codex worker launcher now passes
+`model_reasoning_effort="xhigh"` by default, supports explicit `--reasoning-effort` overrides,
+documents the policy in the packaged and source skills, and records the intentional
+`CONTRACTS.md` source-lock update.
+
+Verification completed for the xhigh worker default change:
+
+```text
+uv run --no-sync pytest tests/test_codex_plugin.py tests/test_simplified_contract.py -q
+18 passed
+
+uv run --no-sync python -B scripts/verify.py
+97 passed
+```
 
 ## Recent Durable Decisions
 

@@ -60,6 +60,8 @@ def test_plugin_contains_desktop_skill_entrypoint() -> None:
     assert "MUST NOT run `queue-next` before `plan-init`" in content
     assert "MUST** follow [WINDOWS.md](WINDOWS.md)" in content
     assert "codex_worker_launcher.py" in content
+    assert "xhigh reasoning" in content
+    assert "--reasoning-effort" in content
     assert "MUST NOT** create an ad hoc" in content
     assert ".codex-supervisor/verify.py" in content
     assert "CODEX_SUPERVISOR_TASK_JSON" in content
@@ -76,6 +78,8 @@ def test_plugin_contains_windows_platform_guidance() -> None:
     assert "codex_worker_launcher.py" in content
     assert "MUST NOT** create ad hoc `run_worker.ps1`" in content
     assert "MUST NOT** pass the worker prompt as a command-line argument" in content
+    assert "xhigh reasoning" in content
+    assert "--reasoning-effort" in content
     assert "pipes the prompt through stdin" in content
     assert "MUST NOT** put complex PowerShell logic inline in `--verify-command`" in content
     assert "MUST** prefer a workspace Python verifier" in content
@@ -104,6 +108,32 @@ def test_plugin_worker_launcher_wraps_windows_codex_ps1() -> None:
         "exec",
         "--skip-git-repo-check",
         "--dangerously-bypass-approvals-and-sandbox",
+        "-c",
+        'model_reasoning_effort="xhigh"',
+        "-C",
+        str(workspace),
+    )
+
+
+def test_plugin_worker_launcher_allows_explicit_reasoning_override() -> None:
+    launcher = _load_worker_launcher()
+    codex_executable = Path("codex")
+    workspace = Path("workspace")
+
+    command = launcher.build_codex_exec_command(
+        codex_executable,
+        workspace,
+        reasoning_effort="high",
+        platform_name="posix",
+    )
+
+    assert command == (
+        str(codex_executable),
+        "exec",
+        "--skip-git-repo-check",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "-c",
+        'model_reasoning_effort="high"',
         "-C",
         str(workspace),
     )
@@ -142,6 +172,8 @@ def test_plugin_worker_launcher_pipes_prompt_to_codex_exec(tmp_path: Path) -> No
         "exec",
         "--skip-git-repo-check",
         "--dangerously-bypass-approvals-and-sandbox",
+        "-c",
+        'model_reasoning_effort="xhigh"',
         "-C",
         str(workspace),
     ]

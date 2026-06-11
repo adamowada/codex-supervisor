@@ -92,6 +92,10 @@ When a Windows `attempt-run` launches Codex as the worker, it **MUST** use the p
 launcher at `<plugin-root>\scripts\codex_worker_launcher.py`. It **MUST NOT** create an ad hoc
 PowerShell worker launcher.
 
+The packaged worker launcher **MUST** default Codex workers to xhigh reasoning with
+`model_reasoning_effort="xhigh"`. Pass `--reasoning-effort low`, `medium`, `high`, or `xhigh` only
+when the user explicitly asks for different worker reasoning behavior.
+
 ## Required Flow
 
 When this skill is invoked for work that creates, edits, verifies, reviews, or ships files, you
@@ -107,6 +111,8 @@ When this skill is invoked for work that creates, edits, verifies, reviews, or s
    - On Windows, Codex worker attempts **MUST** use
      `python -B <plugin-root>\scripts\codex_worker_launcher.py --workspace <workspace> --prompt-file <workspace>\.codex-supervisor\worker_prompt.txt`
      after the `attempt-run --` separator.
+     Omit `--reasoning-effort` unless the user explicitly asks for a non-default reasoning level;
+     the launcher defaults to xhigh reasoning.
 6. You **MUST attach explicit evidence**:
    - `--check`: at least one check that ran or one concrete inspection result.
    - `--artifact`: every known expected product path and important generated artifact. `attempt-run`

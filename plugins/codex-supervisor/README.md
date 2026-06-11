@@ -11,7 +11,7 @@ It provides:
   on `PATH`. When a compact command omits `--path`, the launcher uses the current workspace ledger
   at `.codex-supervisor/planning.sqlite3`.
 - `scripts/codex_worker_launcher.py` to launch Codex workers through one stdin-safe command,
-  including the Windows `codex.ps1` PowerShell path.
+  including the Windows `codex.ps1` PowerShell path and default xhigh reasoning.
 - `skills/codex-supervisor/SKILL.md` as the Desktop-visible entrypoint.
 - `skills/codex-supervisor/WINDOWS.md` as Windows-specific launch and verifier guidance.
 
@@ -51,6 +51,10 @@ checks, optional verifier results, risks, and acceptance results are recorded th
 evidence path. Failed worker processes and failed verifier commands cannot record supplied passing
 acceptance results as passing evidence, and declared output artifacts must exist before supplied
 passing acceptance can remain passing.
+
+The packaged Codex worker launcher defaults workers to `model_reasoning_effort="xhigh"`. Use its
+`--reasoning-effort` option only when the user explicitly asks for a different worker reasoning
+level.
 
 When acceptance depends on machine-checkable file contents or behavior, prefer a workspace Python
 verifier at `.codex-supervisor/verify.py` and pass it through `--verify-command`. On Windows, follow

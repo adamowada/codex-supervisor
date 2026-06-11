@@ -50,6 +50,9 @@ Use these rules when validating or operating the packaged Desktop supervisor in 
 - Windows target-workspace Codex worker attempts **MUST** use the packaged Desktop worker launcher at
   `plugins/codex-supervisor/scripts/codex_worker_launcher.py`; do not create ad hoc PowerShell
   worker launch scripts.
+- Packaged Codex worker launches **MUST** default to xhigh reasoning through
+  `model_reasoning_effort="xhigh"` unless the user explicitly requests different worker reasoning
+  behavior.
 - `plan-init` **MUST** ensure `.codex-supervisor/` is ignored before the workspace can be ACP'd.
 - ACP **MUST NOT** proceed if `.codex-supervisor/**` is tracked or if `.codex-supervisor/` is not
   ignored.

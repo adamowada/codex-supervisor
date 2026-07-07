@@ -64,7 +64,10 @@ def test_acp_gate_accepts_worker_backed_product_change(tmp_path: Path) -> None:
     assert result.changed_product_paths == ("README.md",)
     assert result.worker_backed_paths == ("README.md",)
     assert "succeeded attempt attempt-acp lacks launch packet hash" in result.warnings
-    assert "completed plan plan-acp has no accepted final proof task" in result.warnings
+    assert (
+        "active plan plan-acp has no open task and no accepted final proof task"
+        in result.warnings
+    )
 
 
 def test_acp_gate_accepts_worker_backed_nested_untracked_product_file(tmp_path: Path) -> None:

@@ -98,8 +98,8 @@ discovered from the target git workspace after `attempt-run` finishes. Product p
 product path to be backed by succeeded `attempt-run` evidence.
 
 ACP hard-fails unbacked product paths. It warns, without blocking yet, when succeeded product
-attempts lack launch packet hashes or launch metadata artifacts, or when a completed plan has no
-accepted final proof task.
+attempts lack launch packet hashes or launch metadata artifacts, or when a completed plan or idle
+active plan has no accepted final proof task.
 
 When content or behavior needs machine verification, `attempt-run` may run one verifier command
 after the worker exits and before the terminal transition is recorded. The verifier receives the
@@ -171,6 +171,11 @@ evaluation JSON. Task status is the current-state projection of that durable dec
 Inspection paths read stored state. They do not replay acceptance from evidence and they do not
 reinterpret old decisions through newer policy code.
 
+Accepted task work closes that task, not the whole plan. A plan may stay `active` with no ready or
+running task while Goal Mode decides whether to create review, repair, polish, or final-proof task
+intent. Supervisor marks a plan `done` only when durable completion exists: an accepted
+`shipping_proof_of` task, or an explicit unsupervised completion exception recorded in the ledger.
+
 Goal Mode may decide the larger goal is complete only after final proof is recorded or after an
 explicit unsupervised exception is declared.
 
@@ -182,11 +187,13 @@ state.
 The compact recovery state reports:
 
 - active plan and task;
+- idle active plans with no open task;
 - active attempt and liveness age when a liveness file is available;
 - latest evidence;
 - latest acceptance decision;
 - launch packet and verifier hashes;
 - lineage;
+- suggested lineage targets when Goal Mode needs to choose follow-up task intent;
 - git summary;
 - warning flags;
 - next suggested transition.

@@ -68,11 +68,69 @@ def test_planning_integrity_rejects_invalid_attempt_timestamps(tmp_path: Path) -
     )
 
 
-def test_planning_integrity_checks_open_tasks_per_active_plan(tmp_path: Path) -> None:
+def test_planning_integrity_allows_active_plan_without_open_tasks(tmp_path: Path) -> None:
     db_path = make_planning_db(tmp_path)
     connection = sqlite3.connect(db_path)
     try:
         connection.execute("update tasks set status = 'done' where task_id = 'task-1'")
+        connection.execute(
+            """insert into attempts(
+                   attempt_id, task_id, executor, status, summary, started_at, finished_at
+               ) values (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "attempt-succeeded",
+                "task-1",
+                "worker",
+                "succeeded",
+                "Worker succeeded.",
+                "2026-05-28T17:00:00Z",
+                "2026-05-28T17:01:00Z",
+            ),
+        )
+        connection.execute(
+            """insert into evidence_bundles(
+                   bundle_id, task_id, attempt_id, assurance, summary,
+                   checks_json, artifacts_json, created_at
+               ) values (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "evidence-succeeded",
+                "task-1",
+                "attempt-succeeded",
+                "medium",
+                "Success evidence.",
+                '["Focused check passed."]',
+                '["artifact"]',
+                "2026-05-28T17:01:00Z",
+            ),
+        )
+        connection.execute(
+            """insert into acceptance_decisions(
+                   decision_id, task_id, attempt_id, bundle_id, actor,
+                   result, rationale, evaluation_json, created_at
+               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "acceptance-succeeded",
+                "task-1",
+                "attempt-succeeded",
+                "evidence-succeeded",
+                "codex-supervisor-policy",
+                "accepted",
+                "Policy accepted terminal evidence.",
+                '{"accepted": true}',
+                "2026-05-28T17:01:00Z",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    assert check_planning_integrity(db_path) == ()
+
+
+def test_planning_integrity_rejects_open_tasks_on_nonactive_plans(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+    connection = sqlite3.connect(db_path)
+    try:
         connection.execute(
             """insert into plans(plan_id, title, status, priority, goal, created_at, updated_at)
                values (?, ?, ?, ?, ?, ?, ?)""",
@@ -109,7 +167,6 @@ def test_planning_integrity_checks_open_tasks_per_active_plan(tmp_path: Path) ->
 
     failures = check_planning_integrity(db_path)
 
-    assert "expected at least one ready or running task for the active plan" in failures
     assert "non-active plans cannot have ready or running tasks" in failures
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from codex_supervisor.evidence_artifacts import primary_evidence_artifacts
 from codex_supervisor.policy import EvidenceBundle
 
 
@@ -44,13 +45,14 @@ class EvidenceEnvelope:
 
         strict_checks = self.checks if assurance == "high" else ()
         focused_checks = self.checks if assurance != "high" else ()
+        policy_artifacts = primary_evidence_artifacts(artifacts)
         return EvidenceBundle(
             task_id=task_id,
             attempt_id=attempt_id,
             summary=summary,
             checks=focused_checks,
             strict_checks=strict_checks,
-            artifacts=artifacts,
+            artifacts=policy_artifacts,
             acceptance_results=self.acceptance_results,
             risks=self.risks,
             gaps=self.gaps,

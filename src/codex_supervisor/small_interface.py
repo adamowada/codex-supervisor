@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from codex_supervisor.attempt_store import (
+    ActivePlanWorkState,
     AttemptStore,
     PlanRecord,
     TaskLineageRelation,
@@ -104,6 +105,25 @@ def queue_next(database_path: Path) -> QueueNextResult:
     store = AttemptStore(database_path, read_only=True)
     queued = store.read_next_task()
     if queued is None:
+        active_plan = store.read_active_plan_without_open_task()
+        if active_plan is not None:
+            return QueueNextResult(
+                plan=_active_plan_to_dict(active_plan),
+                task=None,
+                active_attempt=None,
+                latest_evidence=None,
+                latest_acceptance=None,
+                recovery_state=_recovery_state(
+                    database_path,
+                    plan=active_plan,
+                    plan_status=None,
+                    task=None,
+                    active_attempt=None,
+                    latest_evidence=None,
+                    latest_acceptance=None,
+                ),
+                next_transition=_active_plan_without_open_task_transition(active_plan),
+            )
         return QueueNextResult(
             plan=None,
             task=None,
@@ -112,6 +132,8 @@ def queue_next(database_path: Path) -> QueueNextResult:
             latest_acceptance=None,
             recovery_state=_recovery_state(
                 database_path,
+                plan=None,
+                plan_status=None,
                 task=None,
                 active_attempt=None,
                 latest_evidence=None,
@@ -139,6 +161,8 @@ def queue_next(database_path: Path) -> QueueNextResult:
         ),
         recovery_state=_recovery_state(
             database_path,
+            plan=None,
+            plan_status=queued.plan_status,
             task=task,
             active_attempt=active_attempt,
             latest_evidence=latest_evidence,
@@ -291,6 +315,15 @@ def _plan_to_dict(plan: PlanRecord) -> dict[str, object]:
     }
 
 
+def _active_plan_to_dict(plan: ActivePlanWorkState) -> dict[str, object]:
+    return {
+        "plan_id": plan.plan_id,
+        "title": plan.plan_title,
+        "status": plan.plan_status,
+        "priority": plan.priority,
+    }
+
+
 def _attempt_to_dict(attempt: RunAttempt) -> dict[str, object]:
     return {
         "attempt_id": attempt.attempt_id,
@@ -343,6 +376,8 @@ def _evaluation_to_dict(evaluation: AcceptanceEvaluation) -> dict[str, object]:
 def _recovery_state(
     database_path: Path,
     *,
+    plan: ActivePlanWorkState | None,
+    plan_status: str | None,
     task: TaskRecord | None,
     active_attempt: RunAttempt | None,
     latest_evidence: AttemptEvidence | None,
@@ -351,7 +386,10 @@ def _recovery_state(
     liveness = _liveness_state(database_path, active_attempt)
     packet_hashes = _packet_hashes(latest_evidence)
     git_summary = _git_summary(database_path)
+    active_plan_id = _active_plan_id(plan=plan, task=task)
     return {
+        "active_plan_id": active_plan_id,
+        "active_plan_status": plan.plan_status if plan else plan_status,
         "active_task_id": task.task_id if task else None,
         "active_attempt_id": active_attempt.attempt_id if active_attempt else None,
         "liveness": liveness,
@@ -372,6 +410,7 @@ def _recovery_state(
         ]
         if task
         else [],
+        "suggested_lineage_targets": _suggested_lineage_targets(plan),
         "final_proof": _final_proof_state(task),
         "git_summary": git_summary,
         "warning_flags": list(
@@ -384,6 +423,50 @@ def _recovery_state(
             )
         ),
     }
+
+
+def _active_plan_id(
+    *,
+    plan: ActivePlanWorkState | None,
+    task: TaskRecord | None,
+) -> str | None:
+    if plan is not None:
+        return plan.plan_id
+    if task is not None:
+        return task.plan_id
+    return None
+
+
+def _suggested_lineage_targets(
+    plan: ActivePlanWorkState | None,
+) -> list[dict[str, object]]:
+    if plan is None:
+        return []
+    targets: list[dict[str, object]] = []
+    for task in plan.tasks:
+        relations = _suggested_relations_for_task(task)
+        if not relations:
+            continue
+        targets.append(
+            {
+                "task_id": task.task_id,
+                "status": task.status,
+                "suggested_relations": list(relations),
+                "lineage": [
+                    {"relation": item.relation, "task_id": item.task_id}
+                    for item in task.lineage
+                ],
+            }
+        )
+    return targets
+
+
+def _suggested_relations_for_task(task: TaskRecord) -> tuple[str, ...]:
+    if task.status == "blocked":
+        return ("repair_of",)
+    if task.status == "done":
+        return ("review_of", "repair_of", "shipping_proof_of")
+    return ()
 
 
 def _final_proof_state(task: TaskRecord | None) -> dict[str, object]:
@@ -631,3 +714,16 @@ def _next_transition(
     if attempt is not None:
         return "attempt-transition --status succeeded|failed|blocked"
     return "none"
+
+
+def _active_plan_without_open_task_transition(plan: ActivePlanWorkState) -> str:
+    targets = _suggested_lineage_targets(plan)
+    if not targets:
+        return "active plan has no open task; suggested next: task-create"
+    target_id = str(targets[0]["task_id"])
+    suggestions = (
+        f"task-create --lineage review_of={target_id}",
+        f"task-create --lineage repair_of={target_id}",
+        f"task-create --lineage shipping_proof_of={target_id}",
+    )
+    return "active plan has no open task; suggested next: " + " | ".join(suggestions)

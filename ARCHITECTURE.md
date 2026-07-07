@@ -39,7 +39,9 @@ plan for `feature/substrate`. The protected docs stay concise, current, and alig
 
 `plans/planning.sqlite3` stores operational state using the schema in `PLANS.md`. The store enforces
 one active plan, one non-terminal attempt per task, and atomic terminal attempt evidence plus
-acceptance decision writes.
+acceptance decision writes. Terminal task acceptance does not mechanically complete the plan; the
+plan remains active until accepted final proof or a recorded unsupervised completion exception makes
+Goal Mode's completion judgment durable.
 
 The active schema remains compact. Task lineage uses `tasks.lineage_json`. Launch packet details,
 verifier intent, command metadata, and evidence digests should use existing structured JSON or
@@ -86,7 +88,8 @@ Target workspace inspection owns product provenance. It reads git workspace stat
 excludes `.gitignore` and `.codex-supervisor/**`, detects changed product paths, inspects linked
 worktrees, and identifies product paths backed by succeeded `attempt-run` evidence. Git is the
 concrete adapter here. The ACP gate hard-fails unbacked product paths and emits warnings for missing
-packet hashes, missing launch metadata artifacts, and completed plans without final proof.
+packet hashes, missing launch metadata artifacts, and completed or idle active plans without final
+proof.
 
 ### Evidence Boundary
 
@@ -106,7 +109,8 @@ terminal decision, not the acceptance record itself.
 
 `queue-next` is the read path Goal Mode uses to recover. It exposes active task, active attempt,
 liveness age when available, latest evidence, latest acceptance, packet hash, verifier hash,
-lineage, git summary, and warning flags.
+lineage, git summary, and warning flags. When the active plan has no ready or running task, it
+surfaces that idle plan and suggests linked follow-up task intent instead of collapsing to `none`.
 
 Retry, repair, review, and final-proof relationships should use one generic lineage mechanism, not
 workflow-specific job types.

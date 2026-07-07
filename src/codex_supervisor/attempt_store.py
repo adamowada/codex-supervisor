@@ -27,6 +27,9 @@ from codex_supervisor.policy import normalize_assurance
 VALID_TASK_LINEAGE_RELATIONS = frozenset(
     {"retry_of", "repair_of", "review_of", "shipping_proof_of"}
 )
+COMPLETION_EXCEPTION_DECISIONS = frozenset(
+    {"unsupervised_completion_exception", "explicit_unsupervised_completion_exception"}
+)
 
 
 @dataclass(frozen=True)
@@ -73,6 +76,17 @@ class QueuedTaskRecord:
     task: TaskRecord
 
 
+@dataclass(frozen=True)
+class ActivePlanWorkState:
+    """Active plan state when no task is currently open."""
+
+    plan_id: str
+    plan_title: str
+    plan_status: str
+    priority: int
+    tasks: tuple[TaskRecord, ...]
+
+
 class AttemptStore:
     """Small store for `attempts` and `evidence_bundles` rows."""
 
@@ -108,7 +122,13 @@ class AttemptStore:
                    where plan_id = ?""",
                 (plan_id,),
             ).fetchone()
-            if existing is not None and existing["status"] == "blocked":
+            if existing is not None and (
+                existing["status"] == "blocked"
+                or (
+                    existing["status"] == "done"
+                    and not _plan_has_durable_completion(connection, plan_id)
+                )
+            ):
                 connection.execute(
                     "update plans set status = 'active', updated_at = ? where plan_id = ?",
                     (created_at, plan_id),
@@ -527,6 +547,59 @@ class AttemptStore:
             ),
         )
 
+    def read_active_plan_without_open_task(self) -> ActivePlanWorkState | None:
+        """Read the active plan when Goal Mode needs to choose the next linked task."""
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """select plan_id, title, status, priority
+                   from plans
+                   where status = 'active'
+                     and not exists (
+                         select 1
+                         from tasks
+                         where tasks.plan_id = plans.plan_id
+                           and tasks.status in ('ready', 'running')
+                     )
+                   order by priority desc, created_at asc, plan_id asc
+                   limit 1"""
+            ).fetchone()
+            if row is None:
+                return None
+            task_rows = connection.execute(
+                """select task_id, plan_id, title, status, assurance, intent,
+                          acceptance_json, lineage_json
+                   from tasks
+                   where plan_id = ?
+                     and status != 'dropped'
+                   order by updated_at desc, created_at desc, task_id asc""",
+                (row["plan_id"],),
+            ).fetchall()
+        return ActivePlanWorkState(
+            plan_id=row["plan_id"],
+            plan_title=row["title"],
+            plan_status=row["status"],
+            priority=row["priority"],
+            tasks=tuple(
+                TaskRecord(
+                    task_id=task_row["task_id"],
+                    plan_id=task_row["plan_id"],
+                    title=task_row["title"],
+                    status=task_row["status"],
+                    assurance=task_row["assurance"],
+                    intent=task_row["intent"],
+                    acceptance_criteria=_acceptance_criteria_from_json(
+                        task_row["acceptance_json"]
+                    ),
+                    lineage=_task_lineage_from_json(
+                        task_row["lineage_json"],
+                        current_task_id=task_row["task_id"],
+                    ),
+                )
+                for task_row in task_rows
+            ),
+        )
+
     @staticmethod
     def _read_next_open_task(connection: sqlite3.Connection) -> sqlite3.Row | None:
         return connection.execute(
@@ -797,11 +870,18 @@ class AttemptStore:
                  and status = 'blocked'""",
             (plan_id,),
         ).fetchone()[0]
-        next_status = "blocked" if blocked_tasks else "done"
-        connection.execute(
-            "update plans set status = ?, updated_at = ? where plan_id = ?",
-            (next_status, updated_at, plan_id),
-        )
+        if blocked_tasks:
+            connection.execute(
+                "update plans set status = 'blocked', updated_at = ? where plan_id = ?",
+                (updated_at, plan_id),
+            )
+            return
+
+        if _plan_has_durable_completion(connection, plan_id):
+            connection.execute(
+                "update plans set status = 'done', updated_at = ? where plan_id = ?",
+                (updated_at, plan_id),
+            )
 
 
 def _attempt_from_row(row: sqlite3.Row) -> RunAttempt:
@@ -929,6 +1009,78 @@ def _validate_task_lineage_targets(
                 f"lineage target task {item.task_id!r} belongs to plan "
                 f"{row['plan_id']!r}, not {plan_id!r}"
             )
+
+
+def _plan_has_durable_completion(connection: sqlite3.Connection, plan_id: str) -> bool:
+    return _plan_has_accepted_shipping_proof(
+        connection,
+        plan_id,
+    ) or _plan_has_unsupervised_completion_exception(connection, plan_id)
+
+
+def _plan_has_accepted_shipping_proof(
+    connection: sqlite3.Connection,
+    plan_id: str,
+) -> bool:
+    rows = connection.execute(
+        """select task_id, lineage_json
+           from tasks
+           where plan_id = ?
+             and status = 'done'""",
+        (plan_id,),
+    ).fetchall()
+    for row in rows:
+        lineage = _task_lineage_from_json(
+            row["lineage_json"],
+            current_task_id=row["task_id"],
+        )
+        if not any(item.relation == "shipping_proof_of" for item in lineage):
+            continue
+        if _task_has_accepted_terminal_evidence(connection, row["task_id"]):
+            return True
+    return False
+
+
+def _task_has_accepted_terminal_evidence(
+    connection: sqlite3.Connection,
+    task_id: str,
+) -> bool:
+    return (
+        connection.execute(
+            """select 1
+               from attempts
+               join evidence_bundles
+                 on evidence_bundles.attempt_id = attempts.attempt_id
+                and evidence_bundles.task_id = attempts.task_id
+               join acceptance_decisions
+                 on acceptance_decisions.attempt_id = attempts.attempt_id
+                and acceptance_decisions.bundle_id = evidence_bundles.bundle_id
+                and acceptance_decisions.result = 'accepted'
+               where attempts.task_id = ?
+                 and attempts.status = 'succeeded'
+               limit 1""",
+            (task_id,),
+        ).fetchone()
+        is not None
+    )
+
+
+def _plan_has_unsupervised_completion_exception(
+    connection: sqlite3.Connection,
+    plan_id: str,
+) -> bool:
+    placeholders = ", ".join("?" for _ in COMPLETION_EXCEPTION_DECISIONS)
+    return (
+        connection.execute(
+            f"""select 1
+                from decisions
+                where plan_id = ?
+                  and decision in ({placeholders})
+                limit 1""",
+            (plan_id, *sorted(COMPLETION_EXCEPTION_DECISIONS)),
+        ).fetchone()
+        is not None
+    )
 
 
 def _string_array(items: tuple[str, ...], field_name: str) -> tuple[str, ...]:

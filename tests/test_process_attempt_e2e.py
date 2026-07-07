@@ -99,8 +99,15 @@ def test_full_afk_process_attempt_starts_tiny_project(tmp_path: Path) -> None:
     queued = json.loads(
         _run_cli("queue-next", "--path", str(db_path), "--json").stdout
     )
+    assert queued["plan"]["plan_id"] == "plan-afk"
+    assert queued["plan"]["status"] == "active"
     assert queued["task"] is None
-    assert queued["next_transition"] == "none"
+    assert queued["next_transition"] == (
+        "active plan has no open task; suggested next: "
+        "task-create --lineage review_of=task-afk | "
+        "task-create --lineage repair_of=task-afk | "
+        "task-create --lineage shipping_proof_of=task-afk"
+    )
 
 
 def test_attempt_run_updates_liveness_while_worker_runs(tmp_path: Path) -> None:
@@ -567,7 +574,7 @@ def test_happy_path_plain_pass_records_one_worker_attempt_and_clean_plan(
         ).fetchall()
         evidence_count = connection.execute("select count(*) from evidence_bundles").fetchone()[0]
 
-    assert plan_status == "done"
+    assert plan_status == "active"
     assert task_status == "done"
     assert attempts == [("attempt-happy-path", "worker-process", "succeeded")]
     assert evidence_count == 1
@@ -767,11 +774,11 @@ def test_full_afk_follow_up_product_mutation_is_assigned_to_worker(
         "--path",
         str(db_path),
         "--plan-id",
-        "plan-factory-follow-up",
+        "plan-factory-build",
         "--plan-title",
-        "Factory follow-up",
+        "Factory build",
         "--plan-goal",
-        "Apply discovered product cleanup through a worker.",
+        "Create the initial product artifact through a worker.",
         "--task-id",
         "task-update-readme",
         "--title",
@@ -782,6 +789,8 @@ def test_full_afk_follow_up_product_mutation_is_assigned_to_worker(
         "high",
         "--acceptance",
         "README.md contains the local verification note",
+        "--lineage",
+        "repair_of=task-build-readme",
         "--json",
     )
     _write_text_verifier(
@@ -853,10 +862,7 @@ def test_full_afk_follow_up_product_mutation_is_assigned_to_worker(
         ("attempt-build-readme", "worker-process", "succeeded"),
         ("attempt-update-readme", "worker-process", "succeeded"),
     ]
-    assert plans == [
-        ("plan-factory-build", "done"),
-        ("plan-factory-follow-up", "done"),
-    ]
+    assert plans == [("plan-factory-build", "active")]
     assert evidence_count == 2
     assert _planning_integrity_failures(db_path) == ()
 

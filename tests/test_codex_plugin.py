@@ -526,7 +526,7 @@ def test_installed_cache_cli_launcher_runs_full_happy_path_in_fresh_workspace(
         attempts = connection.execute(
             "select attempt_id, executor, status from attempts"
         ).fetchall()
-    assert plan_status == "done"
+    assert plan_status == "active"
     assert attempts == [("plugin-happy-attempt", "worker-process", "succeeded")]
     assert _planning_integrity_failures(workspace_db) == ()
 

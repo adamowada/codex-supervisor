@@ -353,6 +353,212 @@ def test_attempt_transition_runs_and_accepts_medium_task(tmp_path: Path) -> None
     assert completed.evidence is not None
     assert completed.evidence["attempt_id"] == "attempt-1"
 
+    with sqlite3.connect(db_path) as connection:
+        plan_status = connection.execute(
+            "select status from plans where plan_id = 'plan-1'"
+        ).fetchone()[0]
+    assert plan_status == "active"
+
+
+def test_accepted_non_final_task_keeps_plan_open_for_linked_follow_up(
+    tmp_path: Path,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        executor="manual",
+        status="running",
+        summary="Running task.",
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        status="succeeded",
+        summary="Task satisfied.",
+        checks=("Focused check passed.",),
+        artifacts=("artifact",),
+        acceptance_results={"Acceptance criterion": True},
+    )
+
+    queued = queue_next(db_path)
+    created = task_create(
+        db_path,
+        plan_id="plan-1",
+        plan_title="Plan",
+        plan_goal="Goal",
+        title="Review task",
+        intent="Review accepted work before final proof.",
+        assurance="medium",
+        acceptance_criteria=("Review evidence exists",),
+        lineage=({"relation": "review_of", "task_id": "task-1"},),
+        task_id="task-review",
+    )
+    review = queue_next(db_path)
+
+    assert queued.plan is not None
+    assert queued.plan["status"] == "active"
+    assert queued.task is None
+    assert queued.next_transition == (
+        "active plan has no open task; suggested next: "
+        "task-create --lineage review_of=task-1 | "
+        "task-create --lineage repair_of=task-1 | "
+        "task-create --lineage shipping_proof_of=task-1"
+    )
+    assert queued.recovery_state["active_plan_id"] == "plan-1"
+    assert queued.recovery_state["active_task_id"] is None
+    assert queued.recovery_state["suggested_lineage_targets"] == [
+        {
+            "task_id": "task-1",
+            "status": "done",
+            "suggested_relations": ["review_of", "repair_of", "shipping_proof_of"],
+            "lineage": [],
+        }
+    ]
+    assert created.plan["status"] == "active"
+    assert review.task is not None
+    assert review.task["task_id"] == "task-review"
+
+
+def test_done_task_cannot_receive_another_normal_attempt(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        executor="manual",
+        status="running",
+        summary="Running task.",
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        status="succeeded",
+        summary="Task satisfied.",
+        checks=("Focused check passed.",),
+        artifacts=("artifact",),
+        acceptance_results={"Acceptance criterion": True},
+    )
+
+    with pytest.raises(ValueError, match="cannot start attempt"):
+        attempt_transition(
+            db_path,
+            task_id="task-1",
+            attempt_id="attempt-2",
+            executor="manual",
+            status="running",
+            summary="Second normal attempt.",
+        )
+
+
+def test_accepted_shipping_proof_closes_plan(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        executor="manual",
+        status="running",
+        summary="Running task.",
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        status="succeeded",
+        summary="Task satisfied.",
+        checks=("Focused check passed.",),
+        artifacts=("artifact",),
+        acceptance_results={"Acceptance criterion": True},
+    )
+    task_create(
+        db_path,
+        plan_id="plan-1",
+        plan_title="Plan",
+        plan_goal="Goal",
+        title="Shipping proof",
+        intent="Prove task-1 is ready to ship.",
+        assurance="high",
+        acceptance_criteria=("Final proof exists",),
+        lineage=({"relation": "shipping_proof_of", "task_id": "task-1"},),
+        task_id="task-proof",
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-proof",
+        attempt_id="attempt-proof",
+        executor="manual",
+        status="running",
+        summary="Running proof.",
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-proof",
+        attempt_id="attempt-proof",
+        status="succeeded",
+        summary="Proof accepted.",
+        checks=("Final proof checked.",),
+        artifacts=("proof",),
+        acceptance_results={"Final proof exists": True},
+        risks=("No known residual risk.",),
+    )
+
+    with sqlite3.connect(db_path) as connection:
+        plan_status = connection.execute(
+            "select status from plans where plan_id = 'plan-1'"
+        ).fetchone()[0]
+    queued = queue_next(db_path)
+
+    assert plan_status == "done"
+    assert queued.plan is None
+    assert queued.task is None
+    assert queued.next_transition == "none"
+
+
+def test_task_create_reopens_legacy_done_plan_without_completion_proof(
+    tmp_path: Path,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        executor="manual",
+        status="running",
+        summary="Running task.",
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        status="succeeded",
+        summary="Task satisfied.",
+        checks=("Focused check passed.",),
+        artifacts=("artifact",),
+        acceptance_results={"Acceptance criterion": True},
+    )
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("update plans set status = 'done' where plan_id = 'plan-1'")
+
+    created = task_create(
+        db_path,
+        plan_id="plan-1",
+        plan_title="Plan",
+        plan_goal="Goal",
+        title="Repair task",
+        intent="Repair legacy accepted work without creating a separate plan.",
+        assurance="medium",
+        acceptance_criteria=("Repair evidence exists",),
+        lineage=({"relation": "repair_of", "task_id": "task-1"},),
+        task_id="task-repair",
+    )
+
+    assert created.plan["status"] == "active"
+    assert created.task["lineage"] == [{"relation": "repair_of", "task_id": "task-1"}]
+
 
 def test_attempt_transition_can_retry_blocked_task_to_done(tmp_path: Path) -> None:
     db_path = make_planning_db(tmp_path)

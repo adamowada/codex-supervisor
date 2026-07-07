@@ -86,6 +86,9 @@ The first command **MUST** exit `0`. The second command **MUST** print nothing. 
   repair, cleanup, audit, review, warning, polish, or final proof.
 - Use `task-create --lineage relation=task_id` for `retry_of`, `repair_of`, `review_of`, or
   `shipping_proof_of` relationships.
+- Treat accepted task work as task completion, not plan completion. When queue inspection reports an
+  active plan with no open task, create linked review, repair, polish, or final-proof task intent in
+  that same plan unless Goal Mode is declaring an explicit unsupervised completion exception.
 - For full AFK, autonomous worker, unattended worker, or worker-assigned product mutation, create the
   task with `--assurance high` unless the user explicitly requests a lower assurance level.
 

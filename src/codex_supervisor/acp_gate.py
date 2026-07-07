@@ -104,7 +104,7 @@ def _substrate_warnings(workspace: Path, *, database_path: Path) -> tuple[str, .
                where attempts.status = 'succeeded'"""
         ).fetchall()
         plan_rows = connection.execute(
-            "select plan_id, status from plans where status = 'done'"
+            "select plan_id, status from plans where status in ('active', 'done')"
         ).fetchall()
         task_rows = connection.execute(
             "select plan_id, task_id, status, lineage_json from tasks"
@@ -134,8 +134,16 @@ def _substrate_warnings(workspace: Path, *, database_path: Path) -> tuple[str, .
         for plan_id, task_id, status, lineage_json in task_rows
     ]
     for plan_id, _status in plan_rows:
-        if not _has_done_shipping_proof(str(plan_id), task_records):
+        plan_id = str(plan_id)
+        status = str(_status)
+        if _has_done_shipping_proof(plan_id, task_records):
+            continue
+        if status == "done":
             warnings.append(f"completed plan {plan_id} has no accepted final proof task")
+        elif status == "active" and not _has_open_task(plan_id, task_records):
+            warnings.append(
+                f"active plan {plan_id} has no open task and no accepted final proof task"
+            )
     return tuple(warnings)
 
 
@@ -161,6 +169,13 @@ def _has_done_shipping_proof(plan_id: str, tasks: list[dict[str, object]]) -> bo
         ):
             return True
     return False
+
+
+def _has_open_task(plan_id: str, tasks: list[dict[str, object]]) -> bool:
+    return any(
+        task["plan_id"] == plan_id and task["status"] in {"ready", "running"}
+        for task in tasks
+    )
 
 
 def _lineage(raw_json: str) -> tuple[dict[str, str], ...]:

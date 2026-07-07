@@ -109,6 +109,9 @@ packet identity in evidence.
 Goal Mode should read `queue-next` or `codex_supervisor.queue_next` to recover compact state before
 starting new work. Recovery state should lead Goal Mode to advance, retry, repair, review, ship, or
 stop; the supervisor should record that choice as task intent and evidence, not as a new job type.
+Accepted task work is not plan completion. If queue inspection reports an active plan with no open
+task, create linked review, repair, polish, or final-proof task intent in that same plan unless Goal
+Mode is declaring an explicit unsupervised completion exception.
 
 ## Required Flow
 

@@ -79,14 +79,19 @@ Full verification completed:
 
 ```text
 uv run --no-sync python -B scripts/verify.py
-109 passed
+114 passed
 ```
 
 ## Planning Ledger
 
 Active plan:
 
+- None.
+
+Recently completed plans:
+
 - `plan-substrate-20260707`: `Goal Mode substrate pivot`
+- `plan-completion-proof-20260707`: `Plan completion proof semantics`
 
 Accepted tasks:
 
@@ -119,11 +124,19 @@ Accepted tasks:
   repo.
 - `task-final-proof-20260707`: recorded final substrate proof with full verification, source-lock
   check, queue final-proof lineage evidence, and `SUBSTRATE_PLAN.md` implementation audit.
+- `task-plan-completion-semantics-20260707`: corrected plan completion semantics so accepted
+  non-final tasks leave their plan active for linked follow-up work, accepted `shipping_proof_of`
+  tasks close the plan, idle active plans surface lineage guidance through `queue-next`, ACP warns
+  when final proof is still missing, protected docs and skills name the contract, and verification
+  passed.
+- `task-plan-completion-final-proof-20260707`: recorded final proof for the completion-semantics
+  correction with full verification, protected lock, planning integrity, and handoff evidence.
 
 Ready next task:
 
-- None. `plan-substrate-20260707` is complete.
+- None. `plan-substrate-20260707` and `plan-completion-proof-20260707` are complete.
 
 ## Next Action
 
-No next action. The substrate branch plan is complete and ready for final ACP state.
+No next action. The substrate branch plan and completion-semantics correction are complete and ready
+for final ACP state.

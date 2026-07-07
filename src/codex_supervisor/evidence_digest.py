@@ -5,8 +5,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from codex_supervisor.evidence_artifacts import (
+    is_stream_log_artifact,
+    key_excerpt_entries,
+    log_warning_flags,
+    primary_evidence_artifacts,
+    raw_log_artifact_entries,
+    tail_text,
+)
+
 DIGEST_CHECK_PREFIX = "evidence digest: "
-_TAIL_BYTES = 800
 _MAX_LOG_TAILS = 4
 
 
@@ -29,10 +37,13 @@ def build_evidence_digest(
         "process_exit_code": _first_check_suffix(checks, "process exit code: "),
         "verifier_exit_code": _first_check_suffix(checks, "verifier exit code: "),
         "changed_files": _check_suffixes(checks, "git changed product path: "),
-        "warnings": _warnings(checks),
+        "warnings": _unique_strings((*_warnings(checks), *log_warning_flags(artifacts))),
         "artifact_count": len(artifacts),
         "artifacts": list(artifacts),
+        "primary_artifacts": list(primary_evidence_artifacts(artifacts)),
+        "raw_log_artifacts": raw_log_artifact_entries(artifacts),
         "log_sizes": _log_sizes(artifacts),
+        "key_excerpts": key_excerpt_entries(artifacts, limit=_MAX_LOG_TAILS),
         "important_tails": _important_tails(artifacts),
         "risks": list(risks),
         "gaps": list(gaps),
@@ -98,7 +109,7 @@ def _log_sizes(artifacts: tuple[str, ...]) -> list[dict[str, object]]:
     sizes: list[dict[str, object]] = []
     for artifact in artifacts:
         path = Path(artifact)
-        if not _is_log_artifact(path) or not path.is_file():
+        if not is_stream_log_artifact(path) or not path.is_file():
             continue
         sizes.append({"path": artifact, "bytes": path.stat().st_size})
     return sizes
@@ -110,31 +121,24 @@ def _important_tails(artifacts: tuple[str, ...]) -> list[dict[str, object]]:
         if len(tails) >= _MAX_LOG_TAILS:
             break
         path = Path(artifact)
-        if not _is_log_artifact(path) or not path.is_file():
+        if not is_stream_log_artifact(path) or not path.is_file():
             continue
-        tails.append({"path": artifact, "tail": _tail_text(path)})
+        tails.append({"path": artifact, "tail": tail_text(path)})
     return tails
-
-
-def _tail_text(path: Path) -> str:
-    with path.open("rb") as handle:
-        handle.seek(0, 2)
-        size = handle.tell()
-        handle.seek(max(0, size - _TAIL_BYTES))
-        return handle.read().decode("utf-8", errors="replace")
-
-
-def _is_log_artifact(path: Path) -> bool:
-    name = path.name.casefold()
-    return (
-        "stdout" in name
-        or "stderr" in name
-        or "log" in name
-        or path.suffix.casefold() == ".log"
-    )
 
 
 def _string_list(value: object) -> tuple[str, ...]:
     if not isinstance(value, list):
         return ()
     return tuple(item for item in value if isinstance(item, str))
+
+
+def _unique_strings(items: tuple[str, ...]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        unique.append(item)
+    return unique

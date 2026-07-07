@@ -117,12 +117,13 @@ Accepted tasks:
   metadata artifacts, and completed plans without final proof; preserved unbacked product mutation
   as a hard ACP failure; exposed recovery warning flags; refreshed source locks; and verified the
   repo.
+- `task-final-proof-20260707`: recorded final substrate proof with full verification, source-lock
+  check, queue final-proof lineage evidence, and `SUBSTRATE_PLAN.md` implementation audit.
 
 Ready next task:
 
-- `task-final-proof-20260707`: run final substrate proof, linked with `shipping_proof_of` to
-  `task-warning-gates-20260707`.
+- None. `plan-substrate-20260707` is complete.
 
 ## Next Action
 
-Run final substrate proof for `task-final-proof-20260707`.
+No next action. The substrate branch plan is complete and ready for final ACP state.

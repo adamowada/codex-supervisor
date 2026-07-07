@@ -92,6 +92,18 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Shell command to run after the worker exits; nonzero forces failure",
     )
+    run.add_argument(
+        "--launch-packet",
+        type=Path,
+        default=None,
+        help="Free-form Goal Mode worker packet to copy, hash, and pass to the worker",
+    )
+    run.add_argument(
+        "--verifier-intent",
+        type=Path,
+        default=None,
+        help="Free-form verifier intent file to copy, hash, and pass to the worker",
+    )
     run.add_argument("--acceptance-result", action="append", default=[])
     run.add_argument("--risk", action="append", default=[])
     run.add_argument("--gap", action="append", default=[])
@@ -157,6 +169,8 @@ def _dispatch(args: argparse.Namespace) -> object | None:
             summary=args.summary,
             command=_parse_command(tuple(args.process_command)),
             verifier_command=args.verify_command,
+            launch_packet_path=args.launch_packet,
+            verifier_intent_path=args.verifier_intent,
             checks=tuple(args.check),
             artifacts=tuple(args.artifact),
             acceptance_results=_parse_acceptance_results_for_task(

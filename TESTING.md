@@ -28,6 +28,9 @@ The gate checks:
 - e2e coverage that verifier failures override supplied passing acceptance results;
 - e2e coverage that process launch failures, missing declared artifacts, retry after blocked work,
   and running queue inspection preserve durable substrate state;
+- e2e coverage that `attempt-run` copies and hashes launch packets and verifier intent files before
+  worker product mutation;
+- e2e coverage that `command.json` exists while an attempt is running;
 - e2e coverage that installed-cache MCP queue inspection uses an explicit workspace ledger path
   instead of the source repository ledger;
 - e2e coverage that full AFK product follow-up mutation is assigned through another worker attempt,
@@ -52,10 +55,8 @@ The gate checks:
 
 Next tests should cover:
 
-- launch packet copy and hash capture;
-- verifier intent hash capture;
-- launch-time `command.json` for running, failed, and timed-out attempts;
 - generic lineage for retry, repair, review, and shipping proof;
+- launch-time `command.json` coverage for failed attempts;
 - expanded `queue-next` and MCP recovery state;
 - evidence digest generation and raw log preservation;
 - warnings before hard gates for missing packet, missing launch metadata, unbacked product mutation,

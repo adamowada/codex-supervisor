@@ -9,6 +9,7 @@ import tempfile
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 
 from codex_supervisor.small_interface import AttemptTransitionResult, attempt_transition
@@ -29,9 +30,14 @@ class ProcessAttemptResult:
     workspace: str
     exit_code: int
     assignment_path: str
+    command_path: str
     liveness_path: str
     stdout_path: str
     stderr_path: str
+    launch_packet_path: str | None
+    launch_packet_sha256: str | None
+    verifier_intent_path: str | None
+    verifier_intent_sha256: str | None
     verifier_command: str | None
     verifier_exit_code: int | None
     verifier_stdout_path: str | None
@@ -54,6 +60,8 @@ def run_process_attempt(
     workspace: Path,
     command: tuple[str, ...],
     verifier_command: str | None = None,
+    launch_packet_path: Path | None = None,
+    verifier_intent_path: Path | None = None,
     attempt_id: str | None = None,
     executor: str = "codex",
     timeout_seconds: int = 300,
@@ -77,6 +85,16 @@ def run_process_attempt(
 
     workspace = workspace.resolve()
     workspace.mkdir(parents=True, exist_ok=True)
+    launch_packet_path = _resolve_reference_file(
+        launch_packet_path,
+        workspace=workspace,
+        label="launch_packet",
+    )
+    verifier_intent_path = _resolve_reference_file(
+        verifier_intent_path,
+        workspace=workspace,
+        label="verifier_intent",
+    )
     run_summary = summary or _command_summary(command)
     running = attempt_transition(
         database_path,
@@ -107,10 +125,24 @@ def run_process_attempt(
         verifier_command_path = evidence_dir / f"{recorded_attempt_id}-verifier-command.json"
         verifier_stdout_path = evidence_dir / f"{recorded_attempt_id}-verifier-stdout.txt"
         verifier_stderr_path = evidence_dir / f"{recorded_attempt_id}-verifier-stderr.txt"
+    launch_packet = _capture_reference_file(
+        launch_packet_path,
+        workspace=workspace,
+        destination=evidence_dir / f"{recorded_attempt_id}-launch-packet.txt",
+        label="launch_packet",
+    )
+    verifier_intent = _capture_reference_file(
+        verifier_intent_path,
+        workspace=workspace,
+        destination=evidence_dir / f"{recorded_attempt_id}-verifier-intent.txt",
+        label="verifier_intent",
+    )
     assignment_payload = {
         "task": running.task,
         "attempt": running.attempt,
         "workspace": str(workspace),
+        "launch_packet": launch_packet,
+        "verifier_intent": verifier_intent,
     }
     assignment_error = _write_text(
         assignment_path,
@@ -138,6 +170,44 @@ def run_process_attempt(
             "CODEX_SUPERVISOR_WORKSPACE": str(workspace),
         }
     )
+    if launch_packet is not None:
+        env.update(
+            {
+                "CODEX_SUPERVISOR_LAUNCH_PACKET": str(launch_packet["stored_path"]),
+                "CODEX_SUPERVISOR_LAUNCH_PACKET_SHA256": str(launch_packet["sha256"]),
+            }
+        )
+    if verifier_intent is not None:
+        env.update(
+            {
+                "CODEX_SUPERVISOR_VERIFIER_INTENT": str(verifier_intent["stored_path"]),
+                "CODEX_SUPERVISOR_VERIFIER_INTENT_SHA256": str(verifier_intent["sha256"]),
+            }
+        )
+    command_error = _write_text(
+        command_path,
+        json.dumps(
+            _command_metadata(
+                command=command,
+                workspace=workspace,
+                timeout_seconds=timeout_seconds,
+                task_id=task_id,
+                attempt_id=recorded_attempt_id,
+                executor=executor,
+                started_at=str(running.attempt["started_at"]),
+                assignment_path=assignment_path,
+                liveness_path=liveness_path,
+                launch_packet=launch_packet,
+                verifier_intent=verifier_intent,
+                exit_code=None,
+                timed_out=None,
+            ),
+            indent=2,
+            sort_keys=True,
+        ),
+    )
+    if command_error is not None:
+        telemetry_errors.append(f"could not write launch command metadata: {command_error}")
     try:
         completed = _run_worker_process(
             command,
@@ -161,15 +231,21 @@ def run_process_attempt(
         command_error = _write_text(
             command_path,
             json.dumps(
-                {
-                    "command": list(command),
-                    "workspace": str(workspace),
-                    "timeout_seconds": timeout_seconds,
-                    "exit_code": exit_code,
-                    "timed_out": worker_timed_out,
-                    "assignment_path": str(assignment_path),
-                    "liveness_path": str(liveness_path),
-                },
+                _command_metadata(
+                    command=command,
+                    workspace=workspace,
+                    timeout_seconds=timeout_seconds,
+                    task_id=task_id,
+                    attempt_id=recorded_attempt_id,
+                    executor=executor,
+                    started_at=str(running.attempt["started_at"]),
+                    assignment_path=assignment_path,
+                    liveness_path=liveness_path,
+                    launch_packet=launch_packet,
+                    verifier_intent=verifier_intent,
+                    exit_code=exit_code,
+                    timed_out=worker_timed_out,
+                ),
                 indent=2,
                 sort_keys=True,
             ),
@@ -270,6 +346,16 @@ def run_process_attempt(
             str(stdout_path),
             str(stderr_path),
             *(
+                str(captured["stored_path"])
+                for captured in (launch_packet,)
+                if captured
+            ),
+            *(
+                str(captured["stored_path"])
+                for captured in (verifier_intent,)
+                if captured
+            ),
+            *(
                 str(path)
                 for path in (verifier_command_path, verifier_stdout_path, verifier_stderr_path)
                 if path is not None
@@ -293,6 +379,16 @@ def run_process_attempt(
         *(f"git changed product path: {artifact}" for artifact in git_product_artifacts),
         *(f"missing artifact: {artifact}" for artifact in missing_artifacts),
         *(f"telemetry warning: {error}" for error in telemetry_errors),
+        *(
+            (f"launch packet sha256: {launch_packet['sha256']}",)
+            if launch_packet is not None
+            else ()
+        ),
+        *(
+            (f"verifier intent sha256: {verifier_intent['sha256']}",)
+            if verifier_intent is not None
+            else ()
+        ),
         *checks,
     )
     recorded_acceptance_results = _acceptance_results_for_terminal_status(
@@ -330,9 +426,22 @@ def run_process_attempt(
         workspace=str(workspace),
         exit_code=exit_code,
         assignment_path=str(assignment_path),
+        command_path=str(command_path),
         liveness_path=str(liveness_path),
         stdout_path=str(stdout_path),
         stderr_path=str(stderr_path),
+        launch_packet_path=(
+            str(launch_packet["stored_path"]) if launch_packet is not None else None
+        ),
+        launch_packet_sha256=(
+            str(launch_packet["sha256"]) if launch_packet is not None else None
+        ),
+        verifier_intent_path=(
+            str(verifier_intent["stored_path"]) if verifier_intent is not None else None
+        ),
+        verifier_intent_sha256=(
+            str(verifier_intent["sha256"]) if verifier_intent is not None else None
+        ),
         verifier_command=verifier_command,
         verifier_exit_code=verifier_exit_code,
         verifier_stdout_path=verifier_stdout_path_string,
@@ -364,6 +473,109 @@ def _coerce_output(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return value
+
+
+def _capture_reference_file(
+    source_path: Path | None,
+    *,
+    workspace: Path,
+    destination: Path,
+    label: str,
+) -> dict[str, str] | None:
+    if source_path is None:
+        return None
+    source = _resolve_reference_file(source_path, workspace=workspace, label=label)
+    if source is None:
+        return None
+    content = source.read_bytes()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(content)
+    digest = sha256(content).hexdigest()
+    return {
+        "source_path": str(source),
+        "stored_path": str(destination),
+        "sha256": digest,
+    }
+
+
+def _resolve_reference_file(
+    source_path: Path | None,
+    *,
+    workspace: Path,
+    label: str,
+) -> Path | None:
+    if source_path is None:
+        return source_path
+    candidates = (source_path, workspace / source_path) if not source_path.is_absolute() else (
+        source_path,
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    raise FileNotFoundError(f"{label} file does not exist: {source_path}")
+
+
+def _command_metadata(
+    *,
+    command: tuple[str, ...],
+    workspace: Path,
+    timeout_seconds: int,
+    task_id: str,
+    attempt_id: str,
+    executor: str,
+    started_at: str,
+    assignment_path: Path,
+    liveness_path: Path,
+    launch_packet: dict[str, str] | None,
+    verifier_intent: dict[str, str] | None,
+    exit_code: int | None,
+    timed_out: bool | None,
+) -> dict[str, object]:
+    return {
+        "command": list(command),
+        "workspace": str(workspace),
+        "cwd": str(workspace),
+        "timeout_seconds": timeout_seconds,
+        "task_id": task_id,
+        "attempt_id": attempt_id,
+        "executor": executor,
+        "launcher": command[0],
+        "model_reasoning_effort": _model_reasoning_effort(command),
+        "git_head": _git_head(workspace),
+        "started_at": started_at,
+        "exit_code": exit_code,
+        "timed_out": timed_out,
+        "assignment_path": str(assignment_path),
+        "liveness_path": str(liveness_path),
+        "launch_packet": launch_packet,
+        "verifier_intent": verifier_intent,
+    }
+
+
+def _model_reasoning_effort(command: tuple[str, ...]) -> str | None:
+    prefix = "model_reasoning_effort="
+    for item in command:
+        normalized = item.strip().strip("'\"")
+        if normalized.startswith(prefix):
+            return normalized.removeprefix(prefix).strip("'\"")
+    return None
+
+
+def _git_head(workspace: Path) -> str | None:
+    try:
+        completed = subprocess.run(
+            ("git", "-C", str(workspace), "rev-parse", "HEAD"),
+            check=False,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+        )
+    except FileNotFoundError:
+        return None
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip() or None
 
 
 def _run_worker_process(

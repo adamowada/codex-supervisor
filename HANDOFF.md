@@ -79,7 +79,7 @@ Full verification completed:
 
 ```text
 uv run --no-sync python -B scripts/verify.py
-97 passed
+99 passed
 ```
 
 ## Planning Ledger
@@ -94,13 +94,17 @@ Accepted tasks:
   hashes, planning ledger, handoff, and verification with the substrate branch plan.
 - `task-remove-ai-prose-steering-docs-20260707`: tightened steering docs using the Pangram and
   Grammarly common-AI-prose references, refreshed protected hashes, and verified the repo.
+- `task-launch-packet-capture-20260707`: added `attempt-run --launch-packet` and
+  `--verifier-intent`, copied and hashed those files before worker product mutation, injected
+  packet references into assignment metadata and worker environment, wrote launch-time
+  `command.json` with workspace and cwd metadata, added focused e2e coverage, refreshed source
+  locks, and verified the repo.
 
 Ready next task:
 
-- `task-launch-packet-capture-20260707`: implement launch packet and verifier intent path/hash
-  capture before worker product mutation.
+- `task-generic-lineage-20260707`: implement generic task lineage for retry, repair, review, and
+  shipping-proof relationships.
 
 ## Next Action
 
-Implement launch packet capture for `attempt-run`, including packet copy/hash, verifier intent
-hash, assignment metadata, recovery-state exposure, and focused tests.
+Implement generic task lineage and expose it through compact recovery state.

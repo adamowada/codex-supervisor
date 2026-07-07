@@ -31,7 +31,7 @@ content, and acceptance criteria, not in a supervisor job type.
 
 A launch packet is Goal Mode's free-form worker context for one task or attempt.
 
-Substrate target fields:
+Recorded fields when a packet is supplied:
 
 - packet path;
 - packet hash;
@@ -67,7 +67,7 @@ artifacts, git-discovered product paths, checks, risks, gaps, optional verifier 
 acceptance results as evidence.
 
 Substrate launch metadata must be written at launch time, not only after process exit. The
-`command.json` target includes command, cwd, launcher, model/reasoning, timeout, task id, attempt
+`command.json` record includes command, cwd, launcher, model/reasoning, timeout, task id, attempt
 id, packet hash, verifier hash, git head, and start time.
 
 Process launch, timeout, nonzero exit, missing declared artifacts, and telemetry write failures are

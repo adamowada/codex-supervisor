@@ -6,6 +6,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+from hashlib import sha256
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -110,6 +111,9 @@ def test_attempt_run_updates_liveness_while_worker_runs(tmp_path: Path) -> None:
     liveness_path = (
         workspace / ".codex-supervisor" / "evidence" / "attempt-live-liveness.json"
     )
+    command_path = (
+        workspace / ".codex-supervisor" / "evidence" / "attempt-live-command.json"
+    )
 
     _run_cli("plan-init", "--path", str(db_path))
     _run_cli(
@@ -176,6 +180,12 @@ def test_attempt_run_updates_liveness_while_worker_runs(tmp_path: Path) -> None:
         stderr=subprocess.PIPE,
     )
     try:
+        command_payload = _wait_for_json_file(command_path)
+        assert command_payload["command"][:2] == [sys.executable, "-c"]
+        assert command_payload["task_id"] == "task-live"
+        assert command_payload["attempt_id"] == "attempt-live"
+        assert command_payload["exit_code"] is None
+        assert command_payload["timed_out"] is None
         live_payload = _wait_for_liveness_output(liveness_path)
         assert live_payload["state"] == "running"
         assert live_payload["last_output_at"] is not None
@@ -194,6 +204,187 @@ def test_attempt_run_updates_liveness_while_worker_runs(tmp_path: Path) -> None:
     assert final_liveness["state"] == "succeeded"
     assert final_liveness["last_output_at"] is not None
     assert final_liveness["ended_at"] is not None
+    final_command = json.loads(command_path.read_text(encoding="utf-8"))
+    assert final_command["exit_code"] == 0
+    assert final_command["timed_out"] is False
+
+
+def test_attempt_run_copies_and_hashes_launch_packet_and_verifier_intent(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / ".codex-supervisor" / "planning.sqlite3"
+    workspace = tmp_path / "packet-worker-project"
+    packet_file = workspace / ".codex-supervisor" / "worker-packet.md"
+    intent_file = workspace / ".codex-supervisor" / "verifier-intent.md"
+    report_file = workspace / "packet-report.json"
+    output_file = workspace / "done.txt"
+    packet_text = "Goal packet: write done.txt and report packet metadata.\n"
+    intent_text = "Verifier intent: done.txt exists and packet metadata is durable.\n"
+
+    packet_file.parent.mkdir(parents=True)
+    packet_file.write_text(packet_text, encoding="utf-8")
+    intent_file.write_text(intent_text, encoding="utf-8")
+    packet_hash = sha256(packet_file.read_bytes()).hexdigest()
+    intent_hash = sha256(intent_file.read_bytes()).hexdigest()
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-packet",
+        "--plan-title",
+        "Packet capture",
+        "--plan-goal",
+        "Capture Goal Mode packet identity before worker product mutation.",
+        "--task-id",
+        "task-packet",
+        "--title",
+        "Read packet",
+        "--intent",
+        "Run a worker that reads launch packet metadata from assignment and environment.",
+        "--assurance",
+        "high",
+        "--acceptance",
+        "Worker received launch packet and verifier intent metadata",
+        "--json",
+    )
+
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-packet",
+        "--attempt-id",
+        "attempt-packet",
+        "--executor",
+        "worker-process",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--summary",
+        "Assign packet-aware work to a worker.",
+        "--launch-packet",
+        str(packet_file),
+        "--verifier-intent",
+        str(intent_file),
+        "--artifact",
+        str(output_file),
+        "--artifact",
+        str(report_file),
+        "--acceptance-result",
+        "pass",
+        "--risk",
+        "Worker only reads supervisor metadata and writes declared artifacts.",
+        "--review-evidence",
+        "Packet and verifier intent hashes are asserted in the e2e test.",
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        _packet_worker_code(),
+    )
+
+    payload = json.loads(completed.stdout)
+    evidence = payload["transition"]["evidence"]
+    assignment = json.loads(Path(payload["assignment_path"]).read_text(encoding="utf-8"))
+    command = json.loads(Path(payload["command_path"]).read_text(encoding="utf-8"))
+    report = json.loads(report_file.read_text(encoding="utf-8"))
+
+    assert payload["exit_code"] == 0
+    assert payload["transition"]["task_status"] == "done"
+    assert payload["launch_packet_sha256"] == packet_hash
+    assert payload["verifier_intent_sha256"] == intent_hash
+    assert Path(payload["launch_packet_path"]).read_text(encoding="utf-8") == packet_text
+    assert Path(payload["verifier_intent_path"]).read_text(encoding="utf-8") == intent_text
+    assert assignment["launch_packet"]["sha256"] == packet_hash
+    assert assignment["verifier_intent"]["sha256"] == intent_hash
+    assert command["launch_packet"]["sha256"] == packet_hash
+    assert command["verifier_intent"]["sha256"] == intent_hash
+    assert command["cwd"] == str(workspace.resolve())
+    assert command["task_id"] == "task-packet"
+    assert command["attempt_id"] == "attempt-packet"
+    assert str(Path(payload["launch_packet_path"])) in evidence["artifacts"]
+    assert str(Path(payload["verifier_intent_path"])) in evidence["artifacts"]
+    assert f"launch packet sha256: {packet_hash}" in evidence["checks"]
+    assert f"verifier intent sha256: {intent_hash}" in evidence["checks"]
+    assert report == {
+        "assignment_launch_packet_hash": packet_hash,
+        "assignment_verifier_intent_hash": intent_hash,
+        "env_launch_packet_hash": packet_hash,
+        "env_verifier_intent_hash": intent_hash,
+        "packet_text": packet_text,
+        "verifier_intent_text": intent_text,
+    }
+
+
+def test_missing_launch_packet_fails_before_attempt_starts(tmp_path: Path) -> None:
+    db_path = tmp_path / ".codex-supervisor" / "planning.sqlite3"
+    workspace = tmp_path / "missing-packet-project"
+    missing_packet = workspace / "missing-packet.md"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-missing-packet",
+        "--plan-title",
+        "Missing packet",
+        "--plan-goal",
+        "Reject missing launch packet input before starting an attempt.",
+        "--task-id",
+        "task-missing-packet",
+        "--title",
+        "Reject missing packet",
+        "--intent",
+        "Run attempt-run with a missing launch packet.",
+        "--assurance",
+        "medium",
+        "--acceptance",
+        "Missing packet does not create a running attempt",
+        "--json",
+    )
+
+    completed = subprocess.run(
+        _cli_command(
+            "attempt-run",
+            "--path",
+            str(db_path),
+            "--task-id",
+            "task-missing-packet",
+            "--attempt-id",
+            "attempt-missing-packet",
+            "--workspace",
+            str(workspace),
+            "--launch-packet",
+            str(missing_packet),
+            "--",
+            sys.executable,
+            "-c",
+            "print('should not run')",
+        ),
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        timeout=15,
+        env=_cli_env(),
+        check=False,
+    )
+
+    assert completed.returncode == 1
+    assert "launch_packet file does not exist" in completed.stderr
+    with sqlite3.connect(db_path) as connection:
+        task_status = connection.execute(
+            "select status from tasks where task_id = 'task-missing-packet'"
+        ).fetchone()[0]
+        attempt_count = connection.execute("select count(*) from attempts").fetchone()[0]
+    assert task_status == "ready"
+    assert attempt_count == 0
 
 
 def test_timeout_worker_can_be_accepted_by_verifier_on_original_task(
@@ -1142,6 +1333,21 @@ def _wait_for_liveness_output(path: Path) -> dict[str, object]:
     raise AssertionError(f"liveness output did not appear at {path}")
 
 
+def _wait_for_json_file(path: Path) -> dict[str, object]:
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        if path.exists():
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                time.sleep(0.05)
+                continue
+            if isinstance(payload, dict):
+                return payload
+        time.sleep(0.05)
+    raise AssertionError(f"json file did not appear at {path}")
+
+
 def _write_text_verifier(path: Path, body: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("from pathlib import Path\n" + body, encoding="utf-8")
@@ -1173,4 +1379,26 @@ def _assignment_worker_code() -> str:
         "  'assignment_attempt_id': assignment['attempt']['attempt_id'],\n"
         "}, sort_keys=True), encoding='utf-8')\n"
         "print('created index.html from supervisor assignment')\n"
+    )
+
+
+def _packet_worker_code() -> str:
+    return (
+        "import json, os\n"
+        "from pathlib import Path\n"
+        "assignment = json.loads(Path(os.environ['CODEX_SUPERVISOR_TASK_JSON']).read_text("
+        "encoding='utf-8'))\n"
+        "packet_path = Path(os.environ['CODEX_SUPERVISOR_LAUNCH_PACKET'])\n"
+        "intent_path = Path(os.environ['CODEX_SUPERVISOR_VERIFIER_INTENT'])\n"
+        "report = {\n"
+        "  'assignment_launch_packet_hash': assignment['launch_packet']['sha256'],\n"
+        "  'assignment_verifier_intent_hash': assignment['verifier_intent']['sha256'],\n"
+        "  'env_launch_packet_hash': os.environ['CODEX_SUPERVISOR_LAUNCH_PACKET_SHA256'],\n"
+        "  'env_verifier_intent_hash': os.environ['CODEX_SUPERVISOR_VERIFIER_INTENT_SHA256'],\n"
+        "  'packet_text': packet_path.read_text(encoding='utf-8'),\n"
+        "  'verifier_intent_text': intent_path.read_text(encoding='utf-8'),\n"
+        "}\n"
+        "Path('done.txt').write_text('done\\n', encoding='utf-8')\n"
+        "Path('packet-report.json').write_text(json.dumps(report, sort_keys=True), "
+        "encoding='utf-8')\n"
     )

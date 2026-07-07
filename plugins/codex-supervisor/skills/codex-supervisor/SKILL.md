@@ -102,9 +102,9 @@ when the user explicitly asks for different worker reasoning behavior.
 ## Goal Mode Packet And Recovery
 
 Goal Mode should write the worker launch packet and verifier intent before assigning worker work.
-When the active implementation supports packet capture, the supervisor **MUST** copy and hash the
-packet, expose the packet hash in assignment metadata, and surface packet identity in recovery
-state.
+When those files exist, pass them through `attempt-run --launch-packet` and `--verifier-intent`.
+The supervisor **MUST** copy and hash the files, expose hashes in assignment metadata, and record
+packet identity in evidence.
 
 Goal Mode should read `queue-next` or `codex_supervisor.queue_next` to recover compact state before
 starting new work. Recovery state should lead Goal Mode to advance, retry, repair, review, ship, or

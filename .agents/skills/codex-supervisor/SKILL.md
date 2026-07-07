@@ -73,8 +73,8 @@ The first command **MUST** exit `0`. The second command **MUST** print nothing. 
 ## Required Flow
 
 - Create durable task intent before product mutation.
-- Record or identify Goal Mode's launch packet and verifier intent for worker-assigned work when
-  the current implementation supports it.
+- Pass Goal Mode's launch packet and verifier intent through `attempt-run --launch-packet` and
+  `--verifier-intent` when those files exist for worker-assigned work.
 - Record a run attempt before product mutation.
 - Assign product mutation through `attempt-run`.
 - Record stdout, stderr, command metadata, assignment metadata, checks, artifacts, risks, gaps,

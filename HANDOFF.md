@@ -79,7 +79,7 @@ Full verification completed:
 
 ```text
 uv run --no-sync python -B scripts/verify.py
-108 passed
+109 passed
 ```
 
 ## Planning Ledger
@@ -113,12 +113,16 @@ Accepted tasks:
   locks, and verified the repo.
 - `task-shipping-proof-20260707`: exposed `shipping_proof_of` lineage as final proof recovery
   state, kept final proof as generic task intent, refreshed source locks, and verified the repo.
+- `task-warning-gates-20260707`: added ACP warnings for missing packet hashes, missing launch
+  metadata artifacts, and completed plans without final proof; preserved unbacked product mutation
+  as a hard ACP failure; exposed recovery warning flags; refreshed source locks; and verified the
+  repo.
 
 Ready next task:
 
-- `task-warning-gates-20260707`: add warning flags and hard gates for missing packet, launch
-  metadata, unbacked product mutation, and final completion without proof.
+- `task-final-proof-20260707`: run final substrate proof, linked with `shipping_proof_of` to
+  `task-warning-gates-20260707`.
 
 ## Next Action
 
-Implement warning flags and hard gates for `task-warning-gates-20260707`.
+Run final substrate proof for `task-final-proof-20260707`.

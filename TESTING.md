@@ -40,6 +40,8 @@ The gate checks:
 - focused coverage that blocked work surfaces linked repair guidance and linked repair task
   creation reactivates the plan;
 - focused coverage that `shipping_proof_of` lineage is exposed as final proof recovery state;
+- e2e coverage that ACP reports warnings for missing packet hashes and completed plans without
+  final proof while keeping unbacked product paths as hard failures;
 - e2e coverage that installed-cache MCP queue inspection uses an explicit workspace ledger path
   instead of the source repository ledger;
 - e2e coverage that full AFK product follow-up mutation is assigned through another worker attempt,
@@ -65,8 +67,7 @@ The gate checks:
 Next tests should cover:
 
 - launch-time `command.json` coverage for failed attempts;
-- warnings before hard gates for missing packet, missing launch metadata, unbacked product mutation,
-  and final completion without proof.
+- hard-gate escalation for warnings once live smoke proves the warning set is stable.
 
 ## Live Smoke
 

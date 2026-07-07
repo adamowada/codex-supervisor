@@ -27,6 +27,7 @@ def main(argv: list[str] | None = None) -> int:
     payload = {
         "ok": result.ok,
         "failures": list(result.failures),
+        "warnings": list(result.warnings),
         "changed_product_paths": list(result.changed_product_paths),
         "worker_backed_paths": list(result.worker_backed_paths),
     }
@@ -34,10 +35,14 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(payload, indent=2, sort_keys=True))
     elif result.ok:
         print("Target workspace ACP gate passed.")
+        for warning in result.warnings:
+            print(f"warning: {warning}")
     else:
         print("Target workspace ACP gate failed.", file=sys.stderr)
         for failure in result.failures:
             print(f"- {failure}", file=sys.stderr)
+        for warning in result.warnings:
+            print(f"warning: {warning}", file=sys.stderr)
     return 0 if result.ok else 1
 
 

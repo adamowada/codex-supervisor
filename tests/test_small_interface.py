@@ -138,6 +138,39 @@ def test_queue_next_surfaces_blocked_task_with_repair_hint(tmp_path: Path) -> No
     assert result.next_transition == "task-create --lineage repair_of=task-1"
 
 
+def test_queue_next_warns_on_attempt_run_evidence_without_packet_or_metadata(
+    tmp_path: Path,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        executor="worker-process",
+        status="running",
+        summary="Running worker.",
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        status="failed",
+        summary="Worker failed.",
+        checks=("process exit code: 1",),
+        artifacts=("README.md",),
+        acceptance_results={"Acceptance criterion": False},
+    )
+
+    result = queue_next(db_path)
+
+    assert "latest_evidence_launch_packet_missing" in result.recovery_state[
+        "warning_flags"
+    ]
+    assert "latest_evidence_launch_metadata_missing" in result.recovery_state[
+        "warning_flags"
+    ]
+
+
 def test_task_create_can_add_linked_repair_to_blocked_plan(tmp_path: Path) -> None:
     db_path = make_planning_db(tmp_path)
     attempt_transition(

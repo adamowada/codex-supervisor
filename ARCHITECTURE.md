@@ -85,7 +85,8 @@ follow-up work becomes new task intent assigned through `attempt-run`.
 Target workspace inspection owns product provenance. It reads git workspace state, normalizes paths,
 excludes `.gitignore` and `.codex-supervisor/**`, detects changed product paths, inspects linked
 worktrees, and identifies product paths backed by succeeded `attempt-run` evidence. Git is the
-concrete adapter here.
+concrete adapter here. The ACP gate hard-fails unbacked product paths and emits warnings for missing
+packet hashes, missing launch metadata artifacts, and completed plans without final proof.
 
 ### Evidence Boundary
 

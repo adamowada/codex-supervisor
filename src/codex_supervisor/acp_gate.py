@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import json
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
 from codex_supervisor.target_workspace import (
     SUPERVISOR_DIR,
+    artifact_to_workspace_relative,
     changed_product_paths,
     git_check_ignore,
+    has_attempt_run_metadata,
     is_git_worktree,
+    is_product_path,
     linked_worktree_changes,
     tracked_supervisor_paths,
     worker_backed_product_paths,
@@ -22,6 +27,7 @@ class AcpGateResult:
 
     ok: bool
     failures: tuple[str, ...]
+    warnings: tuple[str, ...]
     changed_product_paths: tuple[str, ...]
     worker_backed_paths: tuple[str, ...]
 
@@ -36,12 +42,14 @@ def check_target_workspace_acp_gate(
     workspace = workspace.resolve()
     database_path = (database_path or workspace / SUPERVISOR_DIR / "planning.sqlite3").resolve()
     failures: list[str] = []
+    warnings: list[str] = []
 
     if not is_git_worktree(workspace):
         failures.append("workspace is not a git worktree")
         return AcpGateResult(
             ok=False,
             failures=tuple(failures),
+            warnings=(),
             changed_product_paths=(),
             worker_backed_paths=(),
         )
@@ -66,6 +74,7 @@ def check_target_workspace_acp_gate(
         failures.append(
             "product paths lack attempt-run worker evidence: " + ", ".join(missing_evidence)
         )
+    warnings.extend(_substrate_warnings(workspace, database_path=database_path))
     for linked in linked_worktree_changes(workspace):
         failures.append(
             f"linked worktree has unintegrated product changes: "
@@ -75,6 +84,100 @@ def check_target_workspace_acp_gate(
     return AcpGateResult(
         ok=not failures,
         failures=tuple(failures),
+        warnings=tuple(warnings),
         changed_product_paths=product_paths,
         worker_backed_paths=worker_backed_paths,
     )
+
+
+def _substrate_warnings(workspace: Path, *, database_path: Path) -> tuple[str, ...]:
+    if not database_path.exists():
+        return ("planning database is missing; substrate evidence cannot be inspected",)
+    warnings: list[str] = []
+    with sqlite3.connect(database_path) as connection:
+        attempt_rows = connection.execute(
+            """select attempts.attempt_id,
+                      evidence_bundles.checks_json,
+                      evidence_bundles.artifacts_json
+               from attempts
+               join evidence_bundles on evidence_bundles.attempt_id = attempts.attempt_id
+               where attempts.status = 'succeeded'"""
+        ).fetchall()
+        plan_rows = connection.execute(
+            "select plan_id, status from plans where status = 'done'"
+        ).fetchall()
+        task_rows = connection.execute(
+            "select plan_id, task_id, status, lineage_json from tasks"
+        ).fetchall()
+
+    for attempt_id, checks_json, artifacts_json in attempt_rows:
+        checks = _json_string_array(checks_json)
+        artifacts = _json_string_array(artifacts_json)
+        if not _has_product_artifact(workspace, artifacts):
+            continue
+        if not has_attempt_run_metadata(
+            workspace,
+            attempt_id=str(attempt_id),
+            artifacts=artifacts,
+        ):
+            warnings.append(f"succeeded attempt {attempt_id} lacks launch metadata artifacts")
+        if not any(check.startswith("launch packet sha256: ") for check in checks):
+            warnings.append(f"succeeded attempt {attempt_id} lacks launch packet hash")
+
+    task_records = [
+        {
+            "plan_id": str(plan_id),
+            "task_id": str(task_id),
+            "status": str(status),
+            "lineage": _lineage(lineage_json),
+        }
+        for plan_id, task_id, status, lineage_json in task_rows
+    ]
+    for plan_id, _status in plan_rows:
+        if not _has_done_shipping_proof(str(plan_id), task_records):
+            warnings.append(f"completed plan {plan_id} has no accepted final proof task")
+    return tuple(warnings)
+
+
+def _has_product_artifact(workspace: Path, artifacts: tuple[str, ...]) -> bool:
+    for artifact in artifacts:
+        relative = artifact_to_workspace_relative(workspace, artifact)
+        if relative is not None and is_product_path(relative):
+            return True
+    return False
+
+
+def _has_done_shipping_proof(plan_id: str, tasks: list[dict[str, object]]) -> bool:
+    for task in tasks:
+        if task["plan_id"] != plan_id or task["status"] != "done":
+            continue
+        lineage = task["lineage"]
+        if not isinstance(lineage, tuple):
+            continue
+        if any(
+            item.get("relation") == "shipping_proof_of"
+            for item in lineage
+            if isinstance(item, dict)
+        ):
+            return True
+    return False
+
+
+def _lineage(raw_json: str) -> tuple[dict[str, str], ...]:
+    try:
+        decoded = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return ()
+    if not isinstance(decoded, list):
+        return ()
+    return tuple(item for item in decoded if isinstance(item, dict))
+
+
+def _json_string_array(raw_json: str) -> tuple[str, ...]:
+    try:
+        decoded = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return ()
+    if not isinstance(decoded, list):
+        return ()
+    return tuple(item for item in decoded if isinstance(item, str))

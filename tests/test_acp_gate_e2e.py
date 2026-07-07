@@ -63,6 +63,8 @@ def test_acp_gate_accepts_worker_backed_product_change(tmp_path: Path) -> None:
     assert result.ok is True
     assert result.changed_product_paths == ("README.md",)
     assert result.worker_backed_paths == ("README.md",)
+    assert "succeeded attempt attempt-acp lacks launch packet hash" in result.warnings
+    assert "completed plan plan-acp has no accepted final proof task" in result.warnings
 
 
 def test_acp_gate_accepts_worker_backed_nested_untracked_product_file(tmp_path: Path) -> None:
@@ -341,6 +343,7 @@ def test_acp_gate_script_reports_failures_as_json(tmp_path: Path) -> None:
     assert payload["ok"] is False
     assert payload["changed_product_paths"] == ["README.md"]
     assert payload["worker_backed_paths"] == []
+    assert "warnings" in payload
 
 
 def _create_task(db_path: Path) -> None:

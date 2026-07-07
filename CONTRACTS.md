@@ -97,6 +97,10 @@ discovered from the target git workspace after `attempt-run` finishes. Product p
 `.gitignore` and `.codex-supervisor/**`. ACP uses the same provenance rule to require every changed
 product path to be backed by succeeded `attempt-run` evidence.
 
+ACP hard-fails unbacked product paths. It warns, without blocking yet, when succeeded product
+attempts lack launch packet hashes or launch metadata artifacts, or when a completed plan has no
+accepted final proof task.
+
 When content or behavior needs machine verification, `attempt-run` may run one verifier command
 after the worker exits and before the terminal transition is recorded. The verifier receives the
 same assignment environment and workspace as the worker. Its command metadata, stdout, stderr, and

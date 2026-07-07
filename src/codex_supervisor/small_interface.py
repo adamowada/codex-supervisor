@@ -560,11 +560,26 @@ def _warning_flags(
         and latest_acceptance.bundle_id != latest_evidence.bundle_id
     ):
         flags.append("latest_acceptance_not_latest_evidence")
+    if latest_evidence is not None and _looks_like_attempt_run_evidence(latest_evidence):
+        if _check_suffix(latest_evidence, "launch packet sha256: ") is None:
+            flags.append("latest_evidence_launch_packet_missing")
+        if not _has_launch_metadata_artifacts(latest_evidence):
+            flags.append("latest_evidence_launch_metadata_missing")
     if git_summary.get("dirty"):
         flags.append("git_dirty")
     if git_summary.get("error") and git_summary.get("is_repository"):
         flags.append("git_status_error")
     return tuple(flags)
+
+
+def _looks_like_attempt_run_evidence(evidence: AttemptEvidence) -> bool:
+    return any(check.startswith("process exit code: ") for check in evidence.checks)
+
+
+def _has_launch_metadata_artifacts(evidence: AttemptEvidence) -> bool:
+    return any(artifact.endswith("-assignment.json") for artifact in evidence.artifacts) and any(
+        artifact.endswith("-command.json") for artifact in evidence.artifacts
+    )
 
 
 def _age_seconds(timestamp: str | None) -> int | None:

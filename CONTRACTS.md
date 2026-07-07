@@ -110,15 +110,15 @@ where the literal text is itself required.
 
 Lineage links task intent without adding workflow-specific job types.
 
-Expected relation names include:
+Allowed relation names:
 
 - `retry_of`
 - `repair_of`
 - `review_of`
 - `shipping_proof_of`
 
-Lineage is generic substrate state. A repair is not a special supervisor mode; it is a task linked
-to the attempt or task that needs repair.
+Lineage is stored on task intent as generic relation data. A repair is not a special supervisor
+mode; it is a task linked to the task that needs repair.
 
 ## Evidence Bundle
 

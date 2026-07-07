@@ -41,9 +41,9 @@ plan for `feature/substrate`. The protected docs stay concise, current, and alig
 one active plan, one non-terminal attempt per task, and atomic terminal attempt evidence plus
 acceptance decision writes.
 
-The active schema remains compact. Launch packet details, verifier intent, command metadata,
-lineage, and evidence digests should use existing structured JSON or artifact records until a
-repeated access pattern earns a dedicated table.
+The active schema remains compact. Task lineage uses `tasks.lineage_json`. Launch packet details,
+verifier intent, command metadata, and evidence digests should use existing structured JSON or
+artifact records until a repeated access pattern earns a dedicated table.
 
 ### Policy
 

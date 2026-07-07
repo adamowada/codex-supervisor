@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 
 SCHEMA_NAME = "fresh_simplified_planning"
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 
 SCHEMA_SQL = """
 create table if not exists meta (
@@ -30,6 +30,7 @@ create table if not exists tasks (
     assurance text not null check (assurance in ('low', 'medium', 'high')),
     intent text not null,
     acceptance_json text not null,
+    lineage_json text not null default '[]',
     created_at text not null,
     updated_at text not null
 );
@@ -81,7 +82,7 @@ def initialize_compact_planning_database(database_path: Path) -> None:
     """Create the compact planning schema."""
 
     database_path.parent.mkdir(parents=True, exist_ok=True)
-    _reject_incompatible_existing_database(database_path)
+    _prepare_existing_database(database_path)
     with sqlite3.connect(database_path) as connection:
         connection.execute("pragma foreign_keys = on")
         connection.executescript(SCHEMA_SQL)
@@ -95,7 +96,7 @@ def initialize_compact_planning_database(database_path: Path) -> None:
         )
 
 
-def _reject_incompatible_existing_database(database_path: Path) -> None:
+def _prepare_existing_database(database_path: Path) -> None:
     if not database_path.exists():
         return
     with sqlite3.connect(database_path) as connection:
@@ -121,8 +122,31 @@ def _reject_incompatible_existing_database(database_path: Path) -> None:
             f"existing planning database uses schema name {metadata.get('schema_name')!r}; "
             "delete it and rerun plan-init"
         )
-    if metadata.get("schema_version") != SCHEMA_VERSION:
+    schema_version = metadata.get("schema_version")
+    if schema_version == SCHEMA_VERSION:
+        return
+    if schema_version == "2":
+        _migrate_v2_to_v3(database_path)
+        return
+    if schema_version != SCHEMA_VERSION:
         raise ValueError(
             "existing planning database uses schema version "
-            f"{metadata.get('schema_version')!r}; delete it and rerun plan-init"
+            f"{schema_version!r}; delete it and rerun plan-init"
+        )
+
+
+def _migrate_v2_to_v3(database_path: Path) -> None:
+    with sqlite3.connect(database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute("pragma foreign_keys = on")
+        task_columns = {
+            row["name"] for row in connection.execute("pragma table_info(tasks)")
+        }
+        if "lineage_json" not in task_columns:
+            connection.execute(
+                "alter table tasks add column lineage_json text not null default '[]'"
+            )
+        connection.execute(
+            "insert or replace into meta(key, value) values ('schema_version', ?)",
+            (SCHEMA_VERSION,),
         )

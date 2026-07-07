@@ -26,6 +26,10 @@ def test_fresh_planning_database_contract() -> None:
             "plans",
             "tasks",
         }
+        task_columns = {
+            row[1] for row in connection.execute("pragma table_info(tasks)")
+        }
+        assert "lineage_json" in task_columns
         assert (
             connection.execute(
                 "select value from meta where key = 'schema_name'"
@@ -36,7 +40,7 @@ def test_fresh_planning_database_contract() -> None:
             connection.execute(
                 "select value from meta where key = 'schema_version'"
             ).fetchone()[0]
-            == "2"
+            == "3"
         )
         active_plans = connection.execute(
             "select count(*) from plans where status = 'active'"

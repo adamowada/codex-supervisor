@@ -118,6 +118,8 @@ When this skill is invoked for work that creates, edits, verifies, reviews, or s
 1. You **MUST run `plan-init --json` before any queue inspection** in a fresh workspace.
    You **MUST NOT run `queue-next` before `plan-init`**.
 2. You **MUST create durable task intent** with `task-create` before product mutation.
+   Use `--lineage relation=task_id` when the task is a retry, repair, review, or shipping proof for
+   earlier task intent.
 3. Product mutation tasks **MUST** use `--assurance high` unless the user explicitly requests a
    lower assurance level.
 4. You **MUST record a run attempt** through `attempt-run` before product mutation.

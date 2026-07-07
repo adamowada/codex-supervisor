@@ -84,6 +84,8 @@ The first command **MUST** exit `0`. The second command **MUST** print nothing. 
 - Treat worker failures and verifier failures as durable evidence.
 - Retry the same task when intent is unchanged. Create a new linked task only for new product work,
   repair, cleanup, audit, review, warning, polish, or final proof.
+- Use `task-create --lineage relation=task_id` for `retry_of`, `repair_of`, `review_of`, or
+  `shipping_proof_of` relationships.
 - For full AFK, autonomous worker, unattended worker, or worker-assigned product mutation, create the
   task with `--assurance high` unless the user explicitly requests a lower assurance level.
 

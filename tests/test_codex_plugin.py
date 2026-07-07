@@ -347,7 +347,7 @@ def test_installed_cache_cli_launcher_runs_source_cli_without_path(
         "initialized": True,
         "path": str(db_path),
         "schema_name": "fresh_simplified_planning",
-        "schema_version": "2",
+        "schema_version": "3",
     }
     completed = _run_plugin_cli_launcher_from(
         cached_plugin,
@@ -393,7 +393,7 @@ def test_installed_cache_cli_launcher_defaults_to_invocation_workspace(
         "initialized": True,
         "path": str(workspace_db),
         "schema_name": "fresh_simplified_planning",
-        "schema_version": "2",
+        "schema_version": "3",
     }
     completed = _run_plugin_cli_launcher_from(
         cached_plugin,

@@ -55,6 +55,15 @@ def _build_parser() -> argparse.ArgumentParser:
     task.add_argument("--intent", required=True)
     task.add_argument("--assurance", required=True, choices=("low", "medium", "high"))
     task.add_argument("--acceptance", action="append", required=True)
+    task.add_argument(
+        "--lineage",
+        action="append",
+        default=[],
+        help=(
+            "Generic task lineage as relation=task_id "
+            "(retry_of, repair_of, review_of, shipping_proof_of)"
+        ),
+    )
     task.add_argument("--json", action="store_true", default=False)
 
     transition = subparsers.add_parser("attempt-transition", help="Run one attempt transition")
@@ -137,6 +146,7 @@ def _dispatch(args: argparse.Namespace) -> object | None:
             intent=args.intent,
             assurance=args.assurance,
             acceptance_criteria=tuple(args.acceptance),
+            lineage=_parse_lineage(tuple(args.lineage)),
         )
     if args.command == "attempt-transition":
         return attempt_transition(
@@ -252,6 +262,21 @@ def _parse_command(raw_items: tuple[str, ...]) -> tuple[str, ...]:
     if not command:
         raise ValueError("attempt-run requires a command after --")
     return command
+
+
+def _parse_lineage(raw_items: tuple[str, ...]) -> tuple[dict[str, str], ...]:
+    lineage: list[dict[str, str]] = []
+    for raw_item in raw_items:
+        separator = "=" if "=" in raw_item else ":"
+        if separator not in raw_item:
+            raise ValueError("--lineage must use relation=task_id")
+        relation, task_id = raw_item.split(separator, 1)
+        relation = relation.strip()
+        task_id = task_id.strip()
+        if not relation or not task_id:
+            raise ValueError("--lineage relation and task_id must be non-empty")
+        lineage.append({"relation": relation, "task_id": task_id})
+    return tuple(lineage)
 
 
 def _print_payload(payload: object, *, json_output: bool) -> None:

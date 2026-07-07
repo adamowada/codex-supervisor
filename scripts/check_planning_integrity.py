@@ -23,7 +23,7 @@ EXPECTED_TABLES = {
 
 REQUIRED_META = {
     "schema_name": "fresh_simplified_planning",
-    "schema_version": "2",
+    "schema_version": "3",
 }
 
 VALID_PLAN_STATUSES = {"active", "blocked", "done", "dropped"}
@@ -31,6 +31,7 @@ VALID_TASK_STATUSES = {"ready", "running", "blocked", "done", "dropped"}
 VALID_ATTEMPT_STATUSES = {"planned", "running", "succeeded", "failed", "blocked"}
 VALID_ASSURANCE = {"low", "medium", "high"}
 VALID_ACCEPTANCE_RESULTS = {"accepted", "rejected"}
+VALID_TASK_LINEAGE_RELATIONS = {"retry_of", "repair_of", "review_of", "shipping_proof_of"}
 
 
 def main() -> int:
@@ -191,6 +192,7 @@ def check_planning_integrity(database_path: Path) -> tuple[str, ...]:
 
         _check_attempt_timestamps(connection, failures)
         _check_attempt_relationships(connection, failures)
+        _check_task_lineage(connection, failures)
     finally:
         connection.close()
 
@@ -394,6 +396,53 @@ def _check_attempt_relationships(
             f"blocked task {row['task_id']} has no terminal attempt with evidence "
             "and rejected decision"
         )
+
+
+def _check_task_lineage(
+    connection: sqlite3.Connection,
+    failures: list[str],
+) -> None:
+    task_rows = connection.execute(
+        "select task_id, plan_id, lineage_json from tasks order by task_id"
+    ).fetchall()
+    task_plans = {row["task_id"]: row["plan_id"] for row in task_rows}
+    for row in task_rows:
+        task_id = row["task_id"]
+        try:
+            lineage = json.loads(row["lineage_json"])
+        except json.JSONDecodeError as exc:
+            failures.append(f"tasks.lineage_json task {task_id} is invalid JSON: {exc}")
+            continue
+        if not isinstance(lineage, list):
+            failures.append(f"tasks.lineage_json task {task_id} is not a JSON array")
+            continue
+        seen: set[tuple[str, str]] = set()
+        for index, item in enumerate(lineage):
+            prefix = f"tasks.lineage_json task {task_id} item {index}"
+            if not isinstance(item, dict):
+                failures.append(f"{prefix} is not a JSON object")
+                continue
+            relation = item.get("relation")
+            target_task_id = item.get("task_id")
+            if relation not in VALID_TASK_LINEAGE_RELATIONS:
+                failures.append(f"{prefix} has invalid relation {relation!r}")
+            if not isinstance(target_task_id, str) or not target_task_id.strip():
+                failures.append(f"{prefix} has invalid target task_id {target_task_id!r}")
+                continue
+            if target_task_id == task_id:
+                failures.append(f"{prefix} cannot reference the task itself")
+            target_plan_id = task_plans.get(target_task_id)
+            if target_plan_id is None:
+                failures.append(f"{prefix} references missing task {target_task_id!r}")
+            elif target_plan_id != row["plan_id"]:
+                failures.append(
+                    f"{prefix} references task {target_task_id!r} in plan "
+                    f"{target_plan_id!r}, not {row['plan_id']!r}"
+                )
+            key = (str(relation), target_task_id)
+            if key in seen:
+                failures.append(f"{prefix} duplicates relation {relation!r} to {target_task_id!r}")
+            seen.add(key)
 
 
 if __name__ == "__main__":

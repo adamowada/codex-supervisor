@@ -79,7 +79,7 @@ Full verification completed:
 
 ```text
 uv run --no-sync python -B scripts/verify.py
-99 passed
+103 passed
 ```
 
 ## Planning Ledger
@@ -99,12 +99,15 @@ Accepted tasks:
   packet references into assignment metadata and worker environment, wrote launch-time
   `command.json` with workspace and cwd metadata, added focused e2e coverage, refreshed source
   locks, and verified the repo.
+- `task-generic-lineage-20260707`: added `tasks.lineage_json`, `task-create --lineage`, queue
+  projection of task lineage, integrity validation for lineage references, schema v3 migration,
+  focused tests, source-lock refresh, and verified the repo.
 
 Ready next task:
 
-- `task-generic-lineage-20260707`: implement generic task lineage for retry, repair, review, and
-  shipping-proof relationships.
+- `task-recovery-state-20260707`: expose compact recovery state with active work, latest evidence
+  and acceptance, lineage, provenance, and warning flags.
 
 ## Next Action
 
-Implement generic task lineage and expose it through compact recovery state.
+Implement enriched recovery state for `task-recovery-state-20260707`.

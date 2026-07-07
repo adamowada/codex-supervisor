@@ -703,7 +703,7 @@ def test_full_afk_follow_up_product_mutation_is_assigned_to_worker(
     verifier_file = workspace / ".codex-supervisor" / "verify.py"
 
     init = _run_cli("plan-init", "--path", str(db_path), "--json")
-    assert json.loads(init.stdout)["schema_version"] == "2"
+    assert json.loads(init.stdout)["schema_version"] == "3"
     _run_cli(
         "task-create",
         "--path",

@@ -35,7 +35,7 @@ def test_cli_plan_init_json_reports_compact_schema(tmp_path: Path, capsys) -> No
         "initialized": True,
         "path": str(db_path),
         "schema_name": "fresh_simplified_planning",
-        "schema_version": "2",
+        "schema_version": "3",
     }
 
 
@@ -164,6 +164,44 @@ def test_cli_task_create_json(tmp_path: Path, capsys) -> None:  # type: ignore[n
     assert payload["plan"]["plan_id"] == "plan-factory"
     assert payload["task"]["task_id"] == "task-factory"
     assert payload["task"]["assurance"] == "high"
+    assert payload["task"]["lineage"] == []
+
+
+def test_cli_task_create_json_accepts_lineage(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]
+    db_path = make_planning_db(tmp_path)
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("update tasks set status = 'blocked' where task_id = 'task-1'")
+
+    exit_code = main(
+        [
+            "task-create",
+            "--path",
+            str(db_path),
+            "--plan-id",
+            "plan-1",
+            "--plan-title",
+            "Plan",
+            "--plan-goal",
+            "Goal",
+            "--task-id",
+            "task-repair",
+            "--title",
+            "Repair task",
+            "--intent",
+            "Repair the source task.",
+            "--assurance",
+            "high",
+            "--acceptance",
+            "Repair evidence exists",
+            "--lineage",
+            "repair_of=task-1",
+            "--json",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["task"]["lineage"] == [{"relation": "repair_of", "task_id": "task-1"}]
 
 
 def test_cli_attempt_transition_json(tmp_path: Path, capsys) -> None:  # type: ignore[no-untyped-def]

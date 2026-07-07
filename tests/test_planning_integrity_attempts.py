@@ -244,6 +244,27 @@ def test_planning_integrity_names_missing_acceptance_decision(
     )
 
 
+def test_planning_integrity_rejects_missing_task_lineage_target(
+    tmp_path: Path,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute(
+            """update tasks
+               set lineage_json = ?
+               where task_id = 'task-1'""",
+            ('[{"relation": "repair_of", "task_id": "missing-task"}]',),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    failures = check_planning_integrity(db_path)
+
+    assert any("references missing task 'missing-task'" in failure for failure in failures)
+
+
 def _copy_current_db(tmp_path: Path) -> Path:
     copied = tmp_path / "planning.sqlite3"
     shutil.copyfile(DB_PATH, copied)

@@ -31,6 +31,8 @@ The gate checks:
 - e2e coverage that `attempt-run` copies and hashes launch packets and verifier intent files before
   worker product mutation;
 - e2e coverage that `command.json` exists while an attempt is running;
+- focused coverage that generic task lineage is stored, validated, and exposed through queue
+  inspection;
 - e2e coverage that installed-cache MCP queue inspection uses an explicit workspace ledger path
   instead of the source repository ledger;
 - e2e coverage that full AFK product follow-up mutation is assigned through another worker attempt,
@@ -55,7 +57,6 @@ The gate checks:
 
 Next tests should cover:
 
-- generic lineage for retry, repair, review, and shipping proof;
 - launch-time `command.json` coverage for failed attempts;
 - expanded `queue-next` and MCP recovery state;
 - evidence digest generation and raw log preservation;

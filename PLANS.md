@@ -63,6 +63,7 @@ One intent that can be attempted.
 - `assurance`: required assurance level.
 - `intent`: required text.
 - `acceptance_json`: required JSON array.
+- `lineage_json`: required JSON array of generic task relations.
 - `created_at`: required timestamp.
 - `updated_at`: required timestamp.
 
@@ -79,6 +80,13 @@ Allowed assurance values:
 - `low`
 - `medium`
 - `high`
+
+Allowed lineage relation names:
+
+- `retry_of`
+- `repair_of`
+- `review_of`
+- `shipping_proof_of`
 
 ### `attempts`
 

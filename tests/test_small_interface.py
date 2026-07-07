@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -57,6 +58,52 @@ def test_task_create_reports_stored_plan(tmp_path: Path) -> None:
 
     assert result.plan["title"] == "Plan"
     assert result.task["task_id"] == "task-new"
+    assert result.task["lineage"] == []
+
+
+def test_task_create_records_lineage_and_queue_next_surfaces_it(
+    tmp_path: Path,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("update tasks set status = 'blocked' where task_id = 'task-1'")
+
+    created = task_create(
+        db_path,
+        plan_id="plan-1",
+        plan_title="Plan",
+        plan_goal="Goal",
+        title="Review task",
+        intent="Review the completed source task.",
+        assurance="medium",
+        acceptance_criteria=("Review evidence exists",),
+        lineage=({"relation": "review_of", "task_id": "task-1"},),
+        task_id="task-review",
+    )
+    queued = queue_next(db_path)
+
+    assert created.task["lineage"] == [{"relation": "review_of", "task_id": "task-1"}]
+    assert queued.task is not None
+    assert queued.task["task_id"] == "task-review"
+    assert queued.task["lineage"] == [{"relation": "review_of", "task_id": "task-1"}]
+
+
+def test_task_create_rejects_unknown_lineage_relation(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+
+    with pytest.raises(ValueError, match="lineage relation"):
+        task_create(
+            db_path,
+            plan_id="plan-1",
+            plan_title="Plan",
+            plan_goal="Goal",
+            title="Bad lineage",
+            intent="Record unsupported lineage.",
+            assurance="medium",
+            acceptance_criteria=("Criterion",),
+            lineage=({"relation": "cleanup_of", "task_id": "task-1"},),
+            task_id="task-bad-lineage",
+        )
 
 
 def test_task_create_rejects_second_active_plan(tmp_path: Path) -> None:

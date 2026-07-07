@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from codex_supervisor.attempt_store import AttemptStore, PlanRecord, TaskRecord
+from codex_supervisor.attempt_store import (
+    AttemptStore,
+    PlanRecord,
+    TaskLineageRelation,
+    TaskRecord,
+)
 from codex_supervisor.attempts import (
     AttemptEvidence,
     RunAttempt,
@@ -57,6 +63,7 @@ def task_create(
     intent: str,
     assurance: str,
     acceptance_criteria: tuple[str, ...],
+    lineage: tuple[Mapping[str, str], ...] = (),
     task_id: str | None = None,
     priority: int = 100,
 ) -> TaskCreateResult:
@@ -76,6 +83,7 @@ def task_create(
         intent=intent,
         assurance=assurance,
         acceptance_criteria=acceptance_criteria,
+        lineage=_lineage_from_mappings(lineage),
     )
     return TaskCreateResult(
         plan=_plan_to_dict(plan),
@@ -240,6 +248,10 @@ def _task_to_dict(task: TaskRecord) -> dict[str, object]:
         "assurance": task.assurance,
         "intent": task.intent,
         "acceptance_criteria": list(task.acceptance_criteria),
+        "lineage": [
+            {"relation": item.relation, "task_id": item.task_id}
+            for item in task.lineage
+        ],
     }
 
 
@@ -285,6 +297,20 @@ def _evaluation_to_dict(evaluation: AcceptanceEvaluation) -> dict[str, object]:
         "missing_requirements": list(evaluation.missing_requirements),
         "failed_acceptance_criteria": list(evaluation.failed_acceptance_criteria),
     }
+
+
+def _lineage_from_mappings(
+    lineage: tuple[Mapping[str, str], ...],
+) -> tuple[TaskLineageRelation, ...]:
+    records: list[TaskLineageRelation] = []
+    for item in lineage:
+        try:
+            relation = item["relation"]
+            task_id = item["task_id"]
+        except KeyError as exc:
+            raise ValueError("lineage entries require relation and task_id") from exc
+        records.append(TaskLineageRelation(relation=relation, task_id=task_id))
+    return tuple(records)
 
 
 def _next_transition(

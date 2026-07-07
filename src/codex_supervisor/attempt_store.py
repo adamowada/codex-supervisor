@@ -24,6 +24,10 @@ from codex_supervisor.attempts import (
 )
 from codex_supervisor.policy import normalize_assurance
 
+VALID_TASK_LINEAGE_RELATIONS = frozenset(
+    {"retry_of", "repair_of", "review_of", "shipping_proof_of"}
+)
+
 
 @dataclass(frozen=True)
 class PlanRecord:
@@ -37,6 +41,14 @@ class PlanRecord:
 
 
 @dataclass(frozen=True)
+class TaskLineageRelation:
+    """Generic relation from one task intent to another."""
+
+    relation: str
+    task_id: str
+
+
+@dataclass(frozen=True)
 class TaskRecord:
     """Task row needed by the simplified execution layer."""
 
@@ -47,6 +59,7 @@ class TaskRecord:
     assurance: str
     intent: str
     acceptance_criteria: tuple[str, ...]
+    lineage: tuple[TaskLineageRelation, ...]
 
 
 @dataclass(frozen=True)
@@ -129,6 +142,7 @@ class AttemptStore:
         intent: str,
         assurance: str,
         acceptance_criteria: tuple[str, ...],
+        lineage: tuple[TaskLineageRelation, ...] = (),
         task_id: str | None = None,
         created_at: str | None = None,
     ) -> TaskRecord:
@@ -136,17 +150,23 @@ class AttemptStore:
 
         created_at = created_at or _now()
         task_id = task_id or _stable_id("task")
+        normalized_task_id = _non_empty(task_id, "task_id")
         normalized_acceptance = _string_array(acceptance_criteria, "acceptance_criteria")
         if not normalized_acceptance:
             raise ValueError("acceptance_criteria must include at least one item")
+        normalized_lineage = _normalize_task_lineage(
+            lineage,
+            current_task_id=normalized_task_id,
+        )
         task = TaskRecord(
-            task_id=_non_empty(task_id, "task_id"),
+            task_id=normalized_task_id,
             plan_id=_non_empty(plan_id, "plan_id"),
             title=_non_empty(title, "title"),
             status="ready",
             assurance=normalize_assurance(assurance).value,
             intent=_non_empty(intent, "intent"),
             acceptance_criteria=normalized_acceptance,
+            lineage=normalized_lineage,
         )
 
         with self._connect() as connection:
@@ -156,11 +176,17 @@ class AttemptStore:
             ).fetchone()
             if plan is None:
                 raise LookupError(f"unknown active plan {task.plan_id!r}")
+            _validate_task_lineage_targets(
+                connection,
+                plan_id=task.plan_id,
+                task_id=task.task_id,
+                lineage=task.lineage,
+            )
             connection.execute(
                 """insert into tasks(
                        task_id, plan_id, title, status, assurance, intent,
-                       acceptance_json, created_at, updated_at
-                   ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       acceptance_json, lineage_json, created_at, updated_at
+                   ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     task.task_id,
                     task.plan_id,
@@ -169,6 +195,7 @@ class AttemptStore:
                     task.assurance,
                     task.intent,
                     json.dumps(list(task.acceptance_criteria), indent=2),
+                    _task_lineage_json(task.lineage),
                     created_at,
                     created_at,
                 ),
@@ -475,7 +502,8 @@ class AttemptStore:
                        tasks.status as task_status,
                        tasks.assurance,
                        tasks.intent,
-                       tasks.acceptance_json
+                       tasks.acceptance_json,
+                       tasks.lineage_json
                    from tasks
                    join plans on plans.plan_id = tasks.plan_id
                    where plans.status = 'active'
@@ -502,6 +530,10 @@ class AttemptStore:
                 assurance=row["assurance"],
                 intent=row["intent"],
                 acceptance_criteria=_acceptance_criteria_from_json(row["acceptance_json"]),
+                lineage=_task_lineage_from_json(
+                    row["lineage_json"],
+                    current_task_id=row["task_id"],
+                ),
             ),
         )
 
@@ -606,7 +638,8 @@ class AttemptStore:
     @staticmethod
     def _read_task(connection: sqlite3.Connection, task_id: str) -> TaskRecord:
         row = connection.execute(
-            """select task_id, plan_id, title, status, assurance, intent, acceptance_json
+            """select task_id, plan_id, title, status, assurance, intent, acceptance_json,
+                      lineage_json
                from tasks
                where task_id = ?""",
             (task_id,),
@@ -621,6 +654,10 @@ class AttemptStore:
             assurance=row["assurance"],
             intent=row["intent"],
             acceptance_criteria=_acceptance_criteria_from_json(row["acceptance_json"]),
+            lineage=_task_lineage_from_json(
+                row["lineage_json"],
+                current_task_id=row["task_id"],
+            ),
         )
 
     @staticmethod
@@ -743,6 +780,83 @@ def _acceptance_criteria_from_json(raw_json: str) -> tuple[str, ...]:
     ):
         raise ValueError("task acceptance_json must be a JSON array of strings")
     return tuple(acceptance_criteria)
+
+
+def _task_lineage_json(lineage: tuple[TaskLineageRelation, ...]) -> str:
+    return json.dumps(
+        [
+            {"relation": item.relation, "task_id": item.task_id}
+            for item in lineage
+        ],
+        indent=2,
+        sort_keys=True,
+    )
+
+
+def _task_lineage_from_json(
+    raw_json: str,
+    *,
+    current_task_id: str,
+) -> tuple[TaskLineageRelation, ...]:
+    decoded = json.loads(raw_json)
+    if not isinstance(decoded, list):
+        raise ValueError("task lineage_json must be a JSON array")
+    lineage: list[TaskLineageRelation] = []
+    for item in decoded:
+        if not isinstance(item, dict):
+            raise ValueError("task lineage_json entries must be JSON objects")
+        relation = item.get("relation")
+        target_task_id = item.get("task_id")
+        if not isinstance(relation, str) or not isinstance(target_task_id, str):
+            raise ValueError("task lineage_json entries require relation and task_id strings")
+        lineage.append(TaskLineageRelation(relation=relation, task_id=target_task_id))
+    return _normalize_task_lineage(tuple(lineage), current_task_id=current_task_id)
+
+
+def _normalize_task_lineage(
+    lineage: tuple[TaskLineageRelation, ...],
+    *,
+    current_task_id: str,
+) -> tuple[TaskLineageRelation, ...]:
+    normalized: list[TaskLineageRelation] = []
+    seen: set[tuple[str, str]] = set()
+    for item in lineage:
+        relation = _non_empty(item.relation, "lineage.relation")
+        if relation not in VALID_TASK_LINEAGE_RELATIONS:
+            allowed = ", ".join(sorted(VALID_TASK_LINEAGE_RELATIONS))
+            raise ValueError(f"lineage relation must be one of {allowed}")
+        target_task_id = _non_empty(item.task_id, "lineage.task_id")
+        if target_task_id == current_task_id:
+            raise ValueError("task lineage cannot reference the task itself")
+        key = (relation, target_task_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(TaskLineageRelation(relation=relation, task_id=target_task_id))
+    return tuple(normalized)
+
+
+def _validate_task_lineage_targets(
+    connection: sqlite3.Connection,
+    *,
+    plan_id: str,
+    task_id: str,
+    lineage: tuple[TaskLineageRelation, ...],
+) -> None:
+    for item in lineage:
+        row = connection.execute(
+            "select plan_id from tasks where task_id = ?",
+            (item.task_id,),
+        ).fetchone()
+        if row is None:
+            raise LookupError(
+                f"lineage target task {item.task_id!r} does not exist for {task_id!r}"
+            )
+        if row["plan_id"] != plan_id:
+            raise ValueError(
+                f"lineage target task {item.task_id!r} belongs to plan "
+                f"{row['plan_id']!r}, not {plan_id!r}"
+            )
 
 
 def _string_array(items: tuple[str, ...], field_name: str) -> tuple[str, ...]:

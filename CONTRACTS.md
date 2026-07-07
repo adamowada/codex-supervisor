@@ -1,288 +1,151 @@
 # Contracts
 
-This document defines durable contracts for the supervisor. Code changes must preserve these
-contracts unless an approved plan changes them.
+This file defines the durable contracts for `codex-supervisor`.
 
-## Task Contract
+## Task Intent
 
-A supervisor task is a vertical slice.
-
-Required fields:
-
-- `task_id`
-- `plan_id`
-- `title`
-- `goal`
-- `task_type`: `AFK` or `HITL`
-- `status`: `pending`, `ready`, `running`, `blocked`, `reviewing`, `completed`, `failed`, or `cancelled`
-- `scope_json`
-- `out_of_scope_json`
-- `acceptance_criteria_json`
-- `verification_commands_json`
-- `allowed_paths_json`
-- `blocked_by_json`
-- `worker_backend`
-- `review_required`
-
-AFK tasks must be implementable by a worker without new human input. HITL tasks require a human
-decision, design review, credential, or product judgment.
-
-## Agent Taxonomy
-
-- `supervisor`: the coordinator that reads source of truth, selects work, routes skills, and records
-  durable state.
-- `worker`: a fresh-context implementation run responsible for one task contract.
-- `explorer`: a read-only investigation lane that returns findings but does not mutate state.
-- `reviewer`: a fresh-context review lane focused on bugs, regressions, contract drift, and risk.
-- `handoff`: a compact artifact that lets a new thread resume without depending on chat memory.
-
-## Goal Contract
-
-A Goal Contract is an execution contract for one thread or worker, derived from a supervisor task.
-It does not replace the task row.
+A task intent is a clear unit of work.
 
 Required fields:
 
-- `objective`
-- `context_to_read_first`
-- `in_scope`
-- `out_of_scope`
-- `verification_surface`
-- `stop_condition`
-- `blocked_condition`
-- `iteration_policy`
-- `budget_or_status_limits`
-- `record_updates`
+- stable ID;
+- plan ID;
+- title;
+- intent;
+- assurance level;
+- acceptance criteria;
+- status.
 
-Native Codex Goals can carry this contract into a Codex thread when available. Goal lifecycle state
-is reconciled back into planning SQLite as observation, not authority.
+Backend choice belongs to a run attempt.
+Work category belongs in intent text and acceptance criteria, not in a supervisor job type.
 
-## Story Loop Contract
+## Run Attempt
 
-A story loop executes one vertical slice per iteration.
-
-Required loop rules:
-
-- select the highest-priority executable `AFK` task on an active plan with no unresolved blockers
-  and with nonempty acceptance criteria, verification commands, and safe repo-relative allowed
-  paths;
-- execute exactly one story before broadening scope;
-- verify with the task's commands or artifacts;
-- run review when required;
-- record progress, artifacts, learnings, and follow-up tasks;
-- stop when no ready tasks remain, a task is HITL, sources conflict, verification is inconclusive,
-  or policy requires human authorization.
-
-Ralph's `prd.json` maps to planning SQLite tasks. Ralph's `passes: true` maps to verified task
-completion. Ralph's `progress.txt` maps to plan progress events plus `insights/` updates.
-
-## Worker Result Contract
-
-Every worker must emit a structured result.
+A run attempt is one try at satisfying a task.
 
 Required fields:
 
-- `worker_run_id` for a single-run result, or `worker_run_ids` for an intentionally shared
-  synthesized result whose entries are linked to the same DB result record
-- `status`: `completed`, `blocked`, `failed`, or `needs_review`
-- `summary`
-- `changed_files`
-- `tests_run`: objects with `command`, `exit_code`, and a short result summary
-- `acceptance_results`: exact task acceptance criteria mapped to passing evidence
-- `risks`
-- `follow_up_tasks`
-- `artifacts`
-- `completion_notes` or legacy-compatible `handoff_notes`
+- stable ID;
+- task ID;
+- executor;
+- status;
+- summary;
+- start and finish timestamps when applicable.
 
-Codex worker backends emit structured results compatible with `codex exec --json --output-schema`.
-Completed worker-run rows must link `result_id` to `worker_result_records` and
-`worker_result_run_links`; `result_path` is a transient import source and must not be the durable
-completion authority. Local integrity checks validate this required field set, field types, status
-vocabulary, worker-run identity coverage, shared `worker_run_ids` membership against DB result links,
-task verification coverage with zero exit codes, exact acceptance-criterion coverage, implementation
-changed-file alignment with `allowed_paths_json`, and absence of public `worker-results/` artifacts.
-Publication-ready durable evidence lives in planning SQLite plus tracked supporting documents such
-as `insights/`; ignored paths such as `artifacts/`, `runs/`, `worktrees/`, and `logs/` are ephemeral
-run output.
+Executors may include `codex`, `manual`, `shell`, `review`, or future adapters. Executor names
+describe transport.
 
-When `status` is `completed`, these evidence fields must be nonempty: `summary`, `changed_files`,
-`tests_run`, `acceptance_results`, and completion notes. Supporting `artifacts` may be empty when the
-raw worker JSON itself was only an import source. A completed worker result that only says "done"
-without changed files, verification evidence, completion notes, and acceptance mapping is not durable
-enough to advance the Story Loop.
+`attempt-run` is the generic AFK executor path. It starts one process in a workspace, records the
+process as a run attempt, and attaches stdout, stderr, command metadata, exit code, declared
+artifacts, git-discovered product paths, checks, risks, gaps, optional verifier results, and
+acceptance results as evidence.
 
-The DB row preserves the raw JSON payload and source provenance. Structured `changed_files` should
-list implementation or durable-documentation paths changed by the worker, not evidence files that
-merely prove the run. Supporting reports, logs, and markdown summaries can appear in `artifacts`,
-but they do not replace the DB result record.
+Process launch, timeout, nonzero exit, missing declared artifacts, and telemetry write failures are
+terminal evidence. They must leave the task blocked or accepted through the same durable transition
+path; they must not leave a running attempt stranded.
 
-Each `tests_run` entry needs a nonblank summary that reports durable evidence without stale
-phrasing such as "passed at the time." If a command no longer passes in the current bootstrap
-checkpoint, do not preserve it as passing evidence; replace it with a current passing verifier or
-record the residual risk separately.
+Before the process starts, `attempt-run` writes a task assignment JSON file and exposes it as
+`CODEX_SUPERVISOR_TASK_JSON`. The assignment contains the task intent, acceptance criteria,
+assurance level, attempt ID, and workspace path. Worker processes read that assignment instead of
+requiring a supervisor job type.
 
-Example `tests_run` entry:
+The packaged Codex worker launcher is the default Codex worker path. It must launch workers with
+`model_reasoning_effort="xhigh"` unless the user explicitly requests different worker reasoning
+behavior.
 
-```json
-{"command":"uv run --no-sync python -B -m pytest -q -p no:cacheprovider","exit_code":0,"summary":"passed"}
-```
+For full AFK or autonomous-worker product work, product file mutation happens inside `attempt-run`.
+The supervisor may write supervisor-owned files under `.codex-supervisor/`, launch workers, inspect
+outputs, run verifiers, and record evidence. Product cleanup, repair, audit, warning, or polish work
+is represented as new task intent and assigned through another worker attempt.
 
-Example `acceptance_results` entry:
+Declared task artifacts are verified after the process exits. A caller-supplied passing acceptance
+result is forced to failing evidence when required artifacts are missing.
 
-```json
-{
-  "Default verification passes before handoff.": {
-    "status": "passed",
-    "evidence": "Cache-safe default verification and publication-ready verification passed after ACP."
-  }
-}
-```
+Product artifact provenance includes both caller-declared artifacts and changed product paths
+discovered from the target git workspace after `attempt-run` finishes. Product paths exclude
+`.gitignore` and `.codex-supervisor/**`. ACP uses the same provenance rule to require every changed
+product path to be backed by succeeded `attempt-run` evidence.
 
-## Codex Exec Backend Contract
+When content or behavior needs machine verification, `attempt-run` may run one verifier command
+after the worker exits and before the terminal transition is recorded. The verifier receives the
+same assignment environment and workspace as the worker. Its command metadata, stdout, stderr, and
+exit code become evidence. A nonzero verifier exit code fails the attempt and forces supplied
+passing acceptance results to failing evidence.
 
-The Codex Exec backend is the production worker backend for fresh-context Codex runs. It is invoked
-only after the Story Loop has selected and claimed exactly one ready AFK task.
+Verifier commands should prove behavior or structural contract. Literal string checks are for tasks
+where the literal text is itself required.
 
-A launch request must contain:
+## Evidence Bundle
 
-- `worker_run_id` and `task_id`;
-- rendered Goal Contract content;
-- repo root and isolated worktree path;
-- prompt path, JSONL path, stdout path, stderr path, final-message path, result JSON path, and diff
-  summary path;
-- sandbox mode, approval policy, model, reasoning effort, and service tier when configured;
-- intended `CODEX_HOME`, config path, and whether user config should be loaded;
-- expected Worker Result JSON Schema path;
-- task allowed paths and verification commands.
+An evidence bundle is the structured proof attached to a task or attempt.
 
-Before launch, the backend records preflight evidence in `worker_runs.metadata_json`:
+Required fields:
 
-- resolved Codex executable path or lookup failure;
-- `codex --version` output or failure class;
-- intended `CODEX_HOME`;
-- config path and Goal Mode feature state when observable;
-- selected native-goal or prompt-rendered fallback mode;
-- final argv list;
-- host platform and working directory.
+- stable ID;
+- task ID;
+- optional attempt ID;
+- assurance level;
+- summary;
+- checks JSON;
+- artifacts JSON;
+- timestamp.
 
-The command contract is argv-based. Implementations must not build one shell string by joining
-quoted fragments. The intended shape is:
+Evidence is inspectable. Raw artifacts can live outside SQLite, while SQLite records what exists and
+why it matters.
 
-```text
-codex exec --json --output-schema <schema-path> --output-last-message <final-message-path> \
-  --sandbox <sandbox-mode> <prompt>
-```
+Evidence is structured before storage. The active schema keeps the compact `checks_json` and
+`artifacts_json` fields, and the evidence codec owns how checks, acceptance results, risks, gaps,
+next actions, and review evidence are encoded into those fields. Terminal acceptance is stored as
+a separate decision row linked to the evidence bundle instead of being inferred from check strings.
 
-Additional flags such as model, reasoning effort, config overrides, `--ignore-user-config`, or
-working-directory options are allowed only when the installed Codex CLI preflight confirms them or
-the backend records that they are version-gated. On Windows, if the resolved `codex.exe` cannot be
-executed because it points at an inaccessible `WindowsApps` package, the backend must record
-`codex_cli_unavailable` and use no native Goal Mode assumptions.
+## Acceptance Decision
 
-The backend emits raw evidence even on failure. Failure classes include:
+Acceptance is the policy decision that a task can advance.
 
-- `codex_cli_unavailable`;
-- `codex_version_failed`;
-- `goal_mode_unavailable`;
-- `worktree_setup_failed`;
-- `codex_exec_failed`;
-- `jsonl_parse_failed`;
-- `worker_result_missing`;
-- `worker_result_invalid`;
-- `changed_paths_out_of_scope`;
-- `verification_failed`.
+`attempt-transition` evaluates acceptance when terminal attempt evidence is written. Every terminal
+attempt with evidence writes one `acceptance_decisions` row linked to the task, attempt, and evidence
+bundle. The row records the policy actor, accepted/rejected result, rationale, and structured
+evaluation JSON. Task status is the current-state projection of that durable decision.
 
-Only a valid Worker Result Contract artifact can advance a worker run to `completed`. Failed or
-blocked launches keep their raw evidence paths in the worker run metadata and record retry guidance
-in planning SQLite progress.
+Inspection paths read stored state. They do not replay acceptance from evidence and they do not
+reinterpret old decisions through newer policy code.
 
-## Codex Local State Import Contract
+## Assurance Levels
 
-Local Codex state imports are observations, not authority.
+### Low
 
-Required fields for any imported observation:
+Use for exploration, diagnosis, sketches, and candidate work.
 
-- `source_kind`: `thread`, `thread_spawn_edge`, `thread_goal`, `agent_job`, `automation`,
-  `automation_run`, `inbox_item`, or `log_summary`
-- `source_database`
-- `source_table`
-- `source_id`
-- `observed_at`
-- `confidence`
-- `summary`
-- `linked_plan_id`
-- `linked_task_id`
-- `raw_snapshot_path` or `raw_snapshot_hash`
+Minimum evidence:
 
-Importers may propose plans, tasks, worker runs, artifact links, or progress events. They must not
-silently overwrite canonical planning rows. Conflicts between local Codex observations and planning
-SQLite must be surfaced as reconciliation findings.
+- summary;
+- known risks or gaps;
+- next recommended action.
 
-## Review Contract
+Low assurance advances exploratory work.
 
-Automated review is separate from deterministic checks.
+### Medium
 
-Reviewers inspect:
+Use for ordinary supervised engineering work.
 
-- diff;
-- task contract;
-- source-of-truth docs;
-- tests/check logs;
-- worker result;
-- generated artifacts.
+Minimum evidence:
 
-Reviewers must prioritize bugs, regressions, missing tests, contract drift, source-of-truth drift,
-security/safety risk, and unclear handoff state.
+- summary;
+- focused checks;
+- changed artifacts or paths;
+- acceptance criteria results.
 
-## Project Spawn Contract
+### High
 
-Any production-intended project spawned by the supervisor should begin with the base scaffold, then
-grow by tier as the project earns the extra surface area.
+Use for full-auto, source-of-truth, controller, release, destructive, or trust-boundary work.
 
-### Base Tier
+Minimum evidence:
 
-- `README.md`
-- `AGENTS.md`
-- `PLANS.md`
-- `ARCHITECTURE.md`
-- `CONTRACTS.md`
-- `ROADMAP.md`
-- `TESTING.md`
-- `DECISIONS.md`
-- `SOP.md`
-- `HANDOFF.md`
-- `.gitignore`
-- `.gitattributes`
-- `scripts/verify.py`
-- `insights/README.md`
+- summary;
+- strict checks;
+- explicit artifacts;
+- acceptance criteria results;
+- risk notes;
+- review evidence when review is the risk control.
 
-### Supervisor-Managed Tier
-
-Add when the project needs unattended worker coordination, protected source-of-truth checks, or
-tracked operational queue state:
-
-- `plans/planning.sqlite3`
-- `scripts/print_protected_hashes.py`
-- `scripts/check_protected_files.py`
-- `scripts/check_file_justification.py`
-- `scripts/check_planning_integrity.py`
-
-### Publication-Ready Tier
-
-Add or tighten when the repo is intended to be public or shared outside the local machine:
-
-- `LICENSE`
-- `ATTRIBUTIONS.md`
-- `scripts/check_public_repo_hygiene.py`
-
-### Skills And Source-Study Tier
-
-Add only when the project needs repo-local skills or OSS study sources:
-
-- `scripts/check_skill_inventory.py`
-- `scripts/check_source_inventory.py`
-- project-relevant `.agents/skills/`
-- `sources/README.md`
-
-This tiering is the default SOP unless the user explicitly asks for a smaller project. Do not create
-empty skill, source inventory, attribution, or lock surfaces just to satisfy the supervisor pattern.
+High assurance protects durable and high-risk changes.

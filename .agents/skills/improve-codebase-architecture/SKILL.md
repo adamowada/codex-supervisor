@@ -87,5 +87,5 @@ Side effects happen only in configured durable sources:
 
 - **New domain term?** Update the configured glossary source, or use `knowledge-graph-updater` for `codex-supervisor` insights.
 - **Fuzzy term sharpened?** Update the same durable source immediately if the session permits edits.
-- **User rejects the candidate with a load-bearing reason?** Offer to record the decision where the repo keeps decisions. Use [ADR-FORMAT.md](../grill-with-docs/ADR-FORMAT.md) only when ADRs are configured.
+- **User rejects the candidate with a load-bearing reason?** Offer to record the decision where the repo keeps decisions.
 - **Want alternative interfaces for the deepened module?** Use [INTERFACE-DESIGN.md](INTERFACE-DESIGN.md).

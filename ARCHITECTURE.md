@@ -1,185 +1,105 @@
 # Architecture
 
-`codex-supervisor` is a Python control plane with CLI, Codex Exec worker, MCP, plugin, and
-repo-scaffold surfaces.
+`codex-supervisor` is organized around one state transition model and a narrow active surface.
 
-## Core Shape
+## Core Flow
 
 ```text
-human planning session
-  -> source-of-truth docs
-  -> planning SQLite
-  -> Codex local state reconciliation
-  -> task compiler
-  -> goal contract renderer
-  -> story loop orchestrator
-  -> queue
-  -> worktree manager
-  -> worker backend
-  -> checks
-  -> reviewer backend
-  -> PR/merge/handoff
-  -> insights and skill learning loop
+TaskIntent
+  -> RunAttempt
+  -> EvidenceBundle
+  -> AcceptanceDecision
 ```
 
-## Architectural Boundaries
+The control plane preserves this flow across planning, execution, evidence, and acceptance.
 
-### Supervisor Core
+## Layers
 
-Owns durable state:
+### Source Contracts
 
-- planning database;
-- task queue;
-- worker run records;
-- source lock checks;
-- project registry;
-- artifact registry;
-- knowledge graph update requests.
+Source-of-truth documents define the product contract. They stay concise and current.
 
-The core should be testable without launching Codex.
+### Planning Store
 
-### Codex Local State Adapter
+`plans/planning.sqlite3` stores operational state using the schema in `PLANS.md`.
+The store enforces one active plan, one non-terminal attempt per task, and atomic terminal attempt
+evidence plus acceptance decision writes.
 
-The supervisor may observe local Codex state as telemetry, but it must not treat Codex internal
-databases as the canonical queue.
+### Policy
 
-Read-only inputs:
+Policy maps an explicit task assurance level to evidence requirements:
 
-- `~/.codex/state_5.sqlite`: threads, spawn edges, dynamic tools, and agent-job tables when
-  present.
-- `~/.codex/goals_1.sqlite`: per-thread goal rows when present.
-- `~/.codex/logs_2.sqlite`: local execution and application logs for workflow analytics.
-- `~/.codex/sqlite/codex-dev.db`: automation, automation run, and inbox tables when present.
+- `low`
+- `medium`
+- `high`
 
-The adapter can propose imports into `plans/planning.sqlite3`, link thread IDs and goal IDs as
-evidence, detect stale work, summarize spawn trees, and surface repeated failures. It must not
-write directly to these local Codex SQLite databases.
+Assurance is stored task data. Policy does not infer assurance from prose.
 
-### Automation Bridge
+### Execution Boundary
 
-Automations should be created, updated, or inspected through official Codex automation tooling, not
-through raw SQLite writes. Automation runs are a scheduling surface for supervisor work such as
-queue reconciliation, CI monitoring, project health checks, and thread wakeups.
+Execution is recorded as an attempt. Codex, manual work, shell checks, review, and future adapters
+all run attempts when they produce evidence. The generic process runner is the AFK execution path:
+it starts one worker process in a workspace, captures stdout, stderr, command metadata, exit code,
+declared artifacts, git-discovered product paths, and optional verifier output, then writes terminal
+evidence through the same acceptance path. Launch failures, timeouts, verifier failures, missing
+artifacts, and telemetry write failures become durable evidence instead of leaving invisible running
+work.
 
-### Goal Contract Renderer
+For full AFK or autonomous-worker product work, the supervisor manages task intent, worker launch,
+inspection, verifier setup, evidence, and acceptance. Product files are changed by the worker
+process inside `attempt-run`. Supervisor-owned setup and verifier files live under
+`.codex-supervisor/`. Product follow-up work becomes new task intent assigned through `attempt-run`.
 
-Goal Contracts turn a supervisor task into a thread- or worker-scoped completion contract. They
-include the objective, source context, in-scope and out-of-scope boundaries, verification surface,
-stop condition, blocked condition, iteration policy, and record-update expectations.
+Work semantics live in task intent and worker behavior. The supervisor does not define job types for
+features, bugs, reviews, project starts, or other engineering categories.
 
-Native Codex Goals may be used as an execution aid when available, but they are not the canonical
-queue. The renderer should derive Goal Contracts from planning SQLite and source-of-truth docs, then
-reconcile observed goal state back into planning SQLite as telemetry.
+### Target Workspace Inspection
 
-Worker launch code must verify the Codex version, pass the intended `CODEX_HOME`, and confirm the
-Goals feature is enabled before depending on `/goal`. Enabling Goals through
-`${CODEX_HOME}/config.toml` or `codex features enable goals` is a setup mutation; use it only when
-Goal Mode setup is explicitly in scope and writes to that Codex home are allowed. Otherwise render
-the Goal Contract into the worker prompt and do not edit Codex config or internal goal databases.
+Target workspace inspection owns product provenance. It reads git workspace state, normalizes paths,
+excludes `.gitignore` and `.codex-supervisor/**`, detects changed product paths, inspects linked
+worktrees, and identifies product paths backed by succeeded `attempt-run` evidence. Git is the
+concrete adapter at this seam.
 
-### Story Loop Orchestrator
+### Evidence Boundary
 
-The Story Loop Orchestrator applies one-story discipline to queued AFK work:
+Evidence bundles contain summaries, checks, and artifact references. SQLite indexes evidence and
+points to supporting artifacts. Evidence is kept structured until the compact store encodes it into
+the existing checks and artifacts JSON arrays.
 
-- pick one highest-priority ready vertical slice;
-- prepare one fresh-context worker in an isolated workspace and launch it through the configured
-  backend;
-- verify and review the result;
-- record progress, artifacts, learnings, and follow-up tasks;
-- repeat only when another ready slice exists and policy allows it.
+Acceptance decisions are durable rows written for terminal attempts. They link the task, attempt,
+and evidence bundle to the policy result and rationale. Task status is a projection of the latest
+terminal decision, not the acceptance record itself.
 
-The story loop is a policy layer over the supervisor's queue. It should not replace planning SQLite
-with `prd.json` or `progress.txt`, though it can import Ralph-inspired patterns.
+### Interfaces
 
-### Worker Backends
+The active CLI surface is `plan-init`, `task-create`, `queue-next`, `attempt-transition`, and
+`attempt-run`. `task-create` records durable intent. `queue-next` is inspection only and returns
+running active work before ready work.
+`attempt-transition` is the supervisor/admin state-transition path for attempts, evidence, blocked
+states, review-only evidence, and terminal evidence that does not mutate product files.
+`attempt-run` is the product-file mutation path for target-workspace AFK or autonomous-worker work,
+and records execution through the same model.
 
-Backends execute one task in one isolated context.
+The active MCP surface is one read-only dispatcher operation: `codex_supervisor.queue_next`. MCP
+inspection requires an explicit planning path so it cannot silently inspect the source repository
+ledger while the active work lives in a workspace ledger.
+The active Codex plugin surface is a thin wrapper around that MCP stdio server. The plugin owns
+discovery metadata and launch wiring only; it does not define separate task, worker, or acceptance
+behavior.
 
-Backend families:
+CLI, MCP, plugin, automation, GitHub, and worker integrations are adapters over the core model.
+Each adapter operation declares the task intent, attempt, evidence, and acceptance behavior it
+supports before it becomes active.
 
-- `CodexExecBackend`: primary production backend using `codex exec --json --output-schema`.
-- `ShellBackend`: deterministic checks and maintenance scripts.
-- `ClawCodeBackend`: optional local-model/reference backend inspired by `HarnessLab/claw-code-agent`;
-  keep it generic and do not copy source while upstream licensing is unclear.
-- `SandcastleBackend`: optional TypeScript orchestration bridge if `mattpocock/sandcastle` is adopted.
+## Build Rule
 
-`WorkerBackend` is a narrow boundary between the Story Loop and any execution engine. The Story
-Loop selects and claims a task; the backend receives a `WorkerLaunchRequest` and returns a
-`WorkerLaunchResult`. The request contains the task summary, rendered Goal Contract, repo root,
-worktree path, output paths, sandbox and approval policy, environment overrides, and expected result
-schema. The result contains backend status, exit code, timing, raw evidence paths, changed-file
-summary, failure class, and the worker result JSON path when one was produced.
+Add one generic operation at a time. Each operation declares:
 
-`CodexExecBackend` owns command construction and process evidence, not queue selection. It must:
+- task intent it can create or inspect;
+- attempts it can run;
+- evidence it can emit;
+- assurance levels it can satisfy;
+- acceptance decision it can support.
 
-- resolve the Codex executable and record the resolution method;
-- run or record the failure of `codex --version`;
-- resolve the intended `CODEX_HOME`, config path, sandbox policy, approval policy, and Goal Mode
-  feature state;
-- decide whether native Goals can be used for this launch path, or render the Goal Contract into
-  the prompt as fallback;
-- build an argv-style command rather than a shell-concatenated string;
-- launch from the isolated worktree, never the supervisor repo by accident;
-- capture JSONL events, stdout, stderr, final-message output, exit code, duration, diff summary, and
-  final structured result;
-- hand the result to the planning/result-ingestion layer for validation and transactional updates.
-
-It must not select the next task, mutate Codex internal SQLite databases, silently edit Codex config,
-push or merge branches, delete worktrees outside the configured workspace root, or mark planning rows
-complete without a Worker Result Contract artifact.
-
-The first implementation slice after this design is intentionally non-live: add the backend request
-and result data model, a contract backend that emits fixture-compatible worker evidence, and shared
-result-ingestion tests. That slice proves the boundary before any real `codex exec` process launch.
-
-### Project Adapters
-
-Adapters translate each project into the supervisor's contracts.
-
-Examples:
-
-- `NlpStockPredictionAdapter`: reads tracked planning SQLite through typed helpers.
-- `ObserveSafetyAdapter`: reads active markdown plans and runs plan validation commands.
-- `CodexSubagentTestingAdapter`: understands harness configs, prompts, and run outputs.
-- `TechResumeAdapter`: understands `insights/` wiki files and confidence labels.
-- `GenericRepoAdapter`: uses `AGENTS.md`, `PLANS.md`, checks, and optional `TASKS.json`.
-
-### MCP Server
-
-The MCP server should expose supervisor capabilities to Codex and other harnesses:
-
-- list projects;
-- inspect plans;
-- enqueue tasks;
-- launch workers;
-- read worker status;
-- run reviewers;
-- link artifacts;
-- propose skill updates;
-- read insights.
-
-MCP is an interface, not the core.
-
-### Codex Plugin
-
-A plugin can package:
-
-- the supervisor MCP server;
-- supervisor-specific skills;
-- default tool policy;
-- project bootstrap templates.
-
-## Context-Limit Strategy
-
-The supervisor must not rely on a single long conversation. Each worker is a fresh-context run whose
-prompt contains only:
-
-- task contract;
-- relevant source-of-truth pointers;
-- acceptance criteria;
-- constraints;
-- allowed files/scope;
-- verification commands;
-- required result schema.
-
-Durable continuity lives in SQLite, docs, artifacts, and insights.
+Operations become part of the active surface after the core model and focused tests cover them.
+New semantic work categories become task intents, not supervisor modes.

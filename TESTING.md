@@ -1,135 +1,65 @@
 # Testing
 
-The test strategy protects the supervisor's core promises: reproducible planning, safe full-auto
-orchestration, durable memory, and production-worthy code.
+The verification strategy protects the active control-plane contract.
 
-## Default Suite
+## Current Gate
 
-```sh
-uv run python -B scripts/verify.py
-```
-
-During a HITL ACP/publication checkpoint, the protected-file lock guard can fail while intended
-protected files are tracked and hashes are refreshed. In that checkpoint, run task-relevant component
-checks recorded in planning SQLite or the compact `HANDOFF.md` snapshot, then run the default suite
-again after the lock guard is reconciled.
-
-The default suite expands to:
+Run:
 
 ```sh
-uv run python -B -m pytest -p no:cacheprovider
-uv run ruff check . --no-cache
-uv run ruff format --check . --no-cache
-uv run mypy --no-incremental src scripts
-uv run python -B -m codex_supervisor.cli --help
-uv run --no-sync codex-supervisor --help
-uv run python -B scripts/check_file_justification.py
-uv run python -B scripts/check_public_repo_hygiene.py
-uv run python -B scripts/check_planning_integrity.py
-uv run python -B scripts/check_skill_inventory.py
-uv run python -B scripts/check_source_inventory.py
-uv run python -B scripts/check_protected_files.py
-uv lock --check
+uv run --no-sync python -B scripts/verify.py
 ```
 
-The default suite is deterministic and does not launch real Codex workers. It sets
-`PYTHONDONTWRITEBYTECODE=1` and uses cache-safe pytest, Ruff, and mypy flags so verification does
-not depend on stale cache state. Local tooling can still leave ignored environment or cache
-directories such as `.venv/`, `.mypy_cache/`, or `__pycache__/` when run outside the verifier or by
-dependency setup; those artifacts are ignored and must remain unstaged.
+The gate checks:
 
-## Publication Gate
+- planning database schema and seed records;
+- repo-local skill inventory;
+- protected source-of-truth hashes;
+- focused tests for the compact contract;
+- e2e coverage for MCP stdio, the Codex plugin wrapper, and generic AFK process attempts.
+- e2e coverage that proves an autonomous worker receives task assignment metadata and completes an
+  empty project through `attempt-run`.
+- e2e coverage that the installed-cache plugin CLI launcher can initialize and inspect a fresh
+  planning database with `plan-init --json` without relying on `codex-supervisor` being on `PATH`.
+- e2e coverage that the installed-cache plugin CLI launcher defaults omitted planning paths to the
+  invocation workspace, not the source repository.
+- e2e coverage that failed process attempts cannot record supplied passing acceptance results as
+  passing evidence.
+- e2e coverage that verifier failures override supplied passing acceptance results.
+- e2e coverage that process launch failures, missing declared artifacts, retry after blocked work,
+  and running queue inspection preserve durable factory state.
+- e2e coverage that installed-cache MCP queue inspection uses an explicit workspace ledger path
+  instead of the source repository ledger.
+- e2e coverage that full-AFK product follow-up mutation is assigned through another worker attempt,
+  preserving the supervisor role boundary.
+- e2e coverage that the target-workspace ACP gate rejects direct product edits, rejects tracked
+  `.codex-supervisor/**` state, and accepts product changes backed by `attempt-run` evidence.
+- focused Module coverage for target workspace product provenance, evidence encoding, and terminal
+  attempt acceptance.
+- contract coverage that `HANDOFF.md` edits are paired with `plans/planning.sqlite3` edits, so the
+  readable handoff and durable ledger stay current together.
 
-Before ACP or public release, run the stricter publication gate:
+## Test Philosophy
 
-```sh
-uv run python -B scripts/verify.py --publication-ready
-```
+- Test the model before the interface.
+- Test one transition path at a time.
+- Test AFK workers as process attempts, not as job-specific modes.
+- Add tests with rebuilt behavior.
+- Keep tests close to task, attempt, evidence, and acceptance semantics.
 
-This runs the full default suite and passes `--publication-ready` through to
-`scripts/check_public_repo_hygiene.py`. It intentionally fails while non-ignored public files are
-untracked or unstaged. It also checks that protected source-of-truth files and planning artifact
-evidence are present in the git index, while ignored `sources/` clones remain unstaged.
+## Near-Term Test Growth
 
-`scripts/check_file_justification.py` protects the bootstrap shape by requiring every public file and
-folder to match an intentional purpose category.
+Next tests should cover:
 
-`scripts/check_skill_inventory.py` protects repo-local skills by requiring frontmatter name and
-description metadata, folder/name agreement, route-map coverage, and no prohibited tool-family
-drift.
+- new adapter operations only after they are declared;
+- literal execution of the plugin MCP manifest command;
+- schema/index integrity from a freshly initialized production database;
+- new adapter operations only after the existing factory path stays boring.
 
-## Required Test Surfaces
+## Live Smoke
 
-### Planning And Queue
+The verification gate does not launch real Codex Desktop or a real Codex worker. It uses
+deterministic subprocess workers so CI stays stable and the active contract stays reproducible.
 
-- planning records and serialization;
-- planning SQLite drift checks;
-- SQLite initialization and idempotency;
-- schema migrations and critical DDL validation;
-- planning CLI creation, inspection, lifecycle, and fresh-thread error handling;
-- task status transitions;
-- atomic task claiming;
-- running, ready, HITL, blocked, completed, and empty queue reporting;
-- safe task and worker-run upserts that preserve omitted contract/evidence fields by default.
-
-### Contracts And Evidence
-
-- Worker Result Contract schema;
-- task schema and AFK readiness;
-- completed DB-backed worker result records;
-- shared-result identity coverage through result/run links;
-- supporting artifact-link relationships;
-- exact acceptance-criterion evidence;
-- zero-exit verification records;
-- changed-file alignment with task `allowed_paths_json`;
-- Goal Contract prompt rendering and native-goal fallback text.
-
-### Source Of Truth And Hygiene
-
-- source lock hash calculation;
-- protected-file tracking;
-- public repo hygiene;
-- file purpose classification;
-- source inventory validation;
-- skill inventory validation;
-- attribution and ignored-source boundaries.
-
-### Orchestration
-
-- Story Loop selection and stop conditions;
-- progress recording;
-- contract worker backend execution;
-- Codex Exec worker-launch preflight;
-- JSONL parsing for worker evidence;
-- worktree setup, diff capture, and cleanup guards;
-- review and repair-loop records.
-
-### Project Intelligence
-
-- project adapter parsing;
-- verification command selection;
-- insights graph conventions;
-- skill golden task evaluation;
-- Codex local state read-only imports;
-- automation bridge records.
-
-## Integration Harness
-
-Integration tests use temporary repositories and contract worker backends to exercise the factory
-loop without launching live Codex workers:
-
-1. create a temporary repo;
-2. initialize planning SQLite;
-3. compile a plan into vertical-slice tasks;
-4. create a worktree;
-5. run a contract worker backend;
-6. parse structured worker evidence;
-7. record supporting artifacts, review results, progress events, DB-backed worker results, and
-   compact handoff notes;
-8. verify planning integrity and publication hygiene.
-
-## Live Full-Auto
-
-Live Codex execution is opt-in and requires an explicitly trusted environment. Live smoke tests use
-disposable worktrees, narrow allowed paths, bounded tasks, structured result schemas, and verification
-commands that can run repeatedly without damaging local state.
+Broader live smoke testing happens manually in separate Codex Desktop workspaces, then durable
+lessons are folded back into deterministic source tests.

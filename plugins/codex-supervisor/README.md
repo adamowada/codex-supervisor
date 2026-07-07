@@ -1,85 +1,61 @@
 # Codex Supervisor Plugin
 
-This repo-local Codex Desktop plugin exposes the `codex-supervisor` MCP stdio server and a
-Desktop workflow skill. It is the Stage 12 Desktop boundary for plugin metadata, MCP wiring,
-operator-facing local install notes, and workflow routing.
+This is the thin Codex Desktop wrapper for `codex-supervisor`.
 
-## What It Provides
+It provides:
 
-- `.codex-plugin/plugin.json` gives Codex Desktop discovery metadata for Codex Supervisor.
-- `.mcp.json` defines a `codex-supervisor` MCP server that starts
-  `scripts/mcp_launcher.py` from the plugin root. The launcher is safe after Desktop copies the
-  plugin into `$CODEX_HOME/plugins/cache`: it locates the source repository from the source layout
-  or the Desktop marketplace config, then delegates to
-  `uv run --no-sync python -B -m codex_supervisor.mcp_stdio --repo-root <repo>`.
-- If the launcher cannot find the source repository or cannot start `uv`, it exposes a diagnostic
-  MCP server with only `codex_supervisor.runtime_preflight`; full-AFK work must treat that blocked
-  report as a setup failure.
-- `skills/codex-supervisor/SKILL.md` gives Desktop a packaged workflow entrypoint for queue
-  inspection, project bootstrap, worker launch, review, ACP, and handoff.
-- The MCP server routes through the Python core, reads `plans/planning.sqlite3` as the queue
-  authority, and exposes default-on mutating tools for planning, task, progress, artifact, Story
-  Loop launch, and review-result ingestion workflows.
-- `HANDOFF.md` remains the mutable resume snapshot, not the historical queue source.
+- `.codex-plugin/plugin.json` for plugin discovery.
+- `.mcp.json` for the `codex-supervisor` MCP server.
+- `scripts/mcp_launcher.py` to start the repository's compact MCP stdio server.
+- `scripts/cli_launcher.py` to forward Desktop CLI calls to the source repository without relying
+  on `PATH`. When a compact command omits `--path`, the launcher uses the current workspace ledger
+  at `.codex-supervisor/planning.sqlite3`.
+- `scripts/codex_worker_launcher.py` to launch Codex workers through one stdin-safe command,
+  including the Windows `codex.ps1` PowerShell path and default xhigh reasoning.
+- `skills/codex-supervisor/SKILL.md` as the Desktop-visible entrypoint.
+- `skills/codex-supervisor/WINDOWS.md` as Windows-specific launch and verifier guidance.
 
-## Local Use
+In Codex Desktop, mutation operations are invoked through `scripts/cli_launcher.py`. The skill
+forbids probing `PATH` for a bare `codex-supervisor` executable.
 
-Point Codex Desktop at `plugins/codex-supervisor` as a local plugin source from this repository.
-After changing the packaged skill or MCP wiring, bump the plugin version or refresh the Desktop
-cache, then verify the installed cache profile before smoke testing.
+The plugin is packaging only. The product contract remains in the Python package:
 
-Run the MCP server directly during local checks:
-
-```sh
-uv run --no-sync python -B -m codex_supervisor.mcp_stdio
+```text
+TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
 ```
 
-The mutating MCP tools are enabled by default. Start the server with `--disable-mutations` when a
-read-only Desktop session is intentionally required:
+The active MCP operation is read-only queue inspection:
 
-```sh
-uv run --no-sync python -B -m codex_supervisor.mcp_stdio --disable-mutations
+```text
+codex_supervisor.queue_next
 ```
 
-Verify the plugin source from a clean local discovery context:
+MCP queue inspection uses an explicit planning path. Set `CODEX_SUPERVISOR_PLANNING_PATH` when the
+launcher should bind the MCP server to one workspace ledger; otherwise pass the `path` argument on
+the tool call. The server does not silently fall back to the source repository ledger.
 
-```sh
-uv run --no-sync python -B scripts/verify_codex_plugin_install.py
-```
+In target workspaces, the supervisor owns `.codex-supervisor/**` and the one bootstrap `.gitignore`
+edit required to ignore `.codex-supervisor/`. Product files are mutated by workers through
+`attempt-run`, not by direct supervisor edits or `attempt-transition`. `plan-init` creates or updates
+the workspace `.gitignore` and refuses to proceed when `.codex-supervisor/**` is already tracked.
 
-Verify the currently installed Desktop profile cache:
+When the plugin is launched from the source tree, the launcher finds the repository automatically.
+When launched from the installed Codex cache, it resolves the source repository from
+`CODEX_HOME/config.toml` and the configured `codex-supervisor-local` marketplace. Set
+`CODEX_SUPERVISOR_REPO_ROOT` only when overriding that lookup intentionally.
 
-```sh
-uv run --no-sync python -B scripts/verify_codex_plugin_install.py --desktop-profile --codex-home <CODEX_HOME>
-```
+For full AFK work in a fresh folder, initialize `.codex-supervisor/planning.sqlite3`, create one
+task intent, and run the worker through `attempt-run`. The worker receives the durable assignment at
+`CODEX_SUPERVISOR_TASK_JSON`; stdout, stderr, command metadata, assignment metadata, artifacts,
+checks, optional verifier results, risks, and acceptance results are recorded through the same
+evidence path. Failed worker processes and failed verifier commands cannot record supplied passing
+acceptance results as passing evidence, and declared output artifacts must exist before supplied
+passing acceptance can remain passing.
 
-## Workflow Map
+The packaged Codex worker launcher defaults workers to `model_reasoning_effort="xhigh"`. Use its
+`--reasoning-effort` option only when the user explicitly asks for a different worker reasoning
+level.
 
-| Desktop workflow | Route through |
-| --- | --- |
-| Project bootstrap | `spawned-project-bootstrap` or `setup-agent-docs`, then planning SQLite through CLI helpers |
-| Queue inspection | MCP tools or `uv run --no-sync python -B -m codex_supervisor.cli story-loop-status --json` |
-| Worker launch | `story-loop-runner`, `goal-contract-render`, `task-claim`, and Codex Exec only after backend preflight |
-| Review | `fresh-thread-code-reviewer` and `review-result-ingest` for durable review progress |
-| ACP | `acp-publisher`, `uv run --no-sync python -B scripts/verify.py --publication-ready`, then scoped Git add/commit/push |
-| Handoff | `context-compaction-handoff` or `thread-resume-brief`, with `HANDOFF.md` updated after planning SQLite |
-
-## Responsibilities
-
-- CLI commands own deterministic repository workflows and remain the reference surface for planning
-  SQLite mutations.
-- MCP tools expose supervisor inspection and guarded mutation for Desktop and other MCP clients.
-- `codex_supervisor.project_list` only accepts configured project roots and redacts local absolute
-  paths from returned data.
-- The packaged plugin skill is a Desktop entrypoint; repo-local skills in `.agents/skills/` remain
-  the detailed workflow source during Stage 12.
-- Planning SQLite remains the canonical queue and worker evidence store.
-- `HANDOFF.md` records the compact current resume state.
-
-## Trust Boundary
-
-This plugin does not publish a marketplace entry, write personal Codex plugin registries,
-bulk-copy the repo-local skill library into the plugin archive, or install into a clean Desktop
-profile. Live workers and review ingestion are exposed through production MCP tools and still depend
-on the selected backend, Codex executable, `CODEX_HOME`, Goal Mode preflight, and planning SQLite
-task contract.
+When acceptance depends on machine-checkable file contents or behavior, prefer a workspace Python
+verifier at `.codex-supervisor/verify.py` and pass it through `--verify-command`. On Windows, follow
+the skill's `WINDOWS.md` rules for the packaged worker launcher and verifier invocation.

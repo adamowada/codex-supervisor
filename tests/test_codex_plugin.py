@@ -2,404 +2,694 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import shutil
+import sqlite3
 import subprocess
+import sys
 from pathlib import Path
 
-from scripts.verify_codex_plugin_install import (
-    verify_codex_plugin_desktop_profile,
-    verify_codex_plugin_install,
-)
+from planning_db_factory import make_planning_db
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_ROOT = REPO_ROOT / "plugins" / "codex-supervisor"
-PLUGIN_VERSION = "0.1.3"
-MANIFEST_PATH = PLUGIN_ROOT / ".codex-plugin" / "plugin.json"
-MCP_PATH = PLUGIN_ROOT / ".mcp.json"
-README_PATH = PLUGIN_ROOT / "README.md"
-LAUNCHER_PATH = PLUGIN_ROOT / "scripts" / "mcp_launcher.py"
-SKILL_PATH = PLUGIN_ROOT / "skills" / "codex-supervisor" / "SKILL.md"
 
 
-def _load_json(path: Path) -> dict[str, object]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    assert isinstance(payload, dict)
-    return payload
+def test_plugin_manifest_declares_compact_mcp_wrapper() -> None:
+    manifest = json.loads((PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text())
+    mcp_config = json.loads((PLUGIN_ROOT / ".mcp.json").read_text())
+
+    assert manifest["name"] == "codex-supervisor"
+    assert manifest["version"].startswith("0.2.0")
+    assert manifest["skills"] == "./skills/"
+    assert manifest["mcpServers"] == "./.mcp.json"
+    assert manifest["interface"]["capabilities"] == ["Interactive", "Read"]
+    server = mcp_config["mcpServers"]["codex-supervisor"]
+    assert server == {
+        "command": "python",
+        "args": ["-B", "scripts/mcp_launcher.py"],
+        "cwd": ".",
+    }
 
 
-def _load_launcher_module():
-    spec = importlib.util.spec_from_file_location("codex_supervisor_plugin_launcher", LAUNCHER_PATH)
+def test_plugin_contains_desktop_skill_entrypoint() -> None:
+    skill = PLUGIN_ROOT / "skills" / "codex-supervisor" / "SKILL.md"
+    content = skill.read_text(encoding="utf-8")
+
+    assert "name: codex-supervisor" in content
+    assert "TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision" in content
+    assert "MUST create durable task intent" in content
+    assert "MUST record a run attempt" in content
+    assert "plan-init" in content
+    assert "attempt-run" in content
+    assert "MUST use `attempt-run`" in content
+    assert "MUST NOT** run bare" in content
+    assert "MUST NOT** probe `PATH`" in content
+    assert "full AFK" in content
+    assert "`--assurance high`" in content
+    assert "Filesystem Firewall" in content
+    assert "Product files are every file outside `.codex-supervisor/**`" in content
+    assert "Every product file creation, deletion, or mutation" in content
+    assert "Subagents are not workers" in content
+    assert "git ls-files .codex-supervisor" in content
+    assert "git check-ignore -q -- .codex-supervisor/planning.sqlite3" in content
+    assert "git status --short" in content
+    assert "Product file changes are backed by `attempt-run` worker evidence" in content
+    assert "MUST use the plugin CLI launcher" in content
+    assert "MUST default to the current workspace ledger" in content
+    assert "MUST NOT run `queue-next` before `plan-init`" in content
+    assert "MUST** follow [WINDOWS.md](WINDOWS.md)" in content
+    assert "codex_worker_launcher.py" in content
+    assert "xhigh reasoning" in content
+    assert "--reasoning-effort" in content
+    assert "MUST NOT** create an ad hoc" in content
+    assert ".codex-supervisor/verify.py" in content
+    assert "CODEX_SUPERVISOR_TASK_JSON" in content
+    assert "MUST NOT mutate product files directly" in content
+    assert "Verifier checks **MUST** prove behavior or structural contract" in content
+    assert "MUST NOT** depend on local implementation names" in content
+    assert "Literal string checks **MUST** only be used" in content
+
+
+def test_plugin_contains_windows_platform_guidance() -> None:
+    guidance = PLUGIN_ROOT / "skills" / "codex-supervisor" / "WINDOWS.md"
+    content = guidance.read_text(encoding="utf-8")
+
+    assert "codex_worker_launcher.py" in content
+    assert "MUST NOT** create ad hoc `run_worker.ps1`" in content
+    assert "MUST NOT** pass the worker prompt as a command-line argument" in content
+    assert "xhigh reasoning" in content
+    assert "--reasoning-effort" in content
+    assert "pipes the prompt through stdin" in content
+    assert "MUST NOT** put complex PowerShell logic inline in `--verify-command`" in content
+    assert "MUST** prefer a workspace Python verifier" in content
+    assert "python -B .codex-supervisor\\verify.py" in content
+    assert "MUST** retry the same task" in content
+
+
+def test_plugin_worker_launcher_wraps_windows_codex_ps1() -> None:
+    launcher = _load_worker_launcher()
+    codex_executable = Path("C:/Users/example/AppData/Roaming/npm/codex.ps1")
+    workspace = Path("C:/workspace")
+
+    command = launcher.build_codex_exec_command(
+        codex_executable,
+        workspace,
+        platform_name="nt",
+    )
+
+    assert command == (
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(codex_executable),
+        "exec",
+        "--skip-git-repo-check",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "-c",
+        'model_reasoning_effort="xhigh"',
+        "-C",
+        str(workspace),
+    )
+
+
+def test_plugin_worker_launcher_allows_explicit_reasoning_override() -> None:
+    launcher = _load_worker_launcher()
+    codex_executable = Path("codex")
+    workspace = Path("workspace")
+
+    command = launcher.build_codex_exec_command(
+        codex_executable,
+        workspace,
+        reasoning_effort="high",
+        platform_name="posix",
+    )
+
+    assert command == (
+        str(codex_executable),
+        "exec",
+        "--skip-git-repo-check",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "-c",
+        'model_reasoning_effort="high"',
+        "-C",
+        str(workspace),
+    )
+
+
+def test_plugin_worker_launcher_pipes_prompt_to_codex_exec(tmp_path: Path) -> None:
+    launcher = PLUGIN_ROOT / "scripts" / "codex_worker_launcher.py"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    prompt_file = workspace / ".codex-supervisor" / "worker_prompt.txt"
+    prompt_file.parent.mkdir()
+    prompt_file.write_text("line one\nline two --not-an-argv\n", encoding="utf-8")
+    fake_codex = _write_fake_codex(tmp_path)
+
+    completed = subprocess.run(
+        (
+            sys.executable,
+            "-B",
+            str(launcher),
+            "--workspace",
+            str(workspace),
+            "--prompt-file",
+            str(prompt_file),
+            "--codex-executable",
+            str(fake_codex),
+        ),
+        text=True,
+        capture_output=True,
+        timeout=15,
+        check=True,
+    )
+
+    payload = json.loads((workspace / "fake-codex-result.json").read_text(encoding="utf-8"))
+    assert completed.stdout == "fake codex worker ran\n"
+    assert payload["argv"] == [
+        "exec",
+        "--skip-git-repo-check",
+        "--dangerously-bypass-approvals-and-sandbox",
+        "-c",
+        'model_reasoning_effort="xhigh"',
+        "-C",
+        str(workspace),
+    ]
+    assert payload["stdin"] == "line one\nline two --not-an-argv\n"
+    assert payload["cwd"] == str(workspace)
+
+
+def test_repo_marketplace_points_at_plugin_wrapper() -> None:
+    marketplace = json.loads((REPO_ROOT / ".agents" / "plugins" / "marketplace.json").read_text())
+
+    assert marketplace["name"] == "codex-supervisor-local"
+    assert marketplace["plugins"] == [
+        {
+            "name": "codex-supervisor",
+            "source": {
+                "source": "local",
+                "path": "./plugins/codex-supervisor",
+            },
+            "policy": {
+                "installation": "AVAILABLE",
+                "authentication": "ON_INSTALL",
+            },
+            "category": "Developer Tools",
+        }
+    ]
+
+
+def test_plugin_launcher_starts_compact_mcp_server() -> None:
+    responses = _run_plugin_launcher(
+        (
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": "2025-11-25"},
+            },
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        )
+    )
+
+    assert responses[0]["result"]["serverInfo"]["name"] == "codex-supervisor"
+    assert responses[1]["result"]["tools"][0]["name"] == "codex_supervisor.queue_next"
+
+
+def test_plugin_mcp_queue_requires_explicit_planning_path() -> None:
+    responses = _run_plugin_launcher(
+        (
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "codex_supervisor.queue_next",
+                    "arguments": {},
+                },
+            },
+        )
+    )
+
+    tool_result = responses[1]["result"]
+    structured = tool_result["structuredContent"]
+    assert tool_result["isError"] is True
+    assert structured["ok"] is False
+    assert structured["error"]["code"] == "planning_path_required"
+
+
+def test_installed_cache_launcher_uses_configured_marketplace_without_env(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    cached_plugin = (
+        codex_home
+        / "plugins"
+        / "cache"
+        / "codex-supervisor-local"
+        / "codex-supervisor"
+        / "0.2.0+codex.test"
+    )
+    shutil.copytree(PLUGIN_ROOT, cached_plugin)
+    _write_codex_config(codex_home)
+
+    responses = _run_plugin_launcher_from(
+        cached_plugin,
+        (
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        ),
+        codex_home=codex_home,
+        include_source_env=False,
+    )
+
+    assert responses[0]["result"]["serverInfo"]["name"] == "codex-supervisor"
+    assert responses[1]["result"]["tools"][0]["name"] == "codex_supervisor.queue_next"
+
+
+def test_installed_cache_mcp_launcher_dispatches_workspace_queue(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    cached_plugin = (
+        codex_home
+        / "plugins"
+        / "cache"
+        / "codex-supervisor-local"
+        / "codex-supervisor"
+        / "0.2.0+codex.test"
+    )
+    workspace_db = make_planning_db(tmp_path / "workspace")
+    source_db = REPO_ROOT / "plans" / "planning.sqlite3"
+    source_before = source_db.read_bytes()
+    shutil.copytree(PLUGIN_ROOT, cached_plugin)
+    _write_codex_config(codex_home)
+
+    responses = _run_plugin_launcher_from(
+        cached_plugin,
+        (
+            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": "codex_supervisor.queue_next",
+                    "arguments": {},
+                },
+            },
+        ),
+        codex_home=codex_home,
+        include_source_env=False,
+        planning_path=workspace_db,
+    )
+
+    structured = responses[1]["result"]["structuredContent"]
+    assert structured["ok"] is True
+    assert structured["data"]["task"]["task_id"] == "task-1"
+    assert source_db.read_bytes() == source_before
+
+
+def test_installed_cache_cli_launcher_runs_source_cli_without_path(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    cached_plugin = (
+        codex_home
+        / "plugins"
+        / "cache"
+        / "codex-supervisor-local"
+        / "codex-supervisor"
+        / "0.2.0+codex.test"
+    )
+    db_path = tmp_path / "empty-workspace" / ".codex-supervisor" / "planning.sqlite3"
+    shutil.copytree(PLUGIN_ROOT, cached_plugin)
+    _write_codex_config(codex_home)
+
+    initialized = _run_plugin_cli_launcher_from(
+        cached_plugin,
+        ("plan-init", "--path", str(db_path), "--json"),
+        codex_home=codex_home,
+        include_source_env=False,
+    )
+    assert (db_path.parent.parent / ".gitignore").read_text(encoding="utf-8") == (
+        ".codex-supervisor/\n"
+    )
+    init_payload = json.loads(initialized.stdout)
+    assert init_payload == {
+        "initialized": True,
+        "path": str(db_path),
+        "schema_name": "fresh_simplified_planning",
+        "schema_version": "2",
+    }
+    completed = _run_plugin_cli_launcher_from(
+        cached_plugin,
+        ("queue-next", "--path", str(db_path), "--json"),
+        codex_home=codex_home,
+        include_source_env=False,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["task"] is None
+    assert payload["next_transition"] == "none"
+
+
+def test_installed_cache_cli_launcher_defaults_to_invocation_workspace(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    workspace = tmp_path / "fresh-workspace"
+    workspace.mkdir()
+    workspace_db = workspace / ".codex-supervisor" / "planning.sqlite3"
+    source_db = REPO_ROOT / "plans" / "planning.sqlite3"
+    source_before = source_db.read_bytes()
+    cached_plugin = (
+        codex_home
+        / "plugins"
+        / "cache"
+        / "codex-supervisor-local"
+        / "codex-supervisor"
+        / "0.2.0+codex.test"
+    )
+    shutil.copytree(PLUGIN_ROOT, cached_plugin)
+    _write_codex_config(codex_home)
+
+    initialized = _run_plugin_cli_launcher_from(
+        cached_plugin,
+        ("plan-init", "--json"),
+        codex_home=codex_home,
+        include_source_env=False,
+        invocation_cwd=workspace,
+    )
+    init_payload = json.loads(initialized.stdout)
+    assert init_payload == {
+        "initialized": True,
+        "path": str(workspace_db),
+        "schema_name": "fresh_simplified_planning",
+        "schema_version": "2",
+    }
+    completed = _run_plugin_cli_launcher_from(
+        cached_plugin,
+        ("queue-next", "--json"),
+        codex_home=codex_home,
+        include_source_env=False,
+        invocation_cwd=workspace,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert workspace_db.is_file()
+    assert (workspace / ".gitignore").read_text(encoding="utf-8") == ".codex-supervisor/\n"
+    assert payload["task"] is None
+    assert payload["next_transition"] == "none"
+    assert source_db.read_bytes() == source_before
+
+
+def test_installed_cache_cli_launcher_runs_full_happy_path_in_fresh_workspace(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    workspace = tmp_path / "fresh-worker-workspace"
+    workspace.mkdir()
+    workspace_db = workspace / ".codex-supervisor" / "planning.sqlite3"
+    project_file = workspace / "README.md"
+    verifier_file = workspace / ".codex-supervisor" / "verify.py"
+    source_db = REPO_ROOT / "plans" / "planning.sqlite3"
+    source_before = source_db.read_bytes()
+    cached_plugin = (
+        codex_home
+        / "plugins"
+        / "cache"
+        / "codex-supervisor-local"
+        / "codex-supervisor"
+        / "0.2.0+codex.test"
+    )
+    shutil.copytree(PLUGIN_ROOT, cached_plugin)
+    _write_codex_config(codex_home)
+
+    _run_plugin_cli_launcher_from(
+        cached_plugin,
+        ("plan-init",),
+        codex_home=codex_home,
+        include_source_env=False,
+        invocation_cwd=workspace,
+    )
+    assert (workspace / ".gitignore").read_text(encoding="utf-8") == ".codex-supervisor/\n"
+    _run_plugin_cli_launcher_from(
+        cached_plugin,
+        (
+            "task-create",
+            "--plan-id",
+            "plugin-happy-plan",
+            "--plan-title",
+            "Plugin happy path",
+            "--plan-goal",
+            "Assign one tiny project through the plugin launcher.",
+            "--task-id",
+            "plugin-happy-task",
+            "--title",
+            "Create README",
+            "--intent",
+            "Create README.md in the fresh workspace.",
+            "--assurance",
+            "high",
+            "--acceptance",
+            "README.md exists",
+            "--json",
+        ),
+        codex_home=codex_home,
+        include_source_env=False,
+        invocation_cwd=workspace,
+    )
+    _write_readme_verifier(verifier_file, expected="# Plugin Happy Path\n")
+    completed = _run_plugin_cli_launcher_from(
+        cached_plugin,
+        (
+            "attempt-run",
+            "--task-id",
+            "plugin-happy-task",
+            "--attempt-id",
+            "plugin-happy-attempt",
+            "--executor",
+            "worker-process",
+            "--workspace",
+            str(workspace),
+            "--timeout-seconds",
+            "10",
+            "--summary",
+            "Assign README creation to worker process.",
+            "--check",
+            "Worker created README.md.",
+            "--artifact",
+            str(project_file),
+            "--verify-command",
+            _shell_command((sys.executable, "-B", str(verifier_file))),
+            "--acceptance-result",
+            "pass",
+            "--risk",
+            "Worker ran inside the invocation workspace.",
+            "--json",
+            "--",
+            sys.executable,
+            "-c",
+            (
+                "from pathlib import Path; "
+                "Path('README.md').write_text('# Plugin Happy Path\\n', encoding='utf-8')"
+            ),
+        ),
+        codex_home=codex_home,
+        include_source_env=False,
+        invocation_cwd=workspace,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert workspace_db.is_file()
+    assert payload["exit_code"] == 0
+    assert payload["verifier_exit_code"] == 0
+    assert payload["transition"]["task_status"] == "done"
+    assert payload["transition"]["attempt"]["executor"] == "worker-process"
+    assert "verifier exit code: 0" in payload["transition"]["evidence"]["checks"]
+    assert Path(payload["assignment_path"]).is_file()
+    assert project_file.read_text(encoding="utf-8") == "# Plugin Happy Path\n"
+    assert source_db.read_bytes() == source_before
+
+    with sqlite3.connect(workspace_db) as connection:
+        plan_status = connection.execute(
+            "select status from plans where plan_id = 'plugin-happy-plan'"
+        ).fetchone()[0]
+        attempts = connection.execute(
+            "select attempt_id, executor, status from attempts"
+        ).fetchall()
+    assert plan_status == "done"
+    assert attempts == [("plugin-happy-attempt", "worker-process", "succeeded")]
+    assert _planning_integrity_failures(workspace_db) == ()
+
+
+def _load_worker_launcher() -> object:
+    launcher_path = PLUGIN_ROOT / "scripts" / "codex_worker_launcher.py"
+    spec = importlib.util.spec_from_file_location("codex_worker_launcher", launcher_path)
     assert spec is not None
-    module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def test_plugin_manifest_describes_stage12_desktop_surface() -> None:
-    manifest = _load_json(MANIFEST_PATH)
-
-    assert manifest["name"] == "codex-supervisor"
-    assert manifest["version"] == PLUGIN_VERSION
-    assert manifest["mcpServers"] == "./.mcp.json"
-    assert manifest["skills"] == "./skills/"
-    assert "apps" not in manifest
-    assert manifest["repository"] == "https://github.com/adamowada/codex-supervisor"
-
-    interface = manifest["interface"]
-    assert isinstance(interface, dict)
-    assert interface["displayName"] == "Codex Supervisor"
-    assert interface["category"] == "Developer Tools"
-    assert interface["capabilities"] == ["Interactive", "Read", "Write"]
-    assert interface["websiteURL"] == "https://github.com/adamowada/codex-supervisor"
-    assert interface["brandColor"] == "#2563EB"
-
-    prompts = interface["defaultPrompt"]
-    assert isinstance(prompts, list)
-    assert 1 <= len(prompts) <= 3
-    assert all(isinstance(prompt, str) and 0 < len(prompt) <= 128 for prompt in prompts)
-
-
-def test_mcp_config_launches_repo_stdio_server_without_live_worker() -> None:
-    mcp = _load_json(MCP_PATH)
-    servers = mcp["mcpServers"]
-    assert isinstance(servers, dict)
-    assert set(servers) == {"codex-supervisor"}
-
-    server = servers["codex-supervisor"]
-    assert isinstance(server, dict)
-    assert server["command"] == "python"
-    assert server["args"] == [
-        "-B",
-        "scripts/mcp_launcher.py",
-    ]
-    assert server["cwd"] == "."
-    assert (PLUGIN_ROOT / str(server["cwd"])).resolve() == PLUGIN_ROOT.resolve()
-
-    serialized = json.dumps(server, sort_keys=True)
-    assert "codex exec" not in serialized
-    assert "worker" not in serialized.lower()
-    assert "--disable-mutations" not in serialized
-
-
-def test_plugin_docs_name_desktop_roles_and_queue_authority() -> None:
-    readme = README_PATH.read_text(encoding="utf-8")
-
-    required_phrases = [
-        "codex_supervisor.mcp_stdio",
-        "scripts/mcp_launcher.py",
-        "uv run --no-sync python -B -m codex_supervisor.mcp_stdio",
-        "uv run --no-sync python -B scripts/verify_codex_plugin_install.py",
-        "--desktop-profile",
-        "skills/codex-supervisor/SKILL.md",
-        "plans/planning.sqlite3",
-        "HANDOFF.md",
-        ".agents/skills/",
-        "Project bootstrap",
-        "Queue inspection",
-        "Worker launch",
-        "Review",
-        "ACP",
-        "Handoff",
-        "does not publish a marketplace entry",
-        "mutating MCP tools are enabled by default",
-        "--disable-mutations",
-    ]
-    for phrase in required_phrases:
-        assert phrase in readme
-
-
-def test_plugin_skill_is_valid_and_maps_desktop_workflows() -> None:
-    skill = SKILL_PATH.read_text(encoding="utf-8")
-
-    assert skill.startswith("---\n")
-    frontmatter_end = skill.find("\n---", 4)
-    assert frontmatter_end > 0
-    frontmatter = skill[4:frontmatter_end]
-    assert "name: codex-supervisor" in frontmatter
-    assert "description:" in frontmatter
-
-    required_phrases = [
-        "plans/planning.sqlite3",
-        "MCP tools for inspection and guarded mutation",
-        "uv run --no-sync python -B -m codex_supervisor.cli",
-        ".agents/skills/skill-router/SKILL.md",
-        "spawned-project-bootstrap",
-        "setup-agent-docs",
-        "story-loop-status --json",
-        "goal-contract-render --task-id",
-        "task-claim",
-        "Runtime canary",
-        "canonical dotted MCP tool names",
-        "Treat `tool_search` as discovery, not inventory",
-        "search for `canary`",
-        "name-only queries such as",
-        "Do not pass `tool_search` results as authoritative `mcp_tools`",
-        "`mcp_startup_diagnostic` merely because",
-        "must not approve plugin full-AFK readiness",
-        "fresh-thread-code-reviewer",
-        "review-result-ingest",
-        "acp-publisher",
-        "context-compaction-handoff",
-        "thread-resume-brief",
-    ]
-    for phrase in required_phrases:
-        assert phrase in skill
-
-
-def test_plugin_files_do_not_contain_placeholders_or_absolute_local_paths() -> None:
-    plugin_files = [
-        MANIFEST_PATH,
-        MCP_PATH,
-        README_PATH,
-        LAUNCHER_PATH,
-        SKILL_PATH,
-    ]
-    for path in plugin_files:
-        text = path.read_text(encoding="utf-8")
-        assert "[TODO:" not in text
-        for forbidden in ("C:" + "\\Users", "/" + "Users" + "/"):
-            assert forbidden not in text
-
-
-def test_clean_plugin_install_verifier_discovers_skill_and_mcp_lifecycle() -> None:
-    captured: dict[str, object] = {}
-
-    def fake_runner(
-        command: tuple[str, ...],
-        cwd: Path,
-        payload: str,
-        timeout_seconds: int,
-    ) -> subprocess.CompletedProcess[str]:
-        captured["command"] = command
-        captured["cwd"] = cwd
-        captured["payload"] = payload
-        captured["timeout_seconds"] = timeout_seconds
-        stdout = "\n".join(
-            [
-                json.dumps({"jsonrpc": "2.0", "id": "install-init", "result": {}}),
-                json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": "tools-list",
-                        "result": {
-                            "tools": [
-                                {"name": "codex_supervisor.artifact_link_add"},
-                                {"name": "codex_supervisor.progress_add"},
-                                {"name": "codex_supervisor.runtime_preflight"},
-                                {"name": "codex_supervisor.story_loop_status"},
-                                {"name": "codex_supervisor.story_loop_run_once"},
-                                {"name": "codex_supervisor.task_claim"},
-                                {"name": "codex_supervisor.task_show"},
-                                {"name": "codex_supervisor.task_upsert"},
-                                {"name": "codex_supervisor.review_result_ingest"},
-                            ]
-                        },
-                    }
-                ),
-            ]
-        )
-        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
-
-    summary = verify_codex_plugin_install(repo_root=REPO_ROOT, runner=fake_runner)
-
-    assert summary["ok"] is True
-    assert summary["plugin"] == "codex-supervisor"
-    assert summary["plugin_source"] == "plugins/codex-supervisor"
-    assert summary["clean_profile_isolated"] is True
-    assert summary["real_codex_home_mutated"] is False
-    assert summary["skills"] == ["codex-supervisor"]
-    assert "codex_supervisor.story_loop_status" in summary["mcp_tools"]
-    assert captured["command"] == (
-        "python",
-        "-B",
-        "scripts/mcp_launcher.py",
-    )
-    assert captured["cwd"] == PLUGIN_ROOT
-    payload = str(captured["payload"])
-    assert '"method": "initialize"' in payload
-    assert '"method": "tools/list"' in payload
-
-
-def test_desktop_profile_smoke_discovers_installed_cache_and_tools(tmp_path: Path) -> None:
-    codex_home = tmp_path / "codex-home"
-    plugin_root = (
-        codex_home
-        / "plugins"
-        / "cache"
-        / "codex-supervisor-local"
-        / "codex-supervisor"
-        / PLUGIN_VERSION
-    )
-    repo_root = tmp_path / "source-repo"
-    plugin_root.mkdir(parents=True)
-    repo_root.mkdir()
-    (repo_root / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
-    (repo_root / "src" / "codex_supervisor").mkdir(parents=True)
-    (repo_root / "src" / "codex_supervisor" / "__init__.py").write_text("", encoding="utf-8")
-    (codex_home / "config.toml").write_text(
-        '[plugins."codex-supervisor@codex-supervisor-local"]\nenabled = true\n',
-        encoding="utf-8",
-    )
-    (plugin_root / ".codex-plugin").mkdir()
-    (plugin_root / ".codex-plugin" / "plugin.json").write_text(
-        json.dumps(
-            {
-                "name": "codex-supervisor",
-                "mcpServers": "./.mcp.json",
-                "skills": "./skills/",
-            }
+def _write_fake_codex(tmp_path: Path) -> Path:
+    fake_script = tmp_path / "fake_codex.py"
+    fake_script.write_text(
+        "\n".join(
+            (
+                "import json",
+                "import sys",
+                "from pathlib import Path",
+                "payload = {",
+                "    'argv': sys.argv[1:],",
+                "    'stdin': sys.stdin.read(),",
+                "    'cwd': str(Path.cwd()),",
+                "}",
+                "Path('fake-codex-result.json').write_text(",
+                "    json.dumps(payload, sort_keys=True),",
+                "    encoding='utf-8',",
+                ")",
+                "print('fake codex worker ran')",
+                "",
+            )
         ),
         encoding="utf-8",
     )
-    launcher_dir = plugin_root / "scripts"
-    launcher_dir.mkdir()
-    (launcher_dir / "mcp_launcher.py").write_text("# launcher fixture\n", encoding="utf-8")
-    (plugin_root / ".mcp.json").write_text(
-        json.dumps(
-            {
-                "mcpServers": {
-                    "codex-supervisor": {
-                        "command": "python",
-                        "args": [
-                            "-B",
-                            "scripts/mcp_launcher.py",
-                        ],
-                        "cwd": ".",
-                    }
-                }
-            }
+    if os.name == "nt":
+        fake_executable = tmp_path / "fake-codex.cmd"
+        fake_executable.write_text(
+            f'@echo off\r\n"{sys.executable}" "{fake_script}" %*\r\n',
+            encoding="utf-8",
+        )
+        return fake_executable
+
+    fake_executable = tmp_path / "fake-codex"
+    fake_executable.write_text(
+        f'#!/bin/sh\nexec "{sys.executable}" "{fake_script}" "$@"\n',
+        encoding="utf-8",
+    )
+    fake_executable.chmod(0o755)
+    return fake_executable
+
+
+def _run_plugin_launcher(messages: tuple[dict[str, object], ...]) -> list[dict[str, object]]:
+    return _run_plugin_launcher_from(
+        PLUGIN_ROOT,
+        messages,
+        codex_home=Path.home() / ".codex",
+        include_source_env=True,
+    )
+
+
+def _run_plugin_launcher_from(
+    plugin_root: Path,
+    messages: tuple[dict[str, object], ...],
+    *,
+    codex_home: Path,
+    include_source_env: bool,
+    planning_path: Path | None = None,
+) -> list[dict[str, object]]:
+    env = os.environ.copy()
+    env["CODEX_HOME"] = str(codex_home)
+    if include_source_env:
+        env["CODEX_SUPERVISOR_REPO_ROOT"] = str(REPO_ROOT)
+    else:
+        env.pop("CODEX_SUPERVISOR_REPO_ROOT", None)
+    if planning_path is not None:
+        env["CODEX_SUPERVISOR_PLANNING_PATH"] = str(planning_path)
+    else:
+        env.pop("CODEX_SUPERVISOR_PLANNING_PATH", None)
+    completed = subprocess.run(
+        (sys.executable, "-B", "scripts/mcp_launcher.py"),
+        cwd=plugin_root,
+        input="".join(json.dumps(message) + "\n" for message in messages),
+        text=True,
+        capture_output=True,
+        timeout=15,
+        env=env,
+        check=True,
+    )
+    return [json.loads(line) for line in completed.stdout.splitlines()]
+
+
+def _run_plugin_cli_launcher_from(
+    plugin_root: Path,
+    args: tuple[str, ...],
+    *,
+    codex_home: Path,
+    include_source_env: bool,
+    invocation_cwd: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["CODEX_HOME"] = str(codex_home)
+    env["PATH"] = os.pathsep.join(
+        part for part in env.get("PATH", "").split(os.pathsep) if "codex-supervisor" not in part
+    )
+    if include_source_env:
+        env["CODEX_SUPERVISOR_REPO_ROOT"] = str(REPO_ROOT)
+    else:
+        env.pop("CODEX_SUPERVISOR_REPO_ROOT", None)
+    launcher = plugin_root / "scripts" / "cli_launcher.py"
+    return subprocess.run(
+        (sys.executable, "-B", str(launcher), *args),
+        cwd=invocation_cwd or plugin_root,
+        text=True,
+        capture_output=True,
+        timeout=15,
+        env=env,
+        check=True,
+    )
+
+
+def _write_readme_verifier(path: Path, *, expected: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(
+            (
+                "from pathlib import Path",
+                "expected = " + repr(expected),
+                "content = Path('README.md').read_text(encoding='utf-8')",
+                "if content != expected:",
+                "    raise SystemExit('README.md content mismatch')",
+                "print('README.md verified')",
+                "",
+            )
         ),
         encoding="utf-8",
     )
-    skill_dir = plugin_root / "skills" / "codex-supervisor"
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text(
-        "---\nname: codex-supervisor\ndescription: Desktop supervisor.\n---\n",
-        encoding="utf-8",
-    )
-    captured: dict[str, object] = {}
-
-    def fake_runner(
-        command: tuple[str, ...],
-        cwd: Path,
-        payload: str,
-        timeout_seconds: int,
-    ) -> subprocess.CompletedProcess[str]:
-        captured["cwd"] = cwd
-        stdout = "\n".join(
-            [
-                json.dumps({"jsonrpc": "2.0", "id": "install-init", "result": {}}),
-                json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": "tools-list",
-                        "result": {
-                            "tools": [
-                                {"name": "codex_supervisor.artifact_link_add"},
-                                {"name": "codex_supervisor.progress_add"},
-                                {"name": "codex_supervisor.runtime_preflight"},
-                                {"name": "codex_supervisor.story_loop_status"},
-                                {"name": "codex_supervisor.story_loop_run_once"},
-                                {"name": "codex_supervisor.task_claim"},
-                                {"name": "codex_supervisor.task_show"},
-                                {"name": "codex_supervisor.task_upsert"},
-                                {"name": "codex_supervisor.review_result_ingest"},
-                            ]
-                        },
-                    }
-                ),
-            ]
-        )
-        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
-
-    summary = verify_codex_plugin_desktop_profile(codex_home=codex_home, runner=fake_runner)
-
-    assert summary["ok"] is True
-    assert summary["desktop_profile_smoke"] is True
-    assert summary["plugin_source"].startswith("plugins/cache/codex-supervisor-local")
-    assert "codex_supervisor.runtime_preflight" in summary["mcp_tools"]
-    assert captured["cwd"] == plugin_root.resolve()
 
 
-def test_plugin_launcher_resolves_source_repo_from_source_layout() -> None:
-    launcher = _load_launcher_module()
-    repo_root, diagnostic = launcher.find_repo_root(PLUGIN_ROOT, {})
-
-    assert diagnostic == ""
-    assert repo_root == REPO_ROOT.resolve()
+def _shell_command(args: tuple[str, ...]) -> str:
+    return subprocess.list2cmdline(args)
 
 
-def test_plugin_launcher_resolves_source_repo_from_desktop_cache(tmp_path: Path) -> None:
-    launcher = _load_launcher_module()
-    codex_home = tmp_path / "codex-home"
-    plugin_root = (
-        codex_home
-        / "plugins"
-        / "cache"
-        / "codex-supervisor-local"
-        / "codex-supervisor"
-        / PLUGIN_VERSION
-    )
-    repo_root = tmp_path / "source-repo"
-    (repo_root / "src" / "codex_supervisor").mkdir(parents=True)
-    (repo_root / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
-    plugin_root.mkdir(parents=True)
+def _write_codex_config(codex_home: Path) -> None:
+    codex_home.mkdir(parents=True, exist_ok=True)
+    repo_root = str(REPO_ROOT).replace("'", "''")
     (codex_home / "config.toml").write_text(
-        f"[marketplaces.codex-supervisor-local]\nsource = '{repo_root.as_posix()}'\n",
+        "\n".join(
+            (
+                "[marketplaces.codex-supervisor-local]",
+                'source_type = "local"',
+                f"source = '{repo_root}'",
+                "",
+            )
+        ),
         encoding="utf-8",
     )
 
-    resolved_root, diagnostic = launcher.find_repo_root(
-        plugin_root,
-        {"CODEX_HOME": str(codex_home)},
-    )
 
-    assert diagnostic == ""
-    assert resolved_root == repo_root.resolve()
+def _planning_integrity_failures(db_path: Path) -> tuple[str, ...]:
+    sys.path.insert(0, str(REPO_ROOT))
+    from scripts.check_planning_integrity import check_planning_integrity
 
-
-def test_plugin_launcher_diagnostic_fallback_exposes_runtime_preflight() -> None:
-    launcher = _load_launcher_module()
-    server = launcher._DiagnosticServer(diagnostic="MCP startup failed: no source")
-
-    initialize = server.handle_line(
-        json.dumps(
-            {
-                "jsonrpc": "2.0",
-                "id": "init",
-                "method": "initialize",
-                "params": {"protocolVersion": "2025-11-25"},
-            }
-        )
-    )
-    assert initialize is not None
-    assert "diagnostic" in initialize["result"]["serverInfo"]["version"]
-
-    assert (
-        server.handle_line(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}))
-        is None
-    )
-    tools = server.handle_line(
-        json.dumps({"jsonrpc": "2.0", "id": "tools", "method": "tools/list"})
-    )
-    assert tools is not None
-    assert tools["result"]["tools"][0]["name"] == "codex_supervisor.runtime_preflight"
-
-    result = server.handle_line(
-        json.dumps(
-            {
-                "jsonrpc": "2.0",
-                "id": "call",
-                "method": "tools/call",
-                "params": {"name": "codex_supervisor.runtime_preflight", "arguments": {}},
-            }
-        )
-    )
-    assert result is not None
-    payload = result["result"]["structuredContent"]
-    assert payload["ok"] is False
-    assert payload["data"]["status"] == "blocked"
-    assert payload["data"]["ledger"]["required_surface"] == "live_mcp"
-    assert payload["data"]["ledger"]["decision_source"] == "diagnostic_mcp_fallback"
-    assert payload["data"]["issues"][0]["code"] == "mcp_startup_failed"
-    assert result["result"]["isError"] is True
+    return check_planning_integrity(db_path)

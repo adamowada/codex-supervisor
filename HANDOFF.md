@@ -1,131 +1,140 @@
 # HANDOFF.md
 
-Last updated: 2026-05-28
+Last updated: 2026-06-10
 
-This file is a compact resume snapshot only. Canonical queue state, completion records, worker
-evidence, and operational progress are in `plans/planning.sqlite3`.
+This is the current resume snapshot.
 
-## Current Snapshot
+## Current State
 
-- Current queue state: empty. `story-loop-status --json` reports no current AFK, HITL, or running
-  task after `plan-architecture-deepening-fixes-20260528` was completed.
-- Latest completed checkpoint: `plan-architecture-deepening-fixes-20260528` fixed the four
-  architecture deepening candidates: worker-run stream events now persist through an explicit
-  `worker_evidence` sink, planning integrity is package-owned behind a thin script adapter while
-  spawned-project scaffolds remain self-contained, MCP read-only status derives from the operation
-  registry, and Story Loop launch-outcome persistence lives in `story_loop_outcomes.py`. Focused
-  regression coverage and full `uv run --no-sync python -B scripts/verify.py` passed locally.
-- Previous completed checkpoint: `plan-test20-high-leverage-orchestration-fixes-20260528` added TDD
-  regression coverage and fixes for the todo-list-test-20-low-spark orchestration RCA:
-  display-name model requests now resolve to CLI slugs before Codex Exec launch, required model and
-  reasoning capabilities fail closed instead of falling back, task-scoped required capabilities
-  override launch defaults, fresh empty spawned-project targets are seeded transactionally, and live
-  Story Loop launch refuses project-local planning integrity failures before claim, git worktree, or
-  worker execution. Durable lessons were saved in `insights/live-smoke-lessons.md` and
-  `insights/graph.md`. Full `uv run --no-sync python -B scripts/verify.py` passed locally.
-- Previous completed checkpoint: `plan-test18-orchestration-regressions-20260528` added TDD
-  regression coverage and fixes for the todo-list-test-18-low orchestration RCA: review-required
-  tasks cannot silently drop review obligations after worker/review history exists, live review
-  accepted findings now route repair instead of completing source work, planning integrity requires
-  promotion/browser-smoke/worker-evidence/commit ledgers for controller promotions, Worker Result
-  validation rejects stale blocker text in completed results, `task-upsert --scope-json-file` avoids
-  PowerShell JSON loss, completed result ingestion auto-links repo-visible raw/normalized/manifest
-  evidence while skipping legacy `worker-results/` source paths, and historical planning evidence
-  was backfilled with explicit artifact links/review waivers where appropriate. Durable lessons were
-  saved in `insights/live-smoke-lessons.md` and `insights/graph.md`. Full
-  `uv run --no-sync python -B scripts/verify.py` passed locally.
-- Previous completed checkpoint: `plan-test17-orchestration-regressions-20260528` added TDD
-  regression coverage and fixes for the todo-list-test-17 orchestration RCA: Worker Result
-  evidence matching now normalizes PowerShell path separator variants, planning integrity rejects
-  completed Codex Exec runs that lost core raw evidence or hide a failed `controller.stdout.json`,
-  product-surface tasks cannot acquire controller-worker privileges via `controller_mutation_kind`,
-  `worker-run-upsert` accepts `--metadata-json-file` for PowerShell-safe metadata updates, spawned
-  scaffold integrity copies include the new checks, and `insights/live-smoke-lessons.md` plus
-  `insights/graph.md` record the durable lessons. Focused verification passed across
-  `tests/test_worker_backends.py`, `tests/test_planning.py`, `tests/test_planning_integrity.py`,
-  `tests/test_story_loop.py`, and `tests/test_spawned_projects.py`.
-- Previous completed checkpoint: `plan-test16-orchestration-regressions-20260528` added regression
-  coverage for the todo-list-test-16 orchestration failure mode: Codex Exec liveness now preserves
-  last semantic file-change context across heartbeats, full-AFK runtime preflight blocks manual
-  worker execution, Story Loop e2e polling covers a live file-change-plus-heartbeat worker, and
-  planning integrity rejects nonterminal Codex Exec runs without Story Loop evidence metadata or
-  stalled runs that already recorded file-change events. Durable lessons were added to
-  `insights/live-smoke-lessons.md` and `insights/graph.md`.
-- Previous completed checkpoint: `plan-live-evidence-gate-loop-20260528` adds a Codex Exec evidence
-  gate that rejects completed worker-result claims whose `tests_run` commands were not observed in raw
-  JSONL command-execution events. Regression coverage now includes backend unit coverage and a real
-  CLI Story Loop e2e rejection path. A real Codex MCP Story Loop smoke,
-  `run-evidence-gate-live-smoke`, passed with strict JSONL, `git_worktree` changed files, and
-  matching `git status --short` command evidence. Full `scripts/verify.py` passed locally after the
-  implementation.
-- Previous completed checkpoint: `plan-multiturn-live-smoke-20260528` ran a broader multi-turn live
-  Codex Exec Story Loop smoke against a disposable git/planning/worktree repo. Turn 1 completed and
-  was promoted. The compound turn-2 retries self-blocked before tool use by treating the final
-  structured-output schema as a tool-use constraint, and the simplified retry emitted a passing
-  Worker Result without command-execution evidence or the requested marker in `smoke.txt`; the
-  supervisor rejected that result because completed results cannot have empty `changed_files`.
-  `src/codex_supervisor/worker_backends.py` now clarifies that the schema constrains only the final
-  assistant message, with focused coverage in `tests/test_worker_backends.py`, but live evidence
-  shows that prompt clarification alone is not enough. `insights/live-smoke-lessons.md` and
-  `insights/graph.md` now record the need to reconcile Worker Result claims with JSONL/tool events
-  and inspected worktree state.
-- Previous completed checkpoint: `plan-live-smoke-insight-acp-20260528` added
-  `insights/live-smoke-lessons.md`, linked it from the insight wiki and graph, and registered the
-  file purpose for public justification. The insight captures the todo-list smoke analysis,
-  deterministic e2e follow-up, broader live Codex Exec smoke results, strict schema fix,
-  Windows `workspace-write` limitation, planning hygiene lesson, and ACP evidence loop.
-- Previous completed checkpoint: `plan-broader-live-smoke-20260528` ran a broader live Codex Exec
-  Story Loop smoke against disposable git/planning/worktree repos. The first live attempt exposed
-  an OpenAI strict structured-output schema incompatibility in the Worker Result schema for
-  `browser_smoke_results`; `src/codex_supervisor/worker_backends.py` now makes browser-smoke item
-  properties strict-schema-compatible by requiring every key and allowing `null` for optional
-  fields, with regression coverage in `tests/test_worker_backends.py`. The retry also showed
-  Windows `codex exec --sandbox workspace-write` rejecting write commands as read-only, while the
-  trusted isolated `danger-full-access` retry completed: real Codex edited `smoke.txt`, emitted
-  strict JSONL and final Worker Result evidence, produced an evidence manifest, and completed the
-  disposable queue. Focused worker/schema tests and planning integrity passed locally.
-- Previous completed checkpoint: `plan-e2e-test-gap-closure-20260528` added deterministic e2e
-  coverage for the live-smoke gap: `tests/test_story_loop_e2e.py` now launches the real
-  `story-loop-run-once` and `story-loop-start`/`story-loop-poll` CLI paths against a real temporary
-  git repo, real worktree, and fake Codex executable, while `tests/test_mcp_stdio.py` covers a
-  mutating MCP stdio subprocess lifecycle. The new e2e test exposed support artifacts being treated
-  as product code changes; `src/codex_supervisor/worker_orchestration.py` now ignores declared
-  `artifacts/` support evidence for allowed-path validation while preserving raw worktree state.
-  Focused tests and full `scripts/verify.py` passed locally.
-- Previous completed checkpoint: `plan-supervisor-smoke-fixes-20260528` hardened the todo-list-test-15
-  supervisor smoke-test flow: typed controller mutation contracts, prelaunch dirty-path policy,
-  async controller orphan finalization, runtime preflight metadata, Worker Result artifact
-  normalization, browser smoke progress events, handoff freshness checks, review-skip policy, and
-  spawned-project loopback/process hygiene guidance. Focused tests, live CLI/Worker Result smokes,
-  and full `scripts/verify.py` passed locally.
-- Earlier completed checkpoint: `plan-cross-platform-ci-insight-20260528` added
-  `insights/cross-platform-ci.md` to capture the repeated Windows-local vs Linux-CI assumption
-  pattern and linked it from `insights/README.md` and `insights/graph.md`.
-- Earlier completed checkpoint: `plan-ci-linux-mypy-windll-20260528` repaired GitHub Actions Verify
-  run `26552849566`, where Linux mypy rejected direct `ctypes.windll` access in
-  `src/codex_supervisor/story_loop.py`. Implementation commit:
-  `9aed4a031b04634fdcb5711403cac24113176ca0`.
-- Earlier completed checkpoint: `plan-supervisor-worker-boundary-cleanup-20260528` recorded the
-  todo-list-test-14 RCA, implemented project-aware optional attribution context, shared
-  product-worker/controller-owned path policy, planned-vs-actual evidence metadata, and
-  product-worker prompt/runtime boundary guidance. Implementation commit:
-  `7a11f9f6bde52f5e0c86764eb35e036e4987f766`.
-- Small live Story Loop smoke used temporary real git/planning/worktree state with a deterministic
-  tiny backend. It proved private product workers do not receive absent `ATTRIBUTIONS.md`, preclaim
-  worker metadata uses `planned_evidence_paths` instead of actual raw evidence claims, and
-  controller-owned product paths fail closed before worktree creation.
-- Earlier completed checkpoint: `plan-worker-controller-boundary-hardening-20260527` implemented
-  the worker/controller boundary hardening fixes requested after the earlier todo-list smoke tests.
-- Durable changes now keep normal `codex_exec` workers read-only against planning/controller state,
-  reject unsafe product-worker contracts pre-launch, preserve rejected Worker Result JSON as
-  evidence, enforce review-promotion gates, require browser smoke evidence when task scope demands
-  it, normalize worker backend names, and require explicit strict evidence mode for full-AFK
-  preflight.
-- Earlier completed checkpoint: `plan-subagent-spawn-insight-20260527` recorded the durable lesson
-  that full-history subagent forks cannot also override role; use explicit explorer agents with
-  self-contained prompts instead. The insight lives in
-  `insights/workflow-patterns.md#full-history-subagent-forks-cannot-override-role`.
+Branch: `feature/simplification-refactor`
+
+Current model:
+
+```text
+TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
+```
+
+Active surface:
+
+- CLI: `plan-init`, `task-create`, `queue-next`, `attempt-transition`, `attempt-run`
+- MCP: `codex_supervisor.queue_next`
+- Plugin: thin Desktop wrapper around the same source CLI and MCP stdio server
+- Repo-local skills: `codex-supervisor`, `improve-codebase-architecture`,
+  `reduce-codebase-complexity`
+
+Planning database:
+
+- `meta`
+- `plans`
+- `tasks`
+- `attempts`
+- `evidence_bundles`
+- `acceptance_decisions`
+- `decisions`
+
+`plans/planning.sqlite3` and `HANDOFF.md` must stay current together.
+
+## Architecture Snapshot
+
+The compact architecture is intact. Work semantics stay in task intent and acceptance criteria, not
+supervisor job types. Assurance remains explicit policy data: `low`, `medium`, and `high`.
+
+The latest architecture-deepening pass is implemented in code and docs:
+
+- `src/codex_supervisor/target_workspace.py` owns target workspace product provenance: git changed
+  product paths, `.codex-supervisor/**` exclusion, `.gitignore` exclusion, linked worktree product
+  checks, path normalization, and worker-backed product evidence.
+- `src/codex_supervisor/evidence.py` keeps evidence structured before it is encoded into the
+  compact `checks_json` and `artifacts_json` fields.
+- `src/codex_supervisor/terminal_transition.py` owns terminal attempt acceptance and persistence.
+  Terminal attempts now write a durable `acceptance_decisions` row linked to the task, attempt, and
+  evidence bundle; task status is the current-state projection.
+- `attempt-run` records declared artifacts plus git-discovered product paths through the same
+  provenance rules ACP uses.
+- The packaged Desktop Codex worker launcher defaults workers to
+  `model_reasoning_effort="xhigh"` and exposes `--reasoning-effort` only for explicit user-requested
+  reasoning overrides.
+- `AttemptStore.finalize_attempt()` is the only store terminalization path. Terminal attempts write
+  evidence and acceptance decisions atomically instead of allowing a decision-free completion path.
+- `AttemptStore.finalize_attempt()` rejects contradictory task status, attempt status, acceptance
+  result, and evaluation combinations before writing durable state.
+- `plan-init` refuses existing incompatible planning schemas instead of half-upgrading old ledgers.
+- Source-of-truth docs now name product provenance and structured evidence encoding directly.
+
+Target-workspace supervisor operation still uses the bright-line filesystem boundary: the supervisor
+owns `.codex-supervisor/**` and the narrow `.gitignore` bootstrap edit; product file mutation is
+assigned through `attempt-run`; ACP stops when `.codex-supervisor/**` is tracked, not ignored, or
+when changed product paths lack worker-backed evidence.
+
+## Current Verification
+
+Focused verification completed during the architecture-deepening pass:
+
+```text
+uv run --no-sync pytest tests/test_target_workspace.py tests/test_evidence_terminal_transition.py tests/test_acp_gate_e2e.py tests/test_process_attempt_e2e.py tests/test_small_interface.py
+34 passed
+
+uv run --no-sync ruff check src/codex_supervisor/target_workspace.py src/codex_supervisor/evidence.py src/codex_supervisor/terminal_transition.py src/codex_supervisor/process_attempt.py src/codex_supervisor/acp_gate.py src/codex_supervisor/workspace_hygiene.py src/codex_supervisor/small_interface.py tests/test_target_workspace.py tests/test_evidence_terminal_transition.py
+All checks passed
+```
+
+Full verification completed after doc, source-lock, handoff, and planning ledger updates:
+
+```text
+uv run --no-sync ruff check src tests scripts
+All checks passed
+
+uv run --no-sync python -B -m pytest
+96 passed
+
+uv run --no-sync python -B scripts/verify.py
+96 passed
+```
+
+Planning task `task-durable-acceptance-decisions-20260605` is accepted and done in
+`plans/planning.sqlite3`. The planning database schema is version 2 and includes durable
+`acceptance_decisions` rows. Existing terminal attempts were reconstructed with one acceptance
+decision per attempt during the schema upgrade.
+
+Planning task `task-terminalization-single-path-20260605` is accepted and done in
+`plans/planning.sqlite3`. The unused `complete_attempt()` bypass was removed so terminal store
+state moves through `finalize_attempt()`.
+
+Planning task `task-acceptance-decision-normalization-20260605` is accepted and done in
+`plans/planning.sqlite3`. Acceptance decision actor and rationale values are normalized once before
+both insertion and return.
+
+Planning task `task-acceptance-hardening-review-fixes-20260605` is accepted and done in
+`plans/planning.sqlite3`. The review fixes add fail-fast old-schema initialization, store-level
+acceptance projection validation, clearer integrity diagnostics, and focused regression tests.
+
+The opt-in live Codex pytest and its letter-grade structure have been removed. Live smoke testing is
+manual and out-of-band; source verification now stays fully deterministic with no always-skipped
+live worker test.
+
+Planning task `task-default-xhigh-worker-reasoning-20260610` is accepted and done in
+`plans/planning.sqlite3`. The packaged Codex worker launcher now passes
+`model_reasoning_effort="xhigh"` by default, supports explicit `--reasoning-effort` overrides,
+documents the policy in the packaged and source skills, and records the intentional
+`CONTRACTS.md` source-lock update.
+
+Verification completed for the xhigh worker default change:
+
+```text
+uv run --no-sync pytest tests/test_codex_plugin.py tests/test_simplified_contract.py -q
+18 passed
+
+uv run --no-sync python -B scripts/verify.py
+97 passed
+```
+
+## Recent Durable Decisions
+
+- Product provenance is a target workspace contract.
+- Evidence may be structured in code before compact JSON storage.
+- Stale durable decisions from earlier stages are superseded by current source-of-truth docs,
+  current planning records, and `DECISIONS.md`.
 
 ## Next Action
 
-No active local queue task.
+No next action.

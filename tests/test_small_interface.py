@@ -1,0 +1,222 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from planning_db_factory import insert_task, make_planning_db
+
+from codex_supervisor.small_interface import attempt_transition, queue_next, task_create
+
+
+def test_queue_next_returns_ready_task_and_transition_hint(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+
+    result = queue_next(db_path)
+
+    assert result.task is not None
+    assert result.task["task_id"] == "task-1"
+    assert result.next_transition == "attempt-transition --status running"
+
+
+def test_queue_next_surfaces_running_task_before_ready_work(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+    insert_task(db_path, task_id="task-2", status="ready")
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-running",
+        executor="manual",
+        status="running",
+        summary="Task 1 is already running.",
+    )
+
+    result = queue_next(db_path)
+
+    assert result.task is not None
+    assert result.task["task_id"] == "task-1"
+    assert result.task["status"] == "running"
+    assert result.active_attempt is not None
+    assert result.active_attempt["attempt_id"] == "attempt-running"
+    assert result.next_transition == "attempt-transition --status succeeded|failed|blocked"
+
+
+def test_task_create_reports_stored_plan(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+
+    result = task_create(
+        db_path,
+        plan_id="plan-1",
+        plan_title="Different title",
+        plan_goal="Different goal",
+        title="New task",
+        intent="Create durable task intent.",
+        assurance="medium",
+        acceptance_criteria=("Acceptance criterion",),
+        task_id="task-new",
+    )
+
+    assert result.plan["title"] == "Plan"
+    assert result.task["task_id"] == "task-new"
+
+
+def test_task_create_rejects_second_active_plan(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+
+    with pytest.raises(ValueError, match="second active plan"):
+        task_create(
+            db_path,
+            plan_id="plan-2",
+            plan_title="Second plan",
+            plan_goal="This would widen the active objective set.",
+            title="New task",
+            intent="Create another active objective.",
+            assurance="medium",
+            acceptance_criteria=("Acceptance criterion",),
+            task_id="task-new",
+        )
+
+
+def test_attempt_transition_runs_and_accepts_medium_task(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+
+    running = attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        executor="manual",
+        status="running",
+        summary="Running task.",
+    )
+    completed = attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        status="succeeded",
+        summary="Task satisfied.",
+        checks=("pytest tests/test_small_interface.py",),
+        artifacts=("src/codex_supervisor/small_interface.py",),
+        acceptance_results={"Acceptance criterion": True},
+    )
+
+    assert running.task_status == "running"
+    assert completed.task_status == "done"
+    assert completed.acceptance is not None
+    assert completed.acceptance["accepted"] is True
+    assert completed.evidence is not None
+    assert completed.evidence["attempt_id"] == "attempt-1"
+
+
+def test_attempt_transition_can_retry_blocked_task_to_done(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        executor="manual",
+        status="running",
+        summary="Running task.",
+    )
+    first = attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        status="failed",
+        summary="Task failed.",
+        checks=("failure recorded",),
+        artifacts=("artifact",),
+        acceptance_results={"Acceptance criterion": False},
+    )
+
+    retry = attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-2",
+        executor="manual",
+        status="running",
+        summary="Retry task.",
+    )
+    completed = attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-2",
+        status="succeeded",
+        summary="Retry satisfied task.",
+        checks=("pytest tests/test_small_interface.py",),
+        artifacts=("src/codex_supervisor/small_interface.py",),
+        acceptance_results={"Acceptance criterion": True},
+    )
+
+    assert first.task_status == "blocked"
+    assert retry.task_status == "running"
+    assert completed.task_status == "done"
+    assert completed.acceptance is not None
+    assert completed.acceptance["accepted"] is True
+
+
+def test_attempt_transition_blocks_when_acceptance_is_missing(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        executor="manual",
+        status="running",
+        summary="Running task.",
+    )
+
+    completed = attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        status="succeeded",
+        summary="Task lacks evidence.",
+    )
+
+    assert completed.task_status == "blocked"
+    assert completed.acceptance is not None
+    assert completed.acceptance["accepted"] is False
+
+
+def test_attempt_transition_rejects_cross_task_start(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+    insert_task(db_path, task_id="task-2", status="ready")
+    attempt_transition(
+        db_path,
+        task_id="task-2",
+        attempt_id="attempt-task-2",
+        status="planned",
+        summary="Task 2 attempt.",
+    )
+
+    with pytest.raises(ValueError, match="belongs to task"):
+        attempt_transition(
+            db_path,
+            task_id="task-1",
+            attempt_id="attempt-task-2",
+            status="running",
+            summary="Wrong task.",
+        )
+
+
+def test_attempt_transition_rejects_cross_task_terminal_transition(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+    insert_task(db_path, task_id="task-2", status="ready")
+    attempt_transition(
+        db_path,
+        task_id="task-2",
+        attempt_id="attempt-task-2",
+        status="running",
+        summary="Task 2 running.",
+    )
+
+    with pytest.raises(ValueError, match="belongs to task"):
+        attempt_transition(
+            db_path,
+            task_id="task-1",
+            attempt_id="attempt-task-2",
+            status="succeeded",
+            summary="Wrong task.",
+            checks=("pytest",),
+            artifacts=("artifact",),
+            acceptance_results={"Acceptance criterion": True},
+        )

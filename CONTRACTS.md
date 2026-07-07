@@ -168,10 +168,10 @@ explicit unsupervised exception is declared.
 `queue-next` and `codex_supervisor.queue_next` are read-only recovery paths. They must never mutate
 state.
 
-The substrate target is compact recovery state sufficient for Goal Mode to resume:
+The compact recovery state reports:
 
 - active plan and task;
-- active attempt and liveness age;
+- active attempt and liveness age when a liveness file is available;
 - latest evidence;
 - latest acceptance decision;
 - launch packet and verifier hashes;

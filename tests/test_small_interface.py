@@ -38,7 +38,70 @@ def test_queue_next_surfaces_running_task_before_ready_work(tmp_path: Path) -> N
     assert result.task["status"] == "running"
     assert result.active_attempt is not None
     assert result.active_attempt["attempt_id"] == "attempt-running"
+    assert result.recovery_state["active_task_id"] == "task-1"
+    assert result.recovery_state["active_attempt_id"] == "attempt-running"
+    assert "running_attempt_liveness_missing" in result.recovery_state["warning_flags"]
+    assert "git_summary" in result.recovery_state
     assert result.next_transition == "attempt-transition --status succeeded|failed|blocked"
+
+
+def test_queue_next_surfaces_latest_acceptance_and_recovery_state(
+    tmp_path: Path,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        executor="manual",
+        status="running",
+        summary="Running task.",
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        status="failed",
+        summary="Task failed.",
+        checks=(
+            "launch packet sha256: "
+            "1111111111111111111111111111111111111111111111111111111111111111",
+            "verifier intent sha256: "
+            "2222222222222222222222222222222222222222222222222222222222222222",
+        ),
+        artifacts=("artifact",),
+        acceptance_results={"Acceptance criterion": False},
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-2",
+        executor="manual",
+        status="running",
+        summary="Retry task.",
+    )
+
+    result = queue_next(db_path)
+
+    assert result.latest_evidence is not None
+    assert result.latest_evidence["attempt_id"] == "attempt-1"
+    assert result.latest_acceptance is not None
+    assert result.latest_acceptance["attempt_id"] == "attempt-1"
+    assert result.latest_acceptance["result"] == "rejected"
+    assert result.recovery_state["latest_evidence_bundle_id"] == result.latest_evidence[
+        "bundle_id"
+    ]
+    assert result.recovery_state["latest_acceptance_decision_id"] == result.latest_acceptance[
+        "decision_id"
+    ]
+    assert (
+        result.recovery_state["launch_packet_sha256"]
+        == "1111111111111111111111111111111111111111111111111111111111111111"
+    )
+    assert (
+        result.recovery_state["verifier_intent_sha256"]
+        == "2222222222222222222222222222222222222222222222222222222222222222"
+    )
 
 
 def test_task_create_reports_stored_plan(tmp_path: Path) -> None:

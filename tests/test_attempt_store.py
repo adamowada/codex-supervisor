@@ -75,6 +75,7 @@ def test_attempt_store_reads_queue_state(tmp_path: Path) -> None:
     queued = store.read_next_task()
     active = store.read_active_attempt("task-1")
     latest_evidence = store.read_latest_evidence("task-1")
+    latest_acceptance = store.read_latest_acceptance("task-1")
 
     assert queued is not None
     assert queued.plan_id == "plan-1"
@@ -83,6 +84,7 @@ def test_attempt_store_reads_queue_state(tmp_path: Path) -> None:
     assert active.attempt_id == "attempt-1"
     assert latest_evidence is not None
     assert latest_evidence.bundle_id == "evidence-1"
+    assert latest_acceptance is None
 
 
 def test_attempt_store_rejects_invalid_transition(tmp_path: Path) -> None:

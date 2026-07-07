@@ -79,7 +79,7 @@ Full verification completed:
 
 ```text
 uv run --no-sync python -B scripts/verify.py
-103 passed
+104 passed
 ```
 
 ## Planning Ledger
@@ -102,12 +102,14 @@ Accepted tasks:
 - `task-generic-lineage-20260707`: added `tasks.lineage_json`, `task-create --lineage`, queue
   projection of task lineage, integrity validation for lineage references, schema v3 migration,
   focused tests, source-lock refresh, and verified the repo.
+- `task-recovery-state-20260707`: added latest acceptance reads, compact `recovery_state` output
+  through CLI and MCP, liveness file age when available, packet hash recovery, lineage projection,
+  git summary, warning flags, focused tests, source-lock refresh, and verified the repo.
 
 Ready next task:
 
-- `task-recovery-state-20260707`: expose compact recovery state with active work, latest evidence
-  and acceptance, lineage, provenance, and warning flags.
+- `task-evidence-digests-20260707`: record compact evidence digests while preserving raw logs.
 
 ## Next Action
 
-Implement enriched recovery state for `task-recovery-state-20260707`.
+Implement evidence digests for `task-evidence-digests-20260707`.

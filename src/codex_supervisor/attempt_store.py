@@ -595,6 +595,21 @@ class AttemptStore:
             ).fetchone()
         return _evidence_from_row(row) if row is not None else None
 
+    def read_latest_acceptance(self, task_id: str) -> AcceptanceDecision | None:
+        """Read the latest durable acceptance decision for a task."""
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """select decision_id, task_id, attempt_id, bundle_id, actor, result,
+                          rationale, evaluation_json, created_at
+                   from acceptance_decisions
+                   where task_id = ?
+                   order by created_at desc, decision_id desc
+                   limit 1""",
+                (task_id,),
+            ).fetchone()
+        return _acceptance_from_row(row) if row is not None else None
+
     def update_task_status(
         self,
         task_id: str,
@@ -769,6 +784,20 @@ def _evidence_from_row(row: sqlite3.Row) -> AttemptEvidence:
         summary=row["summary"],
         checks=parse_json_string_array(row["checks_json"], field_name="checks_json"),
         artifacts=parse_json_string_array(row["artifacts_json"], field_name="artifacts_json"),
+        created_at=row["created_at"],
+    )
+
+
+def _acceptance_from_row(row: sqlite3.Row) -> AcceptanceDecision:
+    return AcceptanceDecision(
+        decision_id=row["decision_id"],
+        task_id=row["task_id"],
+        attempt_id=row["attempt_id"],
+        bundle_id=row["bundle_id"],
+        actor=row["actor"],
+        result=row["result"],
+        rationale=row["rationale"],
+        evaluation=json.loads(row["evaluation_json"]),
         created_at=row["created_at"],
     )
 

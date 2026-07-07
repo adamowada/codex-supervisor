@@ -103,9 +103,9 @@ terminal decision, not the acceptance record itself.
 
 ### Recovery And Lineage
 
-`queue-next` is the read path Goal Mode uses to recover. It should expose active task, active
-attempt, liveness age, latest evidence, latest acceptance, packet hash, verifier hash, lineage, git
-summary, and warning flags as the branch implementation matures.
+`queue-next` is the read path Goal Mode uses to recover. It exposes active task, active attempt,
+liveness age when available, latest evidence, latest acceptance, packet hash, verifier hash,
+lineage, git summary, and warning flags.
 
 Retry, repair, review, and final-proof relationships should use one generic lineage mechanism, not
 workflow-specific job types.

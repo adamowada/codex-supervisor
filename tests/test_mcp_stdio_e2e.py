@@ -43,6 +43,7 @@ def test_mcp_stdio_lists_and_calls_queue_tool(tmp_path: Path) -> None:
     structured = responses[2]["result"]["structuredContent"]
     assert structured["ok"] is True
     assert structured["data"]["task"]["task_id"] == "task-1"
+    assert structured["data"]["recovery_state"]["active_task_id"] == "task-1"
     assert structured["data"]["next_transition"] == "attempt-transition --status running"
 
 

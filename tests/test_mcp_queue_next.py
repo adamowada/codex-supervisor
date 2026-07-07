@@ -28,4 +28,6 @@ def test_mcp_queue_next_dispatches_to_compact_queue(tmp_path: Path) -> None:
 
     assert result["ok"] is True
     assert result["data"]["task"]["task_id"] == "task-1"
+    assert result["data"]["recovery_state"]["active_task_id"] == "task-1"
+    assert "git_summary" in result["data"]["recovery_state"]
     assert result["data"]["next_transition"] == "attempt-transition --status running"

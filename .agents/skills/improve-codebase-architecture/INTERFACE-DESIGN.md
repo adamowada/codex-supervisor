@@ -1,6 +1,6 @@
 # Interface Design
 
-When the user wants to explore alternative interfaces for a chosen deepening candidate, use this parallel subagent pattern. It is based on "Design It Twice" (Ousterhout): the first idea is unlikely to be the best.
+When the user wants to compare alternative interfaces for a chosen deepening candidate, use this parallel subagent pattern. It is based on "Design It Twice" (Ousterhout): the first idea is unlikely to be the best.
 
 Uses the vocabulary in [LANGUAGE.md](LANGUAGE.md): **module**, **interface**, **seam**, **adapter**, **leverage**, and **locality**.
 
@@ -19,8 +19,8 @@ Show this to the user, then proceed to Step 2. The user can read while the subag
 
 ### 2. Spawn Subagents
 
-Spawn 3+ read-only Codex explorer subagents in parallel when the host exposes subagent tools;
-otherwise prepare separate self-contained design prompts or explore the variants locally. Each lane
+Spawn 3+ read-only Codex reader subagents in parallel when the host exposes subagent tools;
+otherwise prepare separate self-contained design prompts or inspect the variants locally. Each lane
 must produce a **radically different** interface for the deepened module.
 
 Prompt each subagent with a separate technical brief: relevant modules, coupling details, dependency category from [DEEPENING.md](DEEPENING.md), what sits behind the seam, and which source-of-truth docs must be preserved. The brief is independent of the user-facing problem-space explanation in Step 1.

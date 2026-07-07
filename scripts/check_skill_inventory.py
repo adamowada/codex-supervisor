@@ -61,7 +61,7 @@ def check_skill_inventory() -> tuple[str, ...]:
                 "Cautious",
                 "Sacred constraints",
                 "You **MUST** use these terms consistently",
-                "Before exploring or spawning subagents",
+                "Before inspecting or spawning subagents",
                 "you **MUST** pause and ask for calibration",
                 "They **MUST NOT** be treated as permission",
             ):

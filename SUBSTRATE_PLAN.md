@@ -82,7 +82,7 @@ Goal Mode reads compact state and chooses:
    id, attempt id, packet hash, verifier hash, git head, and start time.
 4. Add generic task lineage, using one small relation mechanism such as `review_of`, `repair_of`,
    and `shipping_proof_of`.
-5. Enrich `queue-next` and MCP read-only state with active task, active attempt, liveness age,
+5. Add `queue-next` and MCP read-only fields for active task, active attempt, liveness age,
    latest evidence, latest acceptance, packet hash, verifier hash, lineage, git summary, and warning
    flags.
 6. Add structured evidence digests over raw logs: verifier result, changed files, declared

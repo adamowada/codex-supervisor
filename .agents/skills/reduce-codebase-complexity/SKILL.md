@@ -1,6 +1,6 @@
 ---
 name: reduce-codebase-complexity
-description: Ruthlessly evaluate a codebase for simplification opportunities. Use when the user wants to reduce state space, remove legacy preservation, shrink public surfaces, collapse mode-like axes, simplify control planes, re-layer architecture, or identify high-leverage deletion and consolidation candidates.
+description: Ruthlessly evaluate a codebase for simplification candidates. Use when the user wants to reduce state space, remove legacy preservation, shrink public surfaces, collapse mode-like axes, simplify control planes, re-layer architecture, or identify high-impact deletion and consolidation candidates.
 ---
 
 # Reduce Codebase Complexity
@@ -20,7 +20,7 @@ You **MUST** use these terms consistently. Full definitions live in [LANGUAGE.md
 - **Layer** - an architectural band with a specific responsibility.
 - **Control Plane** - code that decides what work happens, when, and under which policy.
 - **Active Path** - the intended route through the system.
-- **Preservation Path** - code kept only to protect prior behavior, migration, compatibility, or audit shape.
+- **Preservation Path** - code kept only to protect prior behavior, migration, compatibility, or an audit record.
 - **Reduction Candidate** - a concrete simplification move with a smaller after-state.
 
 Key principles:
@@ -36,7 +36,7 @@ Key principles:
 
 ### 0. Calibrate Ruthlessness
 
-Before exploring or spawning subagents, you **MUST** determine the run posture. If the user's
+Before inspecting or spawning subagents, you **MUST** determine the run posture. If the user's
 tolerance for deletion, breaking changes, compatibility, or current-test preservation is unclear,
 you **MUST** pause and ask for calibration before continuing. Use a host-provided structured
 question or plan-pause tool when available; otherwise ask directly in chat and wait.
@@ -65,7 +65,7 @@ infer `Focused`, `Audit only`, or no-edits posture.
 Treat calibration as the front-door posture for the run, not as a persistent mode-like axis. It
 sets recommendation strength and mutation boundaries; it should not fork every later process step.
 
-### 1. Explore
+### 1. Inspect
 
 Read the repo's source-of-truth documents first: product overview, architecture, contracts, roadmap,
 testing strategy, decisions, operating instructions, and current handoff or planning state when
@@ -75,9 +75,9 @@ Then inventory the live code and tests with `rg --files` or `git ls-files` befor
 filesystem walks. Avoid treating ignored caches, generated artifacts, virtual environments, and
 build outputs as product surface unless the user explicitly asks to audit local artifacts.
 
-Spawn read-only Codex explorer subagents when the host exposes subagent tools and the current task
-permits delegation; otherwise explore locally or prepare self-contained read-only prompts. Give
-explorers separate lenses:
+Spawn read-only Codex reader subagents when the host exposes subagent tools and the current task
+permits delegation; otherwise inspect locally or prepare self-contained read-only prompts. Give
+readers separate lenses:
 
 - surface inventory;
 - axis and mode inventory;
@@ -116,19 +116,19 @@ For each candidate, include:
 - **After-state** - the smaller architecture in plain language.
 - **Test impact** - which tests disappear, move up a level, or become focused.
 - **Risk** - what can break and why that risk is acceptable or unacceptable.
-- **Recommendation strength** - `Strong`, `Worth exploring`, or `Speculative`.
+- **Recommendation strength** - `Strong`, `Worth testing`, or `Speculative`.
 
 End with a **Top recommendation**: the first candidate to pursue and why.
 
 ### 4. Grilling Loop
 
-After presenting candidates, ask the user which one to explore. For an approved or clearly scoped
+After presenting candidates, ask the user which one to examine. For an approved or clearly scoped
 implementation pass, choose the top recommendation only when the repo's source docs and active task
 make the priority clear.
 
 For the selected candidate, grill the design:
 
-- What behavior remains essential?
+- What behavior remains required?
 - Which axes become data or policy?
 - Which modes disappear?
 - Which surfaces remain callable?
@@ -139,7 +139,7 @@ For the selected candidate, grill the design:
 If the user chooses a breaking simplification context, do not add compatibility scaffolding unless
 the user explicitly asks for it.
 
-### 5. Implementation Shape
+### 5. Implementation Plan
 
 When mutation is in scope, reduce before abstracting:
 

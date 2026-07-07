@@ -56,7 +56,7 @@ Next tests should cover:
 - verifier intent hash capture;
 - launch-time `command.json` for running, failed, and timed-out attempts;
 - generic lineage for retry, repair, review, and shipping proof;
-- enriched `queue-next` and MCP recovery state;
+- expanded `queue-next` and MCP recovery state;
 - evidence digest generation and raw log preservation;
 - warnings before hard gates for missing packet, missing launch metadata, unbacked product mutation,
   and final completion without proof.

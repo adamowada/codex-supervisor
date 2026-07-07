@@ -34,7 +34,7 @@ The supervisor process **MUST** use this bright-line boundary:
 - Generated artifacts, cleanup, repair, audit fixes, warning fixes, review fixes, final-proof files,
   and polish changes outside `.codex-supervisor/**` are product file mutations.
 - A worker is a process launched by `attempt-run`.
-- Subagents are not workers. Subagents are useful for exploration or review, but subagents
+- Subagents are not workers. Subagents are useful for read-only inspection or review, but subagents
   **MUST NOT** be treated as supervisor-assigned workers unless the product mutation is performed
   through `attempt-run`.
 - `attempt-transition` **MUST NOT** be used as a substitute for product file mutation.
@@ -43,7 +43,7 @@ The supervisor process **MUST** use this bright-line boundary:
 
 `plan-init` owns the only allowed supervisor write outside `.codex-supervisor/**`.
 
-- Before creating `.codex-supervisor/planning.sqlite3`, `plan-init` **MUST** ensure the workspace
+- Before creating `.codex-supervisor/planning.sqlite3`, `plan-init` **MUST** make the workspace
   `.gitignore` ignores `.codex-supervisor/`.
 - If `.gitignore` exists, `plan-init` **MUST** append `.codex-supervisor/` only when no equivalent
   rule exists.
@@ -77,7 +77,7 @@ NOT** invent supervisor job types for semantic engineering categories.
 When running from Codex Desktop, you **MUST use the plugin CLI launcher** instead of probing whether
 `codex-supervisor` is on `PATH`.
 
-Use this shape:
+Use this command form:
 
 ```sh
 python -B scripts/cli_launcher.py <command> ...

@@ -184,7 +184,7 @@ The substrate target is compact recovery state sufficient for Goal Mode to resum
 
 ### Low
 
-Use for exploration, diagnosis, sketches, and candidate work.
+Use for diagnosis, sketches, and candidate work.
 
 Minimum evidence:
 
@@ -192,7 +192,7 @@ Minimum evidence:
 - known risks or gaps;
 - next recommended action.
 
-Low assurance advances exploratory work.
+Low assurance advances early work.
 
 ### Medium
 

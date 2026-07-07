@@ -6,7 +6,7 @@ Goal Mode owns judgment: objective, strategy, sequencing, recovery, and final co
 owns durable proof: task intent, run attempts, evidence, acceptance decisions, product provenance,
 worker launch records, and compact recovery state.
 
-## Product Shape
+## Product Contract
 
 The substrate keeps one durable work model:
 
@@ -26,7 +26,7 @@ orchestration layer to durable Goal Mode substrate and defines the implementatio
 - free-form launch packet capture and hashing;
 - launch-time `command.json` metadata;
 - generic task lineage for review, repair, retry, and final proof;
-- richer recovery state from `queue-next` and MCP;
+- more recovery data from `queue-next` and MCP;
 - structured evidence digests;
 - supervised shipping/final-proof records.
 
@@ -34,7 +34,7 @@ orchestration layer to durable Goal Mode substrate and defines the implementatio
 
 Assurance describes the evidence needed before a task can advance.
 
-- `low`: exploration, diagnosis, sketches, and candidate work.
+- `low`: diagnosis, sketches, and candidate work.
 - `medium`: ordinary supervised engineering work with focused checks.
 - `high`: full-auto, source-of-truth, controller, release, destructive, or trust-boundary work with
   strict evidence and explicit acceptance.
@@ -92,7 +92,7 @@ Mode can resume, finish, block, or repair an in-flight attempt instead of silent
 something else.
 
 The plugin is packaging, not a second workflow engine. New CLI, MCP, plugin, automation, and worker
-surfaces are added one generic operation at a time after the substrate contract proves the shape.
+surfaces are added one generic operation at a time after the substrate contract is proven.
 
 ## Repository Map
 
@@ -107,4 +107,4 @@ surfaces are added one generic operation at a time after the substrate contract 
 - `TESTING.md`: verification posture.
 - `DECISIONS.md`: durable decisions.
 - `HANDOFF.md`: current resume snapshot.
-- `insights/`: durable design lessons.
+- `insights/`: design lessons.

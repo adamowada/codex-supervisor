@@ -36,7 +36,7 @@ Done when:
 
 ## Stage 2: Launch Packet Capture
 
-Purpose: let Goal Mode provide rich worker context while Supervisor records packet identity.
+Purpose: let Goal Mode provide worker context while Supervisor records packet identity.
 
 Steps:
 
@@ -96,7 +96,7 @@ Purpose: let Goal Mode resume from compact state alone.
 
 Steps:
 
-1. Enrich `queue-next` with active task, active attempt, liveness age, latest evidence, latest
+1. Add `queue-next` fields for active task, active attempt, liveness age, latest evidence, latest
    acceptance, packet hash, verifier hash, lineage, git summary, warning flags, and next transition.
 2. Keep MCP read-only and explicit about the planning path.
 3. Add tests for recovery state after running, failed, blocked, and accepted attempts.
@@ -104,7 +104,7 @@ Steps:
 Done when:
 
 - Goal Mode can recover after compaction or crash without reading raw logs first.
-- MCP exposes the same compact recovery shape.
+- MCP returns the same compact recovery data.
 - Verification passes.
 
 ## Stage 6: Evidence Digests

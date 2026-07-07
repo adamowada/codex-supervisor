@@ -1,11 +1,11 @@
 ---
 name: improve-codebase-architecture
-description: Find deepening opportunities in a codebase, informed by configured domain docs, locked source-of-truth documents, planning records, and ADRs. Use when the user wants to improve architecture, find refactoring opportunities, consolidate tightly-coupled modules, improve testability, or make a codebase more AI-navigable.
+description: Find deepening candidates in a codebase, informed by configured domain docs, locked source-of-truth documents, planning records, and ADRs. Use when the user wants to improve architecture, find refactors, consolidate tightly-coupled modules, improve testability, or make a codebase more AI-navigable.
 ---
 
 # Improve Codebase Architecture
 
-Surface architectural friction and propose **deepening opportunities**: refactors that turn shallow modules into deep ones. The aim is testability and AI-navigability.
+Report architectural friction and propose **deepening candidates**: refactors that turn shallow modules into deep ones. The aim is testability and AI-navigability.
 
 ## Glossary
 
@@ -30,13 +30,13 @@ This skill is informed by the project's domain model. Domain language gives name
 
 ## Process
 
-### 1. Explore
+### 1. Inspect
 
 Read the repo's configured source-of-truth docs first. For `codex-supervisor`, read the protected top-level docs, `insights/`, and planning SQLite records relevant to the review; read `HANDOFF.md` only after live queue state is known. For spawned projects, read `docs/agents/source-of-truth.md`, `docs/agents/domain.md`, `CONTEXT.md`, `CONTEXT-MAP.md`, and ADRs when present; if those lightweight docs are absent, fall back to the spawned-project top-level scaffold (`README.md`, `AGENTS.md`, `PLANS.md`, `ARCHITECTURE.md`, `CONTRACTS.md`, and `SOP.md`), then read `HANDOFF.md` only after current work state is established.
 
-Then walk the codebase. Spawn read-only Codex explorer subagents when the host exposes subagent
-tools; otherwise explore locally or prepare self-contained read-only prompts. Do not follow rigid
-heuristics. Explore organically and note where you experience friction:
+Then walk the codebase. Spawn read-only Codex reader subagents when the host exposes subagent
+tools; otherwise inspect locally or prepare self-contained read-only prompts. Do not follow rigid
+heuristics. Follow the code path that creates the friction:
 
 - Where does understanding one concept require bouncing between many small modules?
 - Where are modules **shallow**, with an interface nearly as complex as the implementation?
@@ -66,7 +66,7 @@ For each candidate, include:
 - **Solution** - plain English description of what would change.
 - **Benefits** - explained in terms of locality, leverage, and tests.
 - **Before / after diagram** - when visual comparison helps.
-- **Recommendation strength** - `Strong`, `Worth exploring`, or `Speculative`.
+- **Recommendation strength** - `Strong`, `Worth testing`, or `Speculative`.
 
 End with a **Top recommendation**: which candidate to tackle first and why.
 
@@ -75,13 +75,13 @@ Use project domain vocabulary plus [LANGUAGE.md](LANGUAGE.md) vocabulary. If a d
 **Decision conflicts:** if a candidate contradicts an existing decision record, surface it only when the friction is real enough to warrant revisiting that decision. Mark it clearly.
 
 Do not propose interfaces yet in interactive mode. After candidates are presented, ask the user:
-"Which of these would you like to explore?" In approved AFK or dangerous full-auto mode, choose the
+"Which candidate should we examine?" In approved AFK or dangerous full-auto mode, choose the
 top recommendation only when the source-of-truth docs and planning task make the priority clear;
 otherwise return the ranked candidates as HITL follow-up tasks.
 
 ### 3. Grilling Loop
 
-Once the user picks a candidate, run a grilling conversation. Walk the design tree with them: constraints, dependencies, the shape of the deepened module, what sits behind the seam, and which tests survive.
+Once the user picks a candidate, run a grilling conversation. Walk the design tree with them: constraints, dependencies, the deepened module boundary, what sits behind the seam, and which tests survive.
 
 Side effects happen only in configured durable sources:
 

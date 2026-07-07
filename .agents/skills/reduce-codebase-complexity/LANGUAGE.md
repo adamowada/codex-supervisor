@@ -55,7 +55,7 @@ Ask how many behavior combinations a choice creates. If adding one value creates
 branches, docs, or test rows, it is an axis and must earn its keep.
 
 **Deletion Test**
-Imagine deleting the code. If no essential behavior disappears, delete it. If essential behavior
+Imagine deleting the code. If no required behavior disappears, delete it. If required behavior
 reappears scattered across callers, consolidate it behind a better active path.
 
 **Surface Test**

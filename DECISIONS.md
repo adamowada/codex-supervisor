@@ -43,11 +43,11 @@ Decision: CI runs the focused verification gate.
 
 Rationale: The gate should match the current architecture and grow with rebuilt behavior.
 
-## D-0007: Insights Capture Design Lessons
+## D-0007: Design Notes Capture Lessons
 
-Decision: Insights record durable lessons that guide future design.
+Decision: `insights/` records durable lessons that guide future design.
 
-Rationale: The insight set should help future work preserve the compact substrate shape.
+Rationale: These notes should help future work preserve the small substrate contract.
 
 ## D-0008: Work Semantics Stay In Task Intent
 
@@ -79,5 +79,5 @@ state.
 Decision: Goal Mode launch packets start as free-form artifacts that Supervisor copies, hashes, and
 references.
 
-Rationale: The packet is where Goal Mode expresses rich context. A strict schema should appear only
+Rationale: The packet is where Goal Mode writes worker context. A strict schema should appear only
 after repeated access patterns prove it will reduce more complexity than it adds.

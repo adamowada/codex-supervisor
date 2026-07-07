@@ -11,7 +11,7 @@ The planning database answers six questions:
 3. What attempts have run?
 4. What evidence exists?
 5. What acceptance decisions did policy make?
-6. What product or architecture decisions shape the plan?
+6. What product or architecture decisions affect the plan?
 
 The planning database is the durable ledger for the Goal Mode substrate. It **MUST** be current
 whenever `HANDOFF.md` is current. Work that changes the repository's current state, completion

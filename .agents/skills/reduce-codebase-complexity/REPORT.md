@@ -7,7 +7,7 @@ no-edits, or no-mutation mode, return the report in chat and name where it would
 
 Start with facts, not preamble:
 
-1. **Declared Architecture** - the shape described by source-of-truth docs.
+1. **Declared Architecture** - the model described by source-of-truth docs.
 2. **Live Architecture** - the reachable code, surfaces, schemas, and tests.
 3. **State-Space Drivers** - axes, modes, surfaces, hidden switches, layers, and preservation paths.
 4. **Reduction Candidates** - ranked candidates.
@@ -20,7 +20,7 @@ Use this template:
 ```markdown
 ### Candidate: <short name>
 
-**Strength:** Strong | Worth exploring | Speculative
+**Strength:** Strong | Worth testing | Speculative
 **Primary move:** Delete Preservation Paths | Shrink Surface | Collapse Axes | Remove Modes | Make Hidden Switches Explicit | Re-layer Around Ownership | Collapse Control Plane | Lift Tests
 **Area:** `file-or-module`, `command`, `schema`, or `surface`
 

@@ -44,7 +44,7 @@ TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
 Use these rules when validating or operating the packaged Desktop supervisor in another workspace.
 
 - Supervisor-owned files are `.codex-supervisor/**`.
-- The supervisor may create or edit `.gitignore` only to ensure `.codex-supervisor/` is ignored.
+- The supervisor may create or edit `.gitignore` only to keep `.codex-supervisor/` ignored.
 - Product files are every workspace file outside `.codex-supervisor/**`, except that bootstrap
   `.gitignore` edit.
 - Product file creation, deletion, or mutation **MUST** happen through `attempt-run`.
@@ -56,7 +56,7 @@ Use these rules when validating or operating the packaged Desktop supervisor in 
 - Packaged Codex worker launches **MUST** default to xhigh reasoning through
   `model_reasoning_effort="xhigh"` unless the user explicitly requests different worker reasoning
   behavior.
-- `plan-init` **MUST** ensure `.codex-supervisor/` is ignored before the workspace can be ACP'd.
+- `plan-init` **MUST** make `.codex-supervisor/` ignored before the workspace can be ACP'd.
 - ACP **MUST NOT** proceed if `.codex-supervisor/**` is tracked or if `.codex-supervisor/` is not
   ignored.
 - Before target-workspace ACP, run:

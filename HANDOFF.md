@@ -62,6 +62,9 @@ locks were refreshed in `scripts/check_protected_files.py` and `src/codex_superv
 Focused checks completed:
 
 ```text
+AI prose audit over steering Markdown and plugin guidance
+No matches for the audited stock phrase set after edits.
+
 uv run --no-sync python -B scripts/check_protected_files.py
 Protected source-of-truth files are unchanged.
 
@@ -85,10 +88,12 @@ Active plan:
 
 - `plan-substrate-20260707`: `Goal Mode substrate pivot`
 
-Accepted task:
+Accepted tasks:
 
 - `task-align-substrate-docs-20260707`: aligned source contracts, skills, metadata, protected
   hashes, planning ledger, handoff, and verification with the substrate branch plan.
+- `task-remove-ai-prose-steering-docs-20260707`: tightened steering docs using the Pangram and
+  Grammarly common-AI-prose references, refreshed protected hashes, and verified the repo.
 
 Ready next task:
 

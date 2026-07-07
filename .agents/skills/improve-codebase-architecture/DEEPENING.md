@@ -30,7 +30,7 @@ Your own services across a network boundary, such as microservices or internal A
 **port** at the seam. The deep module owns the logic; the transport is injected as an **adapter**.
 Tests use an in-memory adapter. Production uses an HTTP, gRPC, or queue adapter.
 
-Recommendation shape: "Define a port at the seam, implement an HTTP adapter for production and an
+Recommendation wording: "Define a port at the seam, implement an HTTP adapter for production and an
 in-memory adapter for testing, so the logic sits in one deep module even though it is deployed across
 a network."
 

@@ -5,12 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "codex-supervisor"
 version = "0.2.0"
-description = "A pre-MVP Codex supervisor rebuilt around a small planning and evidence contract."
+description = "A durable evidence substrate for Codex Goal Mode."
 readme = "README.md"
 requires-python = ">=3.14"
 license = "MIT"
 authors = [{ name = "Adam Owada" }]
-keywords = ["codex", "sqlite", "control-plane"]
+keywords = ["codex", "sqlite", "evidence", "goal-mode"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",

@@ -1,6 +1,6 @@
 # Codex Supervisor Plugin
 
-This is the thin Codex Desktop wrapper for `codex-supervisor`.
+This is the thin Codex Desktop wrapper for the durable Goal Mode substrate in `codex-supervisor`.
 
 It provides:
 
@@ -18,13 +18,14 @@ It provides:
 In Codex Desktop, mutation operations are invoked through `scripts/cli_launcher.py`. The skill
 forbids probing `PATH` for a bare `codex-supervisor` executable.
 
-The plugin is packaging only. The product contract remains in the Python package:
+The plugin is packaging only. Goal Mode owns judgment. The Python package owns the durable
+substrate model:
 
 ```text
 TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
 ```
 
-The active MCP operation is read-only queue inspection:
+The active MCP operation is read-only recovery and queue inspection:
 
 ```text
 codex_supervisor.queue_next
@@ -44,13 +45,17 @@ When launched from the installed Codex cache, it resolves the source repository 
 `CODEX_HOME/config.toml` and the configured `codex-supervisor-local` marketplace. Set
 `CODEX_SUPERVISOR_REPO_ROOT` only when overriding that lookup intentionally.
 
-For full AFK work in a fresh folder, initialize `.codex-supervisor/planning.sqlite3`, create one
-task intent, and run the worker through `attempt-run`. The worker receives the durable assignment at
-`CODEX_SUPERVISOR_TASK_JSON`; stdout, stderr, command metadata, assignment metadata, artifacts,
-checks, optional verifier results, risks, and acceptance results are recorded through the same
-evidence path. Failed worker processes and failed verifier commands cannot record supplied passing
-acceptance results as passing evidence, and declared output artifacts must exist before supplied
-passing acceptance can remain passing.
+For full AFK or Goal Mode worker work in a fresh folder, initialize
+`.codex-supervisor/planning.sqlite3`, create one task intent, and run the worker through
+`attempt-run`. The worker receives the durable assignment at `CODEX_SUPERVISOR_TASK_JSON`; stdout,
+stderr, command metadata, assignment metadata, artifacts, checks, optional verifier results, risks,
+and acceptance results are recorded through the same evidence path. Failed worker processes and
+failed verifier commands cannot record supplied passing acceptance results as passing evidence, and
+declared output artifacts must exist before supplied passing acceptance can remain passing.
+
+As `feature/substrate` lands, Goal Mode launch packets, verifier intent hashes, command metadata,
+lineage, and evidence digests should flow through the same durable model rather than becoming a
+separate workflow engine.
 
 The packaged Codex worker launcher defaults workers to `model_reasoning_effort="xhigh"`. Use its
 `--reasoning-effort` option only when the user explicitly asks for a different worker reasoning

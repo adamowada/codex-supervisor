@@ -1,7 +1,7 @@
 {
   "name": "codex-supervisor",
   "version": "0.2.0+codex.20260529040113",
-  "description": "Codex Desktop wrapper for the compact codex-supervisor MCP server.",
+  "description": "Codex Desktop wrapper for the durable Goal Mode substrate.",
   "author": {
     "name": "Adam Owada"
   },
@@ -11,6 +11,8 @@
   "keywords": [
     "codex",
     "mcp",
+    "evidence",
+    "goal-mode",
     "planning",
     "supervisor"
   ],
@@ -18,8 +20,8 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Codex Supervisor",
-    "shortDescription": "Inspect the compact supervisor queue from Codex Desktop.",
-    "longDescription": "Codex Supervisor exposes the compact MCP stdio server for read-only queue inspection over planning SQLite. Work execution stays in the Python CLI and durable task, attempt, evidence, and acceptance model.",
+    "shortDescription": "Inspect durable Goal Mode recovery state from Codex Desktop.",
+    "longDescription": "Codex Supervisor exposes the compact MCP stdio server for read-only recovery and queue inspection over planning SQLite. Goal Mode owns judgment; work execution stays in the Python CLI and durable task, attempt, evidence, and acceptance model.",
     "developerName": "Adam Owada",
     "category": "Developer Tools",
     "capabilities": [
@@ -28,7 +30,7 @@
     ],
     "websiteURL": "https://github.com/adamowada/codex-supervisor",
     "defaultPrompt": [
-      "Show the supervisor queue.",
+      "Show the Goal Mode recovery queue.",
       "Inspect the next task.",
       "Summarize latest evidence."
     ],

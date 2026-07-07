@@ -1,154 +1,145 @@
 # Roadmap
 
-The simplification refactor rebuilds `codex-supervisor` from the inside out:
+The `feature/substrate` branch turns `codex-supervisor` into the durable evidence substrate for
+Codex Goal Mode.
+
+The durable model stays:
 
 ```text
 TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
 ```
 
-Every stage strengthens that model before adding surface area.
+Every stage strengthens Goal Mode recovery and proof without adding supervisor job types.
 
-## Stage 1: Foundation Contract
+## Stage 1: Substrate Source Contract
 
-Purpose: make the repository speak one control-plane language.
+Purpose: make the repository speak one substrate language.
 
 Steps:
 
-1. Define the compact control-plane model in source-of-truth docs.
-2. Keep planning SQLite on the schema from `PLANS.md`: `meta`, `plans`, `tasks`, `attempts`,
-   `evidence_bundles`, and `decisions`.
-3. Keep bounded repo-local skills that point agents at the active model and reduction workflows.
-4. Keep CI focused on the verification gate in `scripts/verify.py`.
-5. Keep insights focused on durable design lessons.
-6. Keep `HANDOFF.md` current and action-oriented.
-7. Keep protected source-of-truth hashes aligned with the active source document set.
+1. Promote `SUBSTRATE_PLAN.md` as the branch master plan.
+2. Update protected docs to name Goal Mode as the strategic layer and Supervisor as the durable
+   evidence substrate.
+3. Update repo-local and packaged skills so agents preserve the role split.
+4. Update plugin and package descriptions away from orchestration/control-plane identity.
+5. Record the branch state in `plans/planning.sqlite3` and `HANDOFF.md`.
+6. Refresh protected source locks.
+7. Run the verification gate.
 
 Done when:
 
-- `README.md`, `AGENTS.md`, `PLANS.md`, `ARCHITECTURE.md`, `CONTRACTS.md`, `ROADMAP.md`, `SOP.md`,
-  `TESTING.md`, and `DECISIONS.md` agree.
-- `scripts/check_planning_integrity.py` validates the planning database.
-- `scripts/check_skill_inventory.py` validates the active skill surface.
+- `README.md`, `AGENTS.md`, `SUBSTRATE_PLAN.md`, `PLANS.md`, `ARCHITECTURE.md`, `CONTRACTS.md`,
+  `ROADMAP.md`, `SOP.md`, `TESTING.md`, and `DECISIONS.md` agree.
+- The packaged Desktop skill names the durable Goal Mode substrate contract.
 - `scripts/check_protected_files.py` passes.
 - `scripts/verify.py` passes.
-- The planning database has an active simplification plan and a ready next task.
 
-## Stage 2: Policy Core
+## Stage 2: Launch Packet Capture
 
-Purpose: make assurance levels executable.
-
-Steps:
-
-1. Add a small policy module for assurance and acceptance behavior.
-2. Define `low`, `medium`, and `high` as explicit values.
-3. Define evidence requirements for each assurance level.
-4. Define acceptance requirements for each assurance level.
-5. Add a function that selects policy from an explicit assurance level.
-6. Add a function that evaluates whether evidence satisfies a task's assurance.
-7. Keep policy independent from CLI, MCP, plugin, and worker transport details.
-8. Add focused tests for the assurance and acceptance matrix.
-9. Record completion evidence in planning SQLite.
-
-Done when:
-
-- Assurance levels exist in code.
-- Each assurance level has structured evidence requirements.
-- Acceptance can be evaluated from task, attempt, and evidence records.
-- The planning task `task-rebuild-policy-core-20260528` is completed with an evidence bundle.
-- `scripts/verify.py` passes.
-
-## Stage 3: Execution Attempts
-
-Purpose: make all execution use one attempt shape.
+Purpose: let Goal Mode provide rich worker context while Supervisor records packet identity.
 
 Steps:
 
-1. Define a typed `RunAttempt` model in code.
-2. Define attempt statuses: `planned`, `running`, `succeeded`, `failed`, and `blocked`.
-3. Add helpers to create and update attempt rows in planning SQLite.
-4. Add helpers to attach evidence bundles to attempts.
-5. Support manual attempts.
-6. Support shell attempts.
-7. Represent review as an attempt executor when it produces evidence.
-8. Keep executor identity as transport.
-9. Add tests for creating, completing, failing, and blocking attempts.
+1. Add a free-form launch packet input to the worker launch path.
+2. Copy the packet into supervisor-owned evidence storage.
+3. Hash the packet and expose the hash in assignment metadata.
+4. Capture verifier intent and verifier intent hash when present.
+5. Keep the packet schema flexible.
+6. Add tests that prove packet path/hash are durable and available to the worker.
 
 Done when:
 
-- Manual, shell, review, and future Codex execution can share the same attempt shape.
-- Attempt status transitions are validated.
-- Attempt records can produce evidence bundles.
-- Planning integrity catches invalid attempt and evidence relationships.
-- `scripts/verify.py` passes.
+- `attempt-run` records packet identity before product mutation.
+- Workers can read the packet through assignment metadata.
+- Queue inspection can surface packet identity.
+- Verification passes.
 
-## Stage 4: Small Interface
+## Stage 3: Launch-Time Command Metadata
 
-Purpose: prove the core can be operated through a tiny public surface.
+Purpose: make active attempts inspectable while they are running.
 
 Steps:
 
-1. Add one inspection command.
-2. Add one task-intent creation command.
-3. Add one supervisor/admin state-transition command.
-4. Make the inspection command answer the next operational state question from planning SQLite.
-5. Make the mutation command perform one core transition.
-6. Keep command arguments close to the database and contract vocabulary.
-7. Add focused tests for the commands.
-8. Keep the command surface auditable by inspection.
+1. Write `command.json` before launching the worker process.
+2. Include command, cwd, launcher, model/reasoning, timeout, task id, attempt id, packet hash,
+   verifier hash, git head, and start time.
+3. Preserve command metadata when launch fails or times out.
+4. Add tests for running-state command metadata.
 
 Done when:
 
-- One task creation command works.
-- One read command works.
-- One supervisor/admin state-transition command works.
-- The commands map directly to task, attempt, evidence, or acceptance behavior.
-- The commands have focused tests.
-- The command surface remains small.
-- `scripts/verify.py` passes.
+- Active attempts have immediate launch metadata.
+- Failed launches still leave durable command evidence.
+- Verification passes.
 
-## Stage 5: Generic AFK Process Boundary
+## Stage 4: Generic Lineage
 
-Purpose: let worker processes run AFK inside the attempt/evidence model without adding a supervisor
-taxonomy of engineering job types.
+Purpose: make retry, repair, review, and final-proof relationships recoverable without job types.
 
 Steps:
 
-1. Treat `executor` as transport data on `RunAttempt`.
-2. Add one generic process attempt runner.
-3. Run each worker process in an explicit workspace.
-4. Capture stdout, stderr, command metadata, exit code, declared artifacts, checks, risks, gaps, and
-   acceptance results as evidence.
-5. Terminalize every process attempt through the same acceptance policy path.
-6. Keep work categories in task intent and acceptance criteria.
-7. Add focused e2e tests for successful and failed AFK process attempts.
+1. Add one generic relation mechanism for task lineage.
+2. Support relation names such as `retry_of`, `repair_of`, `review_of`, and `shipping_proof_of`.
+3. Show lineage in queue inspection.
+4. Add integrity checks for missing lineage targets.
+5. Add tests for repair and review linkage.
 
 Done when:
 
-- Executor identity is data on the active attempt model.
-- The active codebase has one AFK process path and no separate worker control plane.
-- A high-assurance e2e smoke test starts a tiny project through `task-create` and `attempt-run`.
-- `scripts/verify.py` passes.
+- Goal Mode can link follow-up work to the rejected or accepted work that caused it.
+- No semantic engineering category becomes a supervisor mode.
+- Verification passes.
 
-## Stage 6: Interface Growth
+## Stage 5: Recovery-Oriented Queue State
 
-Purpose: grow larger surfaces as adapters over the proven core.
+Purpose: let Goal Mode resume from compact state alone.
 
 Steps:
 
-1. Choose one adapter surface at a time: MCP, Desktop plugin, automation, GitHub, CI/CD, or spawned
-   projects.
-2. For each operation, declare the task intent it serves.
-3. Declare the attempt it runs or inspects.
-4. Declare the evidence it emits.
-5. Declare the assurance level it can satisfy.
-6. Declare the acceptance behavior it supports.
-7. Add focused adapter tests.
-8. Add the operation to the active surface after the core behavior exists.
+1. Enrich `queue-next` with active task, active attempt, liveness age, latest evidence, latest
+   acceptance, packet hash, verifier hash, lineage, git summary, warning flags, and next transition.
+2. Keep MCP read-only and explicit about the planning path.
+3. Add tests for recovery state after running, failed, blocked, and accepted attempts.
 
 Done when:
 
-- Each adapter operation maps to task intent, attempt, evidence, and acceptance.
-- Adapter state flows through the planning database or explicit external systems.
-- Focused tests cover the adapter contract.
-- The Codex plugin wrapper starts the same compact MCP stdio server as local checks.
-- The operation reduces operator effort enough to justify the surface.
+- Goal Mode can recover after compaction or crash without reading raw logs first.
+- MCP exposes the same compact recovery shape.
+- Verification passes.
+
+## Stage 6: Evidence Digests
+
+Purpose: summarize raw logs and artifacts without losing the detailed evidence trail.
+
+Steps:
+
+1. Generate compact digests for verifier result, changed files, declared artifacts, warnings, log
+   sizes, important tails, risk/gap/next-action notes, and acceptance rationale.
+2. Store digest references through the existing evidence path until repeated queries justify a new
+   table.
+3. Add tests for digest content and raw-artifact preservation.
+
+Done when:
+
+- Queue inspection can show useful evidence summaries.
+- Raw logs remain available for audit.
+- Verification passes.
+
+## Stage 7: Repair And Final Proof
+
+Purpose: make nondeterminism and shipping proof normal supervised work.
+
+Steps:
+
+1. Document and test repair tasks linked to rejected attempts.
+2. Document and test review tasks linked to the work they inspect.
+3. Document and test final-proof tasks linked to the work they prove.
+4. Add warnings first, then hard gates when proven: missing packet, missing launch metadata, product
+   mutation without accepted attempt, and completion without final proof.
+
+Done when:
+
+- A fresh Goal Mode plus Supervisor run can advance, retry, repair, review, and ship with durable
+  proof.
+- Final completion has evidence or an explicit unsupervised exception.
+- Verification passes.

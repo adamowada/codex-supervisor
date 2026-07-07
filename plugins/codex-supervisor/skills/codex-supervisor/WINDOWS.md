@@ -1,10 +1,11 @@
 # Windows Rules
 
-Use these rules when operating `codex-supervisor` from Windows or PowerShell.
+Use these rules when operating the `codex-supervisor` durable Goal Mode substrate from Windows or
+PowerShell.
 
 ## Worker Launch
 
-- You **MUST** use the plugin CLI launcher for supervisor mutation commands:
+- You **MUST** use the plugin CLI launcher for substrate mutation commands:
   `python -B scripts/cli_launcher.py <command> ...`
 - You **MUST** run every product file mutation through `attempt-run`.
 - When launching Codex as the worker on Windows, you **MUST** use the packaged worker launcher:
@@ -47,3 +48,5 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .codex-supervisor\verify
 
 - When the task intent is unchanged, you **MUST** retry the same task instead of creating a new plan
   or task only to recover from Windows launch or quoting failures.
+- When the failure requires repair, review, or final proof, create linked task intent rather than a
+  Windows-specific workflow branch.

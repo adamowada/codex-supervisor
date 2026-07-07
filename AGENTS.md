@@ -2,19 +2,23 @@
 
 ## Repository Purpose
 
-This repository builds `codex-supervisor`: a Python-first control plane for coordinating Codex work
-through task intent, run attempts, evidence bundles, and acceptance decisions.
+This repository builds `codex-supervisor`: a Python-first durable evidence substrate for Codex Goal
+Mode. Goal Mode owns objective, strategy, sequencing, recovery, and final completion. Supervisor
+owns the recoverable ledger, worker launch records, evidence, product provenance, and acceptance
+decisions that make Goal Mode work inspectable and resumable.
 
 ## Operating Principles
 
 - Keep the state space small.
 - Add a new axis only when it collapses more complexity than it creates.
 - Keep durable state in `plans/planning.sqlite3`.
+- Keep `SUBSTRATE_PLAN.md` as the branch master plan for `feature/substrate`.
 - Keep source-of-truth docs short, current, and direct.
 - Keep skills as thin operating guidance.
 - Keep CI focused on the active contract.
 - Keep full-auto safety based on isolation, evidence, and acceptance.
 - Prefer one transition path over mode-specific branches.
+- Let Goal Mode think; make Supervisor remember, launch, verify, and prove.
 
 ## Active Model
 
@@ -25,8 +29,8 @@ TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
 ```
 
 Assurance levels are `low`, `medium`, and `high`. They set evidence and acceptance requirements.
-Work categories belong in task intent and acceptance criteria. Do not add supervisor job types for
-semantic engineering categories.
+Work categories belong in task intent, launch packets, and acceptance criteria. Do not add
+supervisor job types for semantic engineering categories.
 
 ## Source Of Truth
 
@@ -36,6 +40,7 @@ Protected source-of-truth files:
 - `.gitattributes`
 - `README.md`
 - `AGENTS.md`
+- `SUBSTRATE_PLAN.md`
 - `PLANS.md`
 - `ARCHITECTURE.md`
 - `CONTRACTS.md`
@@ -106,9 +111,9 @@ uv run --no-sync codex-supervisor attempt-run --help
 
 ## Definition Of Done
 
-- Source-of-truth docs match the active contract.
+- Source-of-truth docs match the durable Goal Mode substrate contract.
 - Planning SQLite passes the schema check.
-- Repo-local skill guidance matches the active model.
+- Repo-local and packaged skill guidance match the active model.
 - Verification passes.
 - `HANDOFF.md` names the current state and next action, and `plans/planning.sqlite3` records the
   same completed or active work.

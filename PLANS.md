@@ -4,7 +4,7 @@
 
 ## Design Goal
 
-The planning database answers five questions:
+The planning database answers six questions:
 
 1. What are we trying to do?
 2. What task intent is next?
@@ -13,9 +13,9 @@ The planning database answers five questions:
 5. What acceptance decisions did policy make?
 6. What product or architecture decisions shape the plan?
 
-The planning database is the durable ledger. It **MUST** be current whenever `HANDOFF.md` is current.
-Work that changes the repository's current state, completion evidence, or next action **MUST** update
-`plans/planning.sqlite3` and `HANDOFF.md` together.
+The planning database is the durable ledger for the Goal Mode substrate. It **MUST** be current
+whenever `HANDOFF.md` is current. Work that changes the repository's current state, completion
+evidence, or next action **MUST** update `plans/planning.sqlite3` and `HANDOFF.md` together.
 
 ## Schema
 
@@ -142,16 +142,18 @@ Durable product or architecture decisions.
 - `rationale`: required text.
 - `created_at`: required timestamp.
 
-## Extension Rule
+## Substrate Extension Rule
 
-Add a table when repeated queries need it. Until then, store evidence details and attempt metadata
-in structured JSON fields attached to the core tables. Evidence may be structured in code before it
-is encoded into the existing JSON fields. Acceptance decisions are first-class rows because they are
-part of the durable work model.
+Add a table when repeated queries need it. Until then, store packet references, command metadata,
+lineage, warning flags, evidence digests, and attempt metadata in structured JSON fields or
+artifact records attached to the core tables.
+
+Evidence may be structured in code before it is encoded into the existing JSON fields. Acceptance
+decisions are first-class rows because they are part of the durable work model.
 
 ## Currentness Rule
 
 `HANDOFF.md` is the readable resume snapshot. `plans/planning.sqlite3` is the durable resume ledger.
-They **MUST** move together: editing `HANDOFF.md` without updating the planning database is treated as
-missing durable evidence unless the edit is purely typographic and does not change current state,
+They **MUST** move together: editing `HANDOFF.md` without updating the planning database is treated
+as missing durable evidence unless the edit is purely typographic and does not change current state,
 completed work, next action, verification evidence, or source-of-truth status.

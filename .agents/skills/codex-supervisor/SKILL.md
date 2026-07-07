@@ -1,12 +1,12 @@
 ---
 name: codex-supervisor
-description: Operate the compact codex-supervisor control plane through task intent, attempts, evidence, acceptance, and assurance policy.
+description: Operate the durable Goal Mode substrate through task intent, attempts, evidence, acceptance, and recovery state.
 ---
 
 # Codex Supervisor Source Skill
 
 Use this skill when working in the `codex-supervisor` source repository or when validating the
-packaged Codex Desktop supervisor behavior.
+packaged Codex Desktop substrate behavior.
 
 ## Core Contract
 
@@ -16,12 +16,15 @@ The active model **MUST** stay:
 TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
 ```
 
-- Codex **MUST** decide the semantics of work from task intent and acceptance criteria.
-- The supervisor **MUST** own durable state, worker assignment, evidence, acceptance, and auditability.
+- Goal Mode **MUST** own objective, strategy, sequencing, launch packet content, recovery choices,
+  and final completion judgment.
+- The supervisor **MUST** own durable state, worker assignment, launch records, evidence,
+  acceptance, product provenance, auditability, and compact recovery state.
 - The source repository **MUST** keep the state space small.
 - New axes, modes, commands, tables, and adapters **MUST** collapse more complexity than they add.
-- Work categories **MUST** stay in task intent and acceptance criteria. They **MUST NOT** become
-  supervisor job types.
+- Work categories **MUST** stay in task intent, launch packets, and acceptance criteria. They
+  **MUST NOT** become supervisor job types.
+- `SUBSTRATE_PLAN.md` **MUST** remain the branch master plan for `feature/substrate`.
 
 ## Source Repository Rules
 
@@ -34,7 +37,7 @@ TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
 - Protected source-of-truth edits **MUST** refresh `scripts/check_protected_files.py`.
 - The packaged Desktop skill at `plugins/codex-supervisor/skills/codex-supervisor/SKILL.md`
   **MUST** remain the authoritative target-workspace operating contract.
-- Source tests **MUST** cover the active contract rather than legacy compatibility paths.
+- Source tests **MUST** cover the active substrate contract rather than legacy compatibility paths.
 
 ## Target Workspace Firewall
 
@@ -70,6 +73,8 @@ The first command **MUST** exit `0`. The second command **MUST** print nothing. 
 ## Required Flow
 
 - Create durable task intent before product mutation.
+- Record or identify Goal Mode's launch packet and verifier intent for worker-assigned work when
+  the current implementation supports it.
 - Record a run attempt before product mutation.
 - Assign product mutation through `attempt-run`.
 - Record stdout, stderr, command metadata, assignment metadata, checks, artifacts, risks, gaps,
@@ -77,8 +82,8 @@ The first command **MUST** exit `0`. The second command **MUST** print nothing. 
   values such as `No known residual risk.`, `No known gap.`, and `No next action.` when there is
   nothing else to report.
 - Treat worker failures and verifier failures as durable evidence.
-- Retry the same task when intent is unchanged. Create a new task only for new product work, repair,
-  cleanup, audit, or polish.
+- Retry the same task when intent is unchanged. Create a new linked task only for new product work,
+  repair, cleanup, audit, review, warning, polish, or final proof.
 - For full AFK, autonomous worker, unattended worker, or worker-assigned product mutation, create the
   task with `--assurance high` unless the user explicitly requests a lower assurance level.
 
@@ -92,6 +97,8 @@ The first command **MUST** exit `0`. The second command **MUST** print nothing. 
   `--acceptance-result pass` or `--acceptance-result fail`.
 - Named acceptance results are only for multiple criteria, and each name **MUST** exactly match an
   acceptance criterion.
+- Goal Mode **MUST NOT** treat the larger goal as complete until final proof is recorded or an
+  explicit unsupervised exception is declared.
 
 ## Verifiers
 
@@ -111,4 +118,4 @@ uv run --no-sync python -B scripts/verify.py
 ```
 
 The verification gate covers the active planning schema, skill inventory, source locks, plugin
-packaging, and focused contract tests.
+packaging, and focused substrate contract tests.

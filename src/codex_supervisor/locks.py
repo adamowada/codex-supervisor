@@ -12,6 +12,7 @@ PROTECTED_FILES = (
     ".gitattributes",
     "README.md",
     "AGENTS.md",
+    "SUBSTRATE_PLAN.md",
     "PLANS.md",
     "ARCHITECTURE.md",
     "CONTRACTS.md",

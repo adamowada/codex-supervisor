@@ -1,12 +1,13 @@
 ---
 name: codex-supervisor
-description: Operate the codex-supervisor control plane from Codex Desktop through durable task intent, worker attempts, evidence, and acceptance.
+description: Operate the durable Goal Mode substrate from Codex Desktop through task intent, worker attempts, evidence, acceptance, and recovery state.
 ---
 
 # Codex Supervisor
 
-Use this skill when the user asks for `codex-supervisor`, supervisor-managed Codex work, full AFK
-work, autonomous worker assignment, queue inspection, durable evidence, or acceptance tracking.
+Use this skill when the user asks for `codex-supervisor`, durable Goal Mode substrate behavior,
+supervisor-managed Codex work, full AFK work, autonomous worker assignment, queue inspection,
+durable evidence, or acceptance tracking.
 
 ## Core Contract
 
@@ -16,8 +17,10 @@ The durable work model is:
 TaskIntent -> RunAttempt -> EvidenceBundle -> AcceptanceDecision
 ```
 
-Codex decides the semantics of the work. The supervisor owns durable state, evidence, acceptance,
-and auditability. Workers own product file mutation.
+Goal Mode decides the semantics of the work: objective, strategy, sequencing, launch packet content,
+recovery choices, and final completion judgment. The supervisor owns durable state, worker launch
+records, evidence, acceptance, product provenance, auditability, and compact recovery state. Workers
+own product file mutation.
 
 ## Filesystem Firewall
 
@@ -28,8 +31,8 @@ The supervisor process **MUST** use this bright-line boundary:
   `.gitignore` bootstrap rule below.
 - The supervisor process **MUST NOT mutate product files directly**.
 - Every product file creation, deletion, or mutation **MUST** be assigned through `attempt-run`.
-- Generated artifacts, cleanup, repair, audit fixes, warning fixes, and polish changes outside
-  `.codex-supervisor/**` are product file mutations.
+- Generated artifacts, cleanup, repair, audit fixes, warning fixes, review fixes, final-proof files,
+  and polish changes outside `.codex-supervisor/**` are product file mutations.
 - A worker is a process launched by `attempt-run`.
 - Subagents are not workers. Subagents are useful for exploration or review, but subagents
   **MUST NOT** be treated as supervisor-assigned workers unless the product mutation is performed
@@ -66,8 +69,8 @@ Use the MCP tool `codex_supervisor.queue_next` only for read-only queue inspecti
 pass the intended planning database path or use a launcher configured with
 `CODEX_SUPERVISOR_PLANNING_PATH`; MCP **MUST NOT** guess the ledger.
 
-Work categories **MUST** stay in task intent and acceptance criteria. You **MUST NOT** invent
-supervisor job types for semantic engineering categories.
+Work categories **MUST** stay in task intent, launch packets, and acceptance criteria. You **MUST
+NOT** invent supervisor job types for semantic engineering categories.
 
 ## Desktop Invocation
 
@@ -95,6 +98,17 @@ PowerShell worker launcher.
 The packaged worker launcher **MUST** default Codex workers to xhigh reasoning with
 `model_reasoning_effort="xhigh"`. Pass `--reasoning-effort low`, `medium`, `high`, or `xhigh` only
 when the user explicitly asks for different worker reasoning behavior.
+
+## Goal Mode Packet And Recovery
+
+Goal Mode should write the worker launch packet and verifier intent before assigning worker work.
+When the active implementation supports packet capture, the supervisor **MUST** copy and hash the
+packet, expose the packet hash in assignment metadata, and surface packet identity in recovery
+state.
+
+Goal Mode should read `queue-next` or `codex_supervisor.queue_next` to recover compact state before
+starting new work. Recovery state should lead Goal Mode to advance, retry, repair, review, ship, or
+stop; the supervisor should record that choice as task intent and evidence, not as a new job type.
 
 ## Required Flow
 
@@ -151,7 +165,10 @@ acceptance criterion.
 
 When work already belongs to an existing task, acceptance **MUST** be recorded on that task. You
 **MUST NOT** create acceptance-only follow-up tasks. Create follow-up task intent only for new
-product work, repair, cleanup, audit, warning, or polish.
+product work, repair, cleanup, audit, warning, review, polish, or final proof.
+
+Goal Mode **MUST NOT** treat a larger goal as complete until final proof is recorded or an explicit
+unsupervised exception is declared.
 
 ## Verifiers
 

@@ -9,7 +9,7 @@ from codex_supervisor.policy import AssuranceLevel
 
 @dataclass(frozen=True)
 class AdapterOperationContract:
-    """One adapter operation mapped onto the compact control-plane model."""
+    """One adapter operation mapped onto the compact substrate model."""
 
     name: str
     surface: str
@@ -51,7 +51,7 @@ ADAPTER_OPERATION_CONTRACTS: tuple[AdapterOperationContract, ...] = (
 def validate_adapter_contracts(
     contracts: tuple[AdapterOperationContract, ...] = ADAPTER_OPERATION_CONTRACTS,
 ) -> tuple[str, ...]:
-    """Validate that every adapter declaration maps to the compact model."""
+    """Validate that every adapter declaration maps to the substrate model."""
 
     failures: list[str] = []
     seen_names: set[str] = set()

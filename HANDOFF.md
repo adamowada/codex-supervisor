@@ -1,12 +1,19 @@
 # HANDOFF.md
 
-Last updated: 2026-06-10
+Last updated: 2026-07-07
 
 This is the current resume snapshot.
 
 ## Current State
 
-Branch: `feature/simplification-refactor`
+Branch: `feature/substrate`
+
+Master plan: `SUBSTRATE_PLAN.md`
+
+Current product identity: `codex-supervisor` is the durable evidence substrate for Codex Goal Mode.
+Goal Mode owns objective, strategy, sequencing, launch packet content, recovery decisions, and final
+completion judgment. Supervisor owns durable state, launch records, worker assignment, evidence,
+product provenance, acceptance, auditability, and compact recovery state.
 
 Current model:
 
@@ -34,107 +41,61 @@ Planning database:
 
 `plans/planning.sqlite3` and `HANDOFF.md` must stay current together.
 
-## Architecture Snapshot
+## Substrate Pivot
 
-The compact architecture is intact. Work semantics stay in task intent and acceptance criteria, not
-supervisor job types. Assurance remains explicit policy data: `low`, `medium`, and `high`.
+The source-of-truth docs, repo-local skill, packaged Desktop skill, plugin README, plugin metadata,
+package metadata, protected lock manifest, planning ledger, and handoff now align around the
+substrate role split:
 
-The latest architecture-deepening pass is implemented in code and docs:
+- Goal Mode thinks, sequences, recovers, and decides completion.
+- Supervisor remembers, launches, verifies, records evidence, enforces product provenance, and
+  exposes compact recovery state.
+- Worker processes remain ephemeral and receive intelligence from Goal Mode launch packets.
+- Work categories stay in task intent, launch packets, acceptance criteria, and generic lineage,
+  not supervisor job types.
 
-- `src/codex_supervisor/target_workspace.py` owns target workspace product provenance: git changed
-  product paths, `.codex-supervisor/**` exclusion, `.gitignore` exclusion, linked worktree product
-  checks, path normalization, and worker-backed product evidence.
-- `src/codex_supervisor/evidence.py` keeps evidence structured before it is encoded into the
-  compact `checks_json` and `artifacts_json` fields.
-- `src/codex_supervisor/terminal_transition.py` owns terminal attempt acceptance and persistence.
-  Terminal attempts now write a durable `acceptance_decisions` row linked to the task, attempt, and
-  evidence bundle; task status is the current-state projection.
-- `attempt-run` records declared artifacts plus git-discovered product paths through the same
-  provenance rules ACP uses.
-- The packaged Desktop Codex worker launcher defaults workers to
-  `model_reasoning_effort="xhigh"` and exposes `--reasoning-effort` only for explicit user-requested
-  reasoning overrides.
-- `AttemptStore.finalize_attempt()` is the only store terminalization path. Terminal attempts write
-  evidence and acceptance decisions atomically instead of allowing a decision-free completion path.
-- `AttemptStore.finalize_attempt()` rejects contradictory task status, attempt status, acceptance
-  result, and evaluation combinations before writing durable state.
-- `plan-init` refuses existing incompatible planning schemas instead of half-upgrading old ledgers.
-- Source-of-truth docs now name product provenance and structured evidence encoding directly.
-
-Target-workspace supervisor operation still uses the bright-line filesystem boundary: the supervisor
-owns `.codex-supervisor/**` and the narrow `.gitignore` bootstrap edit; product file mutation is
-assigned through `attempt-run`; ACP stops when `.codex-supervisor/**` is tracked, not ignored, or
-when changed product paths lack worker-backed evidence.
+`SUBSTRATE_PLAN.md` is protected as a source-of-truth file for the branch plan. Protected source
+locks were refreshed in `scripts/check_protected_files.py` and `src/codex_supervisor/locks.py`.
 
 ## Current Verification
 
-Focused verification completed during the architecture-deepening pass:
+Focused checks completed:
 
 ```text
-uv run --no-sync pytest tests/test_target_workspace.py tests/test_evidence_terminal_transition.py tests/test_acp_gate_e2e.py tests/test_process_attempt_e2e.py tests/test_small_interface.py
-34 passed
+uv run --no-sync python -B scripts/check_protected_files.py
+Protected source-of-truth files are unchanged.
 
-uv run --no-sync ruff check src/codex_supervisor/target_workspace.py src/codex_supervisor/evidence.py src/codex_supervisor/terminal_transition.py src/codex_supervisor/process_attempt.py src/codex_supervisor/acp_gate.py src/codex_supervisor/workspace_hygiene.py src/codex_supervisor/small_interface.py tests/test_target_workspace.py tests/test_evidence_terminal_transition.py
-All checks passed
+uv run --no-sync python -B scripts/check_skill_inventory.py
+Skill inventory checks passed.
+
+uv run --no-sync python -B scripts/check_planning_integrity.py
+Fresh planning integrity checks passed.
 ```
 
-Full verification completed after doc, source-lock, handoff, and planning ledger updates:
+Full verification completed:
 
 ```text
-uv run --no-sync ruff check src tests scripts
-All checks passed
-
-uv run --no-sync python -B -m pytest
-96 passed
-
-uv run --no-sync python -B scripts/verify.py
-96 passed
-```
-
-Planning task `task-durable-acceptance-decisions-20260605` is accepted and done in
-`plans/planning.sqlite3`. The planning database schema is version 2 and includes durable
-`acceptance_decisions` rows. Existing terminal attempts were reconstructed with one acceptance
-decision per attempt during the schema upgrade.
-
-Planning task `task-terminalization-single-path-20260605` is accepted and done in
-`plans/planning.sqlite3`. The unused `complete_attempt()` bypass was removed so terminal store
-state moves through `finalize_attempt()`.
-
-Planning task `task-acceptance-decision-normalization-20260605` is accepted and done in
-`plans/planning.sqlite3`. Acceptance decision actor and rationale values are normalized once before
-both insertion and return.
-
-Planning task `task-acceptance-hardening-review-fixes-20260605` is accepted and done in
-`plans/planning.sqlite3`. The review fixes add fail-fast old-schema initialization, store-level
-acceptance projection validation, clearer integrity diagnostics, and focused regression tests.
-
-The opt-in live Codex pytest and its letter-grade structure have been removed. Live smoke testing is
-manual and out-of-band; source verification now stays fully deterministic with no always-skipped
-live worker test.
-
-Planning task `task-default-xhigh-worker-reasoning-20260610` is accepted and done in
-`plans/planning.sqlite3`. The packaged Codex worker launcher now passes
-`model_reasoning_effort="xhigh"` by default, supports explicit `--reasoning-effort` overrides,
-documents the policy in the packaged and source skills, and records the intentional
-`CONTRACTS.md` source-lock update.
-
-Verification completed for the xhigh worker default change:
-
-```text
-uv run --no-sync pytest tests/test_codex_plugin.py tests/test_simplified_contract.py -q
-18 passed
-
 uv run --no-sync python -B scripts/verify.py
 97 passed
 ```
 
-## Recent Durable Decisions
+## Planning Ledger
 
-- Product provenance is a target workspace contract.
-- Evidence may be structured in code before compact JSON storage.
-- Stale durable decisions from earlier stages are superseded by current source-of-truth docs,
-  current planning records, and `DECISIONS.md`.
+Active plan:
+
+- `plan-substrate-20260707`: `Goal Mode substrate pivot`
+
+Accepted task:
+
+- `task-align-substrate-docs-20260707`: aligned source contracts, skills, metadata, protected
+  hashes, planning ledger, handoff, and verification with the substrate branch plan.
+
+Ready next task:
+
+- `task-launch-packet-capture-20260707`: implement launch packet and verifier intent path/hash
+  capture before worker product mutation.
 
 ## Next Action
 
-No next action.
+Implement launch packet capture for `attempt-run`, including packet copy/hash, verifier intent
+hash, assignment metadata, recovery-state exposure, and focused tests.

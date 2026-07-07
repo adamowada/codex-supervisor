@@ -1,4 +1,4 @@
-"""Tiny public interface over the compact control-plane model."""
+"""Tiny public interface over the compact substrate model."""
 
 from __future__ import annotations
 

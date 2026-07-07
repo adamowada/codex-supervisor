@@ -372,6 +372,7 @@ def _recovery_state(
         ]
         if task
         else [],
+        "final_proof": _final_proof_state(task),
         "git_summary": git_summary,
         "warning_flags": list(
             _warning_flags(
@@ -382,6 +383,19 @@ def _recovery_state(
                 git_summary=git_summary,
             )
         ),
+    }
+
+
+def _final_proof_state(task: TaskRecord | None) -> dict[str, object]:
+    if task is None:
+        return {"task_id": None, "proves_task_ids": [], "status": None}
+    proves_task_ids = [
+        item.task_id for item in task.lineage if item.relation == "shipping_proof_of"
+    ]
+    return {
+        "task_id": task.task_id if proves_task_ids else None,
+        "proves_task_ids": proves_task_ids,
+        "status": task.status if proves_task_ids else None,
     }
 
 

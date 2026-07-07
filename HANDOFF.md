@@ -79,7 +79,7 @@ Full verification completed:
 
 ```text
 uv run --no-sync python -B scripts/verify.py
-106 passed
+108 passed
 ```
 
 ## Planning Ledger
@@ -111,12 +111,14 @@ Accepted tasks:
 - `task-linked-repair-20260707`: made blocked queue inspection surface repair-lineage guidance,
   allowed linked repair tasks to reactivate blocked plans through task intent, refreshed source
   locks, and verified the repo.
+- `task-shipping-proof-20260707`: exposed `shipping_proof_of` lineage as final proof recovery
+  state, kept final proof as generic task intent, refreshed source locks, and verified the repo.
 
 Ready next task:
 
-- `task-shipping-proof-20260707`: represent shipping and final proof as supervised task intent and
-  recovery evidence.
+- `task-warning-gates-20260707`: add warning flags and hard gates for missing packet, launch
+  metadata, unbacked product mutation, and final completion without proof.
 
 ## Next Action
 
-Implement final proof workflow for `task-shipping-proof-20260707`.
+Implement warning flags and hard gates for `task-warning-gates-20260707`.

@@ -39,6 +39,7 @@ The gate checks:
   exposes the latest digest;
 - focused coverage that blocked work surfaces linked repair guidance and linked repair task
   creation reactivates the plan;
+- focused coverage that `shipping_proof_of` lineage is exposed as final proof recovery state;
 - e2e coverage that installed-cache MCP queue inspection uses an explicit workspace ledger path
   instead of the source repository ledger;
 - e2e coverage that full AFK product follow-up mutation is assigned through another worker attempt,

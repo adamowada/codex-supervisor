@@ -84,12 +84,11 @@ def _check_suffixes(checks: tuple[str, ...], prefix: str) -> list[str]:
 def _warnings(checks: tuple[str, ...]) -> list[str]:
     warnings: list[str] = []
     for check in checks:
-        normalized = check.casefold()
         if (
             check.startswith("telemetry warning: ")
             or check.startswith("missing artifact: ")
             or check.startswith("verifier skipped: ")
-            or "warning" in normalized
+            or check.startswith("warning: ")
         ):
             warnings.append(check)
     return warnings

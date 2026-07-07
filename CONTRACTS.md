@@ -124,6 +124,9 @@ When a plan is blocked by rejected evidence, queue inspection may surface the bl
 `task-create --lineage repair_of=<task_id>` next transition. Creating that linked repair task
 reactivates the plan without adding a repair-specific supervisor mode.
 
+Final proof uses the same mechanism: a task with `shipping_proof_of` lineage is surfaced in
+recovery state as final proof for the linked task.
+
 ## Evidence Bundle
 
 An evidence bundle is the structured proof attached to a task or attempt.

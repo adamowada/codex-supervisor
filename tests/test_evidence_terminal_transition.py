@@ -9,7 +9,11 @@ from planning_db_factory import make_planning_db
 from codex_supervisor.attempt_store import AttemptStore
 from codex_supervisor.attempts import RunAttemptStatus
 from codex_supervisor.evidence import EvidenceEnvelope
-from codex_supervisor.evidence_digest import DIGEST_CHECK_PREFIX, parse_evidence_digest
+from codex_supervisor.evidence_digest import (
+    DIGEST_CHECK_PREFIX,
+    build_evidence_digest,
+    parse_evidence_digest,
+)
 from codex_supervisor.terminal_transition import terminalize_attempt
 
 
@@ -158,6 +162,25 @@ def test_terminalize_attempt_records_rejected_acceptance_decision(tmp_path: Path
     row = _acceptance_decision_row(db_path, "attempt-1")
     assert row["result"] == "rejected"
     assert json.loads(row["evaluation_json"])["accepted"] is False
+
+
+def test_evidence_digest_warning_detection_uses_warning_prefixes() -> None:
+    digest = build_evidence_digest(
+        summary="Summary.",
+        checks=(
+            "next-action: Implement warning flags later.",
+            "telemetry warning: could not write optional metadata",
+        ),
+        artifacts=(),
+        risks=(),
+        gaps=(),
+        next_actions=("Implement warning flags later.",),
+        review_evidence=(),
+        acceptance_rationale="Policy accepted terminal evidence.",
+        acceptance_evaluation={"accepted": True},
+    )
+
+    assert digest["warnings"] == ["telemetry warning: could not write optional metadata"]
 
 
 def _acceptance_decision_row(db_path: Path, attempt_id: str) -> sqlite3.Row:

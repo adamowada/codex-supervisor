@@ -179,6 +179,36 @@ def test_task_create_can_add_linked_repair_to_blocked_plan(tmp_path: Path) -> No
     assert queued.task["task_id"] == "task-repair"
 
 
+def test_queue_next_exposes_shipping_proof_lineage_as_final_proof(
+    tmp_path: Path,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("update tasks set status = 'blocked' where task_id = 'task-1'")
+    task_create(
+        db_path,
+        plan_id="plan-1",
+        plan_title="Plan",
+        plan_goal="Goal",
+        title="Shipping proof",
+        intent="Prove task-1 is ready to ship.",
+        assurance="high",
+        acceptance_criteria=("Final proof exists",),
+        lineage=({"relation": "shipping_proof_of", "task_id": "task-1"},),
+        task_id="task-proof",
+    )
+
+    result = queue_next(db_path)
+
+    assert result.task is not None
+    assert result.task["task_id"] == "task-proof"
+    assert result.recovery_state["final_proof"] == {
+        "task_id": "task-proof",
+        "proves_task_ids": ["task-1"],
+        "status": "ready",
+    }
+
+
 def test_task_create_reports_stored_plan(tmp_path: Path) -> None:
     db_path = make_planning_db(tmp_path)
 

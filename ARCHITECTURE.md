@@ -112,6 +112,8 @@ workflow-specific job types.
 
 When rejected evidence blocks a plan, queue inspection can surface the blocked task and suggest a
 linked repair task. Creating that task reactivates the plan through the same task-intent path.
+When a task has `shipping_proof_of` lineage, recovery state names it as final proof for the linked
+task.
 
 ### Interfaces
 

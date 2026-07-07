@@ -1,6 +1,6 @@
 {
   "name": "codex-supervisor",
-  "version": "0.2.0+codex.20260707175656",
+  "version": "0.2.0+codex.20260707212834",
   "description": "Codex Desktop wrapper for the durable Goal Mode substrate.",
   "author": {
     "name": "Adam Owada"

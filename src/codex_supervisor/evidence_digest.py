@@ -8,6 +8,7 @@ from pathlib import Path
 from codex_supervisor.evidence_artifacts import (
     is_stream_log_artifact,
     key_excerpt_entries,
+    log_summary_entries,
     log_warning_flags,
     primary_evidence_artifacts,
     raw_log_artifact_entries,
@@ -42,6 +43,7 @@ def build_evidence_digest(
         "artifacts": list(artifacts),
         "primary_artifacts": list(primary_evidence_artifacts(artifacts)),
         "raw_log_artifacts": raw_log_artifact_entries(artifacts),
+        "log_summaries": log_summary_entries(artifacts),
         "log_sizes": _log_sizes(artifacts),
         "key_excerpts": key_excerpt_entries(artifacts, limit=_MAX_LOG_TAILS),
         "important_tails": _important_tails(artifacts),

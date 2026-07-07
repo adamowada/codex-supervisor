@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from hashlib import sha256
 from pathlib import Path
 
 RAW_LOG_RETENTION_BYTES = 1_048_576
@@ -69,6 +70,29 @@ def raw_log_artifact_entries(artifacts: tuple[str, ...]) -> list[dict[str, objec
     return entries
 
 
+def log_summary_entries(artifacts: tuple[str, ...]) -> list[dict[str, object]]:
+    """Return deterministic summaries for raw stream logs."""
+
+    entries: list[dict[str, object]] = []
+    for artifact in artifacts:
+        path = Path(artifact)
+        if not is_stream_log_artifact(path) or not path.is_file():
+            continue
+        entries.append(
+            {
+                "path": artifact,
+                "stream": _stream_name(path),
+                "bytes": path.stat().st_size,
+                "sha256": _sha256_file(path),
+                "line_count": _line_count(path),
+                "first_excerpt": head_text(path),
+                "last_excerpt": tail_text(path),
+                "primary_evidence": False,
+            }
+        )
+    return entries
+
+
 def key_excerpt_entries(artifacts: tuple[str, ...], *, limit: int = 4) -> list[dict[str, object]]:
     """Return small excerpts Goal Mode can read instead of raw logs."""
 
@@ -121,6 +145,13 @@ def tail_text(path: Path) -> str:
         return handle.read().decode("utf-8", errors="replace")
 
 
+def head_text(path: Path) -> str:
+    """Read a small head excerpt from a text-ish artifact."""
+
+    with path.open("rb") as handle:
+        return handle.read(KEY_EXCERPT_BYTES).decode("utf-8", errors="replace")
+
+
 def _sample_text(path: Path) -> str:
     with path.open("rb") as handle:
         return handle.read(RAW_LOG_RETENTION_BYTES + 4096).decode(
@@ -144,3 +175,35 @@ def _looks_like_large_diff(sample: str) -> bool:
 def _is_supervisor_evidence_path(path: Path) -> bool:
     parts = {part.casefold() for part in path.parts}
     return ".codex-supervisor" in parts and "evidence" in parts
+
+
+def _sha256_file(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _line_count(path: Path) -> int:
+    count = 0
+    saw_content = False
+    last_byte = b""
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            if chunk:
+                saw_content = True
+                last_byte = chunk[-1:]
+                count += chunk.count(b"\n")
+    if saw_content and last_byte != b"\n":
+        count += 1
+    return count
+
+
+def _stream_name(path: Path) -> str:
+    name = path.name.casefold()
+    if "stderr" in name:
+        return "stderr"
+    if "stdout" in name:
+        return "stdout"
+    return "log"

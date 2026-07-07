@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 
+from codex_supervisor.evidence_artifacts import RAW_LOG_RETENTION_BYTES
 from codex_supervisor.small_interface import AttemptTransitionResult, attempt_transition
 from codex_supervisor.target_workspace import changed_product_paths
 
@@ -531,6 +532,7 @@ def _command_metadata(
     exit_code: int | None,
     timed_out: bool | None,
 ) -> dict[str, object]:
+    reasoning = _model_reasoning_metadata(command)
     return {
         "command": list(command),
         "workspace": str(workspace),
@@ -540,7 +542,8 @@ def _command_metadata(
         "attempt_id": attempt_id,
         "executor": executor,
         "launcher": command[0],
-        "model_reasoning_effort": _model_reasoning_effort(command),
+        "model_reasoning_effort": reasoning["effort"],
+        "model_reasoning_effort_source": reasoning["source"],
         "git_head": _git_head(workspace),
         "started_at": started_at,
         "exit_code": exit_code,
@@ -553,11 +556,36 @@ def _command_metadata(
 
 
 def _model_reasoning_effort(command: tuple[str, ...]) -> str | None:
+    return _model_reasoning_metadata(command)["effort"]
+
+
+def _model_reasoning_metadata(command: tuple[str, ...]) -> dict[str, str | None]:
     prefix = "model_reasoning_effort="
     for item in command:
         normalized = item.strip().strip("'\"")
         if normalized.startswith(prefix):
-            return normalized.removeprefix(prefix).strip("'\"")
+            return {
+                "effort": normalized.removeprefix(prefix).strip("'\""),
+                "source": "command_config",
+            }
+    if not _uses_packaged_worker_launcher(command):
+        return {"effort": None, "source": None}
+    explicit = _packaged_worker_launcher_reasoning_arg(command)
+    if explicit is not None:
+        return {"effort": explicit, "source": "launcher_argument"}
+    return {"effort": "xhigh", "source": "launcher_default"}
+
+
+def _uses_packaged_worker_launcher(command: tuple[str, ...]) -> bool:
+    return any(Path(item).name == "codex_worker_launcher.py" for item in command)
+
+
+def _packaged_worker_launcher_reasoning_arg(command: tuple[str, ...]) -> str | None:
+    for index, item in enumerate(command):
+        if item == "--reasoning-effort" and index + 1 < len(command):
+            return command[index + 1]
+        if item.startswith("--reasoning-effort="):
+            return item.removeprefix("--reasoning-effort=")
     return None
 
 
@@ -659,7 +687,7 @@ def _collect_process_pipe(
             chunk = pipe.readline()  # type: ignore[attr-defined]
             if not chunk:
                 break
-            output_parts.append(chunk)
+            _append_retained_output(output_parts, chunk)
             _append_output(output_path, chunk)
             liveness.mark_output()
     finally:
@@ -671,6 +699,14 @@ def _append_output(path: Path, chunk: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(text)
+
+
+def _append_retained_output(output_parts: list[bytes], chunk: bytes) -> None:
+    retained = sum(len(part) for part in output_parts)
+    remaining = RAW_LOG_RETENTION_BYTES - retained
+    if remaining <= 0:
+        return
+    output_parts.append(chunk[:remaining])
 
 
 def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:

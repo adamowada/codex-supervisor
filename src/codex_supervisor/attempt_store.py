@@ -209,7 +209,6 @@ class AttemptStore:
                 raise LookupError(f"unknown active plan {task.plan_id!r}")
             _validate_task_lineage_targets(
                 connection,
-                plan_id=task.plan_id,
                 task_id=task.task_id,
                 lineage=task.lineage,
             )
@@ -991,7 +990,6 @@ def _normalize_task_lineage(
 def _validate_task_lineage_targets(
     connection: sqlite3.Connection,
     *,
-    plan_id: str,
     task_id: str,
     lineage: tuple[TaskLineageRelation, ...],
 ) -> None:
@@ -1003,11 +1001,6 @@ def _validate_task_lineage_targets(
         if row is None:
             raise LookupError(
                 f"lineage target task {item.task_id!r} does not exist for {task_id!r}"
-            )
-        if row["plan_id"] != plan_id:
-            raise ValueError(
-                f"lineage target task {item.task_id!r} belongs to plan "
-                f"{row['plan_id']!r}, not {plan_id!r}"
             )
 
 

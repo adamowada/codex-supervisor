@@ -401,6 +401,10 @@ def test_accepted_non_final_task_keeps_plan_open_for_linked_follow_up(
     assert queued.plan is not None
     assert queued.plan["status"] == "active"
     assert queued.task is None
+    assert queued.latest_evidence is not None
+    assert queued.latest_evidence["attempt_id"] == "attempt-1"
+    assert queued.latest_acceptance is not None
+    assert queued.latest_acceptance["result"] == "accepted"
     assert queued.next_transition == (
         "active plan has no open task; suggested next: "
         "task-create --lineage review_of=task-1 | "
@@ -409,6 +413,8 @@ def test_accepted_non_final_task_keeps_plan_open_for_linked_follow_up(
     )
     assert queued.recovery_state["active_plan_id"] == "plan-1"
     assert queued.recovery_state["active_task_id"] is None
+    assert queued.recovery_state["latest_task_id"] == "task-1"
+    assert queued.recovery_state["latest_task_status"] == "done"
     assert queued.recovery_state["suggested_lineage_targets"] == [
         {
             "task_id": "task-1",
@@ -558,6 +564,82 @@ def test_task_create_reopens_legacy_done_plan_without_completion_proof(
 
     assert created.plan["status"] == "active"
     assert created.task["lineage"] == [{"relation": "repair_of", "task_id": "task-1"}]
+
+
+def test_task_create_allows_cross_plan_historical_lineage_after_completion(
+    tmp_path: Path,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        executor="manual",
+        status="running",
+        summary="Running task.",
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        status="succeeded",
+        summary="Task satisfied.",
+        checks=("Focused check passed.",),
+        artifacts=("artifact",),
+        acceptance_results={"Acceptance criterion": True},
+    )
+    task_create(
+        db_path,
+        plan_id="plan-1",
+        plan_title="Plan",
+        plan_goal="Goal",
+        title="Shipping proof",
+        intent="Prove task-1 is ready to ship.",
+        assurance="high",
+        acceptance_criteria=("Final proof exists",),
+        lineage=({"relation": "shipping_proof_of", "task_id": "task-1"},),
+        task_id="task-proof",
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-proof",
+        attempt_id="attempt-proof",
+        executor="manual",
+        status="running",
+        summary="Running proof.",
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-proof",
+        attempt_id="attempt-proof",
+        status="succeeded",
+        summary="Proof accepted.",
+        checks=("Final proof checked.",),
+        artifacts=("proof",),
+        acceptance_results={"Final proof exists": True},
+        risks=("No known residual risk.",),
+    )
+
+    created = task_create(
+        db_path,
+        plan_id="plan-follow-up",
+        plan_title="Follow-up repair",
+        plan_goal="Repair a defect found after the prior plan closed.",
+        title="Repair completed task",
+        intent="Repair the accepted task from the completed plan.",
+        assurance="medium",
+        acceptance_criteria=("Repair evidence exists",),
+        lineage=({"relation": "repair_of", "task_id": "task-1"},),
+        task_id="task-follow-up-repair",
+    )
+    queued = queue_next(db_path)
+
+    assert created.plan["plan_id"] == "plan-follow-up"
+    assert created.task["lineage"] == [{"relation": "repair_of", "task_id": "task-1"}]
+    assert queued.plan is not None
+    assert queued.plan["plan_id"] == "plan-follow-up"
+    assert queued.task is not None
+    assert queued.task["task_id"] == "task-follow-up-repair"
 
 
 def test_attempt_transition_can_retry_blocked_task_to_done(tmp_path: Path) -> None:

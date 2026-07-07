@@ -328,6 +328,156 @@ def test_attempt_run_copies_and_hashes_launch_packet_and_verifier_intent(
     }
 
 
+def test_attempt_run_records_packaged_launcher_default_reasoning(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / ".codex-supervisor" / "planning.sqlite3"
+    workspace = tmp_path / "launcher-metadata-project"
+    fake_launcher = workspace / "codex_worker_launcher.py"
+    fake_launcher.parent.mkdir(parents=True)
+    fake_launcher.write_text("print('fake packaged launcher ran')\n", encoding="utf-8")
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-launcher-metadata",
+        "--plan-title",
+        "Launcher metadata",
+        "--plan-goal",
+        "Record effective packaged worker reasoning metadata.",
+        "--task-id",
+        "task-launcher-metadata",
+        "--title",
+        "Run packaged launcher",
+        "--intent",
+        "Run a command shaped like the packaged worker launcher.",
+        "--assurance",
+        "medium",
+        "--acceptance",
+        "Launcher command succeeds",
+        "--json",
+    )
+
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-launcher-metadata",
+        "--attempt-id",
+        "attempt-launcher-metadata",
+        "--executor",
+        "worker-process",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--acceptance-result",
+        "pass",
+        "--json",
+        "--",
+        sys.executable,
+        "-B",
+        str(fake_launcher),
+    )
+
+    payload = json.loads(completed.stdout)
+    command = json.loads(Path(payload["command_path"]).read_text(encoding="utf-8"))
+
+    assert payload["exit_code"] == 0
+    assert command["model_reasoning_effort"] == "xhigh"
+    assert command["model_reasoning_effort_source"] == "launcher_default"
+
+
+def test_attempt_run_digest_summarizes_large_stderr(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / ".codex-supervisor" / "planning.sqlite3"
+    workspace = tmp_path / "large-stderr-project"
+    project_file = workspace / "result.txt"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-large-stderr",
+        "--plan-title",
+        "Large stderr",
+        "--plan-goal",
+        "Keep noisy stderr as audit material and read digest summaries first.",
+        "--task-id",
+        "task-large-stderr",
+        "--title",
+        "Emit noisy stderr",
+        "--intent",
+        "Run a worker that writes a large stderr stream and a valid artifact.",
+        "--assurance",
+        "medium",
+        "--acceptance",
+        "result.txt exists",
+        "--json",
+    )
+
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-large-stderr",
+        "--attempt-id",
+        "attempt-large-stderr",
+        "--executor",
+        "worker-process",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--artifact",
+        str(project_file),
+        "--acceptance-result",
+        "pass",
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        (
+            "import sys\n"
+            "from pathlib import Path\n"
+            "Path('result.txt').write_text('done\\n', encoding='utf-8')\n"
+            "sys.stderr.write('in-process app-server event stream lagged\\n')\n"
+            "sys.stderr.write('x' * 270000)\n"
+        ),
+    )
+
+    payload = json.loads(completed.stdout)
+    digest = payload["transition"]["evidence"]["digest"]
+    stderr_path = payload["stderr_path"]
+    stderr_bytes = Path(stderr_path).read_bytes()
+    stderr_summary = next(
+        item for item in digest["log_summaries"] if item["path"] == stderr_path
+    )
+
+    assert payload["exit_code"] == 0
+    assert stderr_summary["stream"] == "stderr"
+    assert stderr_summary["bytes"] == len(stderr_bytes)
+    assert stderr_summary["sha256"] == sha256(stderr_bytes).hexdigest()
+    assert stderr_summary["primary_evidence"] is False
+    assert "in-process app-server event stream lagged" in stderr_summary["first_excerpt"]
+    assert stderr_path not in digest["primary_artifacts"]
+    assert any(
+        warning.startswith("stderr_too_large: ") for warning in digest["warnings"]
+    )
+    assert any(
+        warning.startswith("app_server_lag_detected: ")
+        for warning in digest["warnings"]
+    )
+
+
 def test_missing_launch_packet_fails_before_attempt_starts(tmp_path: Path) -> None:
     db_path = tmp_path / ".codex-supervisor" / "planning.sqlite3"
     workspace = tmp_path / "missing-packet-project"

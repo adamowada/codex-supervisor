@@ -107,20 +107,32 @@ def queue_next(database_path: Path) -> QueueNextResult:
     if queued is None:
         active_plan = store.read_active_plan_without_open_task()
         if active_plan is not None:
+            latest_task = _latest_recovery_task(active_plan)
+            latest_evidence = (
+                store.read_latest_evidence(latest_task.task_id) if latest_task else None
+            )
+            latest_acceptance = (
+                store.read_latest_acceptance(latest_task.task_id) if latest_task else None
+            )
             return QueueNextResult(
                 plan=_active_plan_to_dict(active_plan),
                 task=None,
                 active_attempt=None,
-                latest_evidence=None,
-                latest_acceptance=None,
+                latest_evidence=_evidence_to_dict(latest_evidence)
+                if latest_evidence
+                else None,
+                latest_acceptance=_acceptance_to_dict(latest_acceptance)
+                if latest_acceptance
+                else None,
                 recovery_state=_recovery_state(
                     database_path,
                     plan=active_plan,
                     plan_status=None,
                     task=None,
+                    latest_task=latest_task,
                     active_attempt=None,
-                    latest_evidence=None,
-                    latest_acceptance=None,
+                    latest_evidence=latest_evidence,
+                    latest_acceptance=latest_acceptance,
                 ),
                 next_transition=_active_plan_without_open_task_transition(active_plan),
             )
@@ -135,6 +147,7 @@ def queue_next(database_path: Path) -> QueueNextResult:
                 plan=None,
                 plan_status=None,
                 task=None,
+                latest_task=None,
                 active_attempt=None,
                 latest_evidence=None,
                 latest_acceptance=None,
@@ -161,13 +174,14 @@ def queue_next(database_path: Path) -> QueueNextResult:
         ),
         recovery_state=_recovery_state(
             database_path,
-            plan=None,
-            plan_status=queued.plan_status,
-            task=task,
-            active_attempt=active_attempt,
-            latest_evidence=latest_evidence,
-            latest_acceptance=latest_acceptance,
-        ),
+        plan=None,
+        plan_status=queued.plan_status,
+        task=task,
+        latest_task=task,
+        active_attempt=active_attempt,
+        latest_evidence=latest_evidence,
+        latest_acceptance=latest_acceptance,
+    ),
         next_transition=_next_transition(task, active_attempt),
     )
 
@@ -379,6 +393,7 @@ def _recovery_state(
     plan: ActivePlanWorkState | None,
     plan_status: str | None,
     task: TaskRecord | None,
+    latest_task: TaskRecord | None,
     active_attempt: RunAttempt | None,
     latest_evidence: AttemptEvidence | None,
     latest_acceptance: AcceptanceDecision | None,
@@ -387,10 +402,14 @@ def _recovery_state(
     packet_hashes = _packet_hashes(latest_evidence)
     git_summary = _git_summary(database_path)
     active_plan_id = _active_plan_id(plan=plan, task=task)
+    lineage_task = task or latest_task
     return {
         "active_plan_id": active_plan_id,
         "active_plan_status": plan.plan_status if plan else plan_status,
         "active_task_id": task.task_id if task else None,
+        "latest_task": _task_to_dict(latest_task) if latest_task else None,
+        "latest_task_id": latest_task.task_id if latest_task else None,
+        "latest_task_status": latest_task.status if latest_task else None,
         "active_attempt_id": active_attempt.attempt_id if active_attempt else None,
         "liveness": liveness,
         "latest_evidence_bundle_id": (
@@ -406,12 +425,12 @@ def _recovery_state(
         "verifier_intent_sha256": packet_hashes["verifier_intent_sha256"],
         "lineage": [
             {"relation": item.relation, "task_id": item.task_id}
-            for item in task.lineage
+            for item in lineage_task.lineage
         ]
-        if task
+        if lineage_task
         else [],
         "suggested_lineage_targets": _suggested_lineage_targets(plan),
-        "final_proof": _final_proof_state(task),
+        "final_proof": _final_proof_state(task or latest_task),
         "git_summary": git_summary,
         "warning_flags": list(
             _warning_flags(
@@ -459,6 +478,13 @@ def _suggested_lineage_targets(
             }
         )
     return targets
+
+
+def _latest_recovery_task(plan: ActivePlanWorkState) -> TaskRecord | None:
+    for task in plan.tasks:
+        if task.status != "dropped":
+            return task
+    return None
 
 
 def _suggested_relations_for_task(task: TaskRecord) -> tuple[str, ...]:

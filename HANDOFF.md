@@ -79,7 +79,17 @@ Full verification completed:
 
 ```text
 uv run --no-sync python -B scripts/verify.py
-114 passed
+117 passed
+```
+
+Latest focused verification completed:
+
+```text
+$env:PYTHONPATH=(Get-Location).Path; uv run --no-sync pytest tests/test_small_interface.py tests/test_process_attempt_e2e.py tests/test_evidence_terminal_transition.py tests/test_planning_integrity_attempts.py tests/test_codex_plugin.py
+64 passed
+
+python C:\Users\adams\.codex\skills\.system\plugin-creator\scripts\validate_plugin.py plugins\codex-supervisor
+Plugin validation passed: C:\Users\adams\projects\codex-supervisor\plugins\codex-supervisor
 ```
 
 ## Planning Ledger
@@ -90,6 +100,7 @@ Active plan:
 
 Recently completed plans:
 
+- `substrate-hardening-20260707`: `Substrate hardening`
 - `plan-substrate-20260707`: `Goal Mode substrate pivot`
 - `plan-completion-proof-20260707`: `Plan completion proof semantics`
 
@@ -131,12 +142,19 @@ Accepted tasks:
   passed.
 - `task-plan-completion-final-proof-20260707`: recorded final proof for the completion-semantics
   correction with full verification, protected lock, planning integrity, and handoff evidence.
+- `task-substrate-hardening-20260707`: allowed cross-plan historical lineage, surfaced latest
+  evidence and acceptance for active plans with no open task, recorded effective packaged-launcher
+  reasoning metadata, added deterministic raw-log summaries to evidence digests, bumped the plugin
+  cachebuster, and verified the repo.
+- `task-substrate-hardening-proof-20260707`: recorded final proof for the substrate hardening work
+  with full verification, plugin validation, source ledger evidence, and handoff update.
 
 Ready next task:
 
-- None. `plan-substrate-20260707` and `plan-completion-proof-20260707` are complete.
+- None. `plan-substrate-20260707`, `plan-completion-proof-20260707`, and
+  `substrate-hardening-20260707` are complete.
 
 ## Next Action
 
-No next action. The substrate branch plan and completion-semantics correction are complete and ready
-for final ACP state.
+ACP the substrate hardening changes, then refresh the installed Codex Supervisor plugin cache from
+the bumped `0.2.0+codex.20260707212834` manifest.

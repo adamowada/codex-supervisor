@@ -425,11 +425,6 @@ def _check_task_lineage(
             target_plan_id = task_plans.get(target_task_id)
             if target_plan_id is None:
                 failures.append(f"{prefix} references missing task {target_task_id!r}")
-            elif target_plan_id != row["plan_id"]:
-                failures.append(
-                    f"{prefix} references task {target_task_id!r} in plan "
-                    f"{target_plan_id!r}, not {row['plan_id']!r}"
-                )
             key = (str(relation), target_task_id)
             if key in seen:
                 failures.append(f"{prefix} duplicates relation {relation!r} to {target_task_id!r}")

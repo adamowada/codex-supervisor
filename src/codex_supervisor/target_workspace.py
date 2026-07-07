@@ -7,10 +7,13 @@ import os
 import sqlite3
 import subprocess
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 
 SUPERVISOR_DIR = ".codex-supervisor"
 SUPERVISOR_IGNORE_ENTRY = ".codex-supervisor/"
+PRODUCT_SHA_CHECK_PREFIX = "product artifact sha256: "
+PRODUCT_DELETED_CHECK_PREFIX = "product artifact deleted: "
 
 
 @dataclass(frozen=True)
@@ -19,6 +22,45 @@ class LinkedWorktreeChanges:
 
     worktree: Path
     product_paths: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ProductProvenance:
+    """Current product state and accepted worker-backed proof for ACP."""
+
+    changed_product_paths: tuple[str, ...]
+    worker_backed_paths: tuple[str, ...]
+    unbacked_paths: tuple[str, ...]
+    linked_worktree_changes: tuple[LinkedWorktreeChanges, ...]
+    inspection_error: str | None = None
+
+
+def inspect_product_provenance(
+    workspace: Path,
+    *,
+    database_path: Path,
+) -> ProductProvenance:
+    """Return one product-provenance view for ACP and recovery checks."""
+
+    inspected_product_paths = changed_product_paths_or_none(workspace)
+    if inspected_product_paths is None:
+        product_paths = ()
+        inspection_error = "could not inspect git product changes"
+    else:
+        product_paths = inspected_product_paths
+        inspection_error = None
+    worker_backed_paths = worker_backed_product_paths(
+        workspace,
+        database_path=database_path,
+    )
+    backed = set(worker_backed_paths)
+    return ProductProvenance(
+        changed_product_paths=product_paths,
+        worker_backed_paths=worker_backed_paths,
+        unbacked_paths=tuple(path for path in product_paths if path not in backed),
+        linked_worktree_changes=linked_worktree_changes(workspace),
+        inspection_error=inspection_error,
+    )
 
 
 def is_git_worktree(workspace: Path) -> bool:
@@ -103,7 +145,8 @@ def worker_backed_product_paths(
         return ()
     with sqlite3.connect(database_path) as connection:
         rows = connection.execute(
-            """select evidence_bundles.artifacts_json,
+            """select evidence_bundles.checks_json,
+                      evidence_bundles.artifacts_json,
                       attempts.attempt_id,
                       attempts.task_id
                from evidence_bundles
@@ -116,7 +159,8 @@ def worker_backed_product_paths(
         ).fetchall()
 
     paths: set[str] = set()
-    for artifacts_json, attempt_id, task_id in rows:
+    for checks_json, artifacts_json, attempt_id, task_id in rows:
+        checks = json_string_array_or_empty(checks_json)
         artifacts = json_string_array_or_empty(artifacts_json)
         if not has_attempt_run_metadata(
             workspace,
@@ -127,7 +171,15 @@ def worker_backed_product_paths(
             continue
         for artifact in artifacts:
             normalized = artifact_to_workspace_relative(workspace, artifact)
-            if normalized is not None and is_product_path(normalized):
+            if (
+                normalized is not None
+                and is_product_path(normalized)
+                and product_path_matches_recorded_state(
+                    workspace,
+                    normalized,
+                    checks=checks,
+                )
+            ):
                 paths.add(normalized)
     return tuple(sorted(paths))
 
@@ -219,6 +271,7 @@ def has_attempt_run_metadata(
 def artifact_to_workspace_relative(workspace: Path, artifact: str) -> str | None:
     """Return an artifact path relative to the workspace when possible."""
 
+    workspace = workspace.resolve()
     artifact_path = Path(artifact)
     if artifact_path.is_absolute():
         try:
@@ -226,7 +279,59 @@ def artifact_to_workspace_relative(workspace: Path, artifact: str) -> str | None
         except ValueError:
             return None
         return relative.as_posix()
-    return normalize_relative_path(artifact)
+    try:
+        relative = (workspace / artifact_path).resolve().relative_to(workspace)
+    except ValueError:
+        return None
+    return normalize_relative_path(relative.as_posix())
+
+
+def product_artifact_state_checks(
+    workspace: Path,
+    product_paths: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Return durable content-state checks for worker-attributed product paths."""
+
+    checks: list[str] = []
+    for product_path in sorted({normalize_relative_path(path) for path in product_paths}):
+        if not is_product_path(product_path):
+            continue
+        path = workspace / product_path
+        if path.is_file():
+            payload = {
+                "path": product_path,
+                "sha256": _sha256_file(path),
+            }
+            checks.append(
+                PRODUCT_SHA_CHECK_PREFIX
+                + json.dumps(payload, sort_keys=True, separators=(",", ":"))
+            )
+            continue
+        if not path.exists():
+            payload = {"path": product_path}
+            checks.append(
+                PRODUCT_DELETED_CHECK_PREFIX
+                + json.dumps(payload, sort_keys=True, separators=(",", ":"))
+            )
+    return tuple(checks)
+
+
+def product_path_matches_recorded_state(
+    workspace: Path,
+    product_path: str,
+    *,
+    checks: tuple[str, ...],
+) -> bool:
+    """Return whether the current product path matches accepted worker evidence."""
+
+    normalized = normalize_relative_path(product_path)
+    recorded_hashes = _recorded_product_hashes(checks)
+    path = workspace / normalized
+    if path.is_file():
+        return recorded_hashes.get(normalized) == _sha256_file(path)
+    if not path.exists():
+        return normalized in _recorded_product_deletions(checks)
+    return False
 
 
 def _read_json_artifact(workspace: Path, relative_path: str) -> object | None:
@@ -264,6 +369,47 @@ def json_string_array_or_empty(raw_json: str) -> tuple[str, ...]:
     if not isinstance(values, list):
         return ()
     return tuple(value for value in values if isinstance(value, str))
+
+
+def _recorded_product_hashes(checks: tuple[str, ...]) -> dict[str, str]:
+    recorded: dict[str, str] = {}
+    for check in checks:
+        if not check.startswith(PRODUCT_SHA_CHECK_PREFIX):
+            continue
+        payload = _json_object(check.removeprefix(PRODUCT_SHA_CHECK_PREFIX))
+        path = payload.get("path")
+        digest = payload.get("sha256")
+        if isinstance(path, str) and isinstance(digest, str):
+            recorded[normalize_relative_path(path)] = digest
+    return recorded
+
+
+def _recorded_product_deletions(checks: tuple[str, ...]) -> set[str]:
+    recorded: set[str] = set()
+    for check in checks:
+        if not check.startswith(PRODUCT_DELETED_CHECK_PREFIX):
+            continue
+        payload = _json_object(check.removeprefix(PRODUCT_DELETED_CHECK_PREFIX))
+        path = payload.get("path")
+        if isinstance(path, str):
+            recorded.add(normalize_relative_path(path))
+    return recorded
+
+
+def _json_object(raw_json: str) -> dict[str, object]:
+    try:
+        value = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _sha256_file(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def run_git(workspace: Path, *args: str) -> subprocess.CompletedProcess[str] | None:

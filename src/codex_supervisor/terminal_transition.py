@@ -13,6 +13,7 @@ from codex_supervisor.attempts import (
 )
 from codex_supervisor.evidence import EvidenceEnvelope
 from codex_supervisor.evidence_digest import build_evidence_digest, encode_evidence_digest
+from codex_supervisor.lifecycle import terminal_task_status
 from codex_supervisor.policy import (
     AcceptanceEvaluation,
     AttemptRecord,
@@ -66,10 +67,9 @@ def terminalize_attempt(
         ),
         policy_evidence,
     )
-    task_status = (
-        "done"
-        if status is RunAttemptStatus.SUCCEEDED and evaluation.accepted
-        else "blocked"
+    task_status = terminal_task_status(
+        attempt_status=status,
+        accepted=evaluation.accepted,
     )
     acceptance_result = "accepted" if task_status == "done" else "rejected"
     acceptance_rationale = _acceptance_rationale(evaluation)

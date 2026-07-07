@@ -22,6 +22,10 @@ from codex_supervisor.attempts import (
     validate_attempt_timestamps,
     validate_attempt_transition,
 )
+from codex_supervisor.lifecycle import (
+    should_prepare_blocked_task_for_attempt,
+    should_reactivate_plan_for_new_task,
+)
 from codex_supervisor.policy import normalize_assurance
 
 VALID_TASK_LINEAGE_RELATIONS = frozenset(
@@ -222,12 +226,12 @@ class AttemptStore:
                    where plan_id = ?""",
                 (normalized_plan_id,),
             ).fetchone()
-            if existing is not None and (
-                existing["status"] == "blocked"
-                or (
-                    existing["status"] == "done"
-                    and not _plan_has_durable_completion(connection, normalized_plan_id)
-                )
+            if existing is not None and should_reactivate_plan_for_new_task(
+                plan_status=str(existing["status"]),
+                has_durable_completion=_plan_has_durable_completion(
+                    connection,
+                    normalized_plan_id,
+                ),
             ):
                 connection.execute(
                     "update plans set status = 'active', updated_at = ? where plan_id = ?",
@@ -952,7 +956,10 @@ class AttemptStore:
         plan_status = row["plan_status"]
         if plan_status == "active" and task_status == "ready":
             return
-        if plan_status == "blocked" and task_status == "blocked":
+        if should_prepare_blocked_task_for_attempt(
+            plan_status=plan_status,
+            task_status=task_status,
+        ):
             connection.execute(
                 "update plans set status = 'active', updated_at = ? where plan_id = ?",
                 (updated_at, row["plan_id"]),

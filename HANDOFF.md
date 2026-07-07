@@ -79,14 +79,14 @@ Full verification completed:
 
 ```text
 uv run --no-sync python -B scripts/verify.py
-130 passed
+139 passed
 ```
 
 Latest focused verification completed:
 
 ```text
-$env:PYTHONPATH=(Get-Location).Path + ';' + (Join-Path (Get-Location) 'src'); uv run --no-sync pytest tests/test_target_workspace.py tests/test_acp_gate_e2e.py tests/test_small_interface.py tests/test_policy.py tests/test_planning_integrity_attempts.py tests/test_attempt_store.py tests/test_process_attempt_e2e.py::test_attempt_run_digest_summarizes_large_stderr tests/test_codex_plugin.py::test_plugin_cli_launcher_ignores_worker_path_args_for_workspace_default tests/test_codex_plugin.py::test_installed_cache_mcp_launcher_prefers_marketplace_source_over_cwd -q -p no:cacheprovider
-72 passed
+uv run --no-sync pytest tests/test_lifecycle.py tests/test_target_workspace.py tests/test_acp_gate_e2e.py tests/test_process_attempt_e2e.py tests/test_adapter_contracts.py -q
+43 passed
 
 uv run --no-sync ruff check
 All checks passed!
@@ -94,8 +94,11 @@ All checks passed!
 python C:\Users\adams\.codex\skills\.system\plugin-creator\scripts\validate_plugin.py plugins\codex-supervisor
 Plugin validation passed: C:\Users\adams\projects\codex-supervisor\plugins\codex-supervisor
 
+uv run --no-sync pytest tests/test_codex_plugin.py -q
+16 passed
+
 codex plugin add codex-supervisor@codex-supervisor-local
-Installed plugin root: C:\Users\adams\.codex\plugins\cache\codex-supervisor-local\codex-supervisor\0.2.0+codex.20260707223857
+Installed plugin root: C:\Users\adams\.codex\plugins\cache\codex-supervisor-local\codex-supervisor\0.2.0+codex.20260707232244
 ```
 
 ## Planning Ledger
@@ -106,6 +109,9 @@ Active plan:
 
 Recently completed plans:
 
+- `plan-plugin-cache-refresh-complexity-drift-20260707`: `Plugin cache refresh after complexity
+  drift fixes`
+- `plan-complexity-drift-fixes-20260707`: `Complexity drift fixes`
 - `plan-plugin-cache-refresh-20260707`: `Plugin cache refresh`
 - `plan-accepted-provenance-hardening-20260707`: `Accepted provenance hardening`
 - `substrate-hardening-20260707`: `Substrate hardening`
@@ -167,6 +173,18 @@ Accepted tasks:
   `0.2.0+codex.20260707223857`, validated the package, and verified the repo.
 - `task-plugin-cache-refresh-proof-20260707`: recorded final proof for the plugin cachebuster
   source update before installing the refreshed Codex cache.
+- `task-complexity-drift-fixes-20260707`: centralized product provenance inspection, added
+  current product-state proof for ACP, extracted lifecycle policy helpers, bounded verifier
+  stdout/stderr retention, declared the active CLI/MCP/plugin/worker surfaces, hardened
+  outside-workspace artifacts, marked the old follow-up-plan insight superseded, and verified the
+  repo.
+- `task-complexity-drift-fixes-proof-20260707`: recorded final proof for the complexity drift
+  fixes with focused tests, Ruff, full verification, and planning integrity.
+- `task-plugin-cache-refresh-complexity-drift-20260707`: bumped the plugin source manifest to
+  `0.2.0+codex.20260707232244`, validated the package, ran plugin tests, and installed the local
+  Codex plugin cache.
+- `task-plugin-cache-refresh-complexity-drift-proof-20260707`: recorded final proof for the
+  refreshed plugin cache before final ACP.
 
 Ready next task:
 
@@ -177,5 +195,5 @@ Ready next task:
 ## Next Action
 
 No source task is ready. The accepted-provenance hardening is verified, recorded in the planning
-ledger, and the installed Codex Supervisor plugin cache has been refreshed from
-`0.2.0+codex.20260707223857`.
+ledger, the complexity drift fixes are verified and recorded, and the installed Codex Supervisor
+plugin cache has been refreshed to `0.2.0+codex.20260707232244`.

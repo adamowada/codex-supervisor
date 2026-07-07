@@ -483,6 +483,111 @@ def test_attempt_run_digest_summarizes_large_stderr(
     )
 
 
+def test_attempt_run_digest_summarizes_large_verifier_stderr(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / ".codex-supervisor" / "planning.sqlite3"
+    workspace = tmp_path / "large-verifier-stderr-project"
+    project_file = workspace / "result.txt"
+    verifier_file = workspace / ".codex-supervisor" / "verify.py"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-large-verifier-stderr",
+        "--plan-title",
+        "Large verifier stderr",
+        "--plan-goal",
+        "Keep noisy verifier stderr as audit material and read digest summaries first.",
+        "--task-id",
+        "task-large-verifier-stderr",
+        "--title",
+        "Emit noisy verifier stderr",
+        "--intent",
+        "Run a worker with a verifier that emits a large stderr stream.",
+        "--assurance",
+        "medium",
+        "--acceptance",
+        "result.txt exists",
+        "--json",
+    )
+    _write_text_verifier(
+        verifier_file,
+        (
+            "import sys\n"
+            "if not Path('result.txt').is_file():\n"
+            "    raise SystemExit(3)\n"
+            "sys.stderr.write('in-process app-server event stream lagged\\n')\n"
+            "sys.stderr.write('v' * 1200000)\n"
+        ),
+    )
+
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-large-verifier-stderr",
+        "--attempt-id",
+        "attempt-large-verifier-stderr",
+        "--executor",
+        "worker-process",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--artifact",
+        str(project_file),
+        "--verify-command",
+        _shell_command((sys.executable, "-B", str(verifier_file))),
+        "--acceptance-result",
+        "pass",
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        "from pathlib import Path; Path('result.txt').write_text('done\\n', encoding='utf-8')",
+    )
+
+    payload = json.loads(completed.stdout)
+    digest = payload["transition"]["evidence"]["digest"]
+    verifier_stderr_path = payload["verifier_stderr_path"]
+    verifier_stderr_bytes = Path(verifier_stderr_path).read_bytes()
+    verifier_stderr_summary = next(
+        item
+        for item in digest["log_summaries"]
+        if item["path"] == verifier_stderr_path
+    )
+
+    assert payload["exit_code"] == 0
+    assert payload["verifier_exit_code"] == 0
+    assert len(verifier_stderr_bytes) < 1200000
+    assert verifier_stderr_summary["stream"] == "stderr"
+    assert verifier_stderr_summary["bytes"] == len(verifier_stderr_bytes)
+    assert verifier_stderr_summary["sha256"] == sha256(
+        verifier_stderr_bytes
+    ).hexdigest()
+    assert verifier_stderr_summary["primary_evidence"] is False
+    assert "in-process app-server event stream lagged" in verifier_stderr_summary[
+        "first_excerpt"
+    ]
+    assert verifier_stderr_path not in digest["primary_artifacts"]
+    assert any(
+        warning.startswith("stderr_too_large: ") for warning in digest["warnings"]
+    )
+    assert any(
+        warning.startswith("app_server_lag_detected: ")
+        for warning in digest["warnings"]
+    )
+    assert any(
+        warning.startswith("raw_log_truncated: ")
+        for warning in digest["warnings"]
+    )
+
+
 def test_missing_launch_packet_fails_before_attempt_starts(tmp_path: Path) -> None:
     db_path = tmp_path / ".codex-supervisor" / "planning.sqlite3"
     workspace = tmp_path / "missing-packet-project"
@@ -1451,6 +1556,72 @@ def test_missing_declared_artifact_blocks_supplied_passing_acceptance(
     ]
     assert f"missing artifact: {missing_artifact}" in checks
     assert "acceptance: missing.txt exists = fail" in checks
+    assert _planning_integrity_failures(db_path) == ()
+
+
+def test_outside_declared_artifact_blocks_supplied_passing_acceptance(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "planning.sqlite3"
+    workspace = tmp_path / "outside-artifact-project"
+    outside_artifact = tmp_path / "outside.txt"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-outside-artifact",
+        "--plan-title",
+        "Outside artifact",
+        "--plan-goal",
+        "Reject artifacts outside the worker workspace.",
+        "--task-id",
+        "task-outside-artifact",
+        "--title",
+        "Reject outside artifact",
+        "--intent",
+        "Run a worker while declaring an artifact outside the workspace.",
+        "--assurance",
+        "medium",
+        "--acceptance",
+        "outside artifact is valid",
+        "--json",
+    )
+    outside_artifact.write_text("outside\n", encoding="utf-8")
+
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-outside-artifact",
+        "--attempt-id",
+        "attempt-outside-artifact",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--artifact",
+        str(outside_artifact),
+        "--acceptance-result",
+        "outside artifact is valid=pass",
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        "print('worker did not create an outside artifact')",
+    )
+
+    payload = json.loads(completed.stdout)
+    checks = payload["transition"]["evidence"]["checks"]
+    artifacts = payload["transition"]["evidence"]["artifacts"]
+
+    assert payload["transition"]["task_status"] == "blocked"
+    assert str(outside_artifact) not in artifacts
+    assert f"missing artifact: {outside_artifact}" in checks
+    assert "acceptance: outside artifact is valid = fail" in checks
     assert _planning_integrity_failures(db_path) == ()
 
 

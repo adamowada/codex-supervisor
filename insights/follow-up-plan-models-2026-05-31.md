@@ -2,13 +2,21 @@
 
 Date: 2026-05-31
 
+Status: superseded by the `feature/substrate` model.
+
+Superseding note, 2026-07-07: the active substrate contract now keeps accepted task completion
+separate from plan completion. Follow-up work uses generic task lineage (`review_of`, `repair_of`,
+`retry_of`, `shipping_proof_of`) and remains in the same active plan when the user-level goal is not
+durably complete. Final proof or an explicit unsupervised completion exception closes the plan.
+This file remains as historical design context, not current guidance.
+
 ## Context
 
 Live factory smoke tests showed a real design question: after an autonomous worker completes a task
 and the supervisor later discovers more product work, where should that follow-up live?
 
-The current behavior is Model A: create new task intent, usually in a new plan, and assign the work
-through another `attempt-run`. Keep this behavior for now.
+The behavior at the time was Model A: create new task intent, usually in a new plan, and assign the
+work through another `attempt-run`.
 
 ## Model A: Follow-Up Work Becomes A New Plan
 
@@ -76,9 +84,11 @@ Why not implement it now:
 Model C is the likely long-term candidate if `codex-supervisor` needs richer factory reporting or
 human-facing project dashboards.
 
-## Decision
+## Historical Decision
 
-Keep Model A. Do not add plan reactivation or explicit plan closure yet.
+At the time, the project kept Model A and did not add plan reactivation or explicit plan closure.
+That decision has been superseded by the substrate branch's linked follow-up and final-proof
+contract.
 
 The current priority is a compact, inspectable, testable factory loop:
 

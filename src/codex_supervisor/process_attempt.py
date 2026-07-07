@@ -22,6 +22,7 @@ from codex_supervisor.target_workspace import (
     artifact_to_workspace_relative,
     changed_product_paths_or_none,
     is_product_path,
+    product_artifact_state_checks,
 )
 
 _TEXT_CAPTURE = {
@@ -303,13 +304,19 @@ def run_process_attempt(
                 terminal_summary = f"{terminal_summary} Could not start verifier: {exc}."
 
         if verifier_stdout_path is not None:
-            verifier_stdout_error = _write_text(verifier_stdout_path, verifier_stdout)
+            verifier_stdout_error = _write_retained_text_output(
+                verifier_stdout_path,
+                verifier_stdout,
+            )
             if verifier_stdout_error is not None:
                 telemetry_errors.append(
                     f"could not write verifier stdout metadata: {verifier_stdout_error}"
                 )
         if verifier_stderr_path is not None:
-            verifier_stderr_error = _write_text(verifier_stderr_path, verifier_stderr)
+            verifier_stderr_error = _write_retained_text_output(
+                verifier_stderr_path,
+                verifier_stderr,
+            )
             if verifier_stderr_error is not None:
                 telemetry_errors.append(
                     f"could not write verifier stderr metadata: {verifier_stderr_error}"
@@ -360,6 +367,11 @@ def run_process_attempt(
         workspace=workspace,
         preexisting_product_paths=preexisting_product_paths,
     )
+    worker_product_paths = _worker_attributed_product_paths(
+        attributed_declared_artifacts,
+        workspace=workspace,
+    )
+    product_state_paths = _unique_strings((*worker_product_paths, *git_product_artifacts))
     recorded_artifacts = _unique_strings(
         (
             str(command_path),
@@ -399,6 +411,7 @@ def run_process_attempt(
             else ()
         ),
         *(f"git changed product path: {artifact}" for artifact in git_product_artifacts),
+        *product_artifact_state_checks(workspace, product_state_paths),
         *(
             f"preexisting product path not attributed to worker: {artifact}"
             for artifact in preexisting_product_warnings
@@ -900,6 +913,21 @@ def _write_text(path: Path, content: str) -> str | None:
     return None
 
 
+def _write_retained_text_output(path: Path, content: str) -> str | None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        encoded = content.encode("utf-8", errors="replace")
+        if len(encoded) <= RAW_LOG_RETENTION_BYTES:
+            path.write_bytes(encoded)
+            return None
+        notice = raw_log_truncation_notice(stream_name=path.name)
+        retained_limit = max(0, RAW_LOG_RETENTION_BYTES - len(notice))
+        path.write_bytes(encoded[:retained_limit] + notice)
+    except OSError as exc:
+        return str(exc)
+    return None
+
+
 def _missing_declared_artifacts(
     artifacts: tuple[str, ...],
     *,
@@ -907,8 +935,11 @@ def _missing_declared_artifacts(
 ) -> tuple[str, ...]:
     missing: list[str] = []
     for artifact in artifacts:
-        artifact_path = Path(artifact)
-        candidate = artifact_path if artifact_path.is_absolute() else workspace / artifact_path
+        relative = artifact_to_workspace_relative(workspace, artifact)
+        if relative is None:
+            missing.append(artifact)
+            continue
+        candidate = workspace / relative
         if not candidate.exists():
             missing.append(artifact)
     return tuple(missing)
@@ -923,14 +954,28 @@ def _worker_attributed_declared_artifacts(
     attributed: list[str] = []
     for artifact in artifacts:
         relative = artifact_to_workspace_relative(workspace, artifact)
+        if relative is None:
+            continue
         if (
-            relative is not None
-            and is_product_path(relative)
+            is_product_path(relative)
             and relative in preexisting_product_paths
         ):
             continue
         attributed.append(artifact)
     return tuple(attributed)
+
+
+def _worker_attributed_product_paths(
+    artifacts: tuple[str, ...],
+    *,
+    workspace: Path,
+) -> tuple[str, ...]:
+    product_paths: list[str] = []
+    for artifact in artifacts:
+        relative = artifact_to_workspace_relative(workspace, artifact)
+        if relative is not None and is_product_path(relative):
+            product_paths.append(relative)
+    return tuple(product_paths)
 
 
 def _unique_strings(items: tuple[str, ...]) -> tuple[str, ...]:

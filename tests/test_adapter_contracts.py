@@ -32,3 +32,29 @@ def test_mcp_surface_contains_declared_queue_operation() -> None:
     tool_names = {tool["name"] for tool in list_mcp_tools()}
 
     assert tool_names == {"codex_supervisor.queue_next"}
+
+
+def test_declared_adapter_surfaces_match_active_contract() -> None:
+    contracts = {contract.name: contract for contract in ADAPTER_OPERATION_CONTRACTS}
+
+    assert set(contracts) == {
+        "cli_task_create",
+        "cli_attempt_transition",
+        "cli_attempt_run",
+        "cli_queue_next",
+        "mcp_queue_next",
+        "plugin_cli_forwarder",
+        "plugin_mcp_stdio",
+        "worker_launcher",
+    }
+    assert {contract.surface for contract in contracts.values()} == {
+        "cli",
+        "mcp",
+        "plugin",
+        "worker",
+    }
+    assert (
+        "workflow engine"
+        in contracts["plugin_cli_forwarder"].operator_value.casefold()
+    )
+    assert "attempt-run" in contracts["worker_launcher"].attempt_behavior

@@ -38,6 +38,7 @@ def build_evidence_digest(
         "process_exit_code": _first_check_suffix(checks, "process exit code: "),
         "verifier_exit_code": _first_check_suffix(checks, "verifier exit code: "),
         "changed_files": _check_suffixes(checks, "git changed product path: "),
+        "product_state": _product_state(checks),
         "warnings": _unique_strings((*_warnings(checks), *log_warning_flags(artifacts))),
         "artifact_count": len(artifacts),
         "artifacts": list(artifacts),
@@ -105,6 +106,31 @@ def _warnings(checks: tuple[str, ...]) -> list[str]:
         ):
             warnings.append(check)
     return warnings
+
+
+def _product_state(checks: tuple[str, ...]) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    for check in checks:
+        if check.startswith("product artifact sha256: "):
+            payload = _json_object(check.removeprefix("product artifact sha256: "))
+            path = payload.get("path")
+            digest = payload.get("sha256")
+            if isinstance(path, str) and isinstance(digest, str):
+                entries.append({"path": path, "sha256": digest, "state": "present"})
+        elif check.startswith("product artifact deleted: "):
+            payload = _json_object(check.removeprefix("product artifact deleted: "))
+            path = payload.get("path")
+            if isinstance(path, str):
+                entries.append({"path": path, "state": "deleted"})
+    return entries
+
+
+def _json_object(raw_json: str) -> dict[str, object]:
+    try:
+        value = json.loads(raw_json)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _log_sizes(artifacts: tuple[str, ...]) -> list[dict[str, object]]:

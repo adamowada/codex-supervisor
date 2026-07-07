@@ -10,14 +10,12 @@ from pathlib import Path
 from codex_supervisor.target_workspace import (
     SUPERVISOR_DIR,
     artifact_to_workspace_relative,
-    changed_product_paths_or_none,
     git_check_ignore,
     has_attempt_run_metadata,
+    inspect_product_provenance,
     is_git_worktree,
     is_product_path,
-    linked_worktree_changes,
     tracked_supervisor_paths,
-    worker_backed_product_paths,
 )
 
 
@@ -62,26 +60,19 @@ def check_target_workspace_acp_gate(
     if tracked_supervisor:
         failures.append(".codex-supervisor has tracked paths: " + "\n".join(tracked_supervisor))
 
-    inspected_product_paths = changed_product_paths_or_none(workspace)
-    if inspected_product_paths is None:
-        failures.append("could not inspect git product changes")
-        product_paths = ()
-    else:
-        product_paths = inspected_product_paths
-    worker_backed_paths = worker_backed_product_paths(
+    provenance = inspect_product_provenance(
         workspace,
         database_path=database_path,
     )
-    missing_evidence = tuple(
-        path for path in product_paths if path not in set(worker_backed_paths)
-    )
-    if missing_evidence:
+    if provenance.inspection_error is not None:
+        failures.append(provenance.inspection_error)
+    if provenance.unbacked_paths:
         failures.append(
             "product paths lack accepted attempt-run worker evidence: "
-            + ", ".join(missing_evidence)
+            + ", ".join(provenance.unbacked_paths)
         )
     warnings.extend(_substrate_warnings(workspace, database_path=database_path))
-    for linked in linked_worktree_changes(workspace):
+    for linked in provenance.linked_worktree_changes:
         failures.append(
             f"linked worktree has unintegrated product changes: "
             f"{linked.worktree}: {', '.join(linked.product_paths)}"
@@ -91,8 +82,8 @@ def check_target_workspace_acp_gate(
         ok=not failures,
         failures=tuple(failures),
         warnings=tuple(warnings),
-        changed_product_paths=product_paths,
-        worker_backed_paths=worker_backed_paths,
+        changed_product_paths=provenance.changed_product_paths,
+        worker_backed_paths=provenance.worker_backed_paths,
     )
 
 

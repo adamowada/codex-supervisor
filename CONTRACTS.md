@@ -144,7 +144,7 @@ next actions, review evidence, command references, packet references, and digest
 encoded into those fields. Terminal acceptance is stored as a separate decision row linked to the
 evidence bundle instead of being inferred from check strings.
 
-Evidence digests summarize raw logs and artifacts for Goal Mode recovery. Digests should include
+Evidence digests summarize raw logs and artifacts for Goal Mode recovery. Digests include
 verifier result, changed files, declared artifacts, warnings, log sizes, important tails,
 risk/gap/next-action notes, and acceptance rationale.
 

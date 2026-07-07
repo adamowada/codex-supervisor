@@ -35,6 +35,8 @@ The gate checks:
   inspection;
 - focused coverage that queue inspection and MCP expose latest acceptance, recovery identifiers,
   packet hashes, git summary, and warning flags;
+- focused coverage that terminal evidence records compact evidence digests and recovery state
+  exposes the latest digest;
 - e2e coverage that installed-cache MCP queue inspection uses an explicit workspace ledger path
   instead of the source repository ledger;
 - e2e coverage that full AFK product follow-up mutation is assigned through another worker attempt,
@@ -60,7 +62,6 @@ The gate checks:
 Next tests should cover:
 
 - launch-time `command.json` coverage for failed attempts;
-- evidence digest generation and raw log preservation;
 - warnings before hard gates for missing packet, missing launch metadata, unbacked product mutation,
   and final completion without proof.
 

@@ -9,6 +9,7 @@ from planning_db_factory import make_planning_db
 from codex_supervisor.attempt_store import AttemptStore
 from codex_supervisor.attempts import RunAttemptStatus
 from codex_supervisor.evidence import EvidenceEnvelope
+from codex_supervisor.evidence_digest import DIGEST_CHECK_PREFIX, parse_evidence_digest
 from codex_supervisor.terminal_transition import terminalize_attempt
 
 
@@ -88,12 +89,21 @@ def test_terminalize_attempt_owns_acceptance_and_persistence(tmp_path: Path) -> 
         {"criterion": "Acceptance criterion", "status": "pass"}
     ]
     assert result.attempt.status is RunAttemptStatus.SUCCEEDED
-    assert result.evidence.checks == (
+    assert result.evidence.checks[:4] == (
         "README.md exists",
         "acceptance: Acceptance criterion = pass",
         "risk: No known residual risk.",
         "review: Reviewer inspected README.md.",
     )
+    assert result.evidence.checks[-1].startswith(DIGEST_CHECK_PREFIX)
+    digest = parse_evidence_digest(result.evidence.checks)
+    assert digest is not None
+    assert digest["summary"] == "Worker succeeded."
+    assert digest["artifacts"] == ["README.md"]
+    assert digest["risks"] == ["No known residual risk."]
+    assert digest["acceptance"]["accepted"] is True
+    assert digest["acceptance"]["rationale"] == "Policy accepted terminal evidence."
+    assert digest["raw_artifacts_preserved"] is True
     assert store.read_task("task-1").status == "done"
 
     row = _acceptance_decision_row(db_path, "attempt-1")

@@ -85,6 +85,7 @@ def test_queue_next_surfaces_latest_acceptance_and_recovery_state(
 
     assert result.latest_evidence is not None
     assert result.latest_evidence["attempt_id"] == "attempt-1"
+    assert result.latest_evidence["digest"]["acceptance"]["accepted"] is False
     assert result.latest_acceptance is not None
     assert result.latest_acceptance["attempt_id"] == "attempt-1"
     assert result.latest_acceptance["result"] == "rejected"
@@ -102,6 +103,7 @@ def test_queue_next_surfaces_latest_acceptance_and_recovery_state(
         result.recovery_state["verifier_intent_sha256"]
         == "2222222222222222222222222222222222222222222222222222222222222222"
     )
+    assert result.recovery_state["latest_evidence_digest"] == result.latest_evidence["digest"]
 
 
 def test_task_create_reports_stored_plan(tmp_path: Path) -> None:

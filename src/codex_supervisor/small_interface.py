@@ -23,6 +23,7 @@ from codex_supervisor.attempts import (
     normalize_attempt_status,
 )
 from codex_supervisor.evidence import EvidenceEnvelope
+from codex_supervisor.evidence_digest import parse_evidence_digest
 from codex_supervisor.policy import AcceptanceEvaluation
 from codex_supervisor.terminal_transition import terminalize_attempt
 
@@ -312,6 +313,7 @@ def _evidence_to_dict(evidence: AttemptEvidence) -> dict[str, object]:
         "checks": list(evidence.checks),
         "artifacts": list(evidence.artifacts),
         "created_at": evidence.created_at,
+        "digest": parse_evidence_digest(evidence.checks),
     }
 
 
@@ -358,6 +360,9 @@ def _recovery_state(
         ),
         "latest_acceptance_decision_id": (
             latest_acceptance.decision_id if latest_acceptance else None
+        ),
+        "latest_evidence_digest": (
+            parse_evidence_digest(latest_evidence.checks) if latest_evidence else None
         ),
         "launch_packet_sha256": packet_hashes["launch_packet_sha256"],
         "verifier_intent_sha256": packet_hashes["verifier_intent_sha256"],

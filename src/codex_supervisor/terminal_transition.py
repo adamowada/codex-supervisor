@@ -12,6 +12,7 @@ from codex_supervisor.attempts import (
     RunAttemptStatus,
 )
 from codex_supervisor.evidence import EvidenceEnvelope
+from codex_supervisor.evidence_digest import build_evidence_digest, encode_evidence_digest
 from codex_supervisor.policy import (
     AcceptanceEvaluation,
     AttemptRecord,
@@ -71,6 +72,25 @@ def terminalize_attempt(
         else "blocked"
     )
     acceptance_result = "accepted" if task_status == "done" else "rejected"
+    acceptance_rationale = _acceptance_rationale(evaluation)
+    acceptance_evaluation = _acceptance_evaluation_payload(
+        task=task,
+        attempt_status=status,
+        evidence=evidence,
+        evaluation=evaluation,
+    )
+    storage_checks = evidence.storage_checks()
+    evidence_digest = build_evidence_digest(
+        summary=summary,
+        checks=storage_checks,
+        artifacts=artifacts,
+        risks=evidence.risks,
+        gaps=evidence.gaps,
+        next_actions=evidence.next_actions,
+        review_evidence=evidence.review_evidence,
+        acceptance_rationale=acceptance_rationale,
+        acceptance_evaluation=acceptance_evaluation,
+    )
     attempt, persisted_evidence, decision = store.finalize_attempt(
         attempt_id,
         task_id=task.task_id,
@@ -78,17 +98,12 @@ def terminalize_attempt(
         summary=summary,
         task_status=task_status,
         assurance=task.assurance,
-        checks=evidence.storage_checks(),
+        checks=(*storage_checks, encode_evidence_digest(evidence_digest)),
         artifacts=artifacts,
         acceptance_actor="codex-supervisor-policy",
         acceptance_result=acceptance_result,
-        acceptance_rationale=_acceptance_rationale(evaluation),
-        acceptance_evaluation=_acceptance_evaluation_payload(
-            task=task,
-            attempt_status=status,
-            evidence=evidence,
-            evaluation=evaluation,
-        ),
+        acceptance_rationale=acceptance_rationale,
+        acceptance_evaluation=acceptance_evaluation,
     )
     return TerminalTransitionResult(
         attempt=attempt,

@@ -105,11 +105,15 @@ Accepted tasks:
 - `task-recovery-state-20260707`: added latest acceptance reads, compact `recovery_state` output
   through CLI and MCP, liveness file age when available, packet hash recovery, lineage projection,
   git summary, warning flags, focused tests, source-lock refresh, and verified the repo.
+- `task-evidence-digests-20260707`: added compact evidence digests to terminal evidence, exposed
+  parsed digests through latest evidence and recovery state, preserved raw artifact references,
+  refreshed source locks, and verified the repo.
 
 Ready next task:
 
-- `task-evidence-digests-20260707`: record compact evidence digests while preserving raw logs.
+- `task-linked-repair-20260707`: represent repair as linked task intent and recovery guidance
+  without adding repair-specific supervisor job types.
 
 ## Next Action
 
-Implement evidence digests for `task-evidence-digests-20260707`.
+Implement linked repair task behavior for `task-linked-repair-20260707`.

@@ -93,7 +93,7 @@ Evidence bundles contain summaries, checks, and artifact references. SQLite inde
 points to supporting artifacts. Evidence is kept structured until the compact store encodes it into
 the existing checks and artifacts JSON arrays.
 
-The substrate branch adds compact evidence digests over raw logs so Goal Mode can recover without
+Terminal evidence records compact evidence digests over raw logs so Goal Mode can recover without
 reading every artifact: verifier result, changed files, warnings, log sizes, important tails, risk
 notes, gaps, next actions, and acceptance rationale.
 

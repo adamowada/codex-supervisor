@@ -18,7 +18,7 @@ def raw_log_truncation_notice(*, stream_name: str) -> bytes:
         f"{RAW_LOG_RETENTION_BYTES} bytes of {stream_name}; "
         "read evidence digest key excerpts first and use this log only for "
         "short-term audit recovery.]\n"
-    ).encode("utf-8")
+    ).encode()
 
 
 def primary_evidence_artifacts(artifacts: tuple[str, ...]) -> tuple[str, ...]:
@@ -33,9 +33,7 @@ def is_primary_evidence_artifact(artifact: str) -> bool:
     path = Path(artifact)
     if _is_supervisor_evidence_path(path):
         return False
-    if is_stream_log_artifact(path):
-        return False
-    return True
+    return not is_stream_log_artifact(path)
 
 
 def is_stream_log_artifact(path: Path) -> bool:

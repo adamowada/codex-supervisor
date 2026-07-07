@@ -63,7 +63,7 @@ def test_acp_gate_accepts_worker_backed_product_change(tmp_path: Path) -> None:
     assert result.ok is True
     assert result.changed_product_paths == ("README.md",)
     assert result.worker_backed_paths == ("README.md",)
-    assert "succeeded attempt attempt-acp lacks launch packet hash" in result.warnings
+    assert "accepted attempt attempt-acp lacks launch packet hash" in result.warnings
     assert (
         "active plan plan-acp has no open task and no accepted final proof task"
         in result.warnings
@@ -187,6 +187,111 @@ def test_acp_gate_accepts_attempt_run_captured_product_paths(tmp_path: Path) -> 
     assert result.worker_backed_paths == ("README.md", "reports/summary.md")
 
 
+def test_acp_gate_rejects_product_path_dirty_before_attempt_run(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _git(workspace, "init")
+    db_path = workspace / ".codex-supervisor" / "planning.sqlite3"
+    product_file = workspace / "README.md"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _create_task(db_path)
+    product_file.write_text("# Preexisting direct edit\n", encoding="utf-8")
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-acp",
+        "--attempt-id",
+        "attempt-acp",
+        "--executor",
+        "worker-process",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--summary",
+        "Run a worker after the product path is already dirty.",
+        "--artifact",
+        str(product_file),
+        "--acceptance-result",
+        "pass",
+        "--risk",
+        "No known residual risk.",
+        "--review-evidence",
+        "The worker ran, but the dirty product path predated the worker.",
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        "print('worker made no product change')",
+    )
+
+    assert json.loads(completed.stdout)["transition"]["task_status"] == "blocked"
+    result = check_target_workspace_acp_gate(workspace)
+
+    assert result.ok is False
+    assert result.changed_product_paths == ("README.md",)
+    assert result.worker_backed_paths == ()
+    assert result.failures == (
+        "product paths lack accepted attempt-run worker evidence: README.md",
+    )
+
+
+def test_acp_gate_rejects_rejected_attempt_run_product_change(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _git(workspace, "init")
+    db_path = workspace / ".codex-supervisor" / "planning.sqlite3"
+    product_file = workspace / "README.md"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _create_task(db_path)
+    completed = _run_cli(
+        "attempt-run",
+        "--path",
+        str(db_path),
+        "--task-id",
+        "task-acp",
+        "--attempt-id",
+        "attempt-acp",
+        "--executor",
+        "worker-process",
+        "--workspace",
+        str(workspace),
+        "--timeout-seconds",
+        "10",
+        "--summary",
+        "Run a worker whose acceptance is rejected.",
+        "--artifact",
+        str(product_file),
+        "--acceptance-result",
+        "fail",
+        "--risk",
+        "Rejected evidence must not satisfy ACP provenance.",
+        "--json",
+        "--",
+        sys.executable,
+        "-c",
+        "from pathlib import Path; Path('README.md').write_text('# Rejected\\n', encoding='utf-8')",
+    )
+
+    assert json.loads(completed.stdout)["transition"]["task_status"] == "blocked"
+    result = check_target_workspace_acp_gate(workspace)
+
+    assert result.ok is False
+    assert result.changed_product_paths == ("README.md",)
+    assert result.worker_backed_paths == ()
+    assert result.failures == (
+        "product paths lack accepted attempt-run worker evidence: README.md",
+    )
+
+
 def test_acp_gate_rejects_dirty_linked_worktree_product_changes(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     linked = tmp_path / "linked-agent"
@@ -233,7 +338,7 @@ def test_acp_gate_rejects_direct_product_edit_without_worker_evidence(tmp_path: 
     assert result.changed_product_paths == ("README.md",)
     assert result.worker_backed_paths == ()
     assert result.failures == (
-        "product paths lack attempt-run worker evidence: README.md",
+        "product paths lack accepted attempt-run worker evidence: README.md",
     )
 
 
@@ -279,6 +384,10 @@ def test_acp_gate_rejects_attempt_transition_product_artifact(tmp_path: Path) ->
         "--check",
         "README.md exists.",
         "--artifact",
+        str(workspace / ".codex-supervisor" / "evidence" / "attempt-manual-assignment.json"),
+        "--artifact",
+        str(workspace / ".codex-supervisor" / "evidence" / "attempt-manual-command.json"),
+        "--artifact",
         str(product_file),
         "--acceptance-result",
         "pass",
@@ -294,7 +403,7 @@ def test_acp_gate_rejects_attempt_transition_product_artifact(tmp_path: Path) ->
     assert result.changed_product_paths == ("README.md",)
     assert result.worker_backed_paths == ()
     assert result.failures == (
-        "product paths lack attempt-run worker evidence: README.md",
+        "product paths lack accepted attempt-run worker evidence: README.md",
     )
 
 

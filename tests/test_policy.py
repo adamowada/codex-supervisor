@@ -52,6 +52,33 @@ def test_low_assurance_accepts_summary_with_next_action() -> None:
     assert evaluation.missing_requirements == ()
 
 
+def test_low_assurance_does_not_require_acceptance_results_for_criteria() -> None:
+    evaluation = evaluate_task_attempt_acceptance(
+        TaskIntent(
+            task_id="task-low",
+            intent="Record exploratory evidence with a lightweight criterion.",
+            assurance=AssuranceLevel.LOW,
+            acceptance_criteria=("Observation recorded",),
+        ),
+        AttemptRecord(
+            attempt_id="attempt-low",
+            task_id="task-low",
+            status="succeeded",
+        ),
+        EvidenceBundle(
+            task_id="task-low",
+            attempt_id="attempt-low",
+            summary="Observation recorded.",
+            gaps=("No known gap.",),
+            next_actions=("No next action.",),
+        ),
+    )
+
+    assert evaluation.accepted is True
+    assert evaluation.missing_requirements == ()
+    assert evaluation.failed_acceptance_criteria == ()
+
+
 def test_medium_assurance_requires_checks_artifacts_and_acceptance_results() -> None:
     task = TaskIntent(
         intent="Implement policy core",

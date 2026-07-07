@@ -57,7 +57,7 @@ def terminalize_attempt(
             intent=task.intent,
             assurance=task.assurance,
             acceptance_criteria=task.acceptance_criteria,
-            review_required=bool(evidence.review_evidence),
+            review_required=task.review_required,
         ),
         AttemptRecord(
             attempt_id=attempt_id,

@@ -63,6 +63,7 @@ class TaskRecord:
     intent: str
     acceptance_criteria: tuple[str, ...]
     lineage: tuple[TaskLineageRelation, ...]
+    review_required: bool = False
 
 
 @dataclass(frozen=True)
@@ -165,6 +166,127 @@ class AttemptStore:
             raise LookupError(f"unknown active plan {plan_id!r}")
         return plan
 
+    def create_task_in_active_plan(
+        self,
+        *,
+        plan_id: str,
+        plan_title: str,
+        plan_goal: str,
+        priority: int,
+        title: str,
+        intent: str,
+        assurance: str,
+        acceptance_criteria: tuple[str, ...],
+        lineage: tuple[TaskLineageRelation, ...] = (),
+        task_id: str | None = None,
+        review_required: bool = False,
+        created_at: str | None = None,
+    ) -> tuple[PlanRecord, TaskRecord]:
+        """Create an active plan and task intent atomically."""
+
+        created_at = created_at or _now()
+        normalized_plan_id = _non_empty(plan_id, "plan_id")
+        normalized_task_id = _non_empty(task_id or _stable_id("task"), "task_id")
+        normalized_acceptance = _string_array(acceptance_criteria, "acceptance_criteria")
+        if not normalized_acceptance:
+            raise ValueError("acceptance_criteria must include at least one item")
+        normalized_lineage = _normalize_task_lineage(
+            lineage,
+            current_task_id=normalized_task_id,
+        )
+        task = TaskRecord(
+            task_id=normalized_task_id,
+            plan_id=normalized_plan_id,
+            title=_non_empty(title, "title"),
+            status="ready",
+            assurance=normalize_assurance(assurance).value,
+            intent=_non_empty(intent, "intent"),
+            acceptance_criteria=normalized_acceptance,
+            lineage=normalized_lineage,
+            review_required=review_required,
+        )
+
+        with self._connect() as connection:
+            active_plan = connection.execute(
+                "select plan_id from plans where status = 'active' and plan_id != ? limit 1",
+                (normalized_plan_id,),
+            ).fetchone()
+            if active_plan is not None:
+                raise ValueError(
+                    "cannot create a second active plan while "
+                    f"{active_plan['plan_id']!r} is active"
+                )
+            existing = connection.execute(
+                """select plan_id, title, status, priority, goal
+                   from plans
+                   where plan_id = ?""",
+                (normalized_plan_id,),
+            ).fetchone()
+            if existing is not None and (
+                existing["status"] == "blocked"
+                or (
+                    existing["status"] == "done"
+                    and not _plan_has_durable_completion(connection, normalized_plan_id)
+                )
+            ):
+                connection.execute(
+                    "update plans set status = 'active', updated_at = ? where plan_id = ?",
+                    (created_at, normalized_plan_id),
+                )
+            connection.execute(
+                """insert into plans(plan_id, title, status, priority, goal, created_at, updated_at)
+                   values (?, ?, 'active', ?, ?, ?, ?)
+                   on conflict(plan_id) do nothing""",
+                (
+                    normalized_plan_id,
+                    _non_empty(plan_title, "plan_title"),
+                    priority,
+                    _non_empty(plan_goal, "plan_goal"),
+                    created_at,
+                    created_at,
+                ),
+            )
+            row = connection.execute(
+                """select plan_id, title, status, priority, goal
+                   from plans
+                   where plan_id = ?""",
+                (normalized_plan_id,),
+            ).fetchone()
+            if row is None or row["status"] != "active":
+                raise LookupError(f"unknown active plan {normalized_plan_id!r}")
+            _validate_task_lineage_targets(
+                connection,
+                task_id=task.task_id,
+                lineage=task.lineage,
+            )
+            connection.execute(
+                """insert into tasks(
+                       task_id, plan_id, title, status, assurance, intent,
+                       acceptance_json, lineage_json, review_required, created_at, updated_at
+                   ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    task.task_id,
+                    task.plan_id,
+                    task.title,
+                    task.status,
+                    task.assurance,
+                    task.intent,
+                    json.dumps(list(task.acceptance_criteria), indent=2),
+                    _task_lineage_json(task.lineage),
+                    1 if task.review_required else 0,
+                    created_at,
+                    created_at,
+                ),
+            )
+            plan = PlanRecord(
+                plan_id=row["plan_id"],
+                title=row["title"],
+                status=row["status"],
+                priority=row["priority"],
+                goal=row["goal"],
+            )
+        return plan, task
+
     def create_task(
         self,
         *,
@@ -215,8 +337,8 @@ class AttemptStore:
             connection.execute(
                 """insert into tasks(
                        task_id, plan_id, title, status, assurance, intent,
-                       acceptance_json, lineage_json, created_at, updated_at
-                   ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       acceptance_json, lineage_json, review_required, created_at, updated_at
+                   ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     task.task_id,
                     task.plan_id,
@@ -226,6 +348,7 @@ class AttemptStore:
                     task.intent,
                     json.dumps(list(task.acceptance_criteria), indent=2),
                     _task_lineage_json(task.lineage),
+                    1 if task.review_required else 0,
                     created_at,
                     created_at,
                 ),
@@ -543,6 +666,7 @@ class AttemptStore:
                     row["lineage_json"],
                     current_task_id=row["task_id"],
                 ),
+                review_required=bool(row["review_required"]),
             ),
         )
 
@@ -567,7 +691,7 @@ class AttemptStore:
                 return None
             task_rows = connection.execute(
                 """select task_id, plan_id, title, status, assurance, intent,
-                          acceptance_json, lineage_json
+                          acceptance_json, lineage_json, review_required
                    from tasks
                    where plan_id = ?
                      and status != 'dropped'
@@ -594,6 +718,7 @@ class AttemptStore:
                         task_row["lineage_json"],
                         current_task_id=task_row["task_id"],
                     ),
+                    review_required=bool(task_row["review_required"]),
                 )
                 for task_row in task_rows
             ),
@@ -613,7 +738,8 @@ class AttemptStore:
                    tasks.assurance,
                    tasks.intent,
                    tasks.acceptance_json,
-                   tasks.lineage_json
+                   tasks.lineage_json,
+                   tasks.review_required
                from tasks
                join plans on plans.plan_id = tasks.plan_id
                where plans.status = 'active'
@@ -640,7 +766,8 @@ class AttemptStore:
                    tasks.assurance,
                    tasks.intent,
                    tasks.acceptance_json,
-                   tasks.lineage_json
+                   tasks.lineage_json,
+                   tasks.review_required
                from tasks
                join plans on plans.plan_id = tasks.plan_id
                where plans.status = 'blocked'
@@ -769,7 +896,7 @@ class AttemptStore:
     def _read_task(connection: sqlite3.Connection, task_id: str) -> TaskRecord:
         row = connection.execute(
             """select task_id, plan_id, title, status, assurance, intent, acceptance_json,
-                      lineage_json
+                      lineage_json, review_required
                from tasks
                where task_id = ?""",
             (task_id,),
@@ -788,6 +915,7 @@ class AttemptStore:
                 row["lineage_json"],
                 current_task_id=row["task_id"],
             ),
+            review_required=bool(row["review_required"]),
         )
 
     @staticmethod

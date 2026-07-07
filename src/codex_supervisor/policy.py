@@ -249,7 +249,8 @@ def _failed_acceptance_criteria(
     if results is None:
         if require_results:
             missing.append("acceptance_results")
-        return tuple(criteria)
+            return tuple(criteria)
+        return ()
 
     failed = tuple(criterion for criterion in criteria if results.get(criterion) is not True)
     if failed and require_results and "acceptance_results" not in missing:

@@ -22,8 +22,8 @@ def test_product_paths_from_porcelain_z_excludes_supervisor_and_gitignore() -> N
             " M .gitignore",
             "?? .codex-supervisor/planning.sqlite3",
             " M app/main.py",
-            "R  old.txt",
-            "docs/new.txt",
+            "R  docs/new.txt",
+            "old.txt",
             "",
         )
     )
@@ -60,6 +60,7 @@ def test_changed_product_paths_and_worker_backed_paths_share_product_rules(
     _git(workspace, "init")
     (workspace / ".gitignore").write_text(".codex-supervisor/\n", encoding="utf-8")
     (workspace / "README.md").write_text("# Product\n", encoding="utf-8")
+    _write_attempt_run_metadata(evidence_dir, attempt_id="attempt-1", task_id="task-1")
     _insert_succeeded_attempt(
         db_path,
         artifacts=(
@@ -82,7 +83,64 @@ def test_changed_product_paths_and_worker_backed_paths_share_product_rules(
     )
 
 
-def _insert_succeeded_attempt(db_path: Path, *, artifacts: tuple[str, ...]) -> None:
+def test_worker_backed_paths_require_accepted_decision_and_metadata(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    db_path = workspace / ".codex-supervisor" / "planning.sqlite3"
+    evidence_dir = workspace / ".codex-supervisor" / "evidence"
+    evidence_dir.mkdir(parents=True)
+    initialize_compact_planning_database(db_path)
+    _git(workspace, "init")
+    (workspace / ".gitignore").write_text(".codex-supervisor/\n", encoding="utf-8")
+    (workspace / "README.md").write_text("# Product\n", encoding="utf-8")
+    _write_attempt_run_metadata(evidence_dir, attempt_id="attempt-1", task_id="task-1")
+    _insert_succeeded_attempt(
+        db_path,
+        artifacts=(
+            str(evidence_dir / "attempt-1-assignment.json"),
+            str(evidence_dir / "attempt-1-command.json"),
+            str(workspace / "README.md"),
+        ),
+        acceptance_result="rejected",
+        evaluation_accepted=False,
+    )
+
+    assert worker_backed_product_paths(workspace, database_path=db_path) == ()
+
+
+def test_attempt_run_metadata_must_exist_and_match_attempt(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    db_path = workspace / ".codex-supervisor" / "planning.sqlite3"
+    evidence_dir = workspace / ".codex-supervisor" / "evidence"
+    evidence_dir.mkdir(parents=True)
+    initialize_compact_planning_database(db_path)
+    _git(workspace, "init")
+    (workspace / ".gitignore").write_text(".codex-supervisor/\n", encoding="utf-8")
+    (workspace / "README.md").write_text("# Product\n", encoding="utf-8")
+    _insert_succeeded_attempt(
+        db_path,
+        artifacts=(
+            str(evidence_dir / "attempt-1-assignment.json"),
+            str(evidence_dir / "attempt-1-command.json"),
+            str(workspace / "README.md"),
+        ),
+    )
+
+    assert worker_backed_product_paths(workspace, database_path=db_path) == ()
+
+
+def _insert_succeeded_attempt(
+    db_path: Path,
+    *,
+    artifacts: tuple[str, ...],
+    acceptance_result: str = "accepted",
+    evaluation_accepted: bool = True,
+) -> None:
     with sqlite3.connect(db_path) as connection:
         connection.execute(
             """insert into plans(plan_id, title, status, priority, goal, created_at, updated_at)
@@ -121,6 +179,50 @@ def _insert_succeeded_attempt(db_path: Path, *, artifacts: tuple[str, ...]) -> N
                 "2026-06-04T00:00:01Z",
             ),
         )
+        connection.execute(
+            """insert into acceptance_decisions(
+                   decision_id, task_id, attempt_id, bundle_id, actor,
+                   result, rationale, evaluation_json, created_at
+               ) values ('acceptance-1', 'task-1', 'attempt-1', 'evidence-1', ?, ?, ?, ?, ?)""",
+            (
+                "codex-supervisor-policy",
+                acceptance_result,
+                "Policy decision.",
+                json.dumps({"accepted": evaluation_accepted}, indent=2),
+                "2026-06-04T00:00:01Z",
+            ),
+        )
+
+
+def _write_attempt_run_metadata(
+    evidence_dir: Path,
+    *,
+    attempt_id: str,
+    task_id: str,
+) -> None:
+    (evidence_dir / f"{attempt_id}-assignment.json").write_text(
+        json.dumps(
+            {
+                "recorded_by": "codex-supervisor.attempt-run",
+                "attempt": {"attempt_id": attempt_id},
+                "task": {"task_id": task_id},
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (evidence_dir / f"{attempt_id}-command.json").write_text(
+        json.dumps(
+            {
+                "recorded_by": "codex-supervisor.attempt-run",
+                "attempt_id": attempt_id,
+                "task_id": task_id,
+                "command": ["python", "-c", "print('worker')"],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
 
 def _git(workspace: Path, *args: str) -> None:

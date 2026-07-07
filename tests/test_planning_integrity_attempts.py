@@ -301,6 +301,169 @@ def test_planning_integrity_names_missing_acceptance_decision(
     )
 
 
+def test_planning_integrity_rejects_terminal_attempt_without_evidence(
+    tmp_path: Path,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute(
+            """insert into attempts(
+                   attempt_id, task_id, executor, status, summary, started_at, finished_at
+               ) values (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "attempt-succeeded-no-evidence",
+                "task-1",
+                "worker",
+                "succeeded",
+                "Worker succeeded without evidence.",
+                "2026-05-28T17:00:00Z",
+                "2026-05-28T17:01:00Z",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    failures = check_planning_integrity(db_path)
+
+    assert (
+        "terminal attempt attempt-succeeded-no-evidence has no evidence bundle"
+        in failures
+    )
+
+
+def test_planning_integrity_rejects_acceptance_for_nonterminal_attempt(
+    tmp_path: Path,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute(
+            """insert into attempts(
+                   attempt_id, task_id, executor, status, summary, started_at, finished_at
+               ) values (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "attempt-running",
+                "task-1",
+                "worker",
+                "running",
+                "Worker is still running.",
+                "2026-05-28T17:00:00Z",
+                None,
+            ),
+        )
+        connection.execute(
+            """insert into evidence_bundles(
+                   bundle_id, task_id, attempt_id, assurance, summary,
+                   checks_json, artifacts_json, created_at
+               ) values (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "evidence-running",
+                "task-1",
+                "attempt-running",
+                "medium",
+                "Premature evidence.",
+                '["check"]',
+                '["artifact"]',
+                "2026-05-28T17:01:00Z",
+            ),
+        )
+        connection.execute(
+            """insert into acceptance_decisions(
+                   decision_id, task_id, attempt_id, bundle_id, actor,
+                   result, rationale, evaluation_json, created_at
+               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "acceptance-running",
+                "task-1",
+                "attempt-running",
+                "evidence-running",
+                "codex-supervisor-policy",
+                "accepted",
+                "Premature acceptance.",
+                '{"accepted": true}',
+                "2026-05-28T17:01:00Z",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    failures = check_planning_integrity(db_path)
+
+    assert (
+        "acceptance decision acceptance-running is attached to non-terminal attempt "
+        "attempt-running"
+    ) in failures
+
+
+def test_planning_integrity_rejects_acceptance_projection_mismatch(
+    tmp_path: Path,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute("update tasks set status = 'done' where task_id = 'task-1'")
+        connection.execute(
+            """insert into attempts(
+                   attempt_id, task_id, executor, status, summary, started_at, finished_at
+               ) values (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "attempt-succeeded",
+                "task-1",
+                "worker",
+                "succeeded",
+                "Worker succeeded.",
+                "2026-05-28T17:00:00Z",
+                "2026-05-28T17:01:00Z",
+            ),
+        )
+        connection.execute(
+            """insert into evidence_bundles(
+                   bundle_id, task_id, attempt_id, assurance, summary,
+                   checks_json, artifacts_json, created_at
+               ) values (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "evidence-succeeded",
+                "task-1",
+                "attempt-succeeded",
+                "medium",
+                "Success evidence.",
+                '["check"]',
+                '["artifact"]',
+                "2026-05-28T17:01:00Z",
+            ),
+        )
+        connection.execute(
+            """insert into acceptance_decisions(
+                   decision_id, task_id, attempt_id, bundle_id, actor,
+                   result, rationale, evaluation_json, created_at
+               ) values (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "acceptance-mismatch",
+                "task-1",
+                "attempt-succeeded",
+                "evidence-succeeded",
+                "codex-supervisor-policy",
+                "accepted",
+                "Incorrect acceptance.",
+                '{"accepted": false}',
+                "2026-05-28T17:01:00Z",
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    failures = check_planning_integrity(db_path)
+
+    assert (
+        "acceptance decision acceptance-mismatch result accepted disagrees with "
+        "evaluation accepted=False"
+    ) in failures
+
+
 def test_planning_integrity_rejects_missing_task_lineage_target(
     tmp_path: Path,
 ) -> None:

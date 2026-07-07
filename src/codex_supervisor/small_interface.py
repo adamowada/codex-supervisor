@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -73,25 +74,24 @@ def task_create(
     acceptance_criteria: tuple[str, ...],
     lineage: tuple[Mapping[str, str], ...] = (),
     task_id: str | None = None,
+    review_required: bool = False,
     priority: int = 100,
 ) -> TaskCreateResult:
     """Create one generic task intent in an active plan."""
 
     store = AttemptStore(database_path)
-    plan = store.ensure_active_plan(
+    plan, task = store.create_task_in_active_plan(
         plan_id=plan_id,
-        title=plan_title,
-        goal=plan_goal,
+        plan_title=plan_title,
+        plan_goal=plan_goal,
         priority=priority,
-    )
-    task = store.create_task(
-        plan_id=plan_id,
         task_id=task_id,
         title=title,
         intent=intent,
         assurance=assurance,
         acceptance_criteria=acceptance_criteria,
         lineage=_lineage_from_mappings(lineage),
+        review_required=review_required,
     )
     return TaskCreateResult(
         plan=_plan_to_dict(plan),
@@ -316,6 +316,7 @@ def _task_to_dict(task: TaskRecord) -> dict[str, object]:
             {"relation": item.relation, "task_id": item.task_id}
             for item in task.lineage
         ],
+        "review_required": task.review_required,
     }
 
 
@@ -591,7 +592,7 @@ def _workspace_root(database_path: Path) -> Path:
 def _git_summary(database_path: Path) -> dict[str, object]:
     workspace = _workspace_root(database_path)
     inside = _run_git(workspace, "rev-parse", "--is-inside-work-tree")
-    if inside.returncode != 0:
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
         return {
             "workspace": str(workspace),
             "is_repository": False,
@@ -620,18 +621,22 @@ def _git_summary(database_path: Path) -> dict[str, object]:
 
 
 def _run_git(workspace: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["GIT_OPTIONAL_LOCKS"] = "0"
     try:
         return subprocess.run(
-            ("git", "-C", str(workspace), *args),
+            ("git", "--no-optional-locks", "-C", str(workspace), *args),
             check=False,
             text=True,
             encoding="utf-8",
             errors="replace",
             capture_output=True,
+            env=env,
+            timeout=15,
         )
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         return subprocess.CompletedProcess(
-            ("git", "-C", str(workspace), *args),
+            ("git", "--no-optional-locks", "-C", str(workspace), *args),
             returncode=1,
             stdout="",
             stderr=str(exc),

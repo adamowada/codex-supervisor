@@ -64,13 +64,26 @@ def _with_workspace_database_default(
     command = argv[0]
     if (
         command not in WORKSPACE_DATABASE_COMMANDS
-        or "--path" in argv
-        or "-h" in argv
-        or "--help" in argv
+        or _has_supervisor_option(argv, "--path")
+        or _has_supervisor_option(argv, "-h")
+        or _has_supervisor_option(argv, "--help")
     ):
         return tuple(argv)
     database_path = invocation_cwd / ".codex-supervisor" / "planning.sqlite3"
     return (command, "--path", str(database_path), *argv[1:])
+
+
+def _has_supervisor_option(argv: list[str], option: str) -> bool:
+    """Return whether a supervisor CLI option appears before worker argv begins."""
+
+    for item in argv[1:]:
+        if item == "--":
+            return False
+        if item == option:
+            return True
+        if option == "--path" and item.startswith("--path="):
+            return True
+    return False
 
 
 def _pythonpath_env(repo_root: Path, environ: dict[str, str]) -> dict[str, str]:

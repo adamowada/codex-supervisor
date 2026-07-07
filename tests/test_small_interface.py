@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import sqlite3
+import subprocess
 from pathlib import Path
 
 import pytest
 from planning_db_factory import insert_task, make_planning_db
 
+import codex_supervisor.small_interface as small_interface
 from codex_supervisor.small_interface import attempt_transition, queue_next, task_create
 
 
@@ -17,6 +19,39 @@ def test_queue_next_returns_ready_task_and_transition_hint(tmp_path: Path) -> No
     assert result.task is not None
     assert result.task["task_id"] == "task-1"
     assert result.next_transition == "attempt-transition --status running"
+
+
+def test_queue_next_git_summary_uses_optional_locks_disabled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    observed_envs: list[dict[str, str] | None] = []
+
+    def fake_run(
+        command: tuple[str, ...],
+        *,
+        check: bool,
+        text: bool,
+        encoding: str,
+        errors: str,
+        capture_output: bool,
+        env: dict[str, str] | None = None,
+        timeout: int | float | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        observed_envs.append(env)
+        assert timeout is not None
+        if command[-1] == "--is-inside-work-tree":
+            return subprocess.CompletedProcess(command, 0, stdout="false\n", stderr="")
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="not a repo")
+
+    monkeypatch.setattr(small_interface.subprocess, "run", fake_run)
+
+    result = queue_next(db_path)
+
+    assert result.recovery_state["git_summary"]["is_repository"] is False
+    assert observed_envs
+    assert all(env is not None and env["GIT_OPTIONAL_LOCKS"] == "0" for env in observed_envs)
 
 
 def test_queue_next_surfaces_running_task_before_ready_work(tmp_path: Path) -> None:
@@ -305,6 +340,85 @@ def test_task_create_rejects_unknown_lineage_relation(tmp_path: Path) -> None:
             lineage=({"relation": "cleanup_of", "task_id": "task-1"},),
             task_id="task-bad-lineage",
         )
+
+
+def test_task_create_rolls_back_new_plan_when_task_validation_fails(
+    tmp_path: Path,
+) -> None:
+    db_path = make_planning_db(tmp_path)
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        executor="manual",
+        status="running",
+        summary="Running task.",
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        status="succeeded",
+        summary="Task satisfied.",
+        checks=("Focused check passed.",),
+        artifacts=("artifact",),
+        acceptance_results={"Acceptance criterion": True},
+    )
+    task_create(
+        db_path,
+        plan_id="plan-1",
+        plan_title="Plan",
+        plan_goal="Goal",
+        title="Shipping proof",
+        intent="Prove task-1 is ready to ship.",
+        assurance="high",
+        acceptance_criteria=("Final proof exists",),
+        lineage=({"relation": "shipping_proof_of", "task_id": "task-1"},),
+        task_id="task-proof",
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-proof",
+        attempt_id="attempt-proof",
+        executor="manual",
+        status="running",
+        summary="Running proof.",
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-proof",
+        attempt_id="attempt-proof",
+        status="succeeded",
+        summary="Proof accepted.",
+        checks=("Final proof checked.",),
+        artifacts=("proof",),
+        acceptance_results={"Final proof exists": True},
+        risks=("No known residual risk.",),
+    )
+
+    with pytest.raises(LookupError, match="lineage target task"):
+        task_create(
+            db_path,
+            plan_id="plan-new",
+            plan_title="New plan",
+            plan_goal="This plan should roll back.",
+            title="Bad task",
+            intent="Reference a missing lineage target.",
+            assurance="medium",
+            acceptance_criteria=("Criterion",),
+            lineage=({"relation": "repair_of", "task_id": "missing-task"},),
+            task_id="task-bad",
+        )
+
+    with sqlite3.connect(db_path) as connection:
+        plans = connection.execute(
+            "select plan_id from plans where plan_id = 'plan-new'"
+        ).fetchall()
+        tasks = connection.execute(
+            "select task_id from tasks where task_id = 'task-bad'"
+        ).fetchall()
+    assert plans == []
+    assert tasks == []
 
 
 def test_task_create_rejects_second_active_plan(tmp_path: Path) -> None:

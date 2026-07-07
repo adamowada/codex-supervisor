@@ -55,6 +55,7 @@ def _build_parser() -> argparse.ArgumentParser:
     task.add_argument("--intent", required=True)
     task.add_argument("--assurance", required=True, choices=("low", "medium", "high"))
     task.add_argument("--acceptance", action="append", required=True)
+    task.add_argument("--review-required", action="store_true", default=False)
     task.add_argument(
         "--lineage",
         action="append",
@@ -147,6 +148,7 @@ def _dispatch(args: argparse.Namespace) -> object | None:
             assurance=args.assurance,
             acceptance_criteria=tuple(args.acceptance),
             lineage=_parse_lineage(tuple(args.lineage)),
+            review_required=args.review_required,
         )
     if args.command == "attempt-transition":
         return attempt_transition(

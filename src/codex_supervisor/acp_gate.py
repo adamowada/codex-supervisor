@@ -10,7 +10,7 @@ from pathlib import Path
 from codex_supervisor.target_workspace import (
     SUPERVISOR_DIR,
     artifact_to_workspace_relative,
-    changed_product_paths,
+    changed_product_paths_or_none,
     git_check_ignore,
     has_attempt_run_metadata,
     is_git_worktree,
@@ -62,7 +62,12 @@ def check_target_workspace_acp_gate(
     if tracked_supervisor:
         failures.append(".codex-supervisor has tracked paths: " + "\n".join(tracked_supervisor))
 
-    product_paths = changed_product_paths(workspace)
+    inspected_product_paths = changed_product_paths_or_none(workspace)
+    if inspected_product_paths is None:
+        failures.append("could not inspect git product changes")
+        product_paths = ()
+    else:
+        product_paths = inspected_product_paths
     worker_backed_paths = worker_backed_product_paths(
         workspace,
         database_path=database_path,
@@ -72,7 +77,8 @@ def check_target_workspace_acp_gate(
     )
     if missing_evidence:
         failures.append(
-            "product paths lack attempt-run worker evidence: " + ", ".join(missing_evidence)
+            "product paths lack accepted attempt-run worker evidence: "
+            + ", ".join(missing_evidence)
         )
     warnings.extend(_substrate_warnings(workspace, database_path=database_path))
     for linked in linked_worktree_changes(workspace):
@@ -101,6 +107,10 @@ def _substrate_warnings(workspace: Path, *, database_path: Path) -> tuple[str, .
                       evidence_bundles.artifacts_json
                from attempts
                join evidence_bundles on evidence_bundles.attempt_id = attempts.attempt_id
+               join acceptance_decisions
+                 on acceptance_decisions.attempt_id = attempts.attempt_id
+                and acceptance_decisions.bundle_id = evidence_bundles.bundle_id
+                and acceptance_decisions.result = 'accepted'
                where attempts.status = 'succeeded'"""
         ).fetchall()
         plan_rows = connection.execute(
@@ -118,11 +128,12 @@ def _substrate_warnings(workspace: Path, *, database_path: Path) -> tuple[str, .
         if not has_attempt_run_metadata(
             workspace,
             attempt_id=str(attempt_id),
+            task_id=None,
             artifacts=artifacts,
         ):
-            warnings.append(f"succeeded attempt {attempt_id} lacks launch metadata artifacts")
+            warnings.append(f"accepted attempt {attempt_id} lacks launch metadata artifacts")
         if not any(check.startswith("launch packet sha256: ") for check in checks):
-            warnings.append(f"succeeded attempt {attempt_id} lacks launch packet hash")
+            warnings.append(f"accepted attempt {attempt_id} lacks launch packet hash")
 
     task_records = [
         {

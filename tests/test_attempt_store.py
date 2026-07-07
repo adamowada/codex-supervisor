@@ -254,3 +254,21 @@ def test_attempt_store_rejects_evidence_for_another_task(tmp_path: Path) -> None
             checks=("pytest",),
             artifacts=("artifact",),
         )
+
+
+def test_schema_rejects_two_active_plans_at_database_boundary(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+
+    with pytest.raises(Exception, match="UNIQUE"), AttemptStore(db_path)._connect() as connection:
+        connection.execute(
+            """insert into plans(plan_id, title, status, priority, goal, created_at, updated_at)
+               values (?, ?, 'active', ?, ?, ?, ?)""",
+            (
+                "plan-second-active",
+                "Second active plan",
+                1,
+                "This should fail at the database boundary.",
+                "2026-05-28T17:00:00Z",
+                "2026-05-28T17:00:00Z",
+            ),
+        )

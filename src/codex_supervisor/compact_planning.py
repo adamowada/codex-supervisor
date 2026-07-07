@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 
 SCHEMA_NAME = "fresh_simplified_planning"
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 
 SCHEMA_SQL = """
 create table if not exists meta (
@@ -22,6 +22,9 @@ create table if not exists plans (
     created_at text not null,
     updated_at text not null
 );
+create unique index if not exists plans_one_active
+    on plans(status)
+    where status = 'active';
 create table if not exists tasks (
     task_id text primary key,
     plan_id text not null references plans(plan_id) on delete cascade,
@@ -31,6 +34,7 @@ create table if not exists tasks (
     intent text not null,
     acceptance_json text not null,
     lineage_json text not null default '[]',
+    review_required integer not null default 0 check (review_required in (0, 1)),
     created_at text not null,
     updated_at text not null
 );
@@ -127,6 +131,9 @@ def _prepare_existing_database(database_path: Path) -> None:
         return
     if schema_version == "2":
         _migrate_v2_to_v3(database_path)
+        schema_version = "3"
+    if schema_version == "3":
+        _migrate_v3_to_v4(database_path)
         return
     if schema_version != SCHEMA_VERSION:
         raise ValueError(
@@ -146,6 +153,28 @@ def _migrate_v2_to_v3(database_path: Path) -> None:
             connection.execute(
                 "alter table tasks add column lineage_json text not null default '[]'"
             )
+        connection.execute(
+            "insert or replace into meta(key, value) values ('schema_version', ?)",
+            ("3",),
+        )
+
+
+def _migrate_v3_to_v4(database_path: Path) -> None:
+    with sqlite3.connect(database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute("pragma foreign_keys = on")
+        task_columns = {
+            row["name"] for row in connection.execute("pragma table_info(tasks)")
+        }
+        if "review_required" not in task_columns:
+            connection.execute(
+                "alter table tasks add column review_required integer not null default 0"
+            )
+        connection.execute(
+            """create unique index if not exists plans_one_active
+               on plans(status)
+               where status = 'active'"""
+        )
         connection.execute(
             "insert or replace into meta(key, value) values ('schema_version', ?)",
             (SCHEMA_VERSION,),

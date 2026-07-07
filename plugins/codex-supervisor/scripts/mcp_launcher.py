@@ -51,19 +51,21 @@ def _repo_root_candidates(plugin_root: Path, environ: Mapping[str, str]) -> Iter
     env_root = environ.get(SOURCE_ENV_VAR)
     if env_root:
         yield Path(_strip_windows_extended_prefix(env_root))
-    yield plugin_root.parents[1]
-    yield Path.cwd()
-    yield from Path.cwd().parents
+    source_layout_root = plugin_root.parents[1]
+    if _is_repo_root(source_layout_root):
+        yield source_layout_root
 
     cache_info = _cache_info(plugin_root, environ)
-    if cache_info is None:
+    if cache_info is not None:
+        codex_home, marketplace_name = cache_info
+        source = _marketplace_source(codex_home / "config.toml", marketplace_name)
+        if source is not None:
+            yield source
+            yield source / "plugins" / PLUGIN_NAME
         return
-    codex_home, marketplace_name = cache_info
-    source = _marketplace_source(codex_home / "config.toml", marketplace_name)
-    if source is None:
-        return
-    yield source
-    yield source / "plugins" / PLUGIN_NAME
+
+    yield Path.cwd()
+    yield from Path.cwd().parents
 
 
 def _is_repo_root(candidate: Path) -> bool:

@@ -40,7 +40,7 @@ def test_fresh_planning_database_contract() -> None:
             connection.execute(
                 "select value from meta where key = 'schema_version'"
             ).fetchone()[0]
-            == "3"
+            == "4"
         )
         active_plans = connection.execute(
             "select count(*) from plans where status = 'active'"

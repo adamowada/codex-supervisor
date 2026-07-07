@@ -450,7 +450,7 @@ def test_attempt_run_digest_summarizes_large_stderr(
             "from pathlib import Path\n"
             "Path('result.txt').write_text('done\\n', encoding='utf-8')\n"
             "sys.stderr.write('in-process app-server event stream lagged\\n')\n"
-            "sys.stderr.write('x' * 270000)\n"
+            "sys.stderr.write('x' * 1200000)\n"
         ),
     )
 
@@ -463,6 +463,7 @@ def test_attempt_run_digest_summarizes_large_stderr(
     )
 
     assert payload["exit_code"] == 0
+    assert len(stderr_bytes) < 1200000
     assert stderr_summary["stream"] == "stderr"
     assert stderr_summary["bytes"] == len(stderr_bytes)
     assert stderr_summary["sha256"] == sha256(stderr_bytes).hexdigest()
@@ -474,6 +475,10 @@ def test_attempt_run_digest_summarizes_large_stderr(
     )
     assert any(
         warning.startswith("app_server_lag_detected: ")
+        for warning in digest["warnings"]
+    )
+    assert any(
+        warning.startswith("raw_log_truncated: ")
         for warning in digest["warnings"]
     )
 
@@ -860,7 +865,7 @@ def test_full_afk_follow_up_product_mutation_is_assigned_to_worker(
     verifier_file = workspace / ".codex-supervisor" / "verify.py"
 
     init = _run_cli("plan-init", "--path", str(db_path), "--json")
-    assert json.loads(init.stdout)["schema_version"] == "3"
+    assert json.loads(init.stdout)["schema_version"] == "4"
     _run_cli(
         "task-create",
         "--path",

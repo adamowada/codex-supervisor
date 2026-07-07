@@ -23,7 +23,7 @@ EXPECTED_TABLES = {
 
 REQUIRED_META = {
     "schema_name": "fresh_simplified_planning",
-    "schema_version": "3",
+    "schema_version": "4",
 }
 
 VALID_PLAN_STATUSES = {"active", "blocked", "done", "dropped"}
@@ -308,6 +308,17 @@ def _check_attempt_relationships(
         """select attempts.attempt_id
            from attempts
            where attempts.status in ('succeeded', 'failed', 'blocked')
+             and not exists (
+                 select 1 from evidence_bundles
+                 where evidence_bundles.attempt_id = attempts.attempt_id
+             )"""
+    ):
+        failures.append(f"terminal attempt {row['attempt_id']} has no evidence bundle")
+
+    for row in connection.execute(
+        """select attempts.attempt_id
+           from attempts
+           where attempts.status in ('succeeded', 'failed', 'blocked')
              and exists (
                  select 1 from evidence_bundles
                  where evidence_bundles.attempt_id = attempts.attempt_id
@@ -318,6 +329,52 @@ def _check_attempt_relationships(
              )"""
     ):
         failures.append(f"terminal attempt {row['attempt_id']} has no acceptance decision")
+
+    for row in connection.execute(
+        """select acceptance_decisions.decision_id,
+                  attempts.attempt_id,
+                  attempts.status
+           from acceptance_decisions
+           join attempts on attempts.attempt_id = acceptance_decisions.attempt_id
+           where attempts.status not in ('succeeded', 'failed', 'blocked')"""
+    ):
+        failures.append(
+            f"acceptance decision {row['decision_id']} is attached to non-terminal attempt "
+            f"{row['attempt_id']}"
+        )
+
+    for row in connection.execute(
+        """select acceptance_decisions.decision_id,
+                  acceptance_decisions.result,
+                  acceptance_decisions.evaluation_json,
+                  attempts.attempt_id,
+                  attempts.status
+           from acceptance_decisions
+           join attempts on attempts.attempt_id = acceptance_decisions.attempt_id"""
+    ):
+        try:
+            evaluation = json.loads(row["evaluation_json"])
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(evaluation, dict):
+            continue
+        accepted = evaluation.get("accepted")
+        if row["result"] == "accepted":
+            if row["status"] != "succeeded":
+                failures.append(
+                    f"acceptance decision {row['decision_id']} accepted non-succeeded "
+                    f"attempt {row['attempt_id']}"
+                )
+            if accepted is not True:
+                failures.append(
+                    f"acceptance decision {row['decision_id']} result accepted disagrees "
+                    f"with evaluation accepted={accepted!r}"
+                )
+        elif accepted is not False:
+            failures.append(
+                f"acceptance decision {row['decision_id']} result rejected disagrees "
+                f"with evaluation accepted={accepted!r}"
+            )
 
     for row in connection.execute(
         """select task_id, count(*) as active_attempts

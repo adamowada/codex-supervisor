@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import tempfile
 import threading
@@ -12,9 +13,16 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 
-from codex_supervisor.evidence_artifacts import RAW_LOG_RETENTION_BYTES
+from codex_supervisor.evidence_artifacts import (
+    RAW_LOG_RETENTION_BYTES,
+    raw_log_truncation_notice,
+)
 from codex_supervisor.small_interface import AttemptTransitionResult, attempt_transition
-from codex_supervisor.target_workspace import changed_product_paths
+from codex_supervisor.target_workspace import (
+    artifact_to_workspace_relative,
+    changed_product_paths_or_none,
+    is_product_path,
+)
 
 _TEXT_CAPTURE = {
     "text": True,
@@ -86,6 +94,7 @@ def run_process_attempt(
 
     workspace = workspace.resolve()
     workspace.mkdir(parents=True, exist_ok=True)
+    preexisting_product_paths = set(changed_product_paths_or_none(workspace) or ())
     launch_packet_path = _resolve_reference_file(
         launch_packet_path,
         workspace=workspace,
@@ -139,6 +148,7 @@ def run_process_attempt(
         label="verifier_intent",
     )
     assignment_payload = {
+        "recorded_by": "codex-supervisor.attempt-run",
         "task": running.task,
         "attempt": running.attempt,
         "workspace": str(workspace),
@@ -262,15 +272,11 @@ def run_process_attempt(
             )
         else:
             try:
-                verifier = subprocess.run(
+                verifier = _run_verifier_command(
                     verifier_command,
-                    cwd=workspace,
-                    env=env,
-                    capture_output=True,
-                    timeout=timeout_seconds,
-                    check=False,
-                    shell=True,
-                    **_TEXT_CAPTURE,
+                    workspace=workspace,
+                    environment=env,
+                    timeout_seconds=timeout_seconds,
                 )
                 verifier_exit_code = verifier.returncode
                 verifier_stdout = _coerce_output(verifier.stdout)
@@ -338,7 +344,22 @@ def run_process_attempt(
         telemetry_summary = "; ".join(telemetry_errors)
         terminal_summary = f"{terminal_summary} Telemetry warning(s): {telemetry_summary}."
 
-    git_product_artifacts = changed_product_paths(workspace)
+    inspected_product_artifacts = changed_product_paths_or_none(workspace)
+    git_product_artifacts = tuple(
+        path
+        for path in (inspected_product_artifacts or ())
+        if path not in preexisting_product_paths
+    )
+    preexisting_product_warnings = tuple(
+        sorted(preexisting_product_paths.intersection(inspected_product_artifacts or ()))
+    )
+    if inspected_product_artifacts is None:
+        telemetry_errors.append("could not inspect git product changes after worker")
+    attributed_declared_artifacts = _worker_attributed_declared_artifacts(
+        artifacts,
+        workspace=workspace,
+        preexisting_product_paths=preexisting_product_paths,
+    )
     recorded_artifacts = _unique_strings(
         (
             str(command_path),
@@ -361,7 +382,7 @@ def run_process_attempt(
                 for path in (verifier_command_path, verifier_stdout_path, verifier_stderr_path)
                 if path is not None
             ),
-            *artifacts,
+            *attributed_declared_artifacts,
             *git_product_artifacts,
         )
     )
@@ -378,6 +399,10 @@ def run_process_attempt(
             else ()
         ),
         *(f"git changed product path: {artifact}" for artifact in git_product_artifacts),
+        *(
+            f"preexisting product path not attributed to worker: {artifact}"
+            for artifact in preexisting_product_warnings
+        ),
         *(f"missing artifact: {artifact}" for artifact in missing_artifacts),
         *(f"telemetry warning: {error}" for error in telemetry_errors),
         *(
@@ -535,6 +560,7 @@ def _command_metadata(
     reasoning = _model_reasoning_metadata(command)
     return {
         "command": list(command),
+        "recorded_by": "codex-supervisor.attempt-run",
         "workspace": str(workspace),
         "cwd": str(workspace),
         "timeout_seconds": timeout_seconds,
@@ -658,9 +684,13 @@ def _run_worker_process(
     except subprocess.TimeoutExpired:
         timed_out = True
         _terminate_process_tree(process)
-        process.wait()
-    stdout_thread.join(timeout=5)
-    stderr_thread.join(timeout=5)
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _kill_process_tree(process)
+            process.wait()
+    stdout_thread.join()
+    stderr_thread.join()
     exit_code = 124 if timed_out else int(process.returncode or 0)
     liveness.finish(
         state="timed_out" if timed_out else ("succeeded" if exit_code == 0 else "failed"),
@@ -674,6 +704,51 @@ def _run_worker_process(
     )
 
 
+def _run_verifier_command(
+    command: str,
+    *,
+    workspace: Path,
+    environment: dict[str, str],
+    timeout_seconds: int,
+) -> subprocess.CompletedProcess[str]:
+    creationflags = (
+        int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) if os.name == "nt" else 0
+    )
+    process = subprocess.Popen(
+        command,
+        cwd=workspace,
+        env=environment,
+        shell=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        creationflags=creationflags,
+        start_new_session=os.name != "nt",
+        **_TEXT_CAPTURE,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired as exc:
+        _terminate_process_tree(process)
+        try:
+            stdout, stderr = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            _kill_process_tree(process)
+            stdout, stderr = process.communicate()
+        raise subprocess.TimeoutExpired(
+            cmd=command,
+            timeout=timeout_seconds,
+            output=stdout if stdout is not None else exc.stdout,
+            stderr=stderr if stderr is not None else exc.stderr,
+        ) from exc
+    return subprocess.CompletedProcess(
+        command,
+        process.returncode if process.returncode is not None else 1,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
 def _collect_process_pipe(
     pipe: object,
     output_path: Path,
@@ -684,7 +759,12 @@ def _collect_process_pipe(
         return
     try:
         while True:
-            chunk = pipe.readline()  # type: ignore[attr-defined]
+            read_chunk = getattr(pipe, "read1", None)
+            chunk = (
+                read_chunk(64 * 1024)
+                if callable(read_chunk)
+                else pipe.read(64 * 1024)  # type: ignore[attr-defined]
+            )
             if not chunk:
                 break
             _append_retained_output(output_parts, chunk)
@@ -695,10 +775,20 @@ def _collect_process_pipe(
 
 
 def _append_output(path: Path, chunk: bytes) -> None:
-    text = chunk.decode("utf-8", errors="replace")
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(text)
+    current_size = path.stat().st_size if path.exists() else 0
+    if current_size >= RAW_LOG_RETENTION_BYTES:
+        return
+    remaining = RAW_LOG_RETENTION_BYTES - current_size
+    notice = raw_log_truncation_notice(stream_name=path.name)
+    normalized_chunk = chunk.decode("utf-8", errors="replace").encode("utf-8")
+    will_reach_cap = len(normalized_chunk) >= remaining
+    retained_limit = max(0, remaining - len(notice)) if will_reach_cap else remaining
+    retained = normalized_chunk[:retained_limit]
+    with path.open("ab") as handle:
+        handle.write(retained)
+        if will_reach_cap:
+            handle.write(raw_log_truncation_notice(stream_name=path.name))
 
 
 def _append_retained_output(output_parts: list[bytes], chunk: bytes) -> None:
@@ -709,7 +799,9 @@ def _append_retained_output(output_parts: list[bytes], chunk: bytes) -> None:
     output_parts.append(chunk[:remaining])
 
 
-def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
+def _terminate_process_tree(
+    process: subprocess.Popen[bytes] | subprocess.Popen[str],
+) -> None:
     if process.poll() is not None:
         return
     if os.name == "nt":
@@ -723,11 +815,34 @@ def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
     kill_process_group = getattr(os, "killpg", None)
     if callable(kill_process_group):
         try:
-            kill_process_group(process.pid, 15)
+            kill_process_group(process.pid, signal.SIGTERM)
             return
         except OSError:
             pass
     process.terminate()
+
+
+def _kill_process_tree(
+    process: subprocess.Popen[bytes] | subprocess.Popen[str],
+) -> None:
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(
+            ("taskkill", "/PID", str(process.pid), "/T", "/F"),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return
+    kill_process_group = getattr(os, "killpg", None)
+    if callable(kill_process_group):
+        try:
+            kill_process_group(process.pid, signal.SIGKILL)
+            return
+        except OSError:
+            pass
+    process.kill()
 
 
 class _LivenessRecorder:
@@ -797,6 +912,25 @@ def _missing_declared_artifacts(
         if not candidate.exists():
             missing.append(artifact)
     return tuple(missing)
+
+
+def _worker_attributed_declared_artifacts(
+    artifacts: tuple[str, ...],
+    *,
+    workspace: Path,
+    preexisting_product_paths: set[str],
+) -> tuple[str, ...]:
+    attributed: list[str] = []
+    for artifact in artifacts:
+        relative = artifact_to_workspace_relative(workspace, artifact)
+        if (
+            relative is not None
+            and is_product_path(relative)
+            and relative in preexisting_product_paths
+        ):
+            continue
+        attributed.append(artifact)
+    return tuple(attributed)
 
 
 def _unique_strings(items: tuple[str, ...]) -> tuple[str, ...]:

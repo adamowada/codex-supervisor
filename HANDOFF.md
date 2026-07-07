@@ -79,17 +79,23 @@ Full verification completed:
 
 ```text
 uv run --no-sync python -B scripts/verify.py
-117 passed
+130 passed
 ```
 
 Latest focused verification completed:
 
 ```text
-$env:PYTHONPATH=(Get-Location).Path; uv run --no-sync pytest tests/test_small_interface.py tests/test_process_attempt_e2e.py tests/test_evidence_terminal_transition.py tests/test_planning_integrity_attempts.py tests/test_codex_plugin.py
-64 passed
+$env:PYTHONPATH=(Get-Location).Path + ';' + (Join-Path (Get-Location) 'src'); uv run --no-sync pytest tests/test_target_workspace.py tests/test_acp_gate_e2e.py tests/test_small_interface.py tests/test_policy.py tests/test_planning_integrity_attempts.py tests/test_attempt_store.py tests/test_process_attempt_e2e.py::test_attempt_run_digest_summarizes_large_stderr tests/test_codex_plugin.py::test_plugin_cli_launcher_ignores_worker_path_args_for_workspace_default tests/test_codex_plugin.py::test_installed_cache_mcp_launcher_prefers_marketplace_source_over_cwd -q -p no:cacheprovider
+72 passed
+
+uv run --no-sync ruff check
+All checks passed!
 
 python C:\Users\adams\.codex\skills\.system\plugin-creator\scripts\validate_plugin.py plugins\codex-supervisor
 Plugin validation passed: C:\Users\adams\projects\codex-supervisor\plugins\codex-supervisor
+
+codex plugin add codex-supervisor@codex-supervisor-local
+Installed plugin root: C:\Users\adams\.codex\plugins\cache\codex-supervisor-local\codex-supervisor\0.2.0+codex.20260707223857
 ```
 
 ## Planning Ledger
@@ -100,6 +106,8 @@ Active plan:
 
 Recently completed plans:
 
+- `plan-plugin-cache-refresh-20260707`: `Plugin cache refresh`
+- `plan-accepted-provenance-hardening-20260707`: `Accepted provenance hardening`
 - `substrate-hardening-20260707`: `Substrate hardening`
 - `plan-substrate-20260707`: `Goal Mode substrate pivot`
 - `plan-completion-proof-20260707`: `Plan completion proof semantics`
@@ -148,13 +156,26 @@ Accepted tasks:
   cachebuster, and verified the repo.
 - `task-substrate-hardening-proof-20260707`: recorded final proof for the substrate hardening work
   with full verification, plugin validation, source ledger evidence, and handoff update.
+- `task-accepted-provenance-hardening-20260707`: enforced accepted attempt-run provenance for ACP,
+  validated real attempt-run metadata, filtered pre-existing dirty product paths out of worker
+  attribution, migrated the planning schema to v4 with `review_required` and a database-level
+  single-active-plan invariant, hardened timeout/log handling, fixed launcher path/source
+  resolution, corrected low-assurance policy, expanded integrity checks, and verified the repo.
+- `task-accepted-provenance-hardening-proof-20260707`: recorded final proof for the accepted
+  provenance hardening with Ruff, full verification, planning integrity, and source evidence.
+- `task-plugin-cachebuster-20260707`: bumped the plugin source manifest to
+  `0.2.0+codex.20260707223857`, validated the package, and verified the repo.
+- `task-plugin-cache-refresh-proof-20260707`: recorded final proof for the plugin cachebuster
+  source update before installing the refreshed Codex cache.
 
 Ready next task:
 
-- None. `plan-substrate-20260707`, `plan-completion-proof-20260707`, and
-  `substrate-hardening-20260707` are complete.
+- None. `plan-substrate-20260707`, `plan-completion-proof-20260707`,
+  `substrate-hardening-20260707`, `plan-accepted-provenance-hardening-20260707`, and
+  `plan-plugin-cache-refresh-20260707` are complete.
 
 ## Next Action
 
-ACP the substrate hardening changes, then refresh the installed Codex Supervisor plugin cache from
-the bumped `0.2.0+codex.20260707212834` manifest.
+No source task is ready. The accepted-provenance hardening is verified, recorded in the planning
+ledger, and the installed Codex Supervisor plugin cache has been refreshed from
+`0.2.0+codex.20260707223857`.

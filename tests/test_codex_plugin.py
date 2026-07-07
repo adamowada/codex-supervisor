@@ -347,7 +347,7 @@ def test_installed_cache_cli_launcher_runs_source_cli_without_path(
         "initialized": True,
         "path": str(db_path),
         "schema_name": "fresh_simplified_planning",
-        "schema_version": "3",
+        "schema_version": "4",
     }
     completed = _run_plugin_cli_launcher_from(
         cached_plugin,
@@ -393,7 +393,7 @@ def test_installed_cache_cli_launcher_defaults_to_invocation_workspace(
         "initialized": True,
         "path": str(workspace_db),
         "schema_name": "fresh_simplified_planning",
-        "schema_version": "3",
+        "schema_version": "4",
     }
     completed = _run_plugin_cli_launcher_from(
         cached_plugin,
@@ -409,6 +409,70 @@ def test_installed_cache_cli_launcher_defaults_to_invocation_workspace(
     assert payload["task"] is None
     assert payload["next_transition"] == "none"
     assert source_db.read_bytes() == source_before
+
+
+def test_plugin_cli_launcher_ignores_worker_path_args_for_workspace_default(
+    tmp_path: Path,
+) -> None:
+    launcher = _load_cli_launcher()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    args = launcher._with_workspace_database_default(
+        [
+            "attempt-run",
+            "--task-id",
+            "task-1",
+            "--workspace",
+            str(workspace),
+            "--",
+            sys.executable,
+            "-c",
+            "print('worker')",
+            "--path",
+            "worker-owned-argument",
+        ],
+        invocation_cwd=workspace,
+    )
+
+    assert args[:3] == (
+        "attempt-run",
+        "--path",
+        str(workspace / ".codex-supervisor" / "planning.sqlite3"),
+    )
+
+
+def test_installed_cache_mcp_launcher_prefers_marketplace_source_over_cwd(
+    tmp_path: Path,
+) -> None:
+    launcher = _load_mcp_launcher()
+    codex_home = tmp_path / "codex-home"
+    cached_plugin = (
+        codex_home
+        / "plugins"
+        / "cache"
+        / "codex-supervisor-local"
+        / "codex-supervisor"
+        / "0.2.0+codex.test"
+    )
+    cwd_repo_lookalike = tmp_path / "target-workspace"
+    shutil.copytree(PLUGIN_ROOT, cached_plugin)
+    _write_codex_config(codex_home)
+    (cwd_repo_lookalike / "src" / "codex_supervisor").mkdir(parents=True)
+    (cwd_repo_lookalike / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    old_cwd = Path.cwd()
+    os.chdir(cwd_repo_lookalike)
+    try:
+        repo_root = launcher.find_repo_root(
+            cached_plugin,
+            {
+                "CODEX_HOME": str(codex_home),
+            },
+        )
+    finally:
+        os.chdir(old_cwd)
+
+    assert repo_root == REPO_ROOT
 
 
 def test_installed_cache_cli_launcher_runs_full_happy_path_in_fresh_workspace(
@@ -534,6 +598,30 @@ def test_installed_cache_cli_launcher_runs_full_happy_path_in_fresh_workspace(
 def _load_worker_launcher() -> object:
     launcher_path = PLUGIN_ROOT / "scripts" / "codex_worker_launcher.py"
     spec = importlib.util.spec_from_file_location("codex_worker_launcher", launcher_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_cli_launcher() -> object:
+    launcher_path = PLUGIN_ROOT / "scripts" / "cli_launcher.py"
+    spec = importlib.util.spec_from_file_location("cli_launcher", launcher_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(launcher_path.parent))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(launcher_path.parent))
+    return module
+
+
+def _load_mcp_launcher() -> object:
+    launcher_path = PLUGIN_ROOT / "scripts" / "mcp_launcher.py"
+    spec = importlib.util.spec_from_file_location("mcp_launcher", launcher_path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)

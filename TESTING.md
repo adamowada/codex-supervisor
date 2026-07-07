@@ -37,6 +37,8 @@ The gate checks:
   packet hashes, git summary, and warning flags;
 - focused coverage that terminal evidence records compact evidence digests and recovery state
   exposes the latest digest;
+- focused coverage that blocked work surfaces linked repair guidance and linked repair task
+  creation reactivates the plan;
 - e2e coverage that installed-cache MCP queue inspection uses an explicit workspace ledger path
   instead of the source repository ledger;
 - e2e coverage that full AFK product follow-up mutation is assigned through another worker attempt,

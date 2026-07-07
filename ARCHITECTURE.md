@@ -110,6 +110,9 @@ lineage, git summary, and warning flags.
 Retry, repair, review, and final-proof relationships should use one generic lineage mechanism, not
 workflow-specific job types.
 
+When rejected evidence blocks a plan, queue inspection can surface the blocked task and suggest a
+linked repair task. Creating that task reactivates the plan through the same task-intent path.
+
 ### Interfaces
 
 The active CLI surface is `plan-init`, `task-create`, `queue-next`, `attempt-transition`, and

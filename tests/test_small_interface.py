@@ -106,6 +106,79 @@ def test_queue_next_surfaces_latest_acceptance_and_recovery_state(
     assert result.recovery_state["latest_evidence_digest"] == result.latest_evidence["digest"]
 
 
+def test_queue_next_surfaces_blocked_task_with_repair_hint(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        executor="manual",
+        status="running",
+        summary="Running task.",
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        status="failed",
+        summary="Task failed.",
+        checks=("Failure recorded.",),
+        artifacts=("artifact",),
+        acceptance_results={"Acceptance criterion": False},
+    )
+
+    result = queue_next(db_path)
+
+    assert result.plan is not None
+    assert result.plan["status"] == "blocked"
+    assert result.task is not None
+    assert result.task["status"] == "blocked"
+    assert result.latest_acceptance is not None
+    assert result.latest_acceptance["result"] == "rejected"
+    assert result.next_transition == "task-create --lineage repair_of=task-1"
+
+
+def test_task_create_can_add_linked_repair_to_blocked_plan(tmp_path: Path) -> None:
+    db_path = make_planning_db(tmp_path)
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        executor="manual",
+        status="running",
+        summary="Running task.",
+    )
+    attempt_transition(
+        db_path,
+        task_id="task-1",
+        attempt_id="attempt-1",
+        status="failed",
+        summary="Task failed.",
+        checks=("Failure recorded.",),
+        artifacts=("artifact",),
+        acceptance_results={"Acceptance criterion": False},
+    )
+
+    created = task_create(
+        db_path,
+        plan_id="plan-1",
+        plan_title="Plan",
+        plan_goal="Goal",
+        title="Repair task",
+        intent="Repair the failed task.",
+        assurance="medium",
+        acceptance_criteria=("Repair evidence exists",),
+        lineage=({"relation": "repair_of", "task_id": "task-1"},),
+        task_id="task-repair",
+    )
+    queued = queue_next(db_path)
+
+    assert created.plan["status"] == "active"
+    assert created.task["lineage"] == [{"relation": "repair_of", "task_id": "task-1"}]
+    assert queued.task is not None
+    assert queued.task["task_id"] == "task-repair"
+
+
 def test_task_create_reports_stored_plan(tmp_path: Path) -> None:
     db_path = make_planning_db(tmp_path)
 

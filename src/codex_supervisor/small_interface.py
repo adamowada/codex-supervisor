@@ -597,6 +597,8 @@ def _next_transition(
 ) -> str:
     if task.status == "ready":
         return "attempt-transition --status running"
+    if task.status == "blocked":
+        return f"task-create --lineage repair_of={task.task_id}"
     if attempt is not None:
         return "attempt-transition --status succeeded|failed|blocked"
     return "none"

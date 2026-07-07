@@ -79,7 +79,7 @@ Full verification completed:
 
 ```text
 uv run --no-sync python -B scripts/verify.py
-104 passed
+106 passed
 ```
 
 ## Planning Ledger
@@ -108,12 +108,15 @@ Accepted tasks:
 - `task-evidence-digests-20260707`: added compact evidence digests to terminal evidence, exposed
   parsed digests through latest evidence and recovery state, preserved raw artifact references,
   refreshed source locks, and verified the repo.
+- `task-linked-repair-20260707`: made blocked queue inspection surface repair-lineage guidance,
+  allowed linked repair tasks to reactivate blocked plans through task intent, refreshed source
+  locks, and verified the repo.
 
 Ready next task:
 
-- `task-linked-repair-20260707`: represent repair as linked task intent and recovery guidance
-  without adding repair-specific supervisor job types.
+- `task-shipping-proof-20260707`: represent shipping and final proof as supervised task intent and
+  recovery evidence.
 
 ## Next Action
 
-Implement linked repair task behavior for `task-linked-repair-20260707`.
+Implement final proof workflow for `task-shipping-proof-20260707`.

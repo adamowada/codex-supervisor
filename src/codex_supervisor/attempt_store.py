@@ -102,6 +102,17 @@ class AttemptStore:
                     "cannot create a second active plan while "
                     f"{active_plan['plan_id']!r} is active"
                 )
+            existing = connection.execute(
+                """select plan_id, title, status, priority, goal
+                   from plans
+                   where plan_id = ?""",
+                (plan_id,),
+            ).fetchone()
+            if existing is not None and existing["status"] == "blocked":
+                connection.execute(
+                    "update plans set status = 'active', updated_at = ? where plan_id = ?",
+                    (created_at, plan_id),
+                )
             connection.execute(
                 """insert into plans(plan_id, title, status, priority, goal, created_at, updated_at)
                    values (?, ?, 'active', ?, ?, ?, ?)
@@ -491,30 +502,9 @@ class AttemptStore:
         """Read the next operational task from the active queue."""
 
         with self._connect() as connection:
-            row = connection.execute(
-                """select
-                       plans.plan_id,
-                       plans.title as plan_title,
-                       plans.status as plan_status,
-                       plans.priority,
-                       tasks.task_id,
-                       tasks.title as task_title,
-                       tasks.status as task_status,
-                       tasks.assurance,
-                       tasks.intent,
-                       tasks.acceptance_json,
-                       tasks.lineage_json
-                   from tasks
-                   join plans on plans.plan_id = tasks.plan_id
-                   where plans.status = 'active'
-                     and tasks.status in ('running', 'ready')
-                   order by
-                     case tasks.status when 'running' then 0 else 1 end,
-                     plans.priority desc,
-                     tasks.created_at asc,
-                     tasks.task_id asc
-                   limit 1""",
-            ).fetchone()
+            row = self._read_next_open_task(connection)
+            if row is None:
+                row = self._read_next_blocked_task(connection)
         if row is None:
             return None
         return QueuedTaskRecord(
@@ -536,6 +526,59 @@ class AttemptStore:
                 ),
             ),
         )
+
+    @staticmethod
+    def _read_next_open_task(connection: sqlite3.Connection) -> sqlite3.Row | None:
+        return connection.execute(
+            """select
+                   plans.plan_id,
+                   plans.title as plan_title,
+                   plans.status as plan_status,
+                   plans.priority,
+                   tasks.task_id,
+                   tasks.title as task_title,
+                   tasks.status as task_status,
+                   tasks.assurance,
+                   tasks.intent,
+                   tasks.acceptance_json,
+                   tasks.lineage_json
+               from tasks
+               join plans on plans.plan_id = tasks.plan_id
+               where plans.status = 'active'
+                 and tasks.status in ('running', 'ready')
+               order by
+                 case tasks.status when 'running' then 0 else 1 end,
+                 plans.priority desc,
+                 tasks.created_at asc,
+                 tasks.task_id asc
+               limit 1""",
+        ).fetchone()
+
+    @staticmethod
+    def _read_next_blocked_task(connection: sqlite3.Connection) -> sqlite3.Row | None:
+        return connection.execute(
+            """select
+                   plans.plan_id,
+                   plans.title as plan_title,
+                   plans.status as plan_status,
+                   plans.priority,
+                   tasks.task_id,
+                   tasks.title as task_title,
+                   tasks.status as task_status,
+                   tasks.assurance,
+                   tasks.intent,
+                   tasks.acceptance_json,
+                   tasks.lineage_json
+               from tasks
+               join plans on plans.plan_id = tasks.plan_id
+               where plans.status = 'blocked'
+                 and tasks.status = 'blocked'
+               order by
+                 plans.priority desc,
+                 tasks.updated_at desc,
+                 tasks.task_id asc
+               limit 1""",
+        ).fetchone()
 
     def read_attempt(self, attempt_id: str) -> RunAttempt:
         """Read one attempt."""

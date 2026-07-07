@@ -120,6 +120,10 @@ Allowed relation names:
 Lineage is stored on task intent as generic relation data. A repair is not a special supervisor
 mode; it is a task linked to the task that needs repair.
 
+When a plan is blocked by rejected evidence, queue inspection may surface the blocked task with a
+`task-create --lineage repair_of=<task_id>` next transition. Creating that linked repair task
+reactivates the plan without adding a repair-specific supervisor mode.
+
 ## Evidence Bundle
 
 An evidence bundle is the structured proof attached to a task or attempt.

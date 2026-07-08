@@ -27,9 +27,12 @@ from codex_supervisor.lifecycle import (
     should_reactivate_plan_for_new_task,
 )
 from codex_supervisor.policy import normalize_assurance
+from codex_supervisor.projections import (
+    plan_has_projected_durable_completion,
+    project_plan,
+)
 from codex_supervisor.work_graph import (
     VALID_TASK_LINEAGE_RELATIONS,
-    plan_has_durable_completion,
 )
 
 
@@ -128,7 +131,7 @@ class AttemptStore:
                 existing["status"] == "blocked"
                 or (
                     existing["status"] == "done"
-                    and not plan_has_durable_completion(connection, plan_id)
+                    and not plan_has_projected_durable_completion(connection, plan_id)
                 )
             ):
                 connection.execute(
@@ -225,7 +228,7 @@ class AttemptStore:
             ).fetchone()
             if existing is not None and should_reactivate_plan_for_new_task(
                 plan_status=str(existing["status"]),
-                has_durable_completion=plan_has_durable_completion(
+                has_durable_completion=plan_has_projected_durable_completion(
                     connection,
                     normalized_plan_id,
                 ),
@@ -984,31 +987,13 @@ class AttemptStore:
         if plan is None or plan["status"] != "active":
             return
 
-        open_tasks = connection.execute(
-            """select count(*)
-               from tasks
-               where plan_id = ?
-                 and status in ('ready', 'running')""",
-            (plan_id,),
-        ).fetchone()[0]
-        if open_tasks:
-            return
-
-        blocked_tasks = connection.execute(
-            """select count(*)
-               from tasks
-               where plan_id = ?
-                 and status = 'blocked'""",
-            (plan_id,),
-        ).fetchone()[0]
-        if blocked_tasks:
+        projection = project_plan(connection, plan_id)
+        if projection.sync_target_status == "blocked":
             connection.execute(
                 "update plans set status = 'blocked', updated_at = ? where plan_id = ?",
                 (updated_at, plan_id),
             )
-            return
-
-        if plan_has_durable_completion(connection, plan_id):
+        elif projection.sync_target_status == "done":
             connection.execute(
                 "update plans set status = 'done', updated_at = ? where plan_id = ?",
                 (updated_at, plan_id),

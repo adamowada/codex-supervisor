@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -12,7 +13,6 @@ from pathlib import Path
 
 from codex_supervisor.attempt_store import ActivePlanWorkState, AttemptStore, TaskRecord
 from codex_supervisor.attempts import (
-    AcceptanceDecision,
     AttemptEvidence,
     RunAttempt,
     RunAttemptStatus,
@@ -25,6 +25,7 @@ from codex_supervisor.evidence_codec import (
     has_check_prefix,
 )
 from codex_supervisor.evidence_digest import parse_evidence_digest
+from codex_supervisor.projections import TerminalEvent, project_plan, read_current_terminal
 from codex_supervisor.work_graph import (
     LineageRelation,
     TaskGraphNode,
@@ -60,9 +61,12 @@ def queue_next_projection(database_path: Path) -> QueueNextResult:
             latest_evidence = (
                 store.read_latest_evidence(latest_task.task_id) if latest_task else None
             )
-            latest_acceptance = (
-                store.read_latest_acceptance(latest_task.task_id) if latest_task else None
+            terminal_event = (
+                _read_current_terminal_event(database_path, latest_task.task_id)
+                if latest_task
+                else None
             )
+            latest_acceptance = _terminal_acceptance_to_dict(terminal_event)
             return QueueNextResult(
                 plan=_active_plan_to_dict(active_plan),
                 task=None,
@@ -70,9 +74,7 @@ def queue_next_projection(database_path: Path) -> QueueNextResult:
                 latest_evidence=_evidence_to_dict(latest_evidence)
                 if latest_evidence
                 else None,
-                latest_acceptance=_acceptance_to_dict(latest_acceptance)
-                if latest_acceptance
-                else None,
+                latest_acceptance=latest_acceptance,
                 recovery_state=_recovery_state(
                     database_path,
                     plan=active_plan,
@@ -83,7 +85,10 @@ def queue_next_projection(database_path: Path) -> QueueNextResult:
                     latest_evidence=latest_evidence,
                     latest_acceptance=latest_acceptance,
                 ),
-                next_transition=_active_plan_without_open_task_transition(active_plan),
+                next_transition=_active_plan_without_open_task_transition(
+                    database_path,
+                    active_plan,
+                ),
             )
         return QueueNextResult(
             plan=None,
@@ -107,7 +112,8 @@ def queue_next_projection(database_path: Path) -> QueueNextResult:
     task = queued.task
     active_attempt = store.read_active_attempt(task.task_id)
     latest_evidence = store.read_latest_evidence(task.task_id)
-    latest_acceptance = store.read_latest_acceptance(task.task_id)
+    terminal_event = _read_current_terminal_event(database_path, task.task_id)
+    latest_acceptance = _terminal_acceptance_to_dict(terminal_event)
     return QueueNextResult(
         plan={
             "plan_id": queued.plan_id,
@@ -118,9 +124,7 @@ def queue_next_projection(database_path: Path) -> QueueNextResult:
         task=_task_to_dict(task),
         active_attempt=_attempt_to_dict(active_attempt) if active_attempt else None,
         latest_evidence=_evidence_to_dict(latest_evidence) if latest_evidence else None,
-        latest_acceptance=(
-            _acceptance_to_dict(latest_acceptance) if latest_acceptance else None
-        ),
+        latest_acceptance=latest_acceptance,
         recovery_state=_recovery_state(
             database_path,
             plan=None,
@@ -184,20 +188,6 @@ def _evidence_to_dict(evidence: AttemptEvidence) -> dict[str, object]:
     }
 
 
-def _acceptance_to_dict(decision: AcceptanceDecision) -> dict[str, object]:
-    return {
-        "decision_id": decision.decision_id,
-        "task_id": decision.task_id,
-        "attempt_id": decision.attempt_id,
-        "bundle_id": decision.bundle_id,
-        "actor": decision.actor,
-        "result": decision.result,
-        "rationale": decision.rationale,
-        "evaluation": dict(decision.evaluation),
-        "created_at": decision.created_at,
-    }
-
-
 def _recovery_state(
     database_path: Path,
     *,
@@ -207,7 +197,7 @@ def _recovery_state(
     latest_task: TaskRecord | None,
     active_attempt: RunAttempt | None,
     latest_evidence: AttemptEvidence | None,
-    latest_acceptance: AcceptanceDecision | None,
+    latest_acceptance: Mapping[str, object] | None,
 ) -> dict[str, object]:
     liveness = _liveness_state(database_path, active_attempt)
     packet_hashes = _packet_hashes(latest_evidence)
@@ -227,7 +217,7 @@ def _recovery_state(
             latest_evidence.bundle_id if latest_evidence else None
         ),
         "latest_acceptance_decision_id": (
-            latest_acceptance.decision_id if latest_acceptance else None
+            latest_acceptance.get("decision_id") if latest_acceptance else None
         ),
         "latest_evidence_digest": (
             parse_evidence_digest(latest_evidence.checks) if latest_evidence else None
@@ -238,7 +228,7 @@ def _recovery_state(
         if lineage_task
         else [],
         "suggested_lineage_targets": list(
-            suggested_lineage_targets(_graph_nodes(plan.tasks if plan else ()))
+            _suggested_lineage_targets(database_path, plan)
         ),
         "final_proof": final_proof_state(_graph_node(task or latest_task)),
         "git_summary": git_summary,
@@ -413,7 +403,7 @@ def _warning_flags(
     *,
     active_attempt: RunAttempt | None,
     latest_evidence: AttemptEvidence | None,
-    latest_acceptance: AcceptanceDecision | None,
+    latest_acceptance: Mapping[str, object] | None,
     liveness: Mapping[str, object],
     git_summary: Mapping[str, object],
 ) -> tuple[str, ...]:
@@ -429,7 +419,7 @@ def _warning_flags(
     if (
         latest_evidence is not None
         and latest_acceptance is not None
-        and latest_acceptance.bundle_id != latest_evidence.bundle_id
+        and latest_acceptance.get("bundle_id") != latest_evidence.bundle_id
     ):
         flags.append("latest_acceptance_not_latest_evidence")
     if latest_evidence is not None and _looks_like_attempt_run_evidence(latest_evidence):
@@ -452,6 +442,32 @@ def _has_launch_metadata_artifacts(evidence: AttemptEvidence) -> bool:
     return any(artifact.endswith("-assignment.json") for artifact in evidence.artifacts) and any(
         artifact.endswith("-command.json") for artifact in evidence.artifacts
     )
+
+
+def _read_current_terminal_event(
+    database_path: Path,
+    task_id: str,
+) -> TerminalEvent | None:
+    with sqlite3.connect(f"file:{database_path.as_posix()}?mode=ro", uri=True) as connection:
+        return read_current_terminal(connection, task_id)
+
+
+def _terminal_acceptance_to_dict(
+    event: TerminalEvent | None,
+) -> dict[str, object] | None:
+    if event is None:
+        return None
+    return {
+        "decision_id": event.decision_id,
+        "task_id": event.task_id,
+        "attempt_id": event.attempt_id,
+        "bundle_id": event.bundle_id,
+        "actor": event.acceptance_actor,
+        "result": event.acceptance_result,
+        "rationale": event.acceptance_rationale,
+        "evaluation": dict(event.acceptance_evaluation),
+        "created_at": event.decision_created_at,
+    }
 
 
 def _age_seconds(timestamp: str | None) -> int | None:
@@ -491,8 +507,11 @@ def _next_transition(
     return "none"
 
 
-def _active_plan_without_open_task_transition(plan: ActivePlanWorkState) -> str:
-    targets = suggested_lineage_targets(_graph_nodes(plan.tasks))
+def _active_plan_without_open_task_transition(
+    database_path: Path,
+    plan: ActivePlanWorkState,
+) -> str:
+    targets = _suggested_lineage_targets(database_path, plan)
     if not targets:
         return "active plan has no open task; suggested next: task-create"
     target_id = str(targets[0]["task_id"])
@@ -502,6 +521,26 @@ def _active_plan_without_open_task_transition(plan: ActivePlanWorkState) -> str:
         f"task-create --lineage shipping_proof_of={target_id}",
     )
     return "active plan has no open task; suggested next: " + " | ".join(suggestions)
+
+
+def _suggested_lineage_targets(
+    database_path: Path,
+    plan: ActivePlanWorkState | None,
+) -> tuple[dict[str, object], ...]:
+    if plan is None:
+        return ()
+    recovered_blockers = _recovered_blocker_ids(database_path, plan.plan_id)
+    tasks = tuple(task for task in plan.tasks if task.task_id not in recovered_blockers)
+    return suggested_lineage_targets(_graph_nodes(tasks))
+
+
+def _recovered_blocker_ids(database_path: Path, plan_id: str) -> frozenset[str]:
+    with sqlite3.connect(f"file:{database_path.as_posix()}?mode=ro", uri=True) as connection:
+        try:
+            projection = project_plan(connection, plan_id)
+        except LookupError:
+            return frozenset()
+    return frozenset(projection.recovered_blocker_ids)
 
 
 def _graph_nodes(tasks: tuple[TaskRecord, ...]) -> tuple[TaskGraphNode, ...]:

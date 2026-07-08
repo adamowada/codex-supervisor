@@ -98,6 +98,23 @@ uv run --no-sync python -B scripts/verify.py
 146 passed
 ```
 
+Latest projection-layer verification completed:
+
+```text
+uv run --no-sync pytest -q tests/test_projections.py tests/test_small_interface.py tests/test_acp_gate_e2e.py
+37 passed
+
+uv run --no-sync ruff check src\codex_supervisor tests
+All checks passed!
+
+uv run --no-sync python -B scripts/verify.py
+148 passed
+
+uv run --no-sync python -B scripts/check_target_workspace_acp.py --workspace . --path plans/planning.sqlite3 --json
+failed: .codex-supervisor/planning.sqlite3 is not ignored by git; dirty source-maintenance paths
+lack accepted attempt-run worker evidence.
+```
+
 ## Planning Ledger
 
 Active plan:
@@ -106,6 +123,7 @@ Active plan:
 
 Recently completed plans:
 
+- `plan-projections-layer-20260708`: `Projection layer`
 - `plan-module-deepening-20260708`: `Module deepening`
 - `plan-work-graph-provenance-fixes-20260708`: `Work graph provenance fixes`
 - `plan-plugin-cache-refresh-complexity-drift-20260707`: `Plugin cache refresh after complexity
@@ -202,17 +220,26 @@ Accepted tasks:
 - `task-module-deepening-proof-20260708`: recorded final proof for the module deepening refactor
   with full verification, focused module/e2e coverage, refreshed plugin cache, and current
   handoff/planning evidence.
+- `task-projections-layer-acp-assessment-20260708`: documented the requested ACP run against the
+  source repo, recorded that the target-workspace ACP gate failed because `.codex-supervisor/` is
+  not ignored and dirty source-maintenance paths were not attempt-run-backed product mutations, and
+  recovered the blocked projection-layer implementation task.
+- `task-projections-layer-proof-20260708`: recorded final proof for the projection-layer work with
+  full verification, focused projection/queue/ACP coverage, Ruff, projected recovered-blocker
+  coverage, and the ACP outcome preserved as a source-workspace caveat.
 
 Ready next task:
 
 - None. `plan-substrate-20260707`, `plan-completion-proof-20260707`,
   `substrate-hardening-20260707`, `plan-accepted-provenance-hardening-20260707`,
-  `plan-plugin-cache-refresh-20260707`, `plan-work-graph-provenance-fixes-20260708`, and
-  `plan-module-deepening-20260708` are complete.
+  `plan-plugin-cache-refresh-20260707`, `plan-work-graph-provenance-fixes-20260708`,
+  `plan-module-deepening-20260708`, and `plan-projections-layer-20260708` are complete.
 
 ## Next Action
 
-No source task is ready. The module deepening refactor is verified and recorded, the durable
-work-graph and queue recovery semantics have deeper module ownership, attempt-run execution is split
-into clearer internal phases, compact evidence check encoding/parsing is centralized, and the
-installed Codex Supervisor plugin cache has been refreshed to `0.2.0+codex.20260708043832`.
+No source task is ready. The projection-layer implementation is verified and recorded:
+`projections.py` now owns joined terminal events, projected plan status, recovered blockers, and
+final-proof coverage; active-plan status sync and ACP warnings consume the projection; queue
+recovery filters recovered blockers out of idle-plan follow-up suggestions. The target-workspace ACP
+gate was run against this source repo and failed for source-context reasons, not for a
+projection-layer regression.

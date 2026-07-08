@@ -18,6 +18,7 @@ build/
 !.env.example
 
 # Runtime/generated supervisor state
+.codex-supervisor/
 runs/
 worktrees/
 artifacts/

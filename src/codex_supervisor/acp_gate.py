@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codex_supervisor.evidence_codec import LAUNCH_PACKET_SHA256_CHECK_PREFIX, has_check_prefix
+from codex_supervisor.projections import project_plan
 from codex_supervisor.target_workspace import (
     SUPERVISOR_DIR,
     artifact_to_workspace_relative,
@@ -18,7 +19,6 @@ from codex_supervisor.target_workspace import (
     is_product_path,
     tracked_supervisor_paths,
 )
-from codex_supervisor.work_graph import plan_has_durable_completion
 
 
 @dataclass(frozen=True)
@@ -109,13 +109,9 @@ def _substrate_warnings(workspace: Path, *, database_path: Path) -> tuple[str, .
         plan_rows = connection.execute(
             "select plan_id, status from plans where status in ('active', 'done')"
         ).fetchall()
-        task_rows = connection.execute(
-            "select plan_id, task_id, status, lineage_json from tasks"
-        ).fetchall()
-        durably_complete_plan_ids = {
-            str(plan_id)
+        plan_projections = {
+            str(plan_id): project_plan(connection, str(plan_id))
             for plan_id, _status in plan_rows
-            if plan_has_durable_completion(connection, str(plan_id))
         }
 
     for attempt_id, checks_json, artifacts_json in attempt_rows:
@@ -133,23 +129,15 @@ def _substrate_warnings(workspace: Path, *, database_path: Path) -> tuple[str, .
         if not has_check_prefix(checks, LAUNCH_PACKET_SHA256_CHECK_PREFIX):
             warnings.append(f"accepted attempt {attempt_id} lacks launch packet hash")
 
-    task_records = [
-        {
-            "plan_id": str(plan_id),
-            "task_id": str(task_id),
-            "status": str(status),
-            "lineage": _lineage(lineage_json),
-        }
-        for plan_id, task_id, status, lineage_json in task_rows
-    ]
     for plan_id, _status in plan_rows:
         plan_id = str(plan_id)
         status = str(_status)
-        if plan_id in durably_complete_plan_ids:
+        projection = plan_projections[plan_id]
+        if projection.durable_completion:
             continue
         if status == "done":
             warnings.append(f"completed plan {plan_id} has no accepted final proof task")
-        elif status == "active" and not _has_open_task(plan_id, task_records):
+        elif status == "active" and not projection.open_task_ids:
             warnings.append(
                 f"active plan {plan_id} has no open task and no accepted final proof task"
             )
@@ -162,23 +150,6 @@ def _has_product_artifact(workspace: Path, artifacts: tuple[str, ...]) -> bool:
         if relative is not None and is_product_path(relative):
             return True
     return False
-
-
-def _has_open_task(plan_id: str, tasks: list[dict[str, object]]) -> bool:
-    return any(
-        task["plan_id"] == plan_id and task["status"] in {"ready", "running"}
-        for task in tasks
-    )
-
-
-def _lineage(raw_json: str) -> tuple[dict[str, str], ...]:
-    try:
-        decoded = json.loads(raw_json)
-    except json.JSONDecodeError:
-        return ()
-    if not isinstance(decoded, list):
-        return ()
-    return tuple(item for item in decoded if isinstance(item, dict))
 
 
 def _json_string_array(raw_json: str) -> tuple[str, ...]:

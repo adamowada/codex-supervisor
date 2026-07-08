@@ -285,7 +285,8 @@ def artifact_to_workspace_relative(workspace: Path, artifact: str) -> str | None
             relative = artifact_path.resolve().relative_to(workspace)
         except ValueError:
             return None
-        return relative.as_posix()
+        return normalize_relative_path(relative.as_posix())
+    artifact_path = Path(normalize_relative_path(str(artifact_path)))
     try:
         relative = (workspace / artifact_path).resolve().relative_to(workspace)
     except ValueError:

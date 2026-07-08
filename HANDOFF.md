@@ -287,6 +287,14 @@ Accepted tasks:
   contract/doc regression tests.
 - `task-contract-alignment-proof-20260708`: recorded final proof for Patch 2 with focused contract
   tests, protected lock verification, full verification, and durable planning evidence.
+- `task-ci-path-normalization-repair-20260708`: fixed the GitHub CI path-normalization failure by
+  normalizing relative artifact strings before workspace containment checks; the first terminal
+  evidence record was rejected because high-assurance evidence was missing risk notes.
+- `task-ci-path-normalization-repair-evidence-20260708`: recovered the blocked CI repair task with
+  accepted high-assurance evidence, including focused Windows verification, a Linux Python 3.14
+  container spot check for `..\\outside.txt`, full verification, and risk notes.
+- `task-ci-path-normalization-repair-proof-20260708`: recorded final proof for the CI repair chain;
+  `queue-next` returns `none` after the accepted proof.
 
 Ready next task:
 
@@ -294,13 +302,14 @@ Ready next task:
   `substrate-hardening-20260707`, `plan-accepted-provenance-hardening-20260707`,
   `plan-plugin-cache-refresh-20260707`, `plan-work-graph-provenance-fixes-20260708`,
   `plan-module-deepening-20260708`, `plan-projections-layer-20260708`, and
-  `plan-acp-repair-20260708`, `plan-safety-patch-20260708`, and
-  `plan-contract-alignment-patch-20260708` are complete.
+  `plan-acp-repair-20260708`, `plan-safety-patch-20260708`,
+  `plan-contract-alignment-patch-20260708`, and
+  `plan-ci-path-normalization-repair-20260708` are complete.
 
 ## Next Action
 
 No source task is ready. Patch 1 and Patch 2 of the three-patch sequence are verified and recorded.
 Patch 1 fixed plugin/MCP path binding and `attempt-run` setup-failure terminalization. Patch 2
 declared `plan-init`, aligned `PLANS.md` with the live schema contract, refreshed protected locks,
-and corrected ACP repair provenance wording. After Patch 2 ACP lands, the next source task is Patch
-3 projection-layer cleanup.
+and corrected ACP repair provenance wording. The GitHub CI path-normalization repair is verified and
+recorded; after its ACP lands, the next source task is Patch 3 projection-layer cleanup.

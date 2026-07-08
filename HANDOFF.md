@@ -123,6 +123,21 @@ uv run --no-sync python -B scripts/check_target_workspace_acp.py --workspace . -
 ok true, failures []
 ```
 
+Latest Patch 1 safety verification completed:
+
+```text
+red: focused Patch 1 regressions failed before implementation
+
+uv run --no-sync pytest -q tests/test_codex_plugin.py::test_plugin_cli_launcher_resolves_supervisor_paths_before_source_cwd tests/test_codex_plugin.py::test_installed_cache_cli_launcher_attempt_run_relative_workspace_uses_invocation_cwd tests/test_mcp_queue_next.py::test_mcp_queue_next_rejects_relative_tool_path tests/test_mcp_queue_next.py::test_mcp_queue_next_rejects_relative_context_path tests/test_process_attempt_e2e.py::test_reference_capture_failure_after_start_terminalizes_attempt
+5 passed
+
+uv run --no-sync pytest -q tests/test_codex_plugin.py tests/test_mcp_queue_next.py tests/test_mcp_stdio_e2e.py tests/test_process_attempt_e2e.py
+43 passed
+
+uv run --no-sync python -B scripts/verify.py
+153 passed
+```
+
 ## Planning Ledger
 
 Active plan:
@@ -131,6 +146,7 @@ Active plan:
 
 Recently completed plans:
 
+- `plan-safety-patch-20260708`: `Path and attempt-run safety`
 - `plan-acp-repair-20260708`: `ACP repair`
 - `plan-projections-layer-20260708`: `Projection layer`
 - `plan-module-deepening-20260708`: `Module deepening`
@@ -241,6 +257,13 @@ Accepted tasks:
   `c00e2d1`, and confirmed clean-worktree ACP passes with no failures.
 - `task-acp-repair-proof-20260708`: recorded final proof for the ACP repair with full verification
   and durable final-proof lineage.
+- `task-safety-patch-20260708`: fixed plugin CLI path binding so supervisor-owned relative paths
+  are resolved against the invocation workspace before the source CLI cwd changes, rejected relative
+  MCP planning paths at dispatch, resolved plugin MCP env paths before launch, terminalized
+  post-start `attempt-run` reference-capture failures as failed evidence, and added red/green
+  regression coverage.
+- `task-safety-patch-proof-20260708`: recorded final proof for Patch 1 with focused regression
+  tests, affected-surface tests, full verification, and durable planning evidence.
 
 Ready next task:
 
@@ -248,13 +271,12 @@ Ready next task:
   `substrate-hardening-20260707`, `plan-accepted-provenance-hardening-20260707`,
   `plan-plugin-cache-refresh-20260707`, `plan-work-graph-provenance-fixes-20260708`,
   `plan-module-deepening-20260708`, `plan-projections-layer-20260708`, and
-  `plan-acp-repair-20260708` are complete.
+  `plan-acp-repair-20260708`, and `plan-safety-patch-20260708` are complete.
 
 ## Next Action
 
-No source task is ready. The projection-layer implementation is verified and recorded:
-`projections.py` now owns joined terminal events, projected plan status, recovered blockers, and
-final-proof coverage; active-plan status sync and ACP warnings consume the projection; queue
-recovery filters recovered blockers out of idle-plan follow-up suggestions. The ACP repair is also
-verified and recorded: `.codex-supervisor/` is ignored, protected locks pass, the projection-layer
-commit was pushed, and clean-worktree ACP passes with no failures.
+No source task is ready. Patch 1 of the three-patch sequence is verified and recorded: plugin CLI
+paths are bound to the invocation workspace before source CLI dispatch, MCP planning paths no longer
+fall through to source-repo-relative lookup, and `attempt-run` setup failures after attempt start
+terminalize with failed evidence. After Patch 1 ACP lands, the next source task is Patch 2 contract
+and documentation alignment.

@@ -31,3 +31,25 @@ def test_mcp_queue_next_dispatches_to_compact_queue(tmp_path: Path) -> None:
     assert result["data"]["recovery_state"]["active_task_id"] == "task-1"
     assert "git_summary" in result["data"]["recovery_state"]
     assert result["data"]["next_transition"] == "attempt-transition --status running"
+
+
+def test_mcp_queue_next_rejects_relative_tool_path() -> None:
+    result = dispatch_mcp_tool(
+        "codex_supervisor.queue_next",
+        {"path": ".codex-supervisor/planning.sqlite3"},
+        context=McpServerContext(),
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "planning_path_must_be_absolute"
+
+
+def test_mcp_queue_next_rejects_relative_context_path() -> None:
+    result = dispatch_mcp_tool(
+        "codex_supervisor.queue_next",
+        {},
+        context=McpServerContext(planning_path=Path("relative.sqlite3")),
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "planning_path_must_be_absolute"

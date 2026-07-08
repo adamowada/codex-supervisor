@@ -442,6 +442,160 @@ def test_plugin_cli_launcher_ignores_worker_path_args_for_workspace_default(
     )
 
 
+def test_plugin_cli_launcher_resolves_supervisor_paths_before_source_cwd(
+    tmp_path: Path,
+) -> None:
+    launcher = _load_cli_launcher()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    packet = workspace / "packet.md"
+    intent = workspace / "intent.md"
+    packet.write_text("packet\n", encoding="utf-8")
+    intent.write_text("intent\n", encoding="utf-8")
+
+    args = launcher._with_workspace_database_default(
+        [
+            "attempt-run",
+            "--path",
+            "relative.sqlite3",
+            "--task-id",
+            "task-1",
+            "--workspace",
+            ".",
+            "--launch-packet",
+            "packet.md",
+            "--verifier-intent=intent.md",
+            "--",
+            sys.executable,
+            "-c",
+            "print('--workspace is worker-owned here')",
+            "--workspace",
+            ".",
+        ],
+        invocation_cwd=workspace,
+    )
+
+    assert args[:3] == (
+        "attempt-run",
+        "--path",
+        str(workspace / "relative.sqlite3"),
+    )
+    assert args[args.index("--workspace") + 1] == str(workspace)
+    assert args[args.index("--launch-packet") + 1] == str(packet)
+    assert f"--verifier-intent={intent}" in args
+    worker_separator = args.index("--")
+    assert args[worker_separator + 1 :] == (
+        sys.executable,
+        "-c",
+        "print('--workspace is worker-owned here')",
+        "--workspace",
+        ".",
+    )
+
+
+def test_installed_cache_cli_launcher_attempt_run_relative_workspace_uses_invocation_cwd(
+    tmp_path: Path,
+) -> None:
+    codex_home = tmp_path / "codex-home"
+    workspace = tmp_path / "relative-worker-workspace"
+    workspace.mkdir()
+    workspace_db = workspace / ".codex-supervisor" / "planning.sqlite3"
+    project_file = workspace / "relative-worker-cwd.txt"
+    source_db = REPO_ROOT / "plans" / "planning.sqlite3"
+    source_before = source_db.read_bytes()
+    cached_plugin = (
+        codex_home
+        / "plugins"
+        / "cache"
+        / "codex-supervisor-local"
+        / "codex-supervisor"
+        / "0.2.0+codex.test"
+    )
+    shutil.copytree(PLUGIN_ROOT, cached_plugin)
+    _write_codex_config(codex_home)
+
+    _run_plugin_cli_launcher_from(
+        cached_plugin,
+        ("plan-init",),
+        codex_home=codex_home,
+        include_source_env=False,
+        invocation_cwd=workspace,
+    )
+    _run_plugin_cli_launcher_from(
+        cached_plugin,
+        (
+            "task-create",
+            "--plan-id",
+            "relative-workspace-plan",
+            "--plan-title",
+            "Relative workspace",
+            "--plan-goal",
+            "Run a worker through relative plugin workspace args.",
+            "--task-id",
+            "relative-workspace-task",
+            "--title",
+            "Write cwd marker",
+            "--intent",
+            "Write a marker from the invocation workspace.",
+            "--assurance",
+            "high",
+            "--acceptance",
+            "Marker written from invocation workspace",
+        ),
+        codex_home=codex_home,
+        include_source_env=False,
+        invocation_cwd=workspace,
+    )
+    completed = _run_plugin_cli_launcher_from(
+        cached_plugin,
+        (
+            "attempt-run",
+            "--task-id",
+            "relative-workspace-task",
+            "--attempt-id",
+            "relative-workspace-attempt",
+            "--executor",
+            "worker-process",
+            "--workspace",
+            ".",
+            "--timeout-seconds",
+            "10",
+            "--summary",
+            "Run worker in relative workspace.",
+            "--artifact",
+            str(project_file),
+            "--acceptance-result",
+            "pass",
+            "--risk",
+            "Relative workspace was resolved before source CLI cwd changed.",
+            "--json",
+            "--",
+            sys.executable,
+            "-c",
+            (
+                "from pathlib import Path; import sys; "
+                "expected = Path(sys.argv[1]).resolve(); "
+                "actual = Path.cwd().resolve(); "
+                "sys.exit(f'cwd mismatch: {actual} != {expected}') "
+                "if actual != expected else "
+                "Path('relative-worker-cwd.txt').write_text(str(actual), encoding='utf-8')"
+            ),
+            str(workspace),
+        ),
+        codex_home=codex_home,
+        include_source_env=False,
+        invocation_cwd=workspace,
+    )
+
+    payload = json.loads(completed.stdout)
+    assert payload["workspace"] == str(workspace)
+    assert payload["exit_code"] == 0
+    assert payload["transition"]["task_status"] == "done"
+    assert project_file.read_text(encoding="utf-8") == str(workspace.resolve())
+    assert workspace_db.is_file()
+    assert source_db.read_bytes() == source_before
+
+
 def test_installed_cache_mcp_launcher_prefers_marketplace_source_over_cwd(
     tmp_path: Path,
 ) -> None:

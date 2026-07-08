@@ -175,13 +175,53 @@ def run_process_attempt(
     verifier_command_path = evidence_paths.verifier_command
     verifier_stdout_path = evidence_paths.verifier_stdout
     verifier_stderr_path = evidence_paths.verifier_stderr
-    references = _capture_reference_files(
-        launch_packet_path=launch_packet_path,
-        verifier_intent_path=verifier_intent_path,
-        evidence_dir=evidence_dir,
-        workspace=workspace,
-        attempt_id=recorded_attempt_id,
-    )
+    try:
+        references = _capture_reference_files(
+            launch_packet_path=launch_packet_path,
+            verifier_intent_path=verifier_intent_path,
+            evidence_dir=evidence_dir,
+            workspace=workspace,
+            attempt_id=recorded_attempt_id,
+        )
+    except OSError as exc:
+        telemetry_error = f"could not prepare attempt telemetry: {exc}"
+        transition = _terminalize_setup_failure(
+            database_path,
+            task_id=task_id,
+            attempt_id=recorded_attempt_id,
+            executor=executor,
+            summary=f"{run_summary} Could not prepare attempt telemetry: {exc}.",
+            checks=checks,
+            acceptance_results=acceptance_results,
+            risks=risks,
+            gaps=(telemetry_error, *gaps),
+            next_actions=next_actions,
+            review_evidence=review_evidence,
+            telemetry_error=telemetry_error,
+        )
+        return ProcessAttemptResult(
+            command=command,
+            workspace=str(workspace),
+            exit_code=1,
+            assignment_path=str(assignment_path),
+            command_path=str(command_path),
+            liveness_path=str(liveness_path),
+            stdout_path=str(stdout_path),
+            stderr_path=str(stderr_path),
+            launch_packet_path=None,
+            launch_packet_sha256=None,
+            verifier_intent_path=None,
+            verifier_intent_sha256=None,
+            verifier_command=verifier_command,
+            verifier_exit_code=None,
+            verifier_stdout_path=(
+                str(verifier_stdout_path) if verifier_stdout_path is not None else None
+            ),
+            verifier_stderr_path=(
+                str(verifier_stderr_path) if verifier_stderr_path is not None else None
+            ),
+            transition=transition,
+        )
     launch_packet = references.launch_packet
     verifier_intent = references.verifier_intent
     assignment_error = _write_assignment_metadata(
@@ -444,6 +484,45 @@ def run_process_attempt(
 
 def _command_summary(command: tuple[str, ...]) -> str:
     return "Run worker process: " + " ".join(command)
+
+
+def _terminalize_setup_failure(
+    database_path: Path,
+    *,
+    task_id: str,
+    attempt_id: str,
+    executor: str,
+    summary: str,
+    checks: tuple[str, ...],
+    acceptance_results: dict[str, bool] | None,
+    risks: tuple[str, ...],
+    gaps: tuple[str, ...],
+    next_actions: tuple[str, ...],
+    review_evidence: tuple[str, ...],
+    telemetry_error: str,
+) -> AttemptTransitionResult:
+    return attempt_transition(
+        database_path,
+        task_id=task_id,
+        attempt_id=attempt_id,
+        executor=executor,
+        status="failed",
+        summary=summary,
+        checks=(
+            f"{PROCESS_EXIT_CHECK_PREFIX}1",
+            f"{TELEMETRY_WARNING_CHECK_PREFIX}{telemetry_error}",
+            *checks,
+        ),
+        artifacts=(),
+        acceptance_results=_acceptance_results_for_terminal_status(
+            acceptance_results,
+            terminal_status="failed",
+        ),
+        risks=risks,
+        gaps=gaps,
+        next_actions=next_actions,
+        review_evidence=review_evidence,
+    )
 
 
 def _evidence_paths(

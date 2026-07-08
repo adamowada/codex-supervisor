@@ -9,6 +9,9 @@ import time
 from hashlib import sha256
 from pathlib import Path
 
+from codex_supervisor import process_attempt as process_attempt_module
+from codex_supervisor.process_attempt import run_process_attempt
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -652,6 +655,88 @@ def test_missing_launch_packet_fails_before_attempt_starts(tmp_path: Path) -> No
         attempt_count = connection.execute("select count(*) from attempts").fetchone()[0]
     assert task_status == "ready"
     assert attempt_count == 0
+
+
+def test_reference_capture_failure_after_start_terminalizes_attempt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / ".codex-supervisor" / "planning.sqlite3"
+    workspace = tmp_path / "reference-capture-failure-project"
+    packet = workspace / "packet.md"
+    worker_marker = workspace / "worker-ran.txt"
+    packet.parent.mkdir(parents=True)
+    packet.write_text("packet\n", encoding="utf-8")
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-reference-capture-failure",
+        "--plan-title",
+        "Reference capture failure",
+        "--plan-goal",
+        "Terminalize setup failures after an attempt starts.",
+        "--task-id",
+        "task-reference-capture-failure",
+        "--title",
+        "Terminalize setup failure",
+        "--intent",
+        "Run attempt-run when reference capture fails after start.",
+        "--assurance",
+        "medium",
+        "--acceptance",
+        "Reference capture failure becomes terminal evidence",
+        "--json",
+    )
+
+    def fail_capture(*args, **kwargs):
+        raise OSError("simulated reference copy failure")
+
+    monkeypatch.setattr(
+        process_attempt_module,
+        "_capture_reference_files",
+        fail_capture,
+    )
+
+    result = run_process_attempt(
+        db_path,
+        task_id="task-reference-capture-failure",
+        attempt_id="attempt-reference-capture-failure",
+        executor="worker-process",
+        workspace=workspace,
+        launch_packet_path=packet,
+        timeout_seconds=10,
+        summary="Run worker after reference capture.",
+        command=(
+            sys.executable,
+            "-c",
+            (
+                "from pathlib import Path; "
+                "Path('worker-ran.txt').write_text('bad', encoding='utf-8')"
+            ),
+        ),
+        acceptance_results={
+            "Reference capture failure becomes terminal evidence": True,
+        },
+    )
+
+    assert result.exit_code == 1
+    assert result.transition.task_status == "blocked"
+    assert result.transition.evidence is not None
+    assert "process exit code: 1" in result.transition.evidence["checks"]
+    assert any(
+        check.startswith("telemetry warning: could not prepare attempt telemetry")
+        for check in result.transition.evidence["checks"]
+    )
+    assert not worker_marker.exists()
+    with sqlite3.connect(db_path) as connection:
+        attempts = connection.execute(
+            "select attempt_id, status from attempts order by attempt_id"
+        ).fetchall()
+    assert attempts == [("attempt-reference-capture-failure", "failed")]
 
 
 def test_timeout_worker_can_be_accepted_by_verifier_on_original_task(

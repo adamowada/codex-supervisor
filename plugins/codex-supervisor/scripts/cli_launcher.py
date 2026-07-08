@@ -57,28 +57,90 @@ def _with_workspace_database_default(
     *,
     invocation_cwd: Path,
 ) -> tuple[str, ...]:
-    """Add the workspace planning DB path when a compact command omits --path."""
+    """Bind supervisor paths before the launcher switches to the source repo cwd."""
 
     if not argv:
         return ()
     command = argv[0]
+    supervisor_args, worker_args = _split_worker_args(argv)
     if (
         command not in WORKSPACE_DATABASE_COMMANDS
-        or _has_supervisor_option(argv, "--path")
-        or _has_supervisor_option(argv, "-h")
-        or _has_supervisor_option(argv, "--help")
+        or _has_supervisor_option(supervisor_args, "-h")
+        or _has_supervisor_option(supervisor_args, "--help")
     ):
         return tuple(argv)
-    database_path = invocation_cwd / ".codex-supervisor" / "planning.sqlite3"
-    return (command, "--path", str(database_path), *argv[1:])
+    bound_args = list(supervisor_args)
+    if not _has_supervisor_option(bound_args, "--path"):
+        database_path = invocation_cwd / ".codex-supervisor" / "planning.sqlite3"
+        bound_args[1:1] = ("--path", str(database_path))
+    return (
+        *_resolve_supervisor_path_options(
+            bound_args,
+            invocation_cwd=invocation_cwd,
+        ),
+        *worker_args,
+    )
+
+
+def _split_worker_args(argv: list[str]) -> tuple[list[str], tuple[str, ...]]:
+    try:
+        separator_index = argv.index("--")
+    except ValueError:
+        return list(argv), ()
+    return list(argv[:separator_index]), tuple(argv[separator_index:])
+
+
+def _resolve_supervisor_path_options(
+    argv: list[str],
+    *,
+    invocation_cwd: Path,
+) -> tuple[str, ...]:
+    if not argv:
+        return ()
+    command = argv[0]
+    path_options = {"--path"}
+    if command == "attempt-run":
+        path_options.update({"--workspace", "--launch-packet", "--verifier-intent"})
+    resolved = list(argv)
+    index = 1
+    while index < len(resolved):
+        item = resolved[index]
+        if item in path_options and index + 1 < len(resolved):
+            resolved[index + 1] = _resolve_invocation_path(
+                resolved[index + 1],
+                invocation_cwd=invocation_cwd,
+            )
+            index += 2
+            continue
+        matched = next(
+            (
+                option
+                for option in path_options
+                if item.startswith(f"{option}=")
+            ),
+            None,
+        )
+        if matched is not None:
+            raw_value = item.split("=", 1)[1]
+            resolved[index] = (
+                f"{matched}="
+                + _resolve_invocation_path(raw_value, invocation_cwd=invocation_cwd)
+            )
+        index += 1
+    return tuple(resolved)
+
+
+def _resolve_invocation_path(value: str, *, invocation_cwd: Path) -> str:
+    path = Path(value)
+    if path.is_absolute():
+        return str(path)
+    return str((invocation_cwd / path).resolve())
 
 
 def _has_supervisor_option(argv: list[str], option: str) -> bool:
     """Return whether a supervisor CLI option appears before worker argv begins."""
 
     for item in argv[1:]:
-        if item == "--":
-            return False
         if item == option:
             return True
         if option == "--path" and item.startswith("--path="):

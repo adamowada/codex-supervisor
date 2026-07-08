@@ -32,7 +32,7 @@ def main() -> int:
     ]
     planning_path = os.environ.get(PLANNING_PATH_ENV_VAR)
     if planning_path and planning_path.strip():
-        command.extend(("--planning-path", planning_path.strip()))
+        command.extend(("--planning-path", _absolute_invocation_path(planning_path.strip())))
     env = _pythonpath_env(repo_root, os.environ)
     completed = subprocess.run(tuple(command), cwd=repo_root, env=env, check=False)
     return completed.returncode
@@ -81,6 +81,13 @@ def _pythonpath_env(repo_root: Path, environ: Mapping[str, str]) -> dict[str, st
     existing = env.get("PYTHONPATH")
     env["PYTHONPATH"] = src_path if not existing else src_path + os.pathsep + existing
     return env
+
+
+def _absolute_invocation_path(value: str) -> str:
+    path = Path(value)
+    if path.is_absolute():
+        return str(path)
+    return str(path.resolve())
 
 
 def _cache_info(plugin_root: Path, environ: Mapping[str, str]) -> tuple[Path, str] | None:

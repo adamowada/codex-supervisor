@@ -100,12 +100,21 @@ def _handle_queue_next(arguments: JsonObject, context: McpServerContext) -> obje
 def _database_path(arguments: JsonObject, context: McpServerContext) -> Path:
     raw_path = _optional_string(arguments.get("path"))
     if raw_path is not None:
-        return Path(raw_path)
+        return _absolute_planning_path(Path(raw_path))
     if context.planning_path is not None:
-        return context.planning_path
+        return _absolute_planning_path(context.planning_path)
     raise McpDispatchError(
         "planning_path_required",
         "codex_supervisor.queue_next requires a planning database path.",
+    )
+
+
+def _absolute_planning_path(path: Path) -> Path:
+    if path.is_absolute():
+        return path
+    raise McpDispatchError(
+        "planning_path_must_be_absolute",
+        "codex_supervisor.queue_next planning database path must be absolute.",
     )
 
 

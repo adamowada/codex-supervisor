@@ -28,6 +28,20 @@ def test_mcp_queue_next_contract_maps_to_compact_model() -> None:
     assert "planning SQLite" in contract.state_flow
 
 
+def test_cli_plan_init_contract_declares_bootstrap_behavior() -> None:
+    contract = next(
+        contract
+        for contract in ADAPTER_OPERATION_CONTRACTS
+        if contract.name == "cli_plan_init"
+    )
+
+    assert contract.surface == "cli"
+    assert contract.operation_name == "plan-init"
+    assert "schema" in contract.state_flow.casefold()
+    assert "gitignore" in contract.evidence_behavior.casefold()
+    assert "acceptance decision" in contract.acceptance_behavior.casefold()
+
+
 def test_mcp_surface_contains_declared_queue_operation() -> None:
     tool_names = {tool["name"] for tool in list_mcp_tools()}
 
@@ -38,6 +52,7 @@ def test_declared_adapter_surfaces_match_active_contract() -> None:
     contracts = {contract.name: contract for contract in ADAPTER_OPERATION_CONTRACTS}
 
     assert set(contracts) == {
+        "cli_plan_init",
         "cli_task_create",
         "cli_attempt_transition",
         "cli_attempt_run",

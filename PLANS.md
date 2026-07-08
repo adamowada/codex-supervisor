@@ -30,8 +30,6 @@ Required keys:
 
 - `schema_name`
 - `schema_version`
-- `reset_at`
-- `reset_reason`
 
 ### `plans`
 
@@ -64,6 +62,7 @@ One intent that can be attempted.
 - `intent`: required text.
 - `acceptance_json`: required JSON array.
 - `lineage_json`: required JSON array of generic task relations.
+- `review_required`: required 0/1 review evidence flag.
 - `created_at`: required timestamp.
 - `updated_at`: required timestamp.
 

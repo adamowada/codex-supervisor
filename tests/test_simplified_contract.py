@@ -61,6 +61,24 @@ def test_fresh_planning_database_contract() -> None:
         connection.close()
 
 
+def test_plans_doc_matches_live_schema_contract() -> None:
+    text = (REPO_ROOT / "PLANS.md").read_text(encoding="utf-8")
+
+    assert "- `schema_name`" in text
+    assert "- `schema_version`" in text
+    assert "`reset_at`" not in text
+    assert "`reset_reason`" not in text
+    assert "- `review_required`: required 0/1 review evidence flag." in text
+
+
+def test_handoff_acp_repair_commit_wording_is_precise() -> None:
+    text = (REPO_ROOT / "HANDOFF.md").read_text(encoding="utf-8")
+
+    assert "committed and pushed\n  `c00e2d1`" not in text
+    assert "`36cb840`" in text
+    assert "ACP repair proof" in text
+
+
 def test_repo_local_skills() -> None:
     skill_files = sorted((REPO_ROOT / ".agents" / "skills").glob("*/SKILL.md"))
     assert [path.parent.name for path in skill_files] == [

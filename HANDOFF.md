@@ -138,6 +138,21 @@ uv run --no-sync python -B scripts/verify.py
 153 passed
 ```
 
+Latest Patch 2 contract-alignment verification completed:
+
+```text
+red: Patch 2 contract/doc regressions failed before implementation
+
+uv run --no-sync pytest -q tests/test_adapter_contracts.py::test_cli_plan_init_contract_declares_bootstrap_behavior tests/test_adapter_contracts.py::test_declared_adapter_surfaces_match_active_contract tests/test_simplified_contract.py::test_plans_doc_matches_live_schema_contract tests/test_simplified_contract.py::test_handoff_acp_repair_commit_wording_is_precise
+4 passed
+
+uv run --no-sync python -B scripts/check_protected_files.py
+Protected source-of-truth files are unchanged.
+
+uv run --no-sync python -B scripts/verify.py
+156 passed
+```
+
 ## Planning Ledger
 
 Active plan:
@@ -146,6 +161,7 @@ Active plan:
 
 Recently completed plans:
 
+- `plan-contract-alignment-patch-20260708`: `Contract alignment patch`
 - `plan-safety-patch-20260708`: `Path and attempt-run safety`
 - `plan-acp-repair-20260708`: `ACP repair`
 - `plan-projections-layer-20260708`: `Projection layer`
@@ -253,10 +269,11 @@ Accepted tasks:
   full verification, focused projection/queue/ACP coverage, Ruff, projected recovered-blocker
   coverage, and the ACP outcome preserved as a source-workspace caveat.
 - `task-acp-repair-20260708`: added the missing `.codex-supervisor/` ignore rule, refreshed the
-  protected `.gitignore` hash, verified source locks and full tests, committed and pushed
-  `c00e2d1`, and confirmed clean-worktree ACP passes with no failures.
-- `task-acp-repair-proof-20260708`: recorded final proof for the ACP repair with full verification
-  and durable final-proof lineage.
+  protected `.gitignore` hash, verified source locks and full tests, and confirmed clean-worktree
+  ACP passes with no failures. The `.gitignore` change landed in `c00e2d1`; the ACP repair proof
+  was recorded in `36cb840`.
+- `task-acp-repair-proof-20260708`: recorded final proof for the ACP repair with full verification,
+  durable final-proof lineage, and commit `36cb840`.
 - `task-safety-patch-20260708`: fixed plugin CLI path binding so supervisor-owned relative paths
   are resolved against the invocation workspace before the source CLI cwd changes, rejected relative
   MCP planning paths at dispatch, resolved plugin MCP env paths before launch, terminalized
@@ -264,6 +281,12 @@ Accepted tasks:
   regression coverage.
 - `task-safety-patch-proof-20260708`: recorded final proof for Patch 1 with focused regression
   tests, affected-surface tests, full verification, and durable planning evidence.
+- `task-contract-alignment-patch-20260708`: declared `plan-init` in adapter operation contracts,
+  aligned `PLANS.md` with live meta keys and the `review_required` task field, refreshed the
+  protected `PLANS.md` hash, corrected the ACP repair handoff commit wording, and added focused
+  contract/doc regression tests.
+- `task-contract-alignment-proof-20260708`: recorded final proof for Patch 2 with focused contract
+  tests, protected lock verification, full verification, and durable planning evidence.
 
 Ready next task:
 
@@ -271,12 +294,13 @@ Ready next task:
   `substrate-hardening-20260707`, `plan-accepted-provenance-hardening-20260707`,
   `plan-plugin-cache-refresh-20260707`, `plan-work-graph-provenance-fixes-20260708`,
   `plan-module-deepening-20260708`, `plan-projections-layer-20260708`, and
-  `plan-acp-repair-20260708`, and `plan-safety-patch-20260708` are complete.
+  `plan-acp-repair-20260708`, `plan-safety-patch-20260708`, and
+  `plan-contract-alignment-patch-20260708` are complete.
 
 ## Next Action
 
-No source task is ready. Patch 1 of the three-patch sequence is verified and recorded: plugin CLI
-paths are bound to the invocation workspace before source CLI dispatch, MCP planning paths no longer
-fall through to source-repo-relative lookup, and `attempt-run` setup failures after attempt start
-terminalize with failed evidence. After Patch 1 ACP lands, the next source task is Patch 2 contract
-and documentation alignment.
+No source task is ready. Patch 1 and Patch 2 of the three-patch sequence are verified and recorded.
+Patch 1 fixed plugin/MCP path binding and `attempt-run` setup-failure terminalization. Patch 2
+declared `plan-init`, aligned `PLANS.md` with the live schema contract, refreshed protected locks,
+and corrected ACP repair provenance wording. After Patch 2 ACP lands, the next source task is Patch
+3 projection-layer cleanup.

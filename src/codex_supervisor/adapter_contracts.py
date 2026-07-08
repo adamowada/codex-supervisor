@@ -25,6 +25,25 @@ class AdapterOperationContract:
 
 ADAPTER_OPERATION_CONTRACTS: tuple[AdapterOperationContract, ...] = (
     AdapterOperationContract(
+        name="cli_plan_init",
+        surface="cli",
+        operation_name="plan-init",
+        task_intent="Bootstraps the compact planning ledger before task intent is recorded.",
+        attempt_behavior="Creates no run attempt.",
+        evidence_behavior=(
+            "Initializes planning SQLite schema metadata and ensures the workspace "
+            ".codex-supervisor/ gitignore guard."
+        ),
+        assurance_levels=(
+            AssuranceLevel.LOW,
+            AssuranceLevel.MEDIUM,
+            AssuranceLevel.HIGH,
+        ),
+        acceptance_behavior="Creates no acceptance decision.",
+        state_flow="Creates or migrates the compact planning SQLite schema.",
+        operator_value="Gives Goal Mode a durable ledger before any supervised work begins.",
+    ),
+    AdapterOperationContract(
         name="cli_task_create",
         surface="cli",
         operation_name="task-create",

@@ -651,12 +651,17 @@ class AttemptStore:
             row = self._read_next_open_task(connection)
             if row is None:
                 row = self._read_next_blocked_task(connection)
+            projected_plan_status = (
+                project_plan(connection, str(row["plan_id"])).projected_status
+                if row is not None
+                else None
+            )
         if row is None:
             return None
         return QueuedTaskRecord(
             plan_id=row["plan_id"],
             plan_title=row["plan_title"],
-            plan_status=row["plan_status"],
+            plan_status=projected_plan_status or row["plan_status"],
             priority=row["priority"],
             task=TaskRecord(
                 task_id=row["task_id"],
@@ -678,10 +683,10 @@ class AttemptStore:
         """Read the active plan when Goal Mode needs to choose the next linked task."""
 
         with self._connect() as connection:
-            row = connection.execute(
+            rows = connection.execute(
                 """select plan_id, title, status, priority
                    from plans
-                   where status = 'active'
+                   where status in ('active', 'blocked')
                      and not exists (
                          select 1
                          from tasks
@@ -689,8 +694,17 @@ class AttemptStore:
                            and tasks.status in ('ready', 'running')
                      )
                    order by priority desc, created_at asc, plan_id asc
-                   limit 1"""
-            ).fetchone()
+                   """
+            ).fetchall()
+            row: sqlite3.Row | None = None
+            projected_status = "active"
+            for candidate in rows:
+                projection = project_plan(connection, str(candidate["plan_id"]))
+                if projection.projected_status != "active":
+                    continue
+                row = candidate
+                projected_status = projection.projected_status
+                break
             if row is None:
                 return None
             task_rows = connection.execute(
@@ -705,7 +719,7 @@ class AttemptStore:
         return ActivePlanWorkState(
             plan_id=row["plan_id"],
             plan_title=row["title"],
-            plan_status=row["status"],
+            plan_status=projected_status,
             priority=row["priority"],
             tasks=tuple(
                 TaskRecord(
@@ -730,7 +744,7 @@ class AttemptStore:
 
     @staticmethod
     def _read_next_open_task(connection: sqlite3.Connection) -> sqlite3.Row | None:
-        return connection.execute(
+        rows = connection.execute(
             """select
                    plans.plan_id,
                    plans.title as plan_title,
@@ -746,19 +760,27 @@ class AttemptStore:
                    tasks.review_required
                from tasks
                join plans on plans.plan_id = tasks.plan_id
-               where plans.status = 'active'
+               where plans.status in ('active', 'blocked')
                  and tasks.status in ('running', 'ready')
                order by
                  case tasks.status when 'running' then 0 else 1 end,
                  plans.priority desc,
                  tasks.created_at asc,
                  tasks.task_id asc
-               limit 1""",
-        ).fetchone()
+               """
+        ).fetchall()
+        for row in rows:
+            projection = project_plan(connection, str(row["plan_id"]))
+            if projection.projected_status != "active":
+                continue
+            if row["task_id"] not in projection.open_task_ids:
+                continue
+            return row
+        return None
 
     @staticmethod
     def _read_next_blocked_task(connection: sqlite3.Connection) -> sqlite3.Row | None:
-        return connection.execute(
+        rows = connection.execute(
             """select
                    plans.plan_id,
                    plans.title as plan_title,
@@ -774,14 +796,22 @@ class AttemptStore:
                    tasks.review_required
                from tasks
                join plans on plans.plan_id = tasks.plan_id
-               where plans.status = 'blocked'
+               where plans.status in ('active', 'blocked')
                  and tasks.status = 'blocked'
                order by
                  plans.priority desc,
                  tasks.updated_at desc,
                  tasks.task_id asc
-               limit 1""",
-        ).fetchone()
+               """
+        ).fetchall()
+        for row in rows:
+            projection = project_plan(connection, str(row["plan_id"]))
+            if projection.projected_status != "blocked":
+                continue
+            if row["task_id"] not in projection.unresolved_blocker_ids:
+                continue
+            return row
+        return None
 
     def read_attempt(self, attempt_id: str) -> RunAttempt:
         """Read one attempt."""

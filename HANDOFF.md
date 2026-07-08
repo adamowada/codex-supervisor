@@ -295,6 +295,13 @@ Accepted tasks:
   container spot check for `..\\outside.txt`, full verification, and risk notes.
 - `task-ci-path-normalization-repair-proof-20260708`: recorded final proof for the CI repair chain;
   `queue-next` returns `none` after the accepted proof.
+- `task-projection-cleanup-patch-20260708`: routed queue selection through `project_plan()` so
+  stale stored blocked/active plans do not re-surface after projected durable completion, recovered
+  blockers project to active follow-up guidance, and `work_graph.plan_has_durable_completion()`
+  delegates to projection coverage semantics; red/green coverage and full verification passed.
+- `task-projection-cleanup-proof-20260708`: recorded final proof for Patch 3 with accepted
+  high-assurance evidence, affected-surface verification, full verification, and clean
+  `queue-next` projection.
 
 Ready next task:
 
@@ -304,12 +311,14 @@ Ready next task:
   `plan-module-deepening-20260708`, `plan-projections-layer-20260708`, and
   `plan-acp-repair-20260708`, `plan-safety-patch-20260708`,
   `plan-contract-alignment-patch-20260708`, and
-  `plan-ci-path-normalization-repair-20260708` are complete.
+  `plan-ci-path-normalization-repair-20260708`, and
+  `plan-projection-cleanup-patch-20260708` are complete.
 
 ## Next Action
 
-No source task is ready. Patch 1 and Patch 2 of the three-patch sequence are verified and recorded.
-Patch 1 fixed plugin/MCP path binding and `attempt-run` setup-failure terminalization. Patch 2
-declared `plan-init`, aligned `PLANS.md` with the live schema contract, refreshed protected locks,
-and corrected ACP repair provenance wording. The GitHub CI path-normalization repair is verified and
-recorded; after its ACP lands, the next source task is Patch 3 projection-layer cleanup.
+No source task is ready. Patch 1, Patch 2, and Patch 3 of the three-patch sequence are verified and
+recorded. Patch 1 fixed plugin/MCP path binding and `attempt-run` setup-failure terminalization.
+Patch 2 declared `plan-init`, aligned `PLANS.md` with the live schema contract, refreshed protected
+locks, and corrected ACP repair provenance wording. Patch 3 made queue and durable-completion reads
+use projection semantics for stale blocked/active plans and partial final-proof coverage. After
+Patch 3 ACP lands, refresh the Codex plugin cache.

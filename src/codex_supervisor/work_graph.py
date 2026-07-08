@@ -40,12 +40,11 @@ def plan_has_durable_completion(
     connection: sqlite3.Connection,
     plan_id: str,
 ) -> bool:
-    """Return whether a plan has accepted final proof or an explicit exception."""
+    """Return whether the plan projection considers the plan durably complete."""
 
-    return plan_has_accepted_shipping_proof(
-        connection,
-        plan_id,
-    ) or plan_has_unsupervised_completion_exception(connection, plan_id)
+    from codex_supervisor.projections import plan_has_projected_durable_completion
+
+    return plan_has_projected_durable_completion(connection, plan_id)
 
 
 def plan_has_accepted_shipping_proof(

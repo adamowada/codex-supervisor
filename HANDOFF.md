@@ -302,6 +302,12 @@ Accepted tasks:
 - `task-projection-cleanup-proof-20260708`: recorded final proof for Patch 3 with accepted
   high-assurance evidence, affected-surface verification, full verification, and clean
   `queue-next` projection.
+- `task-plugin-cache-refresh-after-patches-20260708`: bumped the Codex Supervisor plugin source
+  manifest to `0.2.0+codex.20260708105202`, validated the plugin, reinstalled it from
+  `codex-supervisor-local`, confirmed the installed cache path, ran plugin-focused tests, and
+  verified the repo.
+- `task-plugin-cache-refresh-after-patches-proof-20260708`: recorded final proof for the refreshed
+  plugin cache with accepted high-assurance evidence and clean `queue-next` projection.
 
 Ready next task:
 
@@ -312,7 +318,8 @@ Ready next task:
   `plan-acp-repair-20260708`, `plan-safety-patch-20260708`,
   `plan-contract-alignment-patch-20260708`, and
   `plan-ci-path-normalization-repair-20260708`, and
-  `plan-projection-cleanup-patch-20260708` are complete.
+  `plan-projection-cleanup-patch-20260708`, and
+  `plan-plugin-cache-refresh-after-patches-20260708` are complete.
 
 ## Next Action
 
@@ -320,5 +327,6 @@ No source task is ready. Patch 1, Patch 2, and Patch 3 of the three-patch sequen
 recorded. Patch 1 fixed plugin/MCP path binding and `attempt-run` setup-failure terminalization.
 Patch 2 declared `plan-init`, aligned `PLANS.md` with the live schema contract, refreshed protected
 locks, and corrected ACP repair provenance wording. Patch 3 made queue and durable-completion reads
-use projection semantics for stale blocked/active plans and partial final-proof coverage. After
-Patch 3 ACP lands, refresh the Codex plugin cache.
+use projection semantics for stale blocked/active plans and partial final-proof coverage. The Codex
+Supervisor plugin cache is refreshed to `0.2.0+codex.20260708105202`; after ACP lands, start a new
+Codex thread to pick up refreshed plugin skills and MCP tools.

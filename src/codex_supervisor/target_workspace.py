@@ -10,10 +10,13 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
+from codex_supervisor.evidence_codec import (
+    PRODUCT_DELETED_CHECK_PREFIX,
+    PRODUCT_SHA_CHECK_PREFIX,
+)
+
 SUPERVISOR_DIR = ".codex-supervisor"
 SUPERVISOR_IGNORE_ENTRY = ".codex-supervisor/"
-PRODUCT_SHA_CHECK_PREFIX = "product artifact sha256: "
-PRODUCT_DELETED_CHECK_PREFIX = "product artifact deleted: "
 
 
 @dataclass(frozen=True)

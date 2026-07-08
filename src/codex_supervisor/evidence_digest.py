@@ -14,6 +14,16 @@ from codex_supervisor.evidence_artifacts import (
     raw_log_artifact_entries,
     tail_text,
 )
+from codex_supervisor.evidence_codec import (
+    GIT_CHANGED_PRODUCT_PATH_PREFIX,
+    PROCESS_EXIT_CHECK_PREFIX,
+    PRODUCT_DELETED_CHECK_PREFIX,
+    PRODUCT_SHA_CHECK_PREFIX,
+    VERIFIER_EXIT_CHECK_PREFIX,
+    check_suffix,
+    check_suffixes,
+    warning_checks,
+)
 
 DIGEST_CHECK_PREFIX = "evidence digest: "
 _MAX_LOG_TAILS = 4
@@ -35,11 +45,11 @@ def build_evidence_digest(
 
     return {
         "summary": summary,
-        "process_exit_code": _first_check_suffix(checks, "process exit code: "),
-        "verifier_exit_code": _first_check_suffix(checks, "verifier exit code: "),
-        "changed_files": _check_suffixes(checks, "git changed product path: "),
+        "process_exit_code": check_suffix(checks, PROCESS_EXIT_CHECK_PREFIX),
+        "verifier_exit_code": check_suffix(checks, VERIFIER_EXIT_CHECK_PREFIX),
+        "changed_files": list(check_suffixes(checks, GIT_CHANGED_PRODUCT_PATH_PREFIX)),
         "product_state": _product_state(checks),
-        "warnings": _unique_strings((*_warnings(checks), *log_warning_flags(artifacts))),
+        "warnings": _unique_strings((*warning_checks(checks), *log_warning_flags(artifacts))),
         "artifact_count": len(artifacts),
         "artifacts": list(artifacts),
         "primary_artifacts": list(primary_evidence_artifacts(artifacts)),
@@ -86,39 +96,17 @@ def parse_evidence_digest(checks: tuple[str, ...]) -> dict[str, object] | None:
     return None
 
 
-def _first_check_suffix(checks: tuple[str, ...], prefix: str) -> str | None:
-    values = _check_suffixes(checks, prefix)
-    return values[0] if values else None
-
-
-def _check_suffixes(checks: tuple[str, ...], prefix: str) -> list[str]:
-    return [check.removeprefix(prefix).strip() for check in checks if check.startswith(prefix)]
-
-
-def _warnings(checks: tuple[str, ...]) -> list[str]:
-    warnings: list[str] = []
-    for check in checks:
-        if (
-            check.startswith("telemetry warning: ")
-            or check.startswith("missing artifact: ")
-            or check.startswith("verifier skipped: ")
-            or check.startswith("warning: ")
-        ):
-            warnings.append(check)
-    return warnings
-
-
 def _product_state(checks: tuple[str, ...]) -> list[dict[str, object]]:
     entries: list[dict[str, object]] = []
     for check in checks:
-        if check.startswith("product artifact sha256: "):
-            payload = _json_object(check.removeprefix("product artifact sha256: "))
+        if check.startswith(PRODUCT_SHA_CHECK_PREFIX):
+            payload = _json_object(check.removeprefix(PRODUCT_SHA_CHECK_PREFIX))
             path = payload.get("path")
             digest = payload.get("sha256")
             if isinstance(path, str) and isinstance(digest, str):
                 entries.append({"path": path, "sha256": digest, "state": "present"})
-        elif check.startswith("product artifact deleted: "):
-            payload = _json_object(check.removeprefix("product artifact deleted: "))
+        elif check.startswith(PRODUCT_DELETED_CHECK_PREFIX):
+            payload = _json_object(check.removeprefix(PRODUCT_DELETED_CHECK_PREFIX))
             path = payload.get("path")
             if isinstance(path, str):
                 entries.append({"path": path, "state": "deleted"})

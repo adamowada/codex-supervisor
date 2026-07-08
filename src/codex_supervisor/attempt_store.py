@@ -27,10 +27,9 @@ from codex_supervisor.lifecycle import (
     should_reactivate_plan_for_new_task,
 )
 from codex_supervisor.policy import normalize_assurance
-from codex_supervisor.work_graph import plan_has_durable_completion
-
-VALID_TASK_LINEAGE_RELATIONS = frozenset(
-    {"retry_of", "repair_of", "review_of", "shipping_proof_of"}
+from codex_supervisor.work_graph import (
+    VALID_TASK_LINEAGE_RELATIONS,
+    plan_has_durable_completion,
 )
 
 

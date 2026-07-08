@@ -79,29 +79,23 @@ Full verification completed:
 
 ```text
 uv run --no-sync python -B scripts/verify.py
-142 passed
+146 passed
 ```
 
 Latest focused verification completed:
 
 ```text
-uv run --no-sync pytest tests/test_small_interface.py tests/test_target_workspace.py tests/test_acp_gate_e2e.py -q
-44 passed
+uv run --no-sync pytest -q tests/test_work_graph.py tests/test_evidence_codec.py tests/test_evidence_terminal_transition.py tests/test_small_interface.py tests/test_target_workspace.py tests/test_acp_gate_e2e.py tests/test_process_attempt_e2e.py
+70 passed
 
-uv run --no-sync ruff check
+uv run --no-sync ruff check src\codex_supervisor tests
 All checks passed!
 
-python C:\Users\adams\.codex\skills\.system\plugin-creator\scripts\validate_plugin.py plugins\codex-supervisor
-Plugin validation passed: C:\Users\adams\projects\codex-supervisor\plugins\codex-supervisor
-
-uv run --no-sync pytest tests/test_codex_plugin.py -q
-16 passed
-
 codex plugin add codex-supervisor@codex-supervisor-local
-Installed plugin root: C:\Users\adams\.codex\plugins\cache\codex-supervisor-local\codex-supervisor\0.2.0+codex.20260708040855
+Installed plugin root: C:\Users\adams\.codex\plugins\cache\codex-supervisor-local\codex-supervisor\0.2.0+codex.20260708043832
 
 uv run --no-sync python -B scripts/verify.py
-142 passed
+146 passed
 ```
 
 ## Planning Ledger
@@ -112,6 +106,7 @@ Active plan:
 
 Recently completed plans:
 
+- `plan-module-deepening-20260708`: `Module deepening`
 - `plan-work-graph-provenance-fixes-20260708`: `Work graph provenance fixes`
 - `plan-plugin-cache-refresh-complexity-drift-20260707`: `Plugin cache refresh after complexity
   drift fixes`
@@ -198,17 +193,26 @@ Accepted tasks:
 - `task-work-graph-provenance-proof-20260708`: recorded final proof for the work graph provenance
   fixes and plugin cache refresh with full verification, planning integrity, skill inventory, and
   protected source checks.
+- `task-module-deepening-20260708`: deepened the highest leverage modules without expanding the
+  substrate state space: `work_graph.py` now owns relation vocabulary and read-side graph
+  projections, `recovery.py` owns queue recovery projection, `process_attempt.py` has explicit
+  path/reference/environment/verifier phases, `evidence_codec.py` owns compact evidence check
+  encoding and parsing, focused tests were added, the plugin cachebuster was refreshed to
+  `0.2.0+codex.20260708043832`, and verification passed.
+- `task-module-deepening-proof-20260708`: recorded final proof for the module deepening refactor
+  with full verification, focused module/e2e coverage, refreshed plugin cache, and current
+  handoff/planning evidence.
 
 Ready next task:
 
 - None. `plan-substrate-20260707`, `plan-completion-proof-20260707`,
   `substrate-hardening-20260707`, `plan-accepted-provenance-hardening-20260707`,
-  `plan-plugin-cache-refresh-20260707`, and `plan-work-graph-provenance-fixes-20260708` are
-  complete.
+  `plan-plugin-cache-refresh-20260707`, `plan-work-graph-provenance-fixes-20260708`, and
+  `plan-module-deepening-20260708` are complete.
 
 ## Next Action
 
-No source task is ready. The work graph provenance fixes are verified and recorded, ACP and store
-completion semantics share one durable predicate, rename source deletion is represented in product
-provenance, and the installed Codex Supervisor plugin cache has been refreshed to
-`0.2.0+codex.20260708040855`.
+No source task is ready. The module deepening refactor is verified and recorded, the durable
+work-graph and queue recovery semantics have deeper module ownership, attempt-run execution is split
+into clearer internal phases, compact evidence check encoding/parsing is centralized, and the
+installed Codex Supervisor plugin cache has been refreshed to `0.2.0+codex.20260708043832`.

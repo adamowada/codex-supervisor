@@ -17,6 +17,16 @@ from codex_supervisor.evidence_artifacts import (
     RAW_LOG_RETENTION_BYTES,
     raw_log_truncation_notice,
 )
+from codex_supervisor.evidence_codec import (
+    GIT_CHANGED_PRODUCT_PATH_PREFIX,
+    LAUNCH_PACKET_SHA256_CHECK_PREFIX,
+    MISSING_ARTIFACT_CHECK_PREFIX,
+    PROCESS_EXIT_CHECK_PREFIX,
+    TELEMETRY_WARNING_CHECK_PREFIX,
+    VERIFIER_EXIT_CHECK_PREFIX,
+    VERIFIER_INTENT_SHA256_CHECK_PREFIX,
+    VERIFIER_SKIPPED_CHECK_PREFIX,
+)
 from codex_supervisor.small_interface import AttemptTransitionResult, attempt_transition
 from codex_supervisor.target_workspace import (
     artifact_to_workspace_relative,
@@ -61,6 +71,34 @@ class _WorkerProcessResult:
     stdout: str
     stderr: str
     timed_out: bool = False
+
+
+@dataclass(frozen=True)
+class _EvidencePaths:
+    assignment: Path
+    command: Path
+    liveness: Path
+    stdout: Path
+    stderr: Path
+    verifier_command: Path | None = None
+    verifier_stdout: Path | None = None
+    verifier_stderr: Path | None = None
+
+
+@dataclass(frozen=True)
+class _CapturedReferences:
+    launch_packet: dict[str, str] | None
+    verifier_intent: dict[str, str] | None
+
+
+@dataclass(frozen=True)
+class _VerifierOutcome:
+    exit_code: int | None
+    stdout: str
+    stderr: str
+    skipped_reason: str | None
+    terminal_status: str
+    terminal_summary: str
 
 
 def run_process_attempt(
@@ -124,41 +162,34 @@ def run_process_attempt(
     except OSError as exc:
         telemetry_errors.append(f"could not create workspace evidence directory: {exc}")
         evidence_dir = Path(tempfile.mkdtemp(prefix="codex-supervisor-evidence-"))
-    assignment_path = evidence_dir / f"{recorded_attempt_id}-assignment.json"
-    liveness_path = evidence_dir / f"{recorded_attempt_id}-liveness.json"
-    stdout_path = evidence_dir / f"{recorded_attempt_id}-stdout.txt"
-    stderr_path = evidence_dir / f"{recorded_attempt_id}-stderr.txt"
-    command_path = evidence_dir / f"{recorded_attempt_id}-command.json"
-    verifier_command_path: Path | None = None
-    verifier_stdout_path: Path | None = None
-    verifier_stderr_path: Path | None = None
-    if verifier_command is not None:
-        verifier_command_path = evidence_dir / f"{recorded_attempt_id}-verifier-command.json"
-        verifier_stdout_path = evidence_dir / f"{recorded_attempt_id}-verifier-stdout.txt"
-        verifier_stderr_path = evidence_dir / f"{recorded_attempt_id}-verifier-stderr.txt"
-    launch_packet = _capture_reference_file(
-        launch_packet_path,
-        workspace=workspace,
-        destination=evidence_dir / f"{recorded_attempt_id}-launch-packet.txt",
-        label="launch_packet",
+    evidence_paths = _evidence_paths(
+        evidence_dir,
+        attempt_id=recorded_attempt_id,
+        include_verifier=verifier_command is not None,
     )
-    verifier_intent = _capture_reference_file(
-        verifier_intent_path,
+    assignment_path = evidence_paths.assignment
+    liveness_path = evidence_paths.liveness
+    stdout_path = evidence_paths.stdout
+    stderr_path = evidence_paths.stderr
+    command_path = evidence_paths.command
+    verifier_command_path = evidence_paths.verifier_command
+    verifier_stdout_path = evidence_paths.verifier_stdout
+    verifier_stderr_path = evidence_paths.verifier_stderr
+    references = _capture_reference_files(
+        launch_packet_path=launch_packet_path,
+        verifier_intent_path=verifier_intent_path,
+        evidence_dir=evidence_dir,
         workspace=workspace,
-        destination=evidence_dir / f"{recorded_attempt_id}-verifier-intent.txt",
-        label="verifier_intent",
+        attempt_id=recorded_attempt_id,
     )
-    assignment_payload = {
-        "recorded_by": "codex-supervisor.attempt-run",
-        "task": running.task,
-        "attempt": running.attempt,
-        "workspace": str(workspace),
-        "launch_packet": launch_packet,
-        "verifier_intent": verifier_intent,
-    }
-    assignment_error = _write_text(
+    launch_packet = references.launch_packet
+    verifier_intent = references.verifier_intent
+    assignment_error = _write_assignment_metadata(
         assignment_path,
-        json.dumps(assignment_payload, indent=2, sort_keys=True),
+        task=running.task,
+        attempt=running.attempt,
+        workspace=workspace,
+        references=references,
     )
     if assignment_error is not None:
         telemetry_errors.append(f"could not write assignment metadata: {assignment_error}")
@@ -168,34 +199,14 @@ def run_process_attempt(
     terminal_status = "failed"
     terminal_summary = run_summary
     verifier_exit_code: int | None = None
-    verifier_stdout = ""
-    verifier_stderr = ""
     verifier_skipped_reason: str | None = None
-    env = os.environ.copy()
-    env.setdefault("PYTHONUTF8", "1")
-    env.setdefault("PYTHONIOENCODING", "utf-8")
-    env.update(
-        {
-            "CODEX_SUPERVISOR_TASK_ID": task_id,
-            "CODEX_SUPERVISOR_ATTEMPT_ID": recorded_attempt_id,
-            "CODEX_SUPERVISOR_TASK_JSON": str(assignment_path),
-            "CODEX_SUPERVISOR_WORKSPACE": str(workspace),
-        }
+    env = _worker_environment(
+        task_id=task_id,
+        attempt_id=recorded_attempt_id,
+        assignment_path=assignment_path,
+        workspace=workspace,
+        references=references,
     )
-    if launch_packet is not None:
-        env.update(
-            {
-                "CODEX_SUPERVISOR_LAUNCH_PACKET": str(launch_packet["stored_path"]),
-                "CODEX_SUPERVISOR_LAUNCH_PACKET_SHA256": str(launch_packet["sha256"]),
-            }
-        )
-    if verifier_intent is not None:
-        env.update(
-            {
-                "CODEX_SUPERVISOR_VERIFIER_INTENT": str(verifier_intent["stored_path"]),
-                "CODEX_SUPERVISOR_VERIFIER_INTENT_SHA256": str(verifier_intent["sha256"]),
-            }
-        )
     command_error = _write_text(
         command_path,
         json.dumps(
@@ -266,80 +277,22 @@ def run_process_attempt(
             telemetry_errors.append(f"could not write command metadata: {command_error}")
 
     if verifier_command is not None:
-        if exit_code != 0 and not worker_timed_out:
-            verifier_skipped_reason = f"worker exit code was {exit_code}"
-            terminal_summary = (
-                f"{terminal_summary} Verifier skipped because {verifier_skipped_reason}."
-            )
-        else:
-            try:
-                verifier = _run_verifier_command(
-                    verifier_command,
-                    workspace=workspace,
-                    environment=env,
-                    timeout_seconds=timeout_seconds,
-                )
-                verifier_exit_code = verifier.returncode
-                verifier_stdout = _coerce_output(verifier.stdout)
-                verifier_stderr = _coerce_output(verifier.stderr)
-                if verifier_exit_code != 0:
-                    terminal_status = "failed"
-                elif worker_timed_out:
-                    terminal_status = "succeeded"
-                terminal_summary = (
-                    f"{terminal_summary} Verifier exit code: {verifier_exit_code}."
-                )
-            except subprocess.TimeoutExpired as exc:
-                verifier_exit_code = 1
-                verifier_stdout = _coerce_output(exc.stdout)
-                verifier_stderr = _coerce_output(exc.stderr)
-                terminal_status = "failed"
-                terminal_summary = (
-                    f"{terminal_summary} Verifier timed out after {timeout_seconds} seconds."
-                )
-            except OSError as exc:
-                verifier_exit_code = 1
-                verifier_stderr = str(exc)
-                terminal_status = "failed"
-                terminal_summary = f"{terminal_summary} Could not start verifier: {exc}."
-
-        if verifier_stdout_path is not None:
-            verifier_stdout_error = _write_retained_text_output(
-                verifier_stdout_path,
-                verifier_stdout,
-            )
-            if verifier_stdout_error is not None:
-                telemetry_errors.append(
-                    f"could not write verifier stdout metadata: {verifier_stdout_error}"
-                )
-        if verifier_stderr_path is not None:
-            verifier_stderr_error = _write_retained_text_output(
-                verifier_stderr_path,
-                verifier_stderr,
-            )
-            if verifier_stderr_error is not None:
-                telemetry_errors.append(
-                    f"could not write verifier stderr metadata: {verifier_stderr_error}"
-                )
-        if verifier_command_path is not None:
-            verifier_command_error = _write_text(
-                verifier_command_path,
-                json.dumps(
-                    {
-                        "command": verifier_command,
-                        "workspace": str(workspace),
-                        "timeout_seconds": timeout_seconds,
-                        "exit_code": verifier_exit_code,
-                        "skipped_reason": verifier_skipped_reason,
-                    },
-                    indent=2,
-                    sort_keys=True,
-                ),
-            )
-            if verifier_command_error is not None:
-                telemetry_errors.append(
-                    f"could not write verifier command metadata: {verifier_command_error}"
-                )
+        verifier_outcome = _run_verifier_phase(
+            verifier_command,
+            workspace=workspace,
+            environment=env,
+            timeout_seconds=timeout_seconds,
+            worker_exit_code=exit_code,
+            worker_timed_out=worker_timed_out,
+            terminal_status=terminal_status,
+            terminal_summary=terminal_summary,
+            evidence_paths=evidence_paths,
+            telemetry_errors=telemetry_errors,
+        )
+        verifier_exit_code = verifier_outcome.exit_code
+        verifier_skipped_reason = verifier_outcome.skipped_reason
+        terminal_status = verifier_outcome.terminal_status
+        terminal_summary = verifier_outcome.terminal_summary
 
     missing_artifacts = _missing_declared_artifacts(artifacts, workspace=workspace)
     if missing_artifacts:
@@ -399,32 +352,32 @@ def run_process_attempt(
         )
     )
     recorded_checks = (
-        f"process exit code: {exit_code}",
+        f"{PROCESS_EXIT_CHECK_PREFIX}{exit_code}",
         *(
-            (f"verifier exit code: {verifier_exit_code}",)
+            (f"{VERIFIER_EXIT_CHECK_PREFIX}{verifier_exit_code}",)
             if verifier_exit_code is not None
             else ()
         ),
         *(
-            (f"verifier skipped: {verifier_skipped_reason}",)
+            (f"{VERIFIER_SKIPPED_CHECK_PREFIX}{verifier_skipped_reason}",)
             if verifier_skipped_reason is not None
             else ()
         ),
-        *(f"git changed product path: {artifact}" for artifact in git_product_artifacts),
+        *(f"{GIT_CHANGED_PRODUCT_PATH_PREFIX}{artifact}" for artifact in git_product_artifacts),
         *product_artifact_state_checks(workspace, product_state_paths),
         *(
             f"preexisting product path not attributed to worker: {artifact}"
             for artifact in preexisting_product_warnings
         ),
-        *(f"missing artifact: {artifact}" for artifact in missing_artifacts),
-        *(f"telemetry warning: {error}" for error in telemetry_errors),
+        *(f"{MISSING_ARTIFACT_CHECK_PREFIX}{artifact}" for artifact in missing_artifacts),
+        *(f"{TELEMETRY_WARNING_CHECK_PREFIX}{error}" for error in telemetry_errors),
         *(
-            (f"launch packet sha256: {launch_packet['sha256']}",)
+            (f"{LAUNCH_PACKET_SHA256_CHECK_PREFIX}{launch_packet['sha256']}",)
             if launch_packet is not None
             else ()
         ),
         *(
-            (f"verifier intent sha256: {verifier_intent['sha256']}",)
+            (f"{VERIFIER_INTENT_SHA256_CHECK_PREFIX}{verifier_intent['sha256']}",)
             if verifier_intent is not None
             else ()
         ),
@@ -491,6 +444,250 @@ def run_process_attempt(
 
 def _command_summary(command: tuple[str, ...]) -> str:
     return "Run worker process: " + " ".join(command)
+
+
+def _evidence_paths(
+    evidence_dir: Path,
+    *,
+    attempt_id: str,
+    include_verifier: bool,
+) -> _EvidencePaths:
+    verifier_command_path: Path | None = None
+    verifier_stdout_path: Path | None = None
+    verifier_stderr_path: Path | None = None
+    if include_verifier:
+        verifier_command_path = evidence_dir / f"{attempt_id}-verifier-command.json"
+        verifier_stdout_path = evidence_dir / f"{attempt_id}-verifier-stdout.txt"
+        verifier_stderr_path = evidence_dir / f"{attempt_id}-verifier-stderr.txt"
+    return _EvidencePaths(
+        assignment=evidence_dir / f"{attempt_id}-assignment.json",
+        command=evidence_dir / f"{attempt_id}-command.json",
+        liveness=evidence_dir / f"{attempt_id}-liveness.json",
+        stdout=evidence_dir / f"{attempt_id}-stdout.txt",
+        stderr=evidence_dir / f"{attempt_id}-stderr.txt",
+        verifier_command=verifier_command_path,
+        verifier_stdout=verifier_stdout_path,
+        verifier_stderr=verifier_stderr_path,
+    )
+
+
+def _capture_reference_files(
+    *,
+    launch_packet_path: Path | None,
+    verifier_intent_path: Path | None,
+    evidence_dir: Path,
+    workspace: Path,
+    attempt_id: str,
+) -> _CapturedReferences:
+    return _CapturedReferences(
+        launch_packet=_capture_reference_file(
+            launch_packet_path,
+            workspace=workspace,
+            destination=evidence_dir / f"{attempt_id}-launch-packet.txt",
+            label="launch_packet",
+        ),
+        verifier_intent=_capture_reference_file(
+            verifier_intent_path,
+            workspace=workspace,
+            destination=evidence_dir / f"{attempt_id}-verifier-intent.txt",
+            label="verifier_intent",
+        ),
+    )
+
+
+def _write_assignment_metadata(
+    path: Path,
+    *,
+    task: dict[str, object],
+    attempt: dict[str, object],
+    workspace: Path,
+    references: _CapturedReferences,
+) -> str | None:
+    payload = {
+        "recorded_by": "codex-supervisor.attempt-run",
+        "task": task,
+        "attempt": attempt,
+        "workspace": str(workspace),
+        "launch_packet": references.launch_packet,
+        "verifier_intent": references.verifier_intent,
+    }
+    return _write_text(path, json.dumps(payload, indent=2, sort_keys=True))
+
+
+def _worker_environment(
+    *,
+    task_id: str,
+    attempt_id: str,
+    assignment_path: Path,
+    workspace: Path,
+    references: _CapturedReferences,
+) -> dict[str, str]:
+    environment = os.environ.copy()
+    environment.setdefault("PYTHONUTF8", "1")
+    environment.setdefault("PYTHONIOENCODING", "utf-8")
+    environment.update(
+        {
+            "CODEX_SUPERVISOR_TASK_ID": task_id,
+            "CODEX_SUPERVISOR_ATTEMPT_ID": attempt_id,
+            "CODEX_SUPERVISOR_TASK_JSON": str(assignment_path),
+            "CODEX_SUPERVISOR_WORKSPACE": str(workspace),
+        }
+    )
+    if references.launch_packet is not None:
+        environment.update(
+            {
+                "CODEX_SUPERVISOR_LAUNCH_PACKET": str(
+                    references.launch_packet["stored_path"]
+                ),
+                "CODEX_SUPERVISOR_LAUNCH_PACKET_SHA256": str(
+                    references.launch_packet["sha256"]
+                ),
+            }
+        )
+    if references.verifier_intent is not None:
+        environment.update(
+            {
+                "CODEX_SUPERVISOR_VERIFIER_INTENT": str(
+                    references.verifier_intent["stored_path"]
+                ),
+                "CODEX_SUPERVISOR_VERIFIER_INTENT_SHA256": str(
+                    references.verifier_intent["sha256"]
+                ),
+            }
+        )
+    return environment
+
+
+def _run_verifier_phase(
+    verifier_command: str,
+    *,
+    workspace: Path,
+    environment: dict[str, str],
+    timeout_seconds: int,
+    worker_exit_code: int,
+    worker_timed_out: bool,
+    terminal_status: str,
+    terminal_summary: str,
+    evidence_paths: _EvidencePaths,
+    telemetry_errors: list[str],
+) -> _VerifierOutcome:
+    verifier_exit_code: int | None = None
+    verifier_stdout = ""
+    verifier_stderr = ""
+    verifier_skipped_reason: str | None = None
+    next_terminal_status = terminal_status
+    next_terminal_summary = terminal_summary
+
+    if worker_exit_code != 0 and not worker_timed_out:
+        verifier_skipped_reason = f"worker exit code was {worker_exit_code}"
+        next_terminal_summary = (
+            f"{next_terminal_summary} Verifier skipped because "
+            f"{verifier_skipped_reason}."
+        )
+    else:
+        try:
+            verifier = _run_verifier_command(
+                verifier_command,
+                workspace=workspace,
+                environment=environment,
+                timeout_seconds=timeout_seconds,
+            )
+            verifier_exit_code = verifier.returncode
+            verifier_stdout = _coerce_output(verifier.stdout)
+            verifier_stderr = _coerce_output(verifier.stderr)
+            if verifier_exit_code != 0:
+                next_terminal_status = "failed"
+            elif worker_timed_out:
+                next_terminal_status = "succeeded"
+            next_terminal_summary = (
+                f"{next_terminal_summary} Verifier exit code: {verifier_exit_code}."
+            )
+        except subprocess.TimeoutExpired as exc:
+            verifier_exit_code = 1
+            verifier_stdout = _coerce_output(exc.stdout)
+            verifier_stderr = _coerce_output(exc.stderr)
+            next_terminal_status = "failed"
+            next_terminal_summary = (
+                f"{next_terminal_summary} Verifier timed out after "
+                f"{timeout_seconds} seconds."
+            )
+        except OSError as exc:
+            verifier_exit_code = 1
+            verifier_stderr = str(exc)
+            next_terminal_status = "failed"
+            next_terminal_summary = f"{next_terminal_summary} Could not start verifier: {exc}."
+
+    _record_verifier_outputs(
+        verifier_command,
+        workspace=workspace,
+        timeout_seconds=timeout_seconds,
+        evidence_paths=evidence_paths,
+        exit_code=verifier_exit_code,
+        skipped_reason=verifier_skipped_reason,
+        stdout=verifier_stdout,
+        stderr=verifier_stderr,
+        telemetry_errors=telemetry_errors,
+    )
+    return _VerifierOutcome(
+        exit_code=verifier_exit_code,
+        stdout=verifier_stdout,
+        stderr=verifier_stderr,
+        skipped_reason=verifier_skipped_reason,
+        terminal_status=next_terminal_status,
+        terminal_summary=next_terminal_summary,
+    )
+
+
+def _record_verifier_outputs(
+    verifier_command: str,
+    *,
+    workspace: Path,
+    timeout_seconds: int,
+    evidence_paths: _EvidencePaths,
+    exit_code: int | None,
+    skipped_reason: str | None,
+    stdout: str,
+    stderr: str,
+    telemetry_errors: list[str],
+) -> None:
+    if evidence_paths.verifier_stdout is not None:
+        verifier_stdout_error = _write_retained_text_output(
+            evidence_paths.verifier_stdout,
+            stdout,
+        )
+        if verifier_stdout_error is not None:
+            telemetry_errors.append(
+                f"could not write verifier stdout metadata: {verifier_stdout_error}"
+            )
+    if evidence_paths.verifier_stderr is not None:
+        verifier_stderr_error = _write_retained_text_output(
+            evidence_paths.verifier_stderr,
+            stderr,
+        )
+        if verifier_stderr_error is not None:
+            telemetry_errors.append(
+                f"could not write verifier stderr metadata: {verifier_stderr_error}"
+            )
+    if evidence_paths.verifier_command is None:
+        return
+    verifier_command_error = _write_text(
+        evidence_paths.verifier_command,
+        json.dumps(
+            {
+                "command": verifier_command,
+                "workspace": str(workspace),
+                "timeout_seconds": timeout_seconds,
+                "exit_code": exit_code,
+                "skipped_reason": skipped_reason,
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+    )
+    if verifier_command_error is not None:
+        telemetry_errors.append(
+            f"could not write verifier command metadata: {verifier_command_error}"
+        )
 
 
 def _acceptance_results_for_terminal_status(

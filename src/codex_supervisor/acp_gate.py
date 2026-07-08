@@ -7,6 +7,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+from codex_supervisor.evidence_codec import LAUNCH_PACKET_SHA256_CHECK_PREFIX, has_check_prefix
 from codex_supervisor.target_workspace import (
     SUPERVISOR_DIR,
     artifact_to_workspace_relative,
@@ -129,7 +130,7 @@ def _substrate_warnings(workspace: Path, *, database_path: Path) -> tuple[str, .
             artifacts=artifacts,
         ):
             warnings.append(f"accepted attempt {attempt_id} lacks launch metadata artifacts")
-        if not any(check.startswith("launch packet sha256: ") for check in checks):
+        if not has_check_prefix(checks, LAUNCH_PACKET_SHA256_CHECK_PREFIX):
             warnings.append(f"accepted attempt {attempt_id} lacks launch packet hash")
 
     task_records = [

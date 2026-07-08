@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from planning_db_factory import insert_task, make_planning_db
 
-import codex_supervisor.small_interface as small_interface
+import codex_supervisor.recovery as recovery
 from codex_supervisor.small_interface import attempt_transition, queue_next, task_create
 
 
@@ -45,7 +45,7 @@ def test_queue_next_git_summary_uses_optional_locks_disabled(
             return subprocess.CompletedProcess(command, 0, stdout="false\n", stderr="")
         return subprocess.CompletedProcess(command, 1, stdout="", stderr="not a repo")
 
-    monkeypatch.setattr(small_interface.subprocess, "run", fake_run)
+    monkeypatch.setattr(recovery.subprocess, "run", fake_run)
 
     result = queue_next(db_path)
 

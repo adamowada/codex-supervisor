@@ -6,6 +6,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from codex_supervisor.evidence_artifacts import primary_evidence_artifacts
+from codex_supervisor.evidence_codec import (
+    encode_acceptance_results,
+    encode_gaps,
+    encode_next_actions,
+    encode_review_evidence,
+    encode_risks,
+)
 from codex_supervisor.policy import EvidenceBundle
 
 
@@ -24,12 +31,11 @@ class EvidenceEnvelope:
         """Encode structured evidence into the existing checks JSON array."""
 
         evidence_checks = list(self.checks)
-        for criterion, passed in sorted((self.acceptance_results or {}).items()):
-            evidence_checks.append(f"acceptance: {criterion} = {'pass' if passed else 'fail'}")
-        evidence_checks.extend(f"risk: {risk}" for risk in self.risks)
-        evidence_checks.extend(f"gap: {gap}" for gap in self.gaps)
-        evidence_checks.extend(f"next-action: {action}" for action in self.next_actions)
-        evidence_checks.extend(f"review: {review}" for review in self.review_evidence)
+        evidence_checks.extend(encode_acceptance_results(self.acceptance_results))
+        evidence_checks.extend(encode_risks(self.risks))
+        evidence_checks.extend(encode_gaps(self.gaps))
+        evidence_checks.extend(encode_next_actions(self.next_actions))
+        evidence_checks.extend(encode_review_evidence(self.review_evidence))
         return tuple(evidence_checks)
 
     def policy_bundle(

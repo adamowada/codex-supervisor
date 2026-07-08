@@ -1,6 +1,6 @@
 # HANDOFF.md
 
-Last updated: 2026-07-07
+Last updated: 2026-07-08
 
 This is the current resume snapshot.
 
@@ -79,14 +79,14 @@ Full verification completed:
 
 ```text
 uv run --no-sync python -B scripts/verify.py
-139 passed
+142 passed
 ```
 
 Latest focused verification completed:
 
 ```text
-uv run --no-sync pytest tests/test_lifecycle.py tests/test_target_workspace.py tests/test_acp_gate_e2e.py tests/test_process_attempt_e2e.py tests/test_adapter_contracts.py -q
-43 passed
+uv run --no-sync pytest tests/test_small_interface.py tests/test_target_workspace.py tests/test_acp_gate_e2e.py -q
+44 passed
 
 uv run --no-sync ruff check
 All checks passed!
@@ -98,7 +98,10 @@ uv run --no-sync pytest tests/test_codex_plugin.py -q
 16 passed
 
 codex plugin add codex-supervisor@codex-supervisor-local
-Installed plugin root: C:\Users\adams\.codex\plugins\cache\codex-supervisor-local\codex-supervisor\0.2.0+codex.20260707232244
+Installed plugin root: C:\Users\adams\.codex\plugins\cache\codex-supervisor-local\codex-supervisor\0.2.0+codex.20260708040855
+
+uv run --no-sync python -B scripts/verify.py
+142 passed
 ```
 
 ## Planning Ledger
@@ -109,6 +112,7 @@ Active plan:
 
 Recently completed plans:
 
+- `plan-work-graph-provenance-fixes-20260708`: `Work graph provenance fixes`
 - `plan-plugin-cache-refresh-complexity-drift-20260707`: `Plugin cache refresh after complexity
   drift fixes`
 - `plan-complexity-drift-fixes-20260707`: `Complexity drift fixes`
@@ -185,15 +189,26 @@ Accepted tasks:
   Codex plugin cache.
 - `task-plugin-cache-refresh-complexity-drift-proof-20260707`: recorded final proof for the
   refreshed plugin cache before final ACP.
+- `task-work-graph-provenance-fixes-20260708`: extracted shared durable completion checks into
+  `work_graph.py`, made ACP use the same durable-completion predicate as the store, preserved
+  rename source deletion in product provenance, added regression coverage, and verified the repo.
+- `task-plugin-cache-refresh-work-graph-20260708`: bumped the plugin source manifest to
+  `0.2.0+codex.20260708040855`, validated the package, ran plugin tests, and installed the local
+  Codex plugin cache.
+- `task-work-graph-provenance-proof-20260708`: recorded final proof for the work graph provenance
+  fixes and plugin cache refresh with full verification, planning integrity, skill inventory, and
+  protected source checks.
 
 Ready next task:
 
 - None. `plan-substrate-20260707`, `plan-completion-proof-20260707`,
-  `substrate-hardening-20260707`, `plan-accepted-provenance-hardening-20260707`, and
-  `plan-plugin-cache-refresh-20260707` are complete.
+  `substrate-hardening-20260707`, `plan-accepted-provenance-hardening-20260707`,
+  `plan-plugin-cache-refresh-20260707`, and `plan-work-graph-provenance-fixes-20260708` are
+  complete.
 
 ## Next Action
 
-No source task is ready. The accepted-provenance hardening is verified, recorded in the planning
-ledger, the complexity drift fixes are verified and recorded, and the installed Codex Supervisor
-plugin cache has been refreshed to `0.2.0+codex.20260707232244`.
+No source task is ready. The work graph provenance fixes are verified and recorded, ACP and store
+completion semantics share one durable predicate, rename source deletion is represented in product
+provenance, and the installed Codex Supervisor plugin cache has been refreshed to
+`0.2.0+codex.20260708040855`.

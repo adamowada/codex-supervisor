@@ -27,12 +27,10 @@ from codex_supervisor.lifecycle import (
     should_reactivate_plan_for_new_task,
 )
 from codex_supervisor.policy import normalize_assurance
+from codex_supervisor.work_graph import plan_has_durable_completion
 
 VALID_TASK_LINEAGE_RELATIONS = frozenset(
     {"retry_of", "repair_of", "review_of", "shipping_proof_of"}
-)
-COMPLETION_EXCEPTION_DECISIONS = frozenset(
-    {"unsupervised_completion_exception", "explicit_unsupervised_completion_exception"}
 )
 
 
@@ -131,7 +129,7 @@ class AttemptStore:
                 existing["status"] == "blocked"
                 or (
                     existing["status"] == "done"
-                    and not _plan_has_durable_completion(connection, plan_id)
+                    and not plan_has_durable_completion(connection, plan_id)
                 )
             ):
                 connection.execute(
@@ -228,7 +226,7 @@ class AttemptStore:
             ).fetchone()
             if existing is not None and should_reactivate_plan_for_new_task(
                 plan_status=str(existing["status"]),
-                has_durable_completion=_plan_has_durable_completion(
+                has_durable_completion=plan_has_durable_completion(
                     connection,
                     normalized_plan_id,
                 ),
@@ -1011,7 +1009,7 @@ class AttemptStore:
             )
             return
 
-        if _plan_has_durable_completion(connection, plan_id):
+        if plan_has_durable_completion(connection, plan_id):
             connection.execute(
                 "update plans set status = 'done', updated_at = ? where plan_id = ?",
                 (updated_at, plan_id),
@@ -1137,78 +1135,6 @@ def _validate_task_lineage_targets(
             raise LookupError(
                 f"lineage target task {item.task_id!r} does not exist for {task_id!r}"
             )
-
-
-def _plan_has_durable_completion(connection: sqlite3.Connection, plan_id: str) -> bool:
-    return _plan_has_accepted_shipping_proof(
-        connection,
-        plan_id,
-    ) or _plan_has_unsupervised_completion_exception(connection, plan_id)
-
-
-def _plan_has_accepted_shipping_proof(
-    connection: sqlite3.Connection,
-    plan_id: str,
-) -> bool:
-    rows = connection.execute(
-        """select task_id, lineage_json
-           from tasks
-           where plan_id = ?
-             and status = 'done'""",
-        (plan_id,),
-    ).fetchall()
-    for row in rows:
-        lineage = _task_lineage_from_json(
-            row["lineage_json"],
-            current_task_id=row["task_id"],
-        )
-        if not any(item.relation == "shipping_proof_of" for item in lineage):
-            continue
-        if _task_has_accepted_terminal_evidence(connection, row["task_id"]):
-            return True
-    return False
-
-
-def _task_has_accepted_terminal_evidence(
-    connection: sqlite3.Connection,
-    task_id: str,
-) -> bool:
-    return (
-        connection.execute(
-            """select 1
-               from attempts
-               join evidence_bundles
-                 on evidence_bundles.attempt_id = attempts.attempt_id
-                and evidence_bundles.task_id = attempts.task_id
-               join acceptance_decisions
-                 on acceptance_decisions.attempt_id = attempts.attempt_id
-                and acceptance_decisions.bundle_id = evidence_bundles.bundle_id
-                and acceptance_decisions.result = 'accepted'
-               where attempts.task_id = ?
-                 and attempts.status = 'succeeded'
-               limit 1""",
-            (task_id,),
-        ).fetchone()
-        is not None
-    )
-
-
-def _plan_has_unsupervised_completion_exception(
-    connection: sqlite3.Connection,
-    plan_id: str,
-) -> bool:
-    placeholders = ", ".join("?" for _ in COMPLETION_EXCEPTION_DECISIONS)
-    return (
-        connection.execute(
-            f"""select 1
-                from decisions
-                where plan_id = ?
-                  and decision in ({placeholders})
-                limit 1""",
-            (plan_id, *sorted(COMPLETION_EXCEPTION_DECISIONS)),
-        ).fetchone()
-        is not None
-    )
 
 
 def _string_array(items: tuple[str, ...], field_name: str) -> tuple[str, ...]:

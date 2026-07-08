@@ -35,7 +35,34 @@ def test_product_paths_from_porcelain_z_excludes_supervisor_and_gitignore() -> N
         "README.md",
         "app/main.py",
         "docs/new.txt",
+        "old.txt",
     )
+
+
+def test_product_paths_from_porcelain_z_keeps_copy_source_out_of_changed_paths() -> None:
+    output = "\0".join(
+        (
+            "C  docs/copied.txt",
+            "docs/source.txt",
+            "",
+        )
+    )
+
+    assert product_paths_from_porcelain_z(output) == ("docs/copied.txt",)
+
+
+def test_product_artifact_state_checks_record_rename_source_deletion(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "docs").mkdir()
+    (workspace / "docs" / "new.txt").write_text("renamed\n", encoding="utf-8")
+
+    checks = product_artifact_state_checks(workspace, ("docs/new.txt", "old.txt"))
+
+    assert any(check.startswith("product artifact sha256: ") for check in checks)
+    assert 'product artifact deleted: {"path":"old.txt"}' in checks
 
 
 def test_artifact_to_workspace_relative_normalizes_absolute_and_relative_paths(

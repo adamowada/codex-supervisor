@@ -17,6 +17,7 @@ from codex_supervisor.target_workspace import (
     is_product_path,
     tracked_supervisor_paths,
 )
+from codex_supervisor.work_graph import plan_has_durable_completion
 
 
 @dataclass(frozen=True)
@@ -110,6 +111,11 @@ def _substrate_warnings(workspace: Path, *, database_path: Path) -> tuple[str, .
         task_rows = connection.execute(
             "select plan_id, task_id, status, lineage_json from tasks"
         ).fetchall()
+        durably_complete_plan_ids = {
+            str(plan_id)
+            for plan_id, _status in plan_rows
+            if plan_has_durable_completion(connection, str(plan_id))
+        }
 
     for attempt_id, checks_json, artifacts_json in attempt_rows:
         checks = _json_string_array(checks_json)
@@ -138,7 +144,7 @@ def _substrate_warnings(workspace: Path, *, database_path: Path) -> tuple[str, .
     for plan_id, _status in plan_rows:
         plan_id = str(plan_id)
         status = str(_status)
-        if _has_done_shipping_proof(plan_id, task_records):
+        if plan_id in durably_complete_plan_ids:
             continue
         if status == "done":
             warnings.append(f"completed plan {plan_id} has no accepted final proof task")
@@ -153,22 +159,6 @@ def _has_product_artifact(workspace: Path, artifacts: tuple[str, ...]) -> bool:
     for artifact in artifacts:
         relative = artifact_to_workspace_relative(workspace, artifact)
         if relative is not None and is_product_path(relative):
-            return True
-    return False
-
-
-def _has_done_shipping_proof(plan_id: str, tasks: list[dict[str, object]]) -> bool:
-    for task in tasks:
-        if task["plan_id"] != plan_id or task["status"] != "done":
-            continue
-        lineage = task["lineage"]
-        if not isinstance(lineage, tuple):
-            continue
-        if any(
-            item.get("relation") == "shipping_proof_of"
-            for item in lineage
-            if isinstance(item, dict)
-        ):
             return True
     return False
 

@@ -126,6 +126,10 @@ def product_paths_from_porcelain_z(output: str) -> tuple[str, ...]:
         status = entry[:2]
         raw_path = entry[3:] if len(entry) > 3 else ""
         if "R" in status or "C" in status:
+            if "R" in status and index + 1 < len(entries):
+                source_path = normalize_relative_path(entries[index + 1])
+                if is_product_path(source_path):
+                    paths.append(source_path)
             index += 1
         index += 1
         normalized = normalize_relative_path(raw_path)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -185,6 +186,52 @@ def test_acp_gate_accepts_attempt_run_captured_product_paths(tmp_path: Path) -> 
     assert result.ok is True
     assert result.changed_product_paths == ("README.md", "reports/summary.md")
     assert result.worker_backed_paths == ("README.md", "reports/summary.md")
+
+
+def test_acp_gate_warns_when_shipping_proof_lacks_accepted_evidence(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    _git(workspace, "init")
+    db_path = workspace / ".codex-supervisor" / "planning.sqlite3"
+
+    _run_cli("plan-init", "--path", str(db_path))
+    _create_task(db_path)
+    _run_cli(
+        "task-create",
+        "--path",
+        str(db_path),
+        "--plan-id",
+        "plan-acp",
+        "--plan-title",
+        "ACP plan",
+        "--plan-goal",
+        "Validate ACP.",
+        "--task-id",
+        "task-proof",
+        "--title",
+        "Final proof",
+        "--intent",
+        "Claim durable completion for task-acp.",
+        "--assurance",
+        "high",
+        "--acceptance",
+        "Final proof exists",
+        "--lineage",
+        "shipping_proof_of=task-acp",
+    )
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "update tasks set status = 'done' where task_id in ('task-acp', 'task-proof')"
+        )
+
+    result = check_target_workspace_acp_gate(workspace)
+
+    assert (
+        "active plan plan-acp has no open task and no accepted final proof task"
+        in result.warnings
+    )
 
 
 def test_acp_gate_rejects_product_path_dirty_before_attempt_run(

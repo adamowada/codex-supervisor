@@ -113,6 +113,14 @@ uv run --no-sync python -B scripts/verify.py
 uv run --no-sync python -B scripts/check_target_workspace_acp.py --workspace . --path plans/planning.sqlite3 --json
 failed: .codex-supervisor/planning.sqlite3 is not ignored by git; dirty source-maintenance paths
 lack accepted attempt-run worker evidence.
+
+ACP repair completed:
+
+git check-ignore -q -- .codex-supervisor/planning.sqlite3
+ignored
+
+uv run --no-sync python -B scripts/check_target_workspace_acp.py --workspace . --path plans/planning.sqlite3 --json
+ok true, failures []
 ```
 
 ## Planning Ledger
@@ -123,6 +131,7 @@ Active plan:
 
 Recently completed plans:
 
+- `plan-acp-repair-20260708`: `ACP repair`
 - `plan-projections-layer-20260708`: `Projection layer`
 - `plan-module-deepening-20260708`: `Module deepening`
 - `plan-work-graph-provenance-fixes-20260708`: `Work graph provenance fixes`
@@ -227,19 +236,25 @@ Accepted tasks:
 - `task-projections-layer-proof-20260708`: recorded final proof for the projection-layer work with
   full verification, focused projection/queue/ACP coverage, Ruff, projected recovered-blocker
   coverage, and the ACP outcome preserved as a source-workspace caveat.
+- `task-acp-repair-20260708`: added the missing `.codex-supervisor/` ignore rule, refreshed the
+  protected `.gitignore` hash, verified source locks and full tests, committed and pushed
+  `c00e2d1`, and confirmed clean-worktree ACP passes with no failures.
+- `task-acp-repair-proof-20260708`: recorded final proof for the ACP repair with full verification
+  and durable final-proof lineage.
 
 Ready next task:
 
 - None. `plan-substrate-20260707`, `plan-completion-proof-20260707`,
   `substrate-hardening-20260707`, `plan-accepted-provenance-hardening-20260707`,
   `plan-plugin-cache-refresh-20260707`, `plan-work-graph-provenance-fixes-20260708`,
-  `plan-module-deepening-20260708`, and `plan-projections-layer-20260708` are complete.
+  `plan-module-deepening-20260708`, `plan-projections-layer-20260708`, and
+  `plan-acp-repair-20260708` are complete.
 
 ## Next Action
 
 No source task is ready. The projection-layer implementation is verified and recorded:
 `projections.py` now owns joined terminal events, projected plan status, recovered blockers, and
 final-proof coverage; active-plan status sync and ACP warnings consume the projection; queue
-recovery filters recovered blockers out of idle-plan follow-up suggestions. The target-workspace ACP
-gate was run against this source repo and failed for source-context reasons, not for a
-projection-layer regression.
+recovery filters recovered blockers out of idle-plan follow-up suggestions. The ACP repair is also
+verified and recorded: `.codex-supervisor/` is ignored, protected locks pass, the projection-layer
+commit was pushed, and clean-worktree ACP passes with no failures.
